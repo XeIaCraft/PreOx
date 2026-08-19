@@ -3,11 +3,11 @@
 import { useTransition } from "react";
 import Image from "next/image";
 import { Star, Image as ImageIcon, Clock, Users, Euro } from "lucide-react";
-import { Modal } from "@/components/a-table/ui/modal";
+import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { Button } from "@/components/ui/button";
 import { toggleFavorite, fetchRecipeImage, refineRecipe } from "@/app/apps/a-table/actions/recipes";
-import { useToast } from "@/components/a-table/toast";
+import { useToast } from "@/components/ui/toast";
 import { scaleFactor } from "@/lib/a-table/shopping";
 import type { Appetite, Recipe } from "@/lib/a-table/types";
 

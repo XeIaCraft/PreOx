@@ -2,12 +2,12 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { Search, Star, Archive, ArchiveRestore, Plus } from "lucide-react";
-import { Modal } from "@/components/a-table/ui/modal";
+import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { setRecipeArchived } from "@/app/apps/a-table/actions/recipes";
 import { addRecipeToBacklog } from "@/app/apps/a-table/actions/planning";
-import { useToast } from "@/components/a-table/toast";
+import { useToast } from "@/components/ui/toast";
 import type { Recipe } from "@/lib/a-table/types";
 
 interface LibraryDialogProps {

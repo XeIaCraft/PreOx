@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { RefreshCw, Wine, Trash2 } from "lucide-react";
-import { Modal } from "@/components/a-table/ui/modal";
+import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import {
   regenerateWinePairings,
   dismissGuestMenu,
 } from "@/app/apps/a-table/actions/guest_menu";
-import { useToast } from "@/components/a-table/toast";
+import { useToast } from "@/components/ui/toast";
 import type { GuestCourse, GuestCourseDish, GuestCourseKey, GuestMenu } from "@/lib/a-table/types";
 
 interface GuestMenuDialogProps {

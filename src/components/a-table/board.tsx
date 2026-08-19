@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ShoppingBasket, BookOpen, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DAY_LABELS, WEEKDAY_PLACEMENTS } from "@/lib/a-table/constants";
-import { useToast } from "@/components/a-table/toast";
+import { useToast } from "@/components/ui/toast";
 import { TodayHero } from "@/components/a-table/today-hero";
 import { TempIngredientsRow } from "@/components/a-table/temp-ingredients-row";
 import { GeneratorBar } from "@/components/a-table/generator-bar";

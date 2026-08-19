@@ -2,10 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { ThumbsUp, ThumbsDown } from "lucide-react";
-import { Modal } from "@/components/a-table/ui/modal";
+import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { rateRecipe } from "@/app/apps/a-table/actions/recipes";
-import { useToast } from "@/components/a-table/toast";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 interface RateDialogProps {

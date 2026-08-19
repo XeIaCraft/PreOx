@@ -2,9 +2,9 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
-import { Modal } from "@/components/a-table/ui/modal";
+import { Modal } from "@/components/ui/modal";
 import { removeHistoryEntry, restoreHistoryEntry } from "@/app/apps/a-table/actions/planning";
-import { useToast } from "@/components/a-table/toast";
+import { useToast } from "@/components/ui/toast";
 import type { HistoryEntry, Recipe } from "@/lib/a-table/types";
 
 interface HistoryDialogProps {

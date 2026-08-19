@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Modal } from "@/components/a-table/ui/modal";
+import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { addTemporaryIngredient, updateTemporaryIngredient } from "@/app/apps/a-table/actions/temp_ingredients";
-import { useToast } from "@/components/a-table/toast";
+import { useToast } from "@/components/ui/toast";
 import type { TemporaryIngredient } from "@/lib/a-table/types";
 
 interface TempIngredientDialogProps {

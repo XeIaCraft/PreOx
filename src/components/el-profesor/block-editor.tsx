@@ -1,0 +1,221 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { updateFicheBlock, deleteFicheBlock } from "@/app/apps/el-profesor/actions/extraction";
+import { useToast } from "@/components/ui/toast";
+import type { Citation, FicheBlock, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
+
+const IS_TEXT_BLOCK = new Set([
+  "definition_mecanisme",
+  "valeurs_seuils",
+  "mnemotechnique",
+  "perle_clinique",
+  "piege_erreur",
+  "formule",
+  "texte_libre",
+]);
+
+function TableEditor({ content, onChange }: { content: TableBlockContent; onChange: (c: TableBlockContent) => void }) {
+  const headers = content.headers ?? [];
+  const rows = content.rows ?? [];
+
+  function setHeader(i: number, value: string) {
+    const next = [...headers];
+    next[i] = value;
+    onChange({ headers: next, rows });
+  }
+  function setCell(ri: number, ci: number, value: string) {
+    const next = rows.map((r) => [...r]);
+    next[ri][ci] = value;
+    onChange({ headers, rows: next });
+  }
+  function addColumn() {
+    onChange({ headers: [...headers, "Colonne"], rows: rows.map((r) => [...r, ""]) });
+  }
+  function removeColumn(ci: number) {
+    onChange({ headers: headers.filter((_, i) => i !== ci), rows: rows.map((r) => r.filter((_, i) => i !== ci)) });
+  }
+  function addRow() {
+    onChange({ headers, rows: [...rows, headers.map(() => "")] });
+  }
+  function removeRow(ri: number) {
+    onChange({ headers, rows: rows.filter((_, i) => i !== ri) });
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr>
+              {headers.map((h, i) => (
+                <th key={i} className="border-b border-border p-1">
+                  <div className="flex items-center gap-1">
+                    <Input value={h} onChange={(e) => setHeader(i, e.target.value)} className="h-8 text-xs" />
+                    <button type="button" onClick={() => removeColumn(i)} className="text-foreground-subtle hover:text-danger">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                </th>
+              ))}
+              <th className="border-b border-border p-1">
+                <Button variant="ghost" size="icon" onClick={addColumn} aria-label="Ajouter une colonne">
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri}>
+                {row.map((cell, ci) => (
+                  <td key={ci} className="border-b border-border p-1">
+                    <Input value={cell} onChange={(e) => setCell(ri, ci, e.target.value)} className="h-8 text-xs" />
+                  </td>
+                ))}
+                <td className="border-b border-border p-1">
+                  <button type="button" onClick={() => removeRow(ri)} className="text-foreground-subtle hover:text-danger">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Button variant="secondary" size="sm" onClick={addRow}>
+        <Plus className="h-3.5 w-3.5" /> Ligne
+      </Button>
+    </div>
+  );
+}
+
+function ProtocolEditor({ content, onChange }: { content: ProtocolBlockContent; onChange: (c: ProtocolBlockContent) => void }) {
+  const steps = content.steps ?? [];
+
+  function updateStep(i: number, patch: Partial<ProtocolBlockContent["steps"][number]>) {
+    const next = steps.map((s, idx) => (idx === i ? { ...s, ...patch } : s));
+    onChange({ steps: next });
+  }
+  function addStep() {
+    onChange({ steps: [...steps, { label: "", detail: "", condition: "" }] });
+  }
+  function removeStep(i: number) {
+    onChange({ steps: steps.filter((_, idx) => idx !== i) });
+  }
+
+  return (
+    <div className="space-y-2">
+      {steps.map((step, i) => (
+        <div key={i} className="rounded-[var(--radius-sm)] border border-border p-2">
+          <div className="flex items-center gap-2">
+            <Input placeholder="Étape" value={step.label} onChange={(e) => updateStep(i, { label: e.target.value })} className="h-8 text-xs" />
+            <button type="button" onClick={() => removeStep(i)} className="text-foreground-subtle hover:text-danger">
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <Input
+            placeholder="Détail"
+            value={step.detail}
+            onChange={(e) => updateStep(i, { detail: e.target.value })}
+            className="mt-1.5 h-8 text-xs"
+          />
+          <Input
+            placeholder="Condition (optionnel)"
+            value={step.condition ?? ""}
+            onChange={(e) => updateStep(i, { condition: e.target.value })}
+            className="mt-1.5 h-8 text-xs"
+          />
+        </div>
+      ))}
+      <Button variant="secondary" size="sm" onClick={addStep}>
+        <Plus className="h-3.5 w-3.5" /> Étape
+      </Button>
+    </div>
+  );
+}
+
+export function BlockEditor({
+  block,
+  onChanged,
+  onCitationClick,
+}: {
+  block: FicheBlock;
+  onChanged: () => void;
+  onCitationClick?: (c: Citation) => void;
+}) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [content, setContent] = useState(block.content);
+
+  function handleSave() {
+    startTransition(async () => {
+      const result = await updateFicheBlock(block.id, { content, citations: block.citations });
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  function handleDelete() {
+    if (!confirm("Supprimer ce bloc ?")) return;
+    startTransition(async () => {
+      const result = await deleteFicheBlock(block.id);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  return (
+    <div className="rounded-[var(--radius-md)] border border-border p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wide text-foreground-subtle">{block.blockType}</span>
+        {block.needsReview && <Badge variant="accent">À vérifier</Badge>}
+      </div>
+
+      <div className="mt-2">
+        {block.blockType === "tableau_comparatif" && (
+          <TableEditor content={content as TableBlockContent} onChange={(c) => setContent(c)} />
+        )}
+        {block.blockType === "protocole_paliers" && (
+          <ProtocolEditor content={content as ProtocolBlockContent} onChange={(c) => setContent(c)} />
+        )}
+        {IS_TEXT_BLOCK.has(block.blockType) && (
+          <textarea
+            value={(content as TextBlockContent).text ?? ""}
+            onChange={(e) => setContent({ text: e.target.value })}
+            rows={4}
+            className="w-full rounded-[var(--radius-sm)] border border-border bg-surface p-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          />
+        )}
+      </div>
+
+      {block.citations.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {block.citations.map((c: Citation, i: number) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onCitationClick?.(c)}
+              className="rounded-full border border-border-strong px-2 py-0.5 text-[11px] text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
+            >
+              p. {c.page}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2 flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={handleDelete} disabled={isPending}>
+          <Trash2 className="h-3.5 w-3.5" /> Supprimer
+        </Button>
+        <Button size="sm" onClick={handleSave} disabled={isPending}>
+          Enregistrer
+        </Button>
+      </div>
+    </div>
+  );
+}

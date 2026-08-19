@@ -2,11 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { RefreshCw } from "lucide-react";
-import { Modal } from "@/components/a-table/ui/modal";
+import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { Button } from "@/components/ui/button";
 import { validateDraft, regenerateProposal, refineProposal } from "@/app/apps/a-table/actions/drafts";
-import { useToast } from "@/components/a-table/toast";
+import { useToast } from "@/components/ui/toast";
 import type { DraftProposal } from "@/lib/a-table/types";
 
 interface ValidateDraftDialogProps {

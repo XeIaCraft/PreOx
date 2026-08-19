@@ -133,6 +133,116 @@ export type ATableSettingsRow = {
   updated_at: string;
 };
 
+// -- "El Profesor" module tables ---------------------------------------------
+// Same convention as "À table": jsonb columns typed as Json here, precise
+// domain shapes (block content, citations, front/back) live in
+// src/lib/el-profesor/types.ts.
+
+export type ElProfesorChapterStatus = "pending" | "extracting" | "draft_ready" | "published" | "failed";
+export type ElProfesorContentStatus = "draft" | "published";
+export type ElProfesorReviewRating = "again" | "good";
+export type ElProfesorReviewSource = "scheduled" | "free";
+
+export type ElProfesorBookRow = {
+  id: string;
+  title: string;
+  author: string | null;
+  edition: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ElProfesorChapterRow = {
+  id: string;
+  book_id: string;
+  title: string;
+  order_index: number;
+  pdf_storage_path: string;
+  pdf_page_count: number | null;
+  status: ElProfesorChapterStatus;
+  extraction_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ElProfesorSubEntityRow = {
+  id: string;
+  chapter_id: string;
+  name: string;
+  order_index: number;
+  summary: string;
+  created_at: string;
+};
+
+export type ElProfesorFicheRow = {
+  id: string;
+  sub_entity_id: string;
+  title: string;
+  status: ElProfesorContentStatus;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ElProfesorFicheBlockRow = {
+  id: string;
+  fiche_id: string;
+  order_index: number;
+  block_type: string;
+  content: Json;
+  citations: Json;
+  needs_review: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ElProfesorFlashcardRow = {
+  id: string;
+  fiche_id: string;
+  front: Json;
+  back: Json;
+  citations: Json;
+  status: ElProfesorContentStatus;
+  needs_review: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ElProfesorReviewStateRow = {
+  id: string;
+  user_id: string;
+  flashcard_id: string;
+  due: string;
+  stability: number;
+  difficulty: number;
+  elapsed_days: number;
+  scheduled_days: number;
+  reps: number;
+  lapses: number;
+  state: "new" | "learning" | "review" | "relearning";
+  last_review: string | null;
+};
+
+export type ElProfesorReviewLogRow = {
+  id: string;
+  user_id: string;
+  flashcard_id: string;
+  reviewed_at: string;
+  rating: ElProfesorReviewRating;
+  source: ElProfesorReviewSource;
+};
+
+export type ElProfesorExtractionJobRow = {
+  id: string;
+  chapter_id: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  raw_output: Json | null;
+  error: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -194,6 +304,65 @@ export type Database = {
         Row: ATableSettingsRow;
         Insert: Partial<ATableSettingsRow> & { user_id: string };
         Update: Partial<ATableSettingsRow>;
+        Relationships: [];
+      };
+      el_profesor_books: {
+        Row: ElProfesorBookRow;
+        Insert: Partial<ElProfesorBookRow> & { title: string };
+        Update: Partial<ElProfesorBookRow>;
+        Relationships: [];
+      };
+      el_profesor_chapters: {
+        Row: ElProfesorChapterRow;
+        Insert: Partial<ElProfesorChapterRow> & { book_id: string; title: string; pdf_storage_path: string };
+        Update: Partial<ElProfesorChapterRow>;
+        Relationships: [];
+      };
+      el_profesor_sub_entities: {
+        Row: ElProfesorSubEntityRow;
+        Insert: Partial<ElProfesorSubEntityRow> & { chapter_id: string; name: string };
+        Update: Partial<ElProfesorSubEntityRow>;
+        Relationships: [];
+      };
+      el_profesor_fiches: {
+        Row: ElProfesorFicheRow;
+        Insert: Partial<ElProfesorFicheRow> & { sub_entity_id: string; title: string };
+        Update: Partial<ElProfesorFicheRow>;
+        Relationships: [];
+      };
+      el_profesor_fiche_blocks: {
+        Row: ElProfesorFicheBlockRow;
+        Insert: Partial<ElProfesorFicheBlockRow> & { fiche_id: string; block_type: string };
+        Update: Partial<ElProfesorFicheBlockRow>;
+        Relationships: [];
+      };
+      el_profesor_flashcards: {
+        Row: ElProfesorFlashcardRow;
+        Insert: Partial<ElProfesorFlashcardRow> & { fiche_id: string };
+        Update: Partial<ElProfesorFlashcardRow>;
+        Relationships: [];
+      };
+      el_profesor_review_state: {
+        Row: ElProfesorReviewStateRow;
+        Insert: Partial<ElProfesorReviewStateRow> & { user_id: string; flashcard_id: string };
+        Update: Partial<ElProfesorReviewStateRow>;
+        Relationships: [];
+      };
+      el_profesor_review_log: {
+        Row: ElProfesorReviewLogRow;
+        Insert: Partial<ElProfesorReviewLogRow> & {
+          user_id: string;
+          flashcard_id: string;
+          rating: ElProfesorReviewRating;
+          source: ElProfesorReviewSource;
+        };
+        Update: Partial<ElProfesorReviewLogRow>;
+        Relationships: [];
+      };
+      el_profesor_extraction_jobs: {
+        Row: ElProfesorExtractionJobRow;
+        Insert: Partial<ElProfesorExtractionJobRow> & { chapter_id: string };
+        Update: Partial<ElProfesorExtractionJobRow>;
         Relationships: [];
       };
     };

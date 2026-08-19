@@ -2,12 +2,12 @@
 
 import { useMemo, useTransition } from "react";
 import { RotateCcw } from "lucide-react";
-import { Modal } from "@/components/a-table/ui/modal";
+import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { buildShoppingList } from "@/lib/a-table/shopping";
 import { SHOPPING_CATEGORIES, SHOPPING_OTHER_CATEGORY } from "@/lib/a-table/constants";
 import { toggleShoppingChecked, clearShoppingChecked } from "@/app/apps/a-table/actions/settings";
-import { useToast } from "@/components/a-table/toast";
+import { useToast } from "@/components/ui/toast";
 import type { Appetite, GuestMenu, MealCard, Recipe } from "@/lib/a-table/types";
 
 interface ShoppingDialogProps {

@@ -14,16 +14,16 @@ const FALLBACK_MODULES: Pick<AppModule, "id" | "name" | "description" | "icon" |
   },
   {
     id: "fallback-1",
-    name: "Cas cliniques",
-    description: "Des situations pratiques pour raisonner et s'entraîner.",
-    icon: "stethoscope",
-    status: "coming_soon",
+    name: "El Profesor",
+    description: "Fiches, flashcards et révision espacée générées par IA à partir de vos livres.",
+    icon: "graduation-cap",
+    status: "available",
   },
   {
     id: "fallback-2",
-    name: "Fiches",
-    description: "Des synthèses claires, organisées et faciles à consulter.",
-    icon: "file-text",
+    name: "Cas cliniques",
+    description: "Des situations pratiques pour raisonner et s'entraîner.",
+    icon: "stethoscope",
     status: "coming_soon",
   },
   {
@@ -35,13 +35,6 @@ const FALLBACK_MODULES: Pick<AppModule, "id" | "name" | "description" | "icon" |
   },
   {
     id: "fallback-4",
-    name: "Révision",
-    description: "Des parcours de révision structurés et progressifs.",
-    icon: "graduation-cap",
-    status: "coming_soon",
-  },
-  {
-    id: "fallback-5",
     name: "Outils spécialisés",
     description: "Des utilitaires ciblés pour des besoins spécifiques.",
     icon: "flask-conical",

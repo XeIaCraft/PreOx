@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Modal } from "@/components/a-table/ui/modal";
+import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,7 @@ import {
   COMPLEXITY_LABELS,
 } from "@/lib/a-table/constants";
 import { updatePreferences, updateGenerationRules, updateApiKeys, analyzeTastes, clearCardsAndHistory } from "@/app/apps/a-table/actions/settings";
-import { useToast } from "@/components/a-table/toast";
+import { useToast } from "@/components/ui/toast";
 import type { ATableSettings, Preferences, GenerationRules } from "@/lib/a-table/types";
 
 interface SettingsDialogProps {

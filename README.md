@@ -94,17 +94,20 @@ src/
     hub/                        Header + carte de module de l'espace utilisateur
     admin/                      Composants du panneau d'administration
     a-table/                    Composants du module « À table » (voir plus bas)
+    el-profesor/                Composants du module « El Profesor » (voir plus bas)
   lib/
     supabase/                   Clients Supabase (browser, server, admin) + types
     auth/dal.ts                 Data Access Layer : requireUser/requireProfile/requireAdmin
     apps.ts                     Résolution des modules accessibles pour un profil
     site-url.ts                 Résolution de l'URL publique (emails)
     icon-map.tsx                Icônes disponibles pour les modules
+    gemini-shared.ts            Aides Gemini partagées (parsing JSON, unescape) — a-table + el-profesor
     a-table/                    Logique métier du module « À table » (voir plus bas)
+    el-profesor/                Logique métier du module « El Profesor » (voir plus bas)
   proxy.ts                      Rafraîchissement de session + garde d'accès optimiste
 supabase/
-  migrations/                  Schéma, RLS, triggers (hub + module À table)
-  seed.sql                     Modules du hub (À table + 5 modules de démonstration)
+  migrations/                  Schéma, RLS, triggers (hub + modules À table, El Profesor)
+  seed.sql                     Modules du hub (À table, El Profesor + 3 modules de démonstration)
 ```
 
 ### Pourquoi `proxy.ts` et pas `middleware.ts` ?
@@ -147,12 +150,16 @@ Le rôle **admin** donne accès à `/admin` (protégé) en plus de `/apps`.
    projet : le contenu de `supabase/migrations/20260101000000_init.sql`
    (hub : profils, modules, accès), puis celui de
    `supabase/migrations/20260101000001_a_table.sql` (tables du module
-   « À table »). *(Si vous utilisez la CLI Supabase : `supabase db push`
-   applique les deux dans l'ordre.)*
+   « À table »), puis celui de
+   `supabase/migrations/20260101000002_el_profesor.sql` (tables du module
+   « El Profesor » + création du bucket de stockage privé des PDF de
+   chapitres). *(Si vous utilisez la CLI Supabase : `supabase db push`
+   applique les trois dans l'ordre.)*
 3. **Charger les modules du hub** : exécutez `supabase/seed.sql` — il active
-   le module « À table » (`status='available'`, route `/apps/a-table`) et
-   crée 5 modules de démonstration (Cas cliniques, Fiches, Checklists,
-   Révision, Outils spécialisés).
+   « À table » (`status='available'`, route `/apps/a-table`) et
+   « El Profesor » (`status='available'`, route `/apps/el-profesor`), et
+   crée 3 modules de démonstration (Cas cliniques, Checklists, Outils
+   spécialisés).
 4. **Configurer les redirections d'authentification** : Authentication →
    URL Configuration →
    - **Site URL** : `http://localhost:3000` en développement, votre domaine
@@ -191,15 +198,19 @@ NEXT_PUBLIC_SUPABASE_URL=https://votre-projet.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=votre-cle-anon-ou-publishable
 SUPABASE_SERVICE_ROLE_KEY=votre-cle-service-role
 A_TABLE_ENCRYPTION_KEY=$(openssl rand -base64 32)
+EL_PROFESOR_GEMINI_API_KEY=votre-cle-gemini
 # Optionnel en local, recommandé en production :
 # NEXT_PUBLIC_SITE_URL=https://votre-domaine.vercel.app
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` et `A_TABLE_ENCRYPTION_KEY` sont **secrètes** :
-jamais préfixées par `NEXT_PUBLIC_`, utilisées uniquement côté serveur (la
-première pour les Server Actions d'administration — invitation, suppression
-d'utilisateurs ; la seconde pour chiffrer/déchiffrer les clés API Gemini et
-Pexels de chaque utilisateur du module « À table »). Ne les commitez jamais.
+`SUPABASE_SERVICE_ROLE_KEY`, `A_TABLE_ENCRYPTION_KEY` et
+`EL_PROFESOR_GEMINI_API_KEY` sont **secrètes** : jamais préfixées par
+`NEXT_PUBLIC_`, utilisées uniquement côté serveur (la première pour les
+Server Actions d'administration — invitation, suppression d'utilisateurs ;
+la deuxième pour chiffrer/déchiffrer les clés API Gemini et Pexels de
+chaque utilisateur du module « À table » ; la troisième pour le pipeline
+d'extraction admin du module « El Profesor », voir plus bas). Ne les
+commitez jamais.
 
 ## Lancement en local
 
@@ -230,6 +241,7 @@ npm run typecheck       # Vérification TypeScript
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `A_TABLE_ENCRYPTION_KEY`
+   - `EL_PROFESOR_GEMINI_API_KEY`
    - `NEXT_PUBLIC_SITE_URL` (l'URL finale de votre déploiement)
 4. Déployez. Aucune configuration `next.config.ts` supplémentaire n'est
    nécessaire.
@@ -299,6 +311,60 @@ Les clés sont chiffrées at-rest (AES-256-GCM) avec la variable d'environnement
 serveur `A_TABLE_ENCRYPTION_KEY` avant d'être stockées, et déchiffrées
 uniquement à l'intérieur d'une Server Action juste avant l'appel à l'API
 externe — jamais renvoyées en clair au navigateur.
+
+## Module « El Profesor »
+
+Génère des fiches de révision et des flashcards à partir de chapitres de
+livres (un PDF = un chapitre), avec citation systématique de la source et
+un système de révision espacée (FSRS) entièrement interne à PreOx — aucune
+dépendance à Anki.
+
+**Import et relecture, réservés aux admins du hub** (pas de rôle dédié) :
+
+1. Créer un livre, puis importer un chapitre (PDF) depuis le tableau de
+   bord du module.
+2. Lancer l'extraction : le PDF est envoyé à Gemini (Files API — pas de
+   limite de taille liée à l'upload inline, utile pour les chapitres
+   scannés volumineux), qui identifie les sous-entités du chapitre (une
+   fiche par sous-entité, découpage basé sur les sous-titres du livre
+   lui-même), extrait des blocs de contenu **typés** (définition/mécanisme,
+   valeurs & seuils, tableau comparatif, protocole par paliers,
+   mnémotechnique, perle clinique, piège fréquent, formule, texte libre) et
+   des flashcards — chaque bloc et chaque flashcard portent une **citation
+   verbatim** (page + texte exact) du passage qui les fonde. Une passe de
+   vérification IA signale ensuite les éléments dont la citation ou la
+   fidélité au texte source semble douteuse.
+3. Tout est stocké en brouillon (`draft`) — invisible des autres
+   utilisateurs — jusqu'à relecture humaine dans l'écran de relecture (PDF
+   affiché à côté du contenu généré, entièrement éditable, tableaux inclus)
+   et publication, fiche par fiche ou en un clic pour tout le chapitre.
+
+**Consultation et révision, pour tout utilisateur ayant accès au module** :
+
+- Bibliothèque en **lecture partagée** : le contenu publié est visible par
+  tous, mais la progression de révision de chacun est strictement
+  individuelle.
+- Chaque fiche affiche le PDF source à côté ; cliquer sur une citation
+  saute à la bonne page et surligne le passage exact (surlignage
+  automatique sur le texte natif ; simple saut de page si la page est un
+  scan sans calque texte).
+- Révision **par chapitre** (jamais par livre — trop transversal) : une file
+  « à réviser aujourd'hui » pilotée par l'algorithme FSRS, et une révision
+  libre à la demande qui ne modifie jamais la planification (comme le mode
+  "cram" d'Anki). Auto-évaluation façon Anki : réponse affichée, l'utilisateur
+  juge lui-même correct/incorrect.
+
+Le bucket de stockage privé des PDF (`el-profesor-pdfs`) est créé
+automatiquement par la migration `20260101000002_el_profesor.sql` — aucune
+étape manuelle dans le tableau de bord Supabase. Il n'a aucune policy
+publique : tout accès passe par une Server Action qui vérifie les droits
+puis génère une URL signée à courte durée de vie.
+
+**Clé Gemini** : contrairement à « À table », l'extraction est une action
+admin sur une bibliothèque partagée, pas une génération personnalisée par
+utilisateur — une seule clé serveur (`EL_PROFESOR_GEMINI_API_KEY`, gratuite
+sur [Google AI Studio](https://aistudio.google.com/apikey)) suffit, pas de
+clé par utilisateur ni de chiffrement à gérer.
 
 ## Sécurité
 
