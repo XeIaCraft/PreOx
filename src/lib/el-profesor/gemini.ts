@@ -8,7 +8,10 @@ const FILES_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1bet
 const FILES_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 const MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
-export const EL_PROFESOR_GEMINI_MODEL = "gemini-3.1-flash";
+// A rolling alias (Google hot-swaps it to the current best Flash release)
+// rather than a pinned version string like "gemini-3.1-flash" — pinned
+// Flash versions get retired every few months and start 404ing.
+export const EL_PROFESOR_GEMINI_MODEL = "gemini-flash-latest";
 
 const BLOCK_TYPES: BlockType[] = [
   "definition_mecanisme",
