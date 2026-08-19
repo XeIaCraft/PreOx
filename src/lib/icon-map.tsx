@@ -15,6 +15,7 @@ import {
   Brain,
   Pill,
   ClipboardCheck,
+  Utensils,
   type LucideIcon,
 } from "lucide-react";
 
@@ -34,6 +35,7 @@ export const ICON_OPTIONS = [
   "brain",
   "pill",
   "clipboard-check",
+  "utensils",
 ] as const;
 
 export type IconName = (typeof ICON_OPTIONS)[number];
@@ -54,6 +56,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   brain: Brain,
   pill: Pill,
   "clipboard-check": ClipboardCheck,
+  utensils: Utensils,
 };
 
 function resolveIcon(name: string | null | undefined): LucideIcon {

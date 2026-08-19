@@ -6,6 +6,13 @@ import type { AppModule } from "@/lib/supabase/types";
 
 const FALLBACK_MODULES: Pick<AppModule, "id" | "name" | "description" | "icon" | "status">[] = [
   {
+    id: "fallback-0",
+    name: "À table",
+    description: "Organisez repas et recettes, sans y penser.",
+    icon: "utensils",
+    status: "coming_soon",
+  },
+  {
     id: "fallback-1",
     name: "Cas cliniques",
     description: "Des situations pratiques pour raisonner et s'entraîner.",
