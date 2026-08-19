@@ -2,10 +2,13 @@
 
 PreOx est un **hub applicatif** : une plateforme centrale qui donne accès à
 plusieurs applications/modules, avec une gestion fine des droits par
-utilisateur et par module. Cette V1 pose la base : landing page, authentification
+utilisateur et par module. La base pose : landing page, authentification
 (admin / utilisateur), gestion des utilisateurs, et logique d'accès aux
-modules. Les applications métier elles-mêmes ne sont pas encore développées —
-la structure est prête à les accueillir.
+modules. Un premier module métier réel est branché — **À table**, un
+planificateur de repas assisté par IA (portage natif d'une intégration
+Home Assistant du même nom, voir plus bas) — les autres modules du hub
+restent des emplacements réservés ("coming soon"), prêts à accueillir de
+futurs développements.
 
 ## Stack technique
 
@@ -90,16 +93,18 @@ src/
     auth/                       Formulaires d'authentification
     hub/                        Header + carte de module de l'espace utilisateur
     admin/                      Composants du panneau d'administration
+    a-table/                    Composants du module « À table » (voir plus bas)
   lib/
     supabase/                   Clients Supabase (browser, server, admin) + types
     auth/dal.ts                 Data Access Layer : requireUser/requireProfile/requireAdmin
     apps.ts                     Résolution des modules accessibles pour un profil
     site-url.ts                 Résolution de l'URL publique (emails)
     icon-map.tsx                Icônes disponibles pour les modules
+    a-table/                    Logique métier du module « À table » (voir plus bas)
   proxy.ts                      Rafraîchissement de session + garde d'accès optimiste
 supabase/
-  migrations/                  Schéma, RLS, triggers
-  seed.sql                     5 modules de démonstration
+  migrations/                  Schéma, RLS, triggers (hub + module À table)
+  seed.sql                     Modules du hub (À table + 5 modules de démonstration)
 ```
 
 ### Pourquoi `proxy.ts` et pas `middleware.ts` ?
@@ -138,12 +143,16 @@ Le rôle **admin** donne accès à `/admin` (protégé) en plus de `/apps`.
 ## Configuration Supabase (pas à pas)
 
 1. **Créer le projet** sur [supabase.com](https://supabase.com/dashboard).
-2. **Exécuter la migration** : ouvrez le **SQL Editor** du projet, collez le
-   contenu de `supabase/migrations/20260101000000_init.sql`, exécutez.
-   *(Si vous utilisez la CLI Supabase : `supabase db push`.)*
-3. **(Optionnel) Charger les modules de démonstration** : faites de même avec
-   `supabase/seed.sql` pour créer les 5 modules d'exemple (Cas cliniques,
-   Fiches, Checklists, Révision, Outils spécialisés).
+2. **Exécuter les migrations**, dans l'ordre, via le **SQL Editor** du
+   projet : le contenu de `supabase/migrations/20260101000000_init.sql`
+   (hub : profils, modules, accès), puis celui de
+   `supabase/migrations/20260101000001_a_table.sql` (tables du module
+   « À table »). *(Si vous utilisez la CLI Supabase : `supabase db push`
+   applique les deux dans l'ordre.)*
+3. **Charger les modules du hub** : exécutez `supabase/seed.sql` — il active
+   le module « À table » (`status='available'`, route `/apps/a-table`) et
+   crée 5 modules de démonstration (Cas cliniques, Fiches, Checklists,
+   Révision, Outils spécialisés).
 4. **Configurer les redirections d'authentification** : Authentication →
    URL Configuration →
    - **Site URL** : `http://localhost:3000` en développement, votre domaine
@@ -181,14 +190,16 @@ Copiez `.env.local.example` vers `.env.local` et renseignez :
 NEXT_PUBLIC_SUPABASE_URL=https://votre-projet.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=votre-cle-anon-ou-publishable
 SUPABASE_SERVICE_ROLE_KEY=votre-cle-service-role
+A_TABLE_ENCRYPTION_KEY=$(openssl rand -base64 32)
 # Optionnel en local, recommandé en production :
 # NEXT_PUBLIC_SITE_URL=https://votre-domaine.vercel.app
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` est **secrète** : elle n'est jamais préfixée par
-`NEXT_PUBLIC_` et n'est utilisée que côté serveur (Server Actions
-d'administration : invitation, suppression d'utilisateurs). Ne la commitez
-jamais.
+`SUPABASE_SERVICE_ROLE_KEY` et `A_TABLE_ENCRYPTION_KEY` sont **secrètes** :
+jamais préfixées par `NEXT_PUBLIC_`, utilisées uniquement côté serveur (la
+première pour les Server Actions d'administration — invitation, suppression
+d'utilisateurs ; la seconde pour chiffrer/déchiffrer les clés API Gemini et
+Pexels de chaque utilisateur du module « À table »). Ne les commitez jamais.
 
 ## Lancement en local
 
@@ -218,6 +229,7 @@ npm run typecheck       # Vérification TypeScript
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
+   - `A_TABLE_ENCRYPTION_KEY`
    - `NEXT_PUBLIC_SITE_URL` (l'URL finale de votre déploiement)
 4. Déployez. Aucune configuration `next.config.ts` supplémentaire n'est
    nécessaire.
@@ -240,6 +252,53 @@ npm run typecheck       # Vérification TypeScript
 Aucune autre modification de l'architecture n'est nécessaire : l'accès,
 l'affichage dans le hub et la protection de route sont déjà gérés par la
 structure existante.
+
+## Module « À table »
+
+Planificateur de repas assisté par IA : tableau hebdomadaire par
+glisser-déposer, génération de propositions par Gemini, bibliothèque de
+recettes, liste de courses agrégée, menus invités avec accords mets-vins,
+import de recette (texte/photo), mode recette guidé avec minuteurs.
+
+C'est un **portage natif** d'une intégration Home Assistant du même nom
+(https://github.com/XeIaCraft/A-table) — pas un pont réseau vers Home
+Assistant. Toute la logique métier (règles de génération, agrégation de la
+liste de courses, prompts IA) est réimplémentée dans PreOx ; l'intégration
+HA d'origine n'est plus utilisée à l'exécution.
+
+**Différences volontaires par rapport à l'intégration HA d'origine :**
+
+- **Multi-utilisateur** : chaque utilisateur a ses propres recettes,
+  planning, courses et préférences (isolées par RLS,
+  `supabase/migrations/20260101000001_a_table.sql`), et sa **propre clé
+  API Gemini et Pexels** — pas de clé partagée côté serveur.
+- **Vraies tables relationnelles** (une par type d'entité : `a_table_recipes`,
+  `a_table_meal_cards`, `a_table_drafts`, `a_table_guest_menus`,
+  `a_table_history`, `a_table_temporary_ingredients`, `a_table_settings`)
+  plutôt qu'un blob JSON unique réécrit en entier à chaque sauvegarde —
+  l'original ne tenait que par le mono-thread de Home Assistant.
+- **Glisser-déposer** : change la colonne d'une carte (backlog ↔ jour) mais
+  ne réordonne pas au sein d'une colonne — déjà une limite de l'intégration
+  d'origine, conservée à l'identique plutôt que "corrigée" sans le demander.
+- Transfert de la liste de courses vers une liste de tâches Home Assistant
+  (`todo.add_item`) : sans objet ici, supprimé — la liste reste
+  consultable/cochable nativement dans PreOx.
+- Import de recette par photo : l'image est envoyée directement à Gemini
+  (base64, en mémoire), jamais stockée.
+
+**Clés API par utilisateur** : chaque personne configure ses propres clés
+dans Réglages → Clés API, à l'intérieur du module (pas dans les variables
+d'environnement du projet) :
+
+- **Gemini** — clé gratuite sur [Google AI Studio](https://aistudio.google.com/apikey).
+  Modèle par défaut : `gemini-3.1-flash-lite` (éditable).
+- **Pexels** (facultatif, illustrations de plats) — clé gratuite sur
+  [pexels.com/api](https://www.pexels.com/api/).
+
+Les clés sont chiffrées at-rest (AES-256-GCM) avec la variable d'environnement
+serveur `A_TABLE_ENCRYPTION_KEY` avant d'être stockées, et déchiffrées
+uniquement à l'intérieur d'une Server Action juste avant l'appel à l'API
+externe — jamais renvoyées en clair au navigateur.
 
 ## Sécurité
 

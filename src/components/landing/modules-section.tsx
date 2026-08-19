@@ -8,9 +8,9 @@ const FALLBACK_MODULES: Pick<AppModule, "id" | "name" | "description" | "icon" |
   {
     id: "fallback-0",
     name: "À table",
-    description: "Organisez repas et recettes, sans y penser.",
+    description: "Planifiez vos repas, générez des idées par IA, gérez vos courses.",
     icon: "utensils",
-    status: "coming_soon",
+    status: "available",
   },
   {
     id: "fallback-1",
