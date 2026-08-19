@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+:root {
+  --background: #faf9f6;
+  --surface: #ffffff;
+  --surface-muted: #f2f1ec;
+  --foreground: #161f1d;
+  --foreground-muted: #4b5754;
+  --foreground-subtle: #7c8683;
+
+  --border: #e3e1d9;
+  --border-strong: #cfccc0;
+
+  --primary: #2f5d54;
+  --primary-strong: #1f433c;
+  --primary-foreground: #f7faf9;
+  --primary-tint: #e7efec;
+
+  --accent: #b08a4e;
+  --accent-foreground: #2a2013;
+  --accent-tint: #f4ead9;
+
+  --danger: #b3432b;
+  --danger-tint: #f6e6e0;
+  --success: #2f6d4f;
+  --success-tint: #e6efe8;
+
+  --radius-sm: 0.4rem;
+  --radius-md: 0.65rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+
+  --shadow-color: 20 30% 10%;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-tint: var(--primary-tint);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-tint: var(--accent-tint);
+
+  --color-danger: var(--danger);
+  --color-danger-tint: var(--danger-tint);
+  --color-success: var(--success);
+  --color-success-tint: var(--success-tint);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-fraunces);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #101512;
+    --surface: #161d19;
+    --surface-muted: #1c2420;
+    --foreground: #f2f3ef;
+    --foreground-muted: #b7bfba;
+    --foreground-subtle: #7f8a85;
+
+    --border: #2a332d;
+    --border-strong: #3a453d;
+
+    --primary: #7fb3a3;
+    --primary-strong: #a6d0c2;
+    --primary-foreground: #0e1512;
+    --primary-tint: #1c2b26;
+
+    --accent: #d3ac72;
+    --accent-foreground: #241b0d;
+    --accent-tint: #2c2412;
+
+    --danger: #e08469;
+    --danger-tint: #2e1c15;
+    --success: #7fc19d;
+    --success-tint: #17271e;
+  }
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--primary-tint);
+  color: var(--primary-strong);
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.font-serif-display {
+  font-family: var(--font-serif), ui-serif, Georgia, serif;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
