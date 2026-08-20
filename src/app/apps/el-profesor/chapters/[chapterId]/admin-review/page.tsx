@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireElProfesorAdmin, getChapterContent } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { ExtractionReviewView } from "@/components/el-profesor/extraction-review-view";
+import { ToastProvider } from "@/components/ui/toast";
 
 export default async function AdminReviewPage({ params }: { params: Promise<{ chapterId: string }> }) {
   await requireElProfesorAdmin();
@@ -13,5 +14,9 @@ export default async function AdminReviewPage({ params }: { params: Promise<{ ch
 
   const subEntities = await getChapterContent(chapterId, true);
 
-  return <ExtractionReviewView chapterId={chapterId} chapterTitle={chapter.title} subEntities={subEntities} />;
+  return (
+    <ToastProvider>
+      <ExtractionReviewView chapterId={chapterId} chapterTitle={chapter.title} subEntities={subEntities} />
+    </ToastProvider>
+  );
 }

@@ -1,5 +1,6 @@
 import { requireElProfesorAccess, getDueQueue, getFreeReviewQueue } from "@/lib/el-profesor/dal";
 import { FlashcardReviewer } from "@/components/el-profesor/flashcard-reviewer";
+import { ToastProvider } from "@/components/ui/toast";
 
 export default async function ReviewPage({
   params,
@@ -15,5 +16,9 @@ export default async function ReviewPage({
 
   const queue = source === "free" ? await getFreeReviewQueue(chapterId) : await getDueQueue(profile.id, chapterId);
 
-  return <FlashcardReviewer chapterId={chapterId} source={source} cards={queue} />;
+  return (
+    <ToastProvider>
+      <FlashcardReviewer chapterId={chapterId} source={source} cards={queue} />
+    </ToastProvider>
+  );
 }
