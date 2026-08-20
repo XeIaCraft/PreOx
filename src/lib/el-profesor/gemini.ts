@@ -222,12 +222,19 @@ export async function deleteGeminiFile(apiKey: string, name: string): Promise<vo
   await fetch(`${FILES_BASE_URL}/${name}?key=${apiKey}`, { method: "DELETE" }).catch(() => {});
 }
 
+// Google's Flash models occasionally return 503 ("high demand, try again
+// later") or 429 (rate limit) — both are transient and worth a couple of
+// retries with backoff before surfacing an error to the admin.
+const RETRYABLE_STATUS = new Set([429, 503]);
+const RETRY_DELAYS_MS = [2000, 5000];
+
 async function callGeminiWithFile(
   apiKey: string,
   model: string,
   file: UploadedGeminiFile,
   instructions: string,
-  responseSchema: Record<string, unknown>
+  responseSchema: Record<string, unknown>,
+  attempt = 0
 ): Promise<unknown> {
   const response = await fetch(`${MODELS_BASE_URL}/${model}:generateContent?key=${apiKey}`, {
     method: "POST",
@@ -247,6 +254,10 @@ async function callGeminiWithFile(
   });
 
   if (!response.ok) {
+    if (RETRYABLE_STATUS.has(response.status) && attempt < RETRY_DELAYS_MS.length) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+      return callGeminiWithFile(apiKey, model, file, instructions, responseSchema, attempt + 1);
+    }
     const body = await response.text().catch(() => "");
     throw new GeminiError(`Appel Gemini échoué (${response.status}) : ${body.slice(0, 300) || "erreur inconnue"}.`);
   }
