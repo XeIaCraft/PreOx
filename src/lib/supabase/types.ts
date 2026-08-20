@@ -1,6 +1,15 @@
 export type UserRole = "admin" | "user";
 export type AppStatus = "available" | "coming_soon";
 
+export type HubActivityLogRow = {
+  id: string;
+  actor_id: string | null;
+  action: string;
+  target_label: string | null;
+  detail: Json;
+  created_at: string;
+};
+
 export type Profile = {
   id: string;
   email: string;
@@ -296,6 +305,12 @@ export type Database = {
         Row: Profile;
         Insert: Partial<Profile> & { id: string; email: string };
         Update: Partial<Profile>;
+        Relationships: [];
+      };
+      hub_activity_log: {
+        Row: HubActivityLogRow;
+        Insert: Partial<HubActivityLogRow> & { action: string };
+        Update: Partial<HubActivityLogRow>;
         Relationships: [];
       };
       apps: {

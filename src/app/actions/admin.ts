@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSiteURL } from "@/lib/site-url";
 import { ICON_OPTIONS } from "@/lib/icon-map";
+import { logActivity } from "@/lib/activity-log";
 
 export interface ActionState {
   error?: string;
@@ -22,7 +23,7 @@ const inviteSchema = z.object({
 });
 
 export async function inviteUser(_prevState: ActionState, formData: FormData): Promise<ActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
 
   const parsed = inviteSchema.safeParse({
     email: formData.get("email"),
@@ -57,6 +58,7 @@ export async function inviteUser(_prevState: ActionState, formData: FormData): P
     await supabase.from("profiles").update({ role: "admin" }).eq("id", data.user.id);
   }
 
+  await logActivity(admin.id, "invite_user", email, { role });
   revalidatePath("/admin/users");
   revalidatePath("/admin");
   return { success: `Invitation envoyée à ${email}.` };
@@ -76,6 +78,7 @@ export async function updateUserRole(userId: string, role: "admin" | "user"): Pr
     return { error: "Impossible de mettre à jour le rôle." };
   }
 
+  await logActivity(admin.id, "update_user_role", userId, { role });
   revalidatePath("/admin/users");
   revalidatePath(`/admin/users/${userId}`);
   return { success: "Rôle mis à jour." };
@@ -115,6 +118,7 @@ export async function setAppAccess(userId: string, appId: string, granted: boole
     if (error) return { error: "Impossible de retirer l'accès à ce module." };
   }
 
+  await logActivity(admin.id, granted ? "grant_app_access" : "revoke_app_access", userId, { appId });
   revalidatePath(`/admin/users/${userId}`);
   revalidatePath("/apps");
   return { success: "Accès mis à jour." };
@@ -134,6 +138,7 @@ export async function deleteUser(userId: string): Promise<ActionState> {
     return { error: "Impossible de supprimer cet utilisateur." };
   }
 
+  await logActivity(admin.id, "delete_user", userId);
   revalidatePath("/admin/users");
   revalidatePath("/admin");
   return { success: "Utilisateur supprimé." };
@@ -173,7 +178,7 @@ function parseAppForm(formData: FormData) {
 }
 
 export async function createApp(_prevState: ActionState, formData: FormData): Promise<ActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
 
   const parsed = parseAppForm(formData);
   if (!parsed.success) {
@@ -196,6 +201,7 @@ export async function createApp(_prevState: ActionState, formData: FormData): Pr
     return { error: error.code === "23505" ? "Ce slug est déjà utilisé." : "Impossible de créer le module." };
   }
 
+  await logActivity(admin.id, "create_app", parsed.data.name);
   revalidatePath("/admin/apps");
   revalidatePath("/apps");
   return { success: "Module créé." };
@@ -206,7 +212,7 @@ export async function updateApp(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
 
   const parsed = parseAppForm(formData);
   if (!parsed.success) {
@@ -232,32 +238,35 @@ export async function updateApp(
     return { error: error.code === "23505" ? "Ce slug est déjà utilisé." : "Impossible de modifier le module." };
   }
 
+  await logActivity(admin.id, "update_app", parsed.data.name);
   revalidatePath("/admin/apps");
   revalidatePath("/apps");
   return { success: "Module mis à jour." };
 }
 
 export async function toggleAppActive(appId: string, isActive: boolean): Promise<ActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
 
   const supabase = await createClient();
   const { error } = await supabase.from("apps").update({ is_active: isActive }).eq("id", appId);
 
   if (error) return { error: "Impossible de mettre à jour le module." };
 
+  await logActivity(admin.id, isActive ? "activate_app" : "deactivate_app", appId);
   revalidatePath("/admin/apps");
   revalidatePath("/apps");
   return { success: "Module mis à jour." };
 }
 
 export async function deleteApp(appId: string): Promise<ActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
 
   const supabase = await createClient();
   const { error } = await supabase.from("apps").delete().eq("id", appId);
 
   if (error) return { error: "Impossible de supprimer ce module." };
 
+  await logActivity(admin.id, "delete_app", appId);
   revalidatePath("/admin/apps");
   revalidatePath("/apps");
   return { success: "Module supprimé." };

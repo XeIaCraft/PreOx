@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { requireProfile } from "@/lib/auth/dal";
 import { ProfileForm } from "@/components/profile/profile-form";
+import { AccountDataSection } from "@/components/profile/account-data-section";
 import { SetPasswordForm } from "@/components/auth/set-password-form";
 import { ToastProvider } from "@/components/ui/toast";
 
@@ -26,6 +27,8 @@ export default async function ProfilePage() {
             <SetPasswordForm next="/profile" />
           </div>
         </div>
+
+        <AccountDataSection />
       </div>
     </ToastProvider>
   );
