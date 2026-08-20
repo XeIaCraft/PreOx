@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { GraduationCap, Plus, Trash2, Pencil, Sparkles, BookOpen, ClipboardCheck, SearchCheck, ArrowRight } from "lucide-react";
+import { GraduationCap, Plus, Trash2, Pencil, Sparkles, BookOpen, ClipboardCheck, SearchCheck, ArrowRight, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
@@ -11,6 +11,7 @@ import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog";
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
+import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
 import { deleteBook, deleteChapter } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import { getLastChapter } from "@/lib/el-profesor/local-prefs";
@@ -73,6 +74,7 @@ type ModalState =
   | { type: "upload_chapter"; bookId: string; nextOrder: number }
   | { type: "delete_book"; bookId: string; title: string; chapterCount: number }
   | { type: "delete_chapter"; chapterId: string; title: string; flashcardCount: number }
+  | { type: "gemini_settings" }
   | null;
 
 export function ElProfesorBoard({
@@ -81,12 +83,14 @@ export function ElProfesorBoard({
   needsReviewCounts,
   masteryCounts,
   isAdmin,
+  geminiModel,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
   needsReviewCounts: ChapterDueCounts;
   masteryCounts: ChapterMasteryCounts;
   isAdmin: boolean;
+  geminiModel: string | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -180,9 +184,20 @@ export function ElProfesorBoard({
           </div>
         </div>
         {isAdmin && (
-          <Button onClick={() => setModal({ type: "add_book" })}>
-            <Plus className="h-4 w-4" /> Ajouter un livre
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setModal({ type: "gemini_settings" })}
+              aria-label="Paramètres du modèle IA"
+              title="Paramètres du modèle IA"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+            <Button onClick={() => setModal({ type: "add_book" })}>
+              <Plus className="h-4 w-4" /> Ajouter un livre
+            </Button>
+          </div>
         )}
       </div>
 
@@ -430,6 +445,15 @@ export function ElProfesorBoard({
           isPending={isPending}
           onConfirm={() => confirmDeleteChapter(modal.chapterId)}
           onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.type === "gemini_settings" && (
+        <GeminiSettingsDialog
+          currentModel={geminiModel ?? "gemini-flash-latest"}
+          onClose={() => {
+            setModal(null);
+            refresh();
+          }}
         />
       )}
     </div>

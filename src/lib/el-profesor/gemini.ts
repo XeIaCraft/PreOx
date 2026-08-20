@@ -8,10 +8,13 @@ const FILES_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1bet
 const FILES_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 const MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
-// A rolling alias (Google hot-swaps it to the current best Flash release)
-// rather than a pinned version string like "gemini-3.1-flash" — pinned
-// Flash versions get retired every few months and start 404ing.
-export const EL_PROFESOR_GEMINI_MODEL = "gemini-flash-latest";
+// Default/fallback model — a rolling alias (Google hot-swaps it to the
+// current best Flash release) rather than a pinned version string like
+// "gemini-3.1-flash", which would get retired and start 404ing within a
+// few months. An admin can override the actual model used at runtime via
+// the settings row (see getElProfesorGeminiModel in dal.ts); this constant
+// only seeds that row's default and covers the case where it's missing.
+export const EL_PROFESOR_GEMINI_MODEL_DEFAULT = "gemini-flash-latest";
 
 const BLOCK_TYPES: BlockType[] = [
   "definition_mecanisme",

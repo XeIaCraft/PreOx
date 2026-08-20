@@ -1,5 +1,11 @@
 import { getCurrentProfile } from "@/lib/auth/dal";
-import { getLibrary, getDueCountsByChapter, getNeedsReviewCounts, getMasteryCountsByChapter } from "@/lib/el-profesor/dal";
+import {
+  getLibrary,
+  getDueCountsByChapter,
+  getNeedsReviewCounts,
+  getMasteryCountsByChapter,
+  getElProfesorGeminiModel,
+} from "@/lib/el-profesor/dal";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { ToastProvider } from "@/components/ui/toast";
 
@@ -11,10 +17,11 @@ export default async function ElProfesorPage() {
   // admins need visibility into the pipeline's in-progress state.
   const books = isAdmin ? rawBooks : rawBooks.map((b) => ({ ...b, chapters: b.chapters.filter((c) => c.status === "published") }));
   const allChapters = books.flatMap((b) => b.chapters);
-  const [dueCounts, needsReviewCounts, masteryCounts] = await Promise.all([
+  const [dueCounts, needsReviewCounts, masteryCounts, geminiModel] = await Promise.all([
     getDueCountsByChapter(profile.id, allChapters),
     isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
     getMasteryCountsByChapter(profile.id, allChapters),
+    isAdmin ? getElProfesorGeminiModel() : Promise.resolve(null),
   ]);
 
   return (
@@ -25,6 +32,7 @@ export default async function ElProfesorPage() {
         needsReviewCounts={needsReviewCounts}
         masteryCounts={masteryCounts}
         isAdmin={isAdmin}
+        geminiModel={geminiModel}
       />
     </ToastProvider>
   );

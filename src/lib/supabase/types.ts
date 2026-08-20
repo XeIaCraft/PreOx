@@ -255,6 +255,12 @@ export type ElProfesorFlagRow = {
   created_at: string;
 };
 
+export type ElProfesorSettingsRow = {
+  id: boolean;
+  gemini_model: string;
+  updated_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -381,6 +387,12 @@ export type Database = {
         Row: ElProfesorFlagRow;
         Insert: Partial<ElProfesorFlagRow> & { target_type: "block" | "flashcard"; target_id: string; flagged_by: string };
         Update: Partial<ElProfesorFlagRow>;
+        Relationships: [];
+      };
+      el_profesor_settings: {
+        Row: ElProfesorSettingsRow;
+        Insert: Partial<ElProfesorSettingsRow>;
+        Update: Partial<ElProfesorSettingsRow>;
         Relationships: [];
       };
     };

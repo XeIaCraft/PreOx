@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth/dal";
 import { getAppBySlugForProfile } from "@/lib/apps";
+import { EL_PROFESOR_GEMINI_MODEL_DEFAULT } from "./gemini";
 import type { Profile } from "@/lib/supabase/types";
 import type {
   Book,
@@ -355,4 +356,11 @@ export async function getNeedsReviewCounts(chapterIds: string[]): Promise<Chapte
     counts[chapterId] = (counts[chapterId] ?? 0) + 1;
   }
   return counts;
+}
+
+/** Currently configured Gemini model — falls back to the built-in default if the settings row is somehow missing. */
+export async function getElProfesorGeminiModel(): Promise<string> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_settings").select("gemini_model").eq("id", true).single();
+  return data?.gemini_model || EL_PROFESOR_GEMINI_MODEL_DEFAULT;
 }

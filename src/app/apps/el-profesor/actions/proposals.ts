@@ -1,11 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireElProfesorAccess } from "@/lib/el-profesor/dal";
+import { requireElProfesorAccess, getElProfesorGeminiModel } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getElProfesorGeminiApiKey } from "@/lib/supabase/env";
-import { generateFromSelection, EL_PROFESOR_GEMINI_MODEL } from "@/lib/el-profesor/gemini";
+import { generateFromSelection } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
 import type { BlockContent, Citation, FlashcardSide } from "@/lib/el-profesor/types";
 
@@ -48,7 +48,8 @@ export async function proposeFromSelection(
 
   try {
     const apiKey = getElProfesorGeminiApiKey();
-    const result = await generateFromSelection(apiKey, EL_PROFESOR_GEMINI_MODEL, subEntity.name, chapterTitle, page, trimmedQuote);
+    const model = await getElProfesorGeminiModel();
+    const result = await generateFromSelection(apiKey, model, subEntity.name, chapterTitle, page, trimmedQuote);
 
     const admin = createAdminClient();
 

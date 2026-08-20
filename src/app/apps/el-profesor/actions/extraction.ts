@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireElProfesorAdmin } from "@/lib/el-profesor/dal";
+import { requireElProfesorAdmin, getElProfesorGeminiModel } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import { getElProfesorGeminiApiKey } from "@/lib/supabase/env";
@@ -11,7 +11,6 @@ import {
   extractChapterContent,
   extractComplementaryContent,
   verifyExtraction,
-  EL_PROFESOR_GEMINI_MODEL,
 } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
 import { getChapterContent } from "@/lib/el-profesor/dal";
@@ -58,16 +57,15 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
 
   let geminiFileName: string | null = null;
   const apiKey = getElProfesorGeminiApiKey();
+  const model = await getElProfesorGeminiModel();
 
   try {
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
     const file = await uploadPdfToGemini(apiKey, bytes, chapter.title);
     geminiFileName = file.name;
 
-    const extraction = await extractChapterContent(apiKey, EL_PROFESOR_GEMINI_MODEL, file, chapter.title);
-    const verification = await verifyExtraction(apiKey, EL_PROFESOR_GEMINI_MODEL, file, extraction).catch(
-      () => ({ flags: [] as VerificationFlag[] })
-    );
+    const extraction = await extractChapterContent(apiKey, model, file, chapter.title);
+    const verification = await verifyExtraction(apiKey, model, file, extraction).catch(() => ({ flags: [] as VerificationFlag[] }));
 
     await persistExtraction(chapterId, extraction, verification.flags);
 
@@ -272,6 +270,7 @@ export async function extractChapterComplementary(chapterId: string): Promise<Ac
   await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
 
   const apiKey = getElProfesorGeminiApiKey();
+  const model = await getElProfesorGeminiModel();
   let geminiFileName: string | null = null;
 
   try {
@@ -282,7 +281,7 @@ export async function extractChapterComplementary(chapterId: string): Promise<Ac
     const file = await uploadPdfToGemini(apiKey, bytes, chapter.title);
     geminiFileName = file.name;
 
-    const complementary = await extractComplementaryContent(apiKey, EL_PROFESOR_GEMINI_MODEL, file, chapter.title, coverageSummary);
+    const complementary = await extractComplementaryContent(apiKey, model, file, chapter.title, coverageSummary);
     const addedCount = await persistComplementaryAdditions(chapterId, complementary, existingContent);
 
     await supabase
