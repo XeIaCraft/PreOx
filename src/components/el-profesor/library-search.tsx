@@ -6,7 +6,7 @@ import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { searchLibrary, type SearchResult } from "@/app/apps/el-profesor/actions/search";
 
-export function LibrarySearch({ autoFocus }: { autoFocus?: boolean } = {}) {
+export function LibrarySearch({ autoFocus, bookId, bookTitle }: { autoFocus?: boolean; bookId?: string; bookTitle?: string } = {}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [open, setOpen] = useState(false);
@@ -61,7 +61,7 @@ export function LibrarySearch({ autoFocus }: { autoFocus?: boolean } = {}) {
     }
     debounceRef.current = setTimeout(() => {
       startTransition(async () => {
-        const found = await searchLibrary(value);
+        const found = await searchLibrary(value, bookId);
         setResults(found);
       });
     }, 250);
@@ -77,7 +77,7 @@ export function LibrarySearch({ autoFocus }: { autoFocus?: boolean } = {}) {
           onChange={(e) => handleChange(e.target.value)}
           onFocus={() => setOpen(true)}
           autoFocus={autoFocus}
-          placeholder="Rechercher une notion, un médicament, une pathologie… (Ctrl+K)"
+          placeholder={bookTitle ? `Rechercher dans « ${bookTitle} »…` : "Rechercher une notion, un médicament, une pathologie… (Ctrl+K)"}
           className="pl-9 pr-9"
         />
         {query && (

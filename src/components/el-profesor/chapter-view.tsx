@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks } from "lucide-react";
+import { QuizMode } from "@/components/el-profesor/quiz-mode";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -14,6 +15,7 @@ import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-fro
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { toggleBookmark } from "@/app/apps/el-profesor/actions/bookmarks";
+import { getMyNote, saveMyNote } from "@/app/apps/el-profesor/actions/notes";
 import {
   getLastSubEntity,
   setLastSubEntity,
@@ -65,6 +67,7 @@ export function ChapterView({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [printTarget, setPrintTarget] = useState<"single" | "chapter">("single");
+  const [quizOpen, setQuizOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   function handlePrintChapter() {
@@ -136,6 +139,11 @@ export function ChapterView({
     }
     return entries;
   }, [withFiche]);
+
+  const publishedFlashcards = useMemo(
+    () => withFiche.flatMap((sub) => sub.fiche!.flashcards.filter((c) => c.status === "published")),
+    [withFiche]
+  );
 
   const swipeStartX = useRef<number | null>(null);
 
@@ -304,6 +312,18 @@ export function ChapterView({
           >
             <Files className="h-4 w-4" />
           </Button>
+          {publishedFlashcards.length >= 4 && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden sm:inline-flex"
+              onClick={() => setQuizOpen(true)}
+              aria-label="Mode quiz"
+              title="Mode quiz (questions à choix multiples)"
+            >
+              <ListChecks className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -393,13 +413,16 @@ export function ChapterView({
               onPointerUp={handleContentPointerUp}
             >
               {selected?.fiche ? (
-                <FicheViewer
-                  title={selected.fiche.title}
-                  summary={selected.summary}
-                  blocks={selected.fiche.blocks}
-                  onCitationClick={handleCitationClick}
-                  fontScale={fontScale}
-                />
+                <>
+                  <FicheViewer
+                    title={selected.fiche.title}
+                    summary={selected.summary}
+                    blocks={selected.fiche.blocks}
+                    onCitationClick={handleCitationClick}
+                    fontScale={fontScale}
+                  />
+                  <NoteEditor key={selected.id} subEntityId={selected.id} />
+                </>
               ) : (
                 <p className="text-sm text-foreground-subtle">Sélectionnez une entrée.</p>
               )}
@@ -460,6 +483,8 @@ export function ChapterView({
 
       {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
 
+      {quizOpen && <QuizMode cards={publishedFlashcards} onClose={() => setQuizOpen(false)} />}
+
       {pendingSelection && (
         <ProposeFromSelectionDialog
           chapterId={chapterId}
@@ -473,6 +498,50 @@ export function ChapterView({
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** Keyed by sub-entity id at the call site so switching notions remounts it fresh — no manual reset-on-change effect needed. */
+function NoteEditor({ subEntityId }: { subEntityId: string }) {
+  const [content, setContent] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMyNote(subEntityId).then((note) => {
+      if (!cancelled) setContent(note);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [subEntityId]);
+
+  function handleChange(value: string) {
+    setContent(value);
+    if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    setSaving(true);
+    saveTimeout.current = setTimeout(() => {
+      saveMyNote(subEntityId, value).finally(() => setSaving(false));
+    }, 800);
+  }
+
+  if (content === null) return null;
+
+  return (
+    <div className="mt-6 border-t border-border pt-4 print:hidden">
+      <p className="mb-1.5 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+        Mes notes personnelles
+        {saving && <span className="text-foreground-subtle">(enregistrement…)</span>}
+      </p>
+      <textarea
+        value={content}
+        onChange={(e) => handleChange(e.target.value)}
+        rows={3}
+        placeholder="Notes privées, visibles par vous seul…"
+        className="w-full resize-y rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      />
     </div>
   );
 }

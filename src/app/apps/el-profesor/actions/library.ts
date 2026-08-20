@@ -61,6 +61,28 @@ export async function moveBook(bookId: string, direction: "up" | "down"): Promis
   return { success: "Livre déplacé." };
 }
 
+const MAX_COVER_BYTES = 5 * 1024 * 1024;
+
+export async function uploadBookCover(bookId: string, imageBase64: string, mimeType: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const bytes = Buffer.from(imageBase64, "base64");
+  if (bytes.byteLength > MAX_COVER_BYTES) return { error: "Image trop lourde (5 Mo maximum)." };
+
+  const ext = mimeType.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "jpg";
+  const path = `${bookId}.${ext}`;
+
+  const supabase = await createClient();
+  const { error: uploadError } = await supabase.storage.from("el-profesor-covers").upload(path, bytes, { contentType: mimeType, upsert: true });
+  if (uploadError) return { error: "Échec de l'envoi de l'image." };
+
+  const { data: pub } = supabase.storage.from("el-profesor-covers").getPublicUrl(path);
+  const { error } = await supabase.from("el_profesor_books").update({ cover_url: pub.publicUrl }).eq("id", bookId);
+  if (error) return { error: "Image envoyée, mais impossible de l'enregistrer." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Couverture mise à jour." };
+}
+
 export async function updateBook(bookId: string, input: { title: string; author?: string; edition?: string }): Promise<ActionState> {
   await requireElProfesorAdmin();
   if (!input.title.trim()) return { error: "Le titre du livre est obligatoire." };

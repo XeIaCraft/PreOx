@@ -57,6 +57,7 @@ export default async function ElProfesorPage() {
     <ToastProvider>
       <ElProfesorBoard
         books={books}
+        userName={profile.full_name || profile.email}
         dueCounts={dueCounts}
         needsReviewCounts={needsReviewCounts}
         masteryCounts={masteryCounts}

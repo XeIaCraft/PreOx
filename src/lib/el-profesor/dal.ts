@@ -51,7 +51,15 @@ export async function requireElProfesorAdmin(): Promise<Profile> {
 }
 
 function toBook(row: ElProfesorBookRow): Book {
-  return { id: row.id, title: row.title, author: row.author, edition: row.edition, orderIndex: row.order_index, createdAt: row.created_at };
+  return {
+    id: row.id,
+    title: row.title,
+    author: row.author,
+    edition: row.edition,
+    coverUrl: row.cover_url,
+    orderIndex: row.order_index,
+    createdAt: row.created_at,
+  };
 }
 
 function toChapter(row: ElProfesorChapterRow): Chapter {

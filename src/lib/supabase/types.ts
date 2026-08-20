@@ -159,6 +159,7 @@ export type ElProfesorBookRow = {
   title: string;
   author: string | null;
   edition: string | null;
+  cover_url: string | null;
   order_index: number;
   created_by: string | null;
   created_at: string;
@@ -278,6 +279,14 @@ export type ElProfesorBookmarkRow = {
   user_id: string;
   sub_entity_id: string;
   created_at: string;
+};
+
+export type ElProfesorNoteRow = {
+  id: string;
+  user_id: string;
+  sub_entity_id: string;
+  content: string;
+  updated_at: string;
 };
 
 export type Database = {
@@ -424,6 +433,12 @@ export type Database = {
         Row: ElProfesorBookmarkRow;
         Insert: Partial<ElProfesorBookmarkRow> & { user_id: string; sub_entity_id: string };
         Update: Partial<ElProfesorBookmarkRow>;
+        Relationships: [];
+      };
+      el_profesor_notes: {
+        Row: ElProfesorNoteRow;
+        Insert: Partial<ElProfesorNoteRow> & { user_id: string; sub_entity_id: string };
+        Update: Partial<ElProfesorNoteRow>;
         Relationships: [];
       };
     };

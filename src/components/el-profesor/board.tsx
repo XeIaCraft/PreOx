@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   GraduationCap,
   Plus,
@@ -19,18 +20,22 @@ import {
   ShieldAlert,
   ChevronUp,
   ChevronDown,
+  Search,
+  Trophy,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
 import { EL_PROFESOR_ONBOARDING_STEPS } from "@/components/el-profesor/onboarding-steps";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog";
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
+import { CertificateModal } from "@/components/el-profesor/certificate-modal";
 import { LearningWidgets, DailyCard, LibraryStats, BookmarksList } from "@/components/el-profesor/learning-widgets";
 import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
@@ -104,6 +109,7 @@ type ModalState =
   | { type: "delete_book"; bookId: string; title: string; chapterCount: number }
   | { type: "delete_chapter"; chapterId: string; title: string; flashcardCount: number }
   | { type: "gemini_settings" }
+  | { type: "search_book"; bookId: string; bookTitle: string }
   | null;
 
 export function ElProfesorBoard({
@@ -121,6 +127,7 @@ export function ElProfesorBoard({
   mostDifficultGlobal,
   dailyCard,
   bookmarks,
+  userName,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -136,10 +143,12 @@ export function ElProfesorBoard({
   mostDifficultGlobal: DifficultFlashcardStat[];
   dailyCard: Flashcard | null;
   bookmarks: BookmarkedEntity[];
+  userName: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [modal, setModal] = useState<ModalState>(null);
+  const [certificateBook, setCertificateBook] = useState<{ title: string } | null>(null);
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingStartedAt, setPendingStartedAt] = useState<number | null>(null);
@@ -365,19 +374,53 @@ export function ElProfesorBoard({
       )}
 
       <div className="mt-8 space-y-8">
-        {books.map((book, bookIndex) => (
+        {books.map((book, bookIndex) => {
+          const publishedChapters = book.chapters.filter((c) => c.status === "published");
+          const bookMastered =
+            publishedChapters.length > 0 &&
+            publishedChapters.every((c) => {
+              const m = masteryCounts[c.id];
+              return m && m.total > 0 && m.acquired === m.total;
+            });
+          return (
           <div key={book.id}>
             <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-serif-display text-lg font-medium text-foreground">{book.title}</h2>
-                {(book.author || book.edition) && (
-                  <p className="text-sm text-foreground-subtle">
-                    {[book.author, book.edition].filter(Boolean).join(" — ")}
-                  </p>
+              <div className="flex items-center gap-3">
+                {book.coverUrl && (
+                  <span className="relative h-14 w-10 shrink-0 overflow-hidden rounded-[var(--radius-sm)] border border-border bg-surface-muted">
+                    <Image src={book.coverUrl} alt="" fill sizes="40px" className="object-cover" />
+                  </span>
                 )}
+                <div>
+                  <h2 className="font-serif-display text-lg font-medium text-foreground">{book.title}</h2>
+                  {bookMastered && (
+                    <button
+                      type="button"
+                      onClick={() => setCertificateBook({ title: book.title })}
+                      className="mt-0.5 flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+                    >
+                      <Trophy className="h-3 w-3" /> Livre maîtrisé — voir mon certificat
+                    </button>
+                  )}
+                  {(book.author || book.edition) && (
+                    <p className="text-sm text-foreground-subtle">
+                      {[book.author, book.edition].filter(Boolean).join(" — ")}
+                    </p>
+                  )}
+                </div>
               </div>
-              {isAdmin && (
-                <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setModal({ type: "search_book", bookId: book.id, bookTitle: book.title })}
+                  aria-label={`Rechercher dans ${book.title}`}
+                  title="Rechercher dans ce livre"
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
+                {isAdmin && (
+                  <>
                   <div className="flex flex-col">
                     <button
                       type="button"
@@ -426,8 +469,9 @@ export function ElProfesorBoard({
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
-                </div>
-              )}
+                  </>
+                )}
+              </div>
             </div>
 
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -558,7 +602,8 @@ export function ElProfesorBoard({
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {modal?.type === "add_book" && (
@@ -621,6 +666,15 @@ export function ElProfesorBoard({
           onConfirm={() => confirmDeleteChapter(modal.chapterId)}
           onClose={() => setModal(null)}
         />
+      )}
+      {certificateBook && (
+        <CertificateModal bookTitle={certificateBook.title} userName={userName} onClose={() => setCertificateBook(null)} />
+      )}
+
+      {modal?.type === "search_book" && (
+        <Modal title="Rechercher" onClose={() => setModal(null)} size="md">
+          <LibrarySearch autoFocus bookId={modal.bookId} bookTitle={modal.bookTitle} />
+        </Modal>
       )}
       {modal?.type === "gemini_settings" && (
         <GeminiSettingsDialog

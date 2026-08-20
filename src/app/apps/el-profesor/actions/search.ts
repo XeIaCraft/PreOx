@@ -12,8 +12,8 @@ export interface SearchResult {
   ficheTitle: string;
 }
 
-/** Searches published sub-entity names and fiche titles across the whole library. */
-export async function searchLibrary(query: string): Promise<SearchResult[]> {
+/** Searches published sub-entity names and fiche titles — across the whole library, or scoped to one book. */
+export async function searchLibrary(query: string, bookId?: string): Promise<SearchResult[]> {
   await requireElProfesorAccess();
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
@@ -47,11 +47,9 @@ export async function searchLibrary(query: string): Promise<SearchResult[]> {
   const chapterIds = [...new Set((subEntities ?? []).map((s) => s.chapter_id))];
   if (chapterIds.length === 0) return [];
 
-  const { data: chapters } = await supabase
-    .from("el_profesor_chapters")
-    .select("id, title, book_id")
-    .in("id", chapterIds)
-    .eq("status", "published");
+  let chaptersQuery = supabase.from("el_profesor_chapters").select("id, title, book_id").in("id", chapterIds).eq("status", "published");
+  if (bookId) chaptersQuery = chaptersQuery.eq("book_id", bookId);
+  const { data: chapters } = await chaptersQuery;
   const chapterById = new Map((chapters ?? []).map((c) => [c.id, c]));
 
   const bookIds = [...new Set((chapters ?? []).map((c) => c.book_id))];
