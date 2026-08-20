@@ -40,6 +40,8 @@ import { LearningWidgets, DailyCard, LibraryStats, BookmarksList } from "@/compo
 import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/export";
+import { getCertificateStatsForBook } from "@/app/apps/el-profesor/actions/certificate";
+import { exportBookNotes } from "@/app/apps/el-profesor/actions/notes";
 import { getLastChapter } from "@/lib/el-profesor/local-prefs";
 import type {
   BookWithChapters,
@@ -49,6 +51,8 @@ import type {
   UpcomingForecastDay,
   DifficultFlashcardStat,
   BookmarkedEntity,
+  ChapterMasteryPercentile,
+  StaleChapterAlert,
 } from "@/lib/el-profesor/dal";
 import type { ChapterStatus, Flashcard } from "@/lib/el-profesor/types";
 
@@ -64,6 +68,43 @@ function MasteryBar({ counts }: { counts: { total: number; new: number; learning
       <p className="mt-1 text-[11px] text-foreground-subtle">
         {counts.acquired} acquise{counts.acquired > 1 ? "s" : ""} · {counts.learning} en cours · {counts.new} nouvelle{counts.new > 1 ? "s" : ""}
       </p>
+    </div>
+  );
+}
+
+/** Per-book comparison of how far along each of its chapters is — a quick "where should I focus" glance across a book's chapters. */
+function ChapterProgressComparison({
+  chapters,
+  masteryCounts,
+}: {
+  chapters: BookWithChapters["chapters"];
+  masteryCounts: ChapterMasteryCounts;
+}) {
+  const rows = chapters
+    .map((c) => {
+      const m = masteryCounts[c.id];
+      const pct = m && m.total > 0 ? Math.round((m.acquired / m.total) * 100) : 0;
+      return { chapter: c, pct };
+    })
+    .filter((r) => masteryCounts[r.chapter.id]?.total);
+  if (rows.length < 2) return null;
+
+  return (
+    <div className="mt-3 rounded-[var(--radius-md)] border border-border bg-surface-muted/40 p-3">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">Progression par chapitre</p>
+      <div className="mt-2 space-y-1.5">
+        {rows.map(({ chapter, pct }) => (
+          <div key={chapter.id} className="flex items-center gap-2">
+            <span className="w-32 shrink-0 truncate text-xs text-foreground-muted" title={chapter.title}>
+              {chapter.title}
+            </span>
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-muted">
+              <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="w-9 shrink-0 text-right text-[11px] text-foreground-subtle">{pct}%</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -104,7 +145,7 @@ const STATUS_VARIANT: Record<ChapterStatus, "neutral" | "accent" | "success" | "
 
 type ModalState =
   | { type: "add_book" }
-  | { type: "edit_book"; book: { id: string; title: string; author: string | null; edition: string | null } }
+  | { type: "edit_book"; book: { id: string; title: string; author: string | null; edition: string | null; theme: string | null } }
   | { type: "upload_chapter"; bookId: string; nextOrder: number }
   | { type: "delete_book"; bookId: string; title: string; chapterCount: number }
   | { type: "delete_chapter"; chapterId: string; title: string; flashcardCount: number }
@@ -128,6 +169,9 @@ export function ElProfesorBoard({
   dailyCard,
   bookmarks,
   userName,
+  globalMastery,
+  staleChapters,
+  reviewTimeStats,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -144,11 +188,15 @@ export function ElProfesorBoard({
   dailyCard: Flashcard | null;
   bookmarks: BookmarkedEntity[];
   userName: string;
+  globalMastery: Record<string, ChapterMasteryPercentile>;
+  staleChapters: StaleChapterAlert[];
+  reviewTimeStats: { totalMs: number; last7DaysMs: number };
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [modal, setModal] = useState<ModalState>(null);
-  const [certificateBook, setCertificateBook] = useState<{ title: string } | null>(null);
+  const [themeFilter, setThemeFilter] = useState<string | null>(null);
+  const [certificateBook, setCertificateBook] = useState<{ title: string; flashcardCount?: number; totalDurationMs?: number } | null>(null);
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingStartedAt, setPendingStartedAt] = useState<number | null>(null);
@@ -174,6 +222,8 @@ export function ElProfesorBoard({
   const chaptersMastered = masteryValues.filter((m) => m.total > 0 && m.acquired === m.total).length;
   const totalChapters = books.reduce((sum, b) => sum + b.chapters.filter((c) => c.status === "published").length, 0);
   const totalFlashcards = masteryValues.reduce((sum, m) => sum + m.total, 0);
+  const themes = [...new Set(books.map((b) => b.theme).filter((t): t is string => Boolean(t)))].sort();
+  const visibleBooks = themeFilter ? books.filter((b) => b.theme === themeFilter) : books;
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -244,6 +294,57 @@ export function ElProfesorBoard({
       const link = document.createElement("a");
       link.href = url;
       link.download = `${chapterTitle.replace(/[^\w\s-]/g, "").trim() || "chapitre"}-flashcards.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  // True Anki .apkg export would require building a SQLite-in-zip package —
+  // no library for that is available here, and it'd be disproportionate for
+  // this use case. Anki's own "Fichier > Importer" reads a plain tab-separated
+  // text file directly (front\tback per line), which gets the same result
+  // with none of the binary-format complexity.
+  function handleExportAnki(chapterId: string, chapterTitle: string) {
+    setExportingId(chapterId);
+    startTransition(async () => {
+      const result = await getChapterFlashcardsForExport(chapterId);
+      setExportingId(null);
+      if ("error" in result) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      if (result.length === 0) {
+        toast("Aucune flashcard publiée à exporter pour ce chapitre.", { variant: "error" });
+        return;
+      }
+      const sanitize = (s: string) => s.replace(/[\t\n\r]+/g, " ").trim();
+      const lines = result.map((c) => `${sanitize(c.front)}\t${sanitize(c.back)}`);
+      const blob = new Blob([`﻿${lines.join("\n")}`], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${chapterTitle.replace(/[^\w\s-]/g, "").trim() || "chapitre"}-anki.txt`;
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  function handleExportNotes(bookId: string, bookTitle: string) {
+    startTransition(async () => {
+      const result = await exportBookNotes(bookId);
+      if ("error" in result) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      if (!result.hasNotes) {
+        toast("Aucune note personnelle pour ce livre.", { variant: "error" });
+        return;
+      }
+      const blob = new Blob([`﻿${result.content}`], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${bookTitle.replace(/[^\w\s-]/g, "").trim() || "livre"}-mes-notes.md`;
       link.click();
       URL.revokeObjectURL(url);
     });
@@ -337,7 +438,21 @@ export function ElProfesorBoard({
           difficultCount={difficultCount}
           totalAcquired={totalAcquired}
           chaptersMastered={chaptersMastered}
+          reviewTimeStats={reviewTimeStats}
         />
+      )}
+
+      {globalDueCount >= 50 && (
+        <div className="mt-6 flex items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-danger/30 bg-danger-tint px-4 py-3">
+          <p className="text-sm text-danger">
+            {globalDueCount} cartes en attente de révision — la pile s&apos;accumule, un rattrapage s&apos;impose.
+          </p>
+          <Link href="/apps/el-profesor/review?mode=due">
+            <Button size="sm" variant="secondary">
+              Rattraper
+            </Button>
+          </Link>
+        </div>
       )}
 
       {isAdmin && mostDifficultGlobal.length > 0 && (
@@ -361,6 +476,26 @@ export function ElProfesorBoard({
         </div>
       )}
 
+      {isAdmin && staleChapters.length > 0 && (
+        <div className="mt-6 rounded-[var(--radius-lg)] border border-accent/30 bg-accent-tint/40 p-4">
+          <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-accent">
+            <ShieldAlert className="h-3.5 w-3.5" /> Chapitres jamais révisés récemment
+          </p>
+          <ul className="mt-2 space-y-1 text-sm text-foreground-muted">
+            {staleChapters.map((c) => (
+              <li key={c.chapterId}>
+                {c.chapterTitle} <span className="text-foreground-subtle">— {c.bookTitle}</span>
+                {c.lastReviewedAt ? (
+                  <span className="text-foreground-subtle"> (dernière révision : {new Date(c.lastReviewedAt).toLocaleDateString("fr-FR")})</span>
+                ) : (
+                  <span className="text-foreground-subtle"> (jamais révisé)</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {books.length > 0 && (
         <div className="mt-6">
           <LibrarySearch />
@@ -373,8 +508,35 @@ export function ElProfesorBoard({
         </div>
       )}
 
+      {themes.length > 1 && (
+        <div className="mt-6 flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setThemeFilter(null)}
+            className={`rounded-full border px-2.5 py-1 text-xs ${
+              themeFilter === null ? "border-primary bg-primary-tint text-primary-strong" : "border-border text-foreground-subtle"
+            }`}
+          >
+            Tous les thèmes
+          </button>
+          {themes.map((theme) => (
+            <button
+              key={theme}
+              type="button"
+              onClick={() => setThemeFilter(theme)}
+              className={`rounded-full border px-2.5 py-1 text-xs ${
+                themeFilter === theme ? "border-primary bg-primary-tint text-primary-strong" : "border-border text-foreground-subtle"
+              }`}
+            >
+              {theme}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="mt-8 space-y-8">
-        {books.map((book, bookIndex) => {
+        {visibleBooks.map((book) => {
+          const bookIndex = books.findIndex((b) => b.id === book.id);
           const publishedChapters = book.chapters.filter((c) => c.status === "published");
           const bookMastered =
             publishedChapters.length > 0 &&
@@ -396,7 +558,12 @@ export function ElProfesorBoard({
                   {bookMastered && (
                     <button
                       type="button"
-                      onClick={() => setCertificateBook({ title: book.title })}
+                      onClick={() => {
+                        setCertificateBook({ title: book.title });
+                        getCertificateStatsForBook(book.id).then((stats) =>
+                          setCertificateBook({ title: book.title, flashcardCount: stats.flashcardCount, totalDurationMs: stats.totalDurationMs })
+                        );
+                      }}
                       className="mt-0.5 flex items-center gap-1 text-xs font-medium text-accent hover:underline"
                     >
                       <Trophy className="h-3 w-3" /> Livre maîtrisé — voir mon certificat
@@ -406,6 +573,11 @@ export function ElProfesorBoard({
                     <p className="text-sm text-foreground-subtle">
                       {[book.author, book.edition].filter(Boolean).join(" — ")}
                     </p>
+                  )}
+                  {book.theme && (
+                    <span className="mt-0.5 inline-block rounded-full border border-border px-2 py-0.5 text-[11px] text-foreground-subtle">
+                      {book.theme}
+                    </span>
                   )}
                 </div>
               </div>
@@ -418,6 +590,15 @@ export function ElProfesorBoard({
                   title="Rechercher dans ce livre"
                 >
                   <Search className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleExportNotes(book.id, book.title)}
+                  aria-label={`Exporter mes notes pour ${book.title}`}
+                  title="Exporter mes notes de ce livre"
+                >
+                  <Download className="h-4 w-4" />
                 </Button>
                 {isAdmin && (
                   <>
@@ -447,7 +628,7 @@ export function ElProfesorBoard({
                     onClick={() =>
                       setModal({
                         type: "edit_book",
-                        book: { id: book.id, title: book.title, author: book.author, edition: book.edition },
+                        book: { id: book.id, title: book.title, author: book.author, edition: book.edition, theme: book.theme },
                       })
                     }
                     aria-label="Modifier le livre"
@@ -474,6 +655,8 @@ export function ElProfesorBoard({
               </div>
             </div>
 
+            <ChapterProgressComparison chapters={publishedChapters} masteryCounts={masteryCounts} />
+
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {book.chapters.map((chapter) => {
                 const due = dueCounts[chapter.id] ?? 0;
@@ -492,6 +675,11 @@ export function ElProfesorBoard({
                       <p className="mt-1.5 text-xs text-danger">{chapter.extractionError}</p>
                     )}
                     {chapter.status === "published" && masteryCounts[chapter.id] && <MasteryBar counts={masteryCounts[chapter.id]} />}
+                    {chapter.status === "published" && globalMastery[chapter.id] && (
+                      <p className="mt-1 text-[11px] text-foreground-subtle">
+                        {globalMastery[chapter.id].masteredPct}% des autres utilisateurs actifs ont aussi maîtrisé ce chapitre
+                      </p>
+                    )}
                     {chapter.status === "published" && (difficultCounts[chapter.id] ?? 0) > 0 && (
                       <p className="mt-1 flex items-center gap-1 text-[11px] text-danger">
                         <ShieldAlert className="h-3 w-3" /> {difficultCounts[chapter.id]} carte
@@ -557,6 +745,17 @@ export function ElProfesorBoard({
                           title="Exporter les flashcards en CSV"
                         >
                           <Download className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {isAdmin && chapter.status === "published" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleExportAnki(chapter.id, chapter.title)}
+                          disabled={exportingId === chapter.id}
+                          title="Exporter au format Anki (texte tabulé, importable via Fichier > Importer)"
+                        >
+                          Export Anki
                         </Button>
                       )}
                       {isAdmin && (chapter.status === "draft_ready" || chapter.status === "published") && (
@@ -668,7 +867,13 @@ export function ElProfesorBoard({
         />
       )}
       {certificateBook && (
-        <CertificateModal bookTitle={certificateBook.title} userName={userName} onClose={() => setCertificateBook(null)} />
+        <CertificateModal
+          bookTitle={certificateBook.title}
+          userName={userName}
+          flashcardCount={certificateBook.flashcardCount}
+          totalDurationMs={certificateBook.totalDurationMs}
+          onClose={() => setCertificateBook(null)}
+        />
       )}
 
       {modal?.type === "search_book" && (

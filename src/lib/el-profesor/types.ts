@@ -40,6 +40,7 @@ export type Book = {
   author: string | null;
   edition: string | null;
   coverUrl: string | null;
+  theme: string | null;
   orderIndex: number;
   createdAt: string;
 };

@@ -11,7 +11,9 @@ export interface ActionState {
   success?: string;
 }
 
-export async function createBook(input: { title: string; author?: string; edition?: string }): Promise<ActionState & { bookId?: string }> {
+export async function createBook(
+  input: { title: string; author?: string; edition?: string; theme?: string }
+): Promise<ActionState & { bookId?: string }> {
   const profile = await requireElProfesorAdmin();
   if (!input.title.trim()) return { error: "Le titre du livre est obligatoire." };
 
@@ -24,6 +26,7 @@ export async function createBook(input: { title: string; author?: string; editio
       title: input.title.trim(),
       author: input.author?.trim() || null,
       edition: input.edition?.trim() || null,
+      theme: input.theme?.trim() || null,
       order_index: count ?? 0,
       created_by: profile.id,
     })
@@ -83,14 +86,22 @@ export async function uploadBookCover(bookId: string, imageBase64: string, mimeT
   return { success: "Couverture mise à jour." };
 }
 
-export async function updateBook(bookId: string, input: { title: string; author?: string; edition?: string }): Promise<ActionState> {
+export async function updateBook(
+  bookId: string,
+  input: { title: string; author?: string; edition?: string; theme?: string }
+): Promise<ActionState> {
   await requireElProfesorAdmin();
   if (!input.title.trim()) return { error: "Le titre du livre est obligatoire." };
 
   const supabase = await createClient();
   const { error } = await supabase
     .from("el_profesor_books")
-    .update({ title: input.title.trim(), author: input.author?.trim() || null, edition: input.edition?.trim() || null })
+    .update({
+      title: input.title.trim(),
+      author: input.author?.trim() || null,
+      edition: input.edition?.trim() || null,
+      theme: input.theme?.trim() || null,
+    })
     .eq("id", bookId);
   if (error) return { error: "Impossible de mettre à jour le livre." };
 

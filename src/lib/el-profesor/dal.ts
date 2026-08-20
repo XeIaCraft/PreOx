@@ -10,6 +10,7 @@ import type { Profile } from "@/lib/supabase/types";
 import type {
   Book,
   Chapter,
+  ChapterStatus,
   SubEntity,
   Fiche,
   FicheBlock,
@@ -57,6 +58,7 @@ function toBook(row: ElProfesorBookRow): Book {
     author: row.author,
     edition: row.edition,
     coverUrl: row.cover_url,
+    theme: row.theme,
     orderIndex: row.order_index,
     createdAt: row.created_at,
   };
@@ -720,6 +722,156 @@ export async function getMostDifficultFlashcardsGlobal(limit = 10): Promise<Diff
   });
 
   return stats.sort((a, b) => b.againCount - a.againCount);
+}
+
+export interface ReviewTimeStats {
+  totalMs: number;
+  last7DaysMs: number;
+}
+
+/** Total time spent in review sessions (sum of tracked per-card durations) — overall and over the last 7 days, for the dashboard's time-invested stat. */
+export async function getReviewTimeStats(userId: string): Promise<ReviewTimeStats> {
+  const supabase = await createClient();
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - 7);
+
+  const { data } = await supabase
+    .from("el_profesor_review_log")
+    .select("duration_ms, reviewed_at")
+    .eq("user_id", userId)
+    .not("duration_ms", "is", null);
+
+  let totalMs = 0;
+  let last7DaysMs = 0;
+  const sinceTime = since.getTime();
+  for (const row of data ?? []) {
+    const ms = row.duration_ms ?? 0;
+    totalMs += ms;
+    if (new Date(row.reviewed_at).getTime() >= sinceTime) last7DaysMs += ms;
+  }
+  return { totalMs, last7DaysMs };
+}
+
+export interface BookCertificateStats {
+  flashcardCount: number;
+  totalDurationMs: number;
+}
+
+/** Extra stats for the "livre maîtrisé" certificate: how many flashcards, and total time invested (sum of tracked review durations for this user across the book's cards). */
+export async function getBookCertificateStats(
+  userId: string,
+  chapters: { id: string; status: ChapterStatus }[]
+): Promise<BookCertificateStats> {
+  const supabase = await createClient();
+  const published = chapters.filter((c) => c.status === "published");
+  const perChapter = await Promise.all(published.map((c) => getChapterContent(c.id, false)));
+  const flashcardIds = perChapter.flat().flatMap((s) => s.fiche?.flashcards ?? []).map((f) => f.id);
+  if (flashcardIds.length === 0) return { flashcardCount: 0, totalDurationMs: 0 };
+
+  const { data } = await supabase.from("el_profesor_review_log").select("duration_ms").eq("user_id", userId).in("flashcard_id", flashcardIds);
+  const totalDurationMs = (data ?? []).reduce((sum, r) => sum + (r.duration_ms ?? 0), 0);
+  return { flashcardCount: flashcardIds.length, totalDurationMs };
+}
+
+export interface StaleChapterAlert {
+  chapterId: string;
+  chapterTitle: string;
+  bookTitle: string;
+  lastReviewedAt: string | null;
+}
+
+/**
+ * Admin-only content-quality signal: published chapters nobody has reviewed
+ * in a while (or ever) — worth a nudge to promote or double-check the
+ * content. Aggregates el_profesor_review_log via the service-role client
+ * (same "no admin override on individual review data" caveat as
+ * getMostDifficultFlashcardsGlobal), but only ever surfaces a timestamp per
+ * chapter, never who reviewed what.
+ */
+export async function getStaleChaptersForAdmin(
+  chapters: Chapter[],
+  books: Book[],
+  staleDays = 30
+): Promise<StaleChapterAlert[]> {
+  const supabase = createAdminClient();
+  const published = chapters.filter((c) => c.status === "published");
+  const bookTitleById = new Map(books.map((b) => [b.id, b.title]));
+  const cutoff = Date.now() - staleDays * 24 * 60 * 60 * 1000;
+  const alerts: StaleChapterAlert[] = [];
+
+  await Promise.all(
+    published.map(async (chapter) => {
+      const content = await getChapterContent(chapter.id, false);
+      const flashcardIds = content.flatMap((s) => s.fiche?.flashcards ?? []).map((f) => f.id);
+      if (flashcardIds.length === 0) return;
+
+      const { data } = await supabase
+        .from("el_profesor_review_log")
+        .select("reviewed_at")
+        .in("flashcard_id", flashcardIds)
+        .order("reviewed_at", { ascending: false })
+        .limit(1);
+      const last = data?.[0]?.reviewed_at ?? null;
+      if (!last || new Date(last).getTime() < cutoff) {
+        alerts.push({ chapterId: chapter.id, chapterTitle: chapter.title, bookTitle: bookTitleById.get(chapter.bookId) ?? "", lastReviewedAt: last });
+      }
+    })
+  );
+
+  return alerts;
+}
+
+export interface ChapterMasteryPercentile {
+  masteredPct: number;
+  engagedUsers: number;
+}
+
+/**
+ * Anonymous, user-facing signal: of the users who have engaged with this
+ * chapter (reviewed at least one of its cards), what percentage have fully
+ * mastered every card. Uses the service-role client to aggregate across all
+ * users — el_profesor_review_state's RLS is strictly per-user with no admin
+ * override (see migration comment), so this only ever returns a rounded
+ * percentage plus the engaged-user count, never anything tied to an
+ * individual. A floor of 3 engaged users avoids a percentage that would
+ * otherwise reveal a single other user's own mastery state.
+ */
+export async function getGlobalChapterMasteryPercentages(chapters: Chapter[]): Promise<Record<string, ChapterMasteryPercentile>> {
+  const supabase = createAdminClient();
+  const published = chapters.filter((c) => c.status === "published");
+  const result: Record<string, ChapterMasteryPercentile> = {};
+
+  await Promise.all(
+    published.map(async (chapter) => {
+      const content = await getChapterContent(chapter.id, false);
+      const flashcardIds = content.flatMap((s) => s.fiche?.flashcards ?? []).map((f) => f.id);
+      if (flashcardIds.length === 0) return;
+
+      const { data: states } = await supabase
+        .from("el_profesor_review_state")
+        .select("user_id, flashcard_id, state")
+        .in("flashcard_id", flashcardIds);
+
+      const engagedUsers = new Set<string>();
+      const acquiredByUser = new Map<string, Set<string>>();
+      for (const row of states ?? []) {
+        engagedUsers.add(row.user_id);
+        if (row.state === "review") {
+          if (!acquiredByUser.has(row.user_id)) acquiredByUser.set(row.user_id, new Set());
+          acquiredByUser.get(row.user_id)!.add(row.flashcard_id);
+        }
+      }
+      if (engagedUsers.size < 3) return;
+
+      let masteredCount = 0;
+      for (const userId of engagedUsers) {
+        if ((acquiredByUser.get(userId)?.size ?? 0) === flashcardIds.length) masteredCount++;
+      }
+      result[chapter.id] = { masteredPct: Math.round((masteredCount / engagedUsers.size) * 100), engagedUsers: engagedUsers.size };
+    })
+  );
+
+  return result;
 }
 
 /** Currently configured Gemini model — falls back to the built-in default if the settings row is somehow missing. */

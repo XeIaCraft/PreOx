@@ -27,13 +27,22 @@ export interface SubmitReviewResult extends ActionState {
  * Returns the log id and the pre-update FSRS state so the UI can offer a
  * single-step "undo" (useful for mobile mis-taps) via `undoReview`.
  */
-export async function submitReview(flashcardId: string, rating: ReviewRating, source: ReviewSource): Promise<SubmitReviewResult> {
+export async function submitReview(
+  flashcardId: string,
+  rating: ReviewRating,
+  source: ReviewSource,
+  durationMs?: number
+): Promise<SubmitReviewResult> {
   const profile = await requireElProfesorAccess();
   const supabase = await createClient();
 
+  // Sanity-clamped: a stray multi-minute gap (tab left in background, phone
+  // locked mid-review) would otherwise wildly skew the aggregate time stats.
+  const cleanDuration = durationMs != null && durationMs > 0 && durationMs < 5 * 60_000 ? Math.round(durationMs) : null;
+
   const { data: logRow, error: logError } = await supabase
     .from("el_profesor_review_log")
-    .insert({ user_id: profile.id, flashcard_id: flashcardId, rating, source })
+    .insert({ user_id: profile.id, flashcard_id: flashcardId, rating, source, duration_ms: cleanDuration })
     .select("id")
     .single();
   if (logError || !logRow) return { error: "Impossible d'enregistrer cette révision." };

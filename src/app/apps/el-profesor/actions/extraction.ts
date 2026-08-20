@@ -11,9 +11,11 @@ import {
   extractChapterContent,
   extractComplementaryContent,
   verifyExtraction,
+  generateMnemonic,
 } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
 import { getChapterContent } from "@/lib/el-profesor/dal";
+import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-profesor/content-log";
 import type {
   ExtractionResult,
   ComplementaryResult,
@@ -350,7 +352,7 @@ export async function updateFicheBlock(
   blockId: string,
   input: { content: BlockContent; citations: Citation[] }
 ): Promise<ActionState> {
-  await requireElProfesorAdmin();
+  const profile = await requireElProfesorAdmin();
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -359,6 +361,7 @@ export async function updateFicheBlock(
     .eq("id", blockId);
   if (error) return { error: "Impossible de mettre à jour ce bloc." };
 
+  await logContentChange(profile.id, "block", blockId, "edit");
   revalidatePath("/apps/el-profesor");
   return { success: "Bloc mis à jour." };
 }
@@ -367,7 +370,7 @@ export async function updateFlashcard(
   flashcardId: string,
   input: { front: FlashcardSide; back: FlashcardSide; citations: Citation[] }
 ): Promise<ActionState> {
-  await requireElProfesorAdmin();
+  const profile = await requireElProfesorAdmin();
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -381,8 +384,70 @@ export async function updateFlashcard(
     .eq("id", flashcardId);
   if (error) return { error: "Impossible de mettre à jour cette flashcard." };
 
+  await logContentChange(profile.id, "flashcard", flashcardId, "edit");
   revalidatePath("/apps/el-profesor");
   return { success: "Flashcard mise à jour." };
+}
+
+function blockToPlainText(blockType: string, content: BlockContent): string {
+  if (blockType === "tableau_comparatif") {
+    const c = content as TableBlockContent;
+    return [(c.headers ?? []).join(" | "), ...(c.rows ?? []).map((r) => r.join(" | "))].join("\n");
+  }
+  if (blockType === "protocole_paliers") {
+    const c = content as ProtocolBlockContent;
+    return (c.steps ?? []).map((s, i) => `${i + 1}. ${s.label} — ${s.detail}`).join("\n");
+  }
+  return (content as { text?: string }).text ?? "";
+}
+
+/** Proposes a mnemonic as a new draft block on the same fiche, for a block that isn't itself a mnemonic. Never overwrites the source block. */
+export async function suggestMnemonicForBlock(blockId: string): Promise<ActionState> {
+  const profile = await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: block } = await supabase.from("el_profesor_fiche_blocks").select("fiche_id, block_type, content").eq("id", blockId).single();
+  if (!block) return { error: "Bloc introuvable." };
+
+  const { data: fiche } = await supabase.from("el_profesor_fiches").select("sub_entity_id").eq("id", block.fiche_id).single();
+  const { data: subEntity } = fiche ? await supabase.from("el_profesor_sub_entities").select("name").eq("id", fiche.sub_entity_id).single() : { data: null };
+
+  const sourceText = blockToPlainText(block.block_type, block.content as unknown as BlockContent);
+  if (!sourceText.trim()) return { error: "Ce bloc n'a pas assez de contenu pour en tirer un moyen mnémotechnique." };
+
+  try {
+    const apiKey = getElProfesorGeminiApiKey();
+    const model = await getElProfesorGeminiModel();
+    const result = await generateMnemonic(apiKey, model, subEntity?.name ?? "", sourceText);
+
+    const { count } = await supabase.from("el_profesor_fiche_blocks").select("id", { count: "exact", head: true }).eq("fiche_id", block.fiche_id);
+    const { error } = await supabase.from("el_profesor_fiche_blocks").insert({
+      fiche_id: block.fiche_id,
+      order_index: count ?? 0,
+      block_type: "mnemotechnique",
+      content: { text: result.text } as unknown as BlockContent as never,
+      citations: [] as unknown as Citation[] as never,
+      needs_review: true,
+      status: "draft",
+    });
+    if (error) return { error: "Impossible d'enregistrer la mnémotechnique proposée." };
+
+    await logContentChange(profile.id, "block", blockId, "suggest_mnemonic");
+    revalidatePath("/apps/el-profesor");
+    return { success: "Mnémotechnique proposée en brouillon." };
+  } catch (err) {
+    return { error: err instanceof GeminiError ? err.message : "Échec de la génération du moyen mnémotechnique." };
+  }
+}
+
+export async function getFicheBlockHistory(blockId: string): Promise<ContentLogEntry[]> {
+  await requireElProfesorAdmin();
+  return getContentLog("block", blockId);
+}
+
+export async function getFlashcardHistory(flashcardId: string): Promise<ContentLogEntry[]> {
+  await requireElProfesorAdmin();
+  return getContentLog("flashcard", flashcardId);
 }
 
 export async function deleteFicheBlock(blockId: string): Promise<ActionState> {

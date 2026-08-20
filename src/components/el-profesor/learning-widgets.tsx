@@ -161,6 +161,14 @@ export function LibraryStats({
   );
 }
 
+function formatReviewDuration(ms: number): string {
+  const totalMinutes = Math.round(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return `${hours} h ${minutes.toString().padStart(2, "0")}`;
+  return `${minutes} min`;
+}
+
 export function LearningWidgets({
   activity,
   forecast,
@@ -168,6 +176,7 @@ export function LearningWidgets({
   difficultCount,
   totalAcquired,
   chaptersMastered,
+  reviewTimeStats,
 }: {
   activity: ReviewActivitySummary;
   forecast?: UpcomingForecastDay[];
@@ -175,13 +184,19 @@ export function LearningWidgets({
   difficultCount: number;
   totalAcquired: number;
   chaptersMastered: number;
+  reviewTimeStats?: { totalMs: number; last7DaysMs: number };
 }) {
+  const totalActiveDays = activity.last12Weeks.filter((d) => d.count > 0).length;
   const badges: Badge[] = [
     { earned: activity.currentStreak >= 3, icon: Flame, label: "3 jours de suite" },
     { earned: activity.longestStreak >= 7, icon: Flame, label: "7 jours de suite" },
+    { earned: activity.longestStreak >= 14, icon: Flame, label: "14 jours de suite" },
     { earned: totalAcquired >= 50, icon: Award, label: "50 cartes maîtrisées" },
     { earned: totalAcquired >= 200, icon: Trophy, label: "200 cartes maîtrisées" },
+    { earned: totalAcquired >= 500, icon: GraduationCap, label: "500 cartes maîtrisées" },
     { earned: chaptersMastered >= 1, icon: BookCheck, label: "1 chapitre maîtrisé" },
+    { earned: chaptersMastered >= 3, icon: BookCheck, label: "3 chapitres maîtrisés" },
+    { earned: totalActiveDays >= 30, icon: Star, label: "30 jours d'activité" },
   ];
   const earnedCount = badges.filter((b) => b.earned).length;
 
@@ -232,8 +247,12 @@ export function LearningWidgets({
       {weekCount > 0 && (
         <p className="mt-3 text-xs text-foreground-subtle">
           Cette semaine : {weekCount} carte{weekCount > 1 ? "s" : ""} révisée{weekCount > 1 ? "s" : ""} sur {activeDays} jour
-          {activeDays > 1 ? "s" : ""}.
+          {activeDays > 1 ? "s" : ""}
+          {reviewTimeStats && reviewTimeStats.last7DaysMs > 0 ? ` — ${formatReviewDuration(reviewTimeStats.last7DaysMs)} de révision` : ""}.
         </p>
+      )}
+      {reviewTimeStats && reviewTimeStats.totalMs > 0 && (
+        <p className="text-xs text-foreground-subtle">Temps total investi : {formatReviewDuration(reviewTimeStats.totalMs)}.</p>
       )}
 
       {forecast && forecast.some((d) => d.count > 0) && (

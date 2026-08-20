@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, X, PartyPopper, Undo2, Info, Keyboard } from "lucide-react";
+import { ArrowLeft, Check, X, PartyPopper, Undo2, Info, Keyboard, Timer, Square, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { submitReview, undoReview } from "@/app/apps/el-profesor/actions/review";
@@ -18,6 +18,61 @@ interface LastAction {
   previousState: ReviewState | null | undefined;
   rating: "again" | "good";
   front: string;
+}
+
+const POMODORO_FOCUS_MS = 25 * 60_000;
+const POMODORO_BREAK_MS = 5 * 60_000;
+
+/** Self-contained focus timer for review sessions — 25 min focus, 5 min break, repeating until stopped. Purely a client-side nudge, no persistence. */
+function PomodoroTimer({ toast }: { toast: (message: string, opts?: { variant?: "success" | "error" }) => void }) {
+  const [phase, setPhase] = useState<"idle" | "focus" | "break">("idle");
+  const [remainingMs, setRemainingMs] = useState(POMODORO_FOCUS_MS);
+
+  useEffect(() => {
+    if (phase === "idle") return;
+    const interval = setInterval(() => {
+      setRemainingMs((ms) => {
+        if (ms > 1000) return ms - 1000;
+        const nextPhase = phase === "focus" ? "break" : "focus";
+        toast(phase === "focus" ? "Pomodoro terminé — pause de 5 minutes." : "Pause terminée — retour à la révision.", { variant: "success" });
+        setPhase(nextPhase);
+        return nextPhase === "focus" ? POMODORO_FOCUS_MS : POMODORO_BREAK_MS;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [phase, toast]);
+
+  function toggle() {
+    if (phase === "idle") {
+      setPhase("focus");
+      setRemainingMs(POMODORO_FOCUS_MS);
+    } else {
+      setPhase("idle");
+    }
+  }
+
+  const minutes = Math.floor(remainingMs / 60000);
+  const seconds = Math.floor((remainingMs % 60000) / 1000);
+
+  return (
+    <div className="flex items-center gap-1">
+      {phase !== "idle" && (
+        <span className={`text-xs tabular-nums ${phase === "break" ? "text-success" : "text-foreground-subtle"}`}>
+          {minutes}:{seconds.toString().padStart(2, "0")}
+        </span>
+      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="hidden sm:inline-flex"
+        onClick={toggle}
+        aria-label={phase === "idle" ? "Démarrer un Pomodoro (25 min)" : "Arrêter le Pomodoro"}
+        title="Minuteur Pomodoro (25 min de focus / 5 min de pause)"
+      >
+        {phase === "idle" ? <Timer className="h-4 w-4" /> : <Square className="h-3.5 w-3.5" />}
+      </Button>
+    </div>
+  );
 }
 
 const COMPLETION_MESSAGES = [
@@ -55,6 +110,9 @@ export function FlashcardReviewer({
   const [struggled, setStruggled] = useState<string[]>([]);
   const [lastAction, setLastAction] = useState<LastAction | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [dictationMode, setDictationMode] = useState(false);
+  const [dictationInput, setDictationInput] = useState("");
+  const revealedAtRef = useRef<number | null>(null);
   // Picked once per session mount so it stays stable across re-renders but varies session to session.
   const [completionMessage] = useState(() => COMPLETION_MESSAGES[Math.floor(Math.random() * COMPLETION_MESSAGES.length)]);
   const swipeStartX = useRef<number | null>(null);
@@ -64,8 +122,10 @@ export function FlashcardReviewer({
   function handleRate(rating: "again" | "good") {
     if (!current) return;
     const answeredIndex = index;
+    const durationMs = revealedAtRef.current != null ? Date.now() - revealedAtRef.current : undefined;
+    revealedAtRef.current = null;
     startTransition(async () => {
-      const result = await submitReview(current.id, rating, source);
+      const result = await submitReview(current.id, rating, source, durationMs);
       if (result.error || !result.logId) {
         toast(result.error ?? "Impossible d'enregistrer cette révision.", { variant: "error" });
         return;
@@ -82,6 +142,7 @@ export function FlashcardReviewer({
       setTally((t) => (rating === "again" ? { ...t, again: t.again + 1 } : { ...t, good: t.good + 1 }));
       if (rating === "again") setStruggled((s) => [...s, current.front.text]);
       setRevealed(false);
+      setDictationInput("");
       setIndex((i) => i + 1);
     });
   }
@@ -89,6 +150,7 @@ export function FlashcardReviewer({
   function handleRestart() {
     setIndex(0);
     setRevealed(false);
+    setDictationInput("");
     setDone(0);
     setTally({ again: 0, good: 0 });
     setStruggled([]);
@@ -137,6 +199,7 @@ export function FlashcardReviewer({
       if (!revealed && e.key === " ") {
         e.preventDefault();
         setRevealed(true);
+        revealedAtRef.current = Date.now();
       } else if (revealed && (e.key === "ArrowLeft" || e.key === "1")) {
         e.preventDefault();
         handleRate("again");
@@ -251,6 +314,20 @@ export function FlashcardReviewer({
           <span className="text-xs text-foreground-subtle">
             {index + 1} / {cards.length}
           </span>
+          <PomodoroTimer toast={toast} />
+          <Button
+            variant={dictationMode ? "secondary" : "ghost"}
+            size="icon"
+            className="hidden sm:inline-flex"
+            onClick={() => {
+              setDictationMode((m) => !m);
+              setDictationInput("");
+            }}
+            aria-label={dictationMode ? "Désactiver le mode dictée" : "Activer le mode dictée"}
+            title="Mode dictée : tapez la réponse au clavier plutôt que de la deviner"
+          >
+            <PenLine className="h-4 w-4" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -322,12 +399,44 @@ export function FlashcardReviewer({
       </div>
 
       <div className="pb-[calc(1rem+env(safe-area-inset-bottom))]">
-        {!revealed ? (
-          <Button className="w-full" size="lg" onClick={() => setRevealed(true)}>
+        {!revealed && dictationMode ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setRevealed(true);
+              revealedAtRef.current = Date.now();
+            }}
+            className="space-y-2"
+          >
+            <input
+              autoFocus
+              value={dictationInput}
+              onChange={(e) => setDictationInput(e.target.value)}
+              placeholder="Tapez votre réponse…"
+              className="w-full rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+            />
+            <Button type="submit" className="w-full" size="lg">
+              Vérifier
+            </Button>
+          </form>
+        ) : !revealed ? (
+          <Button
+            className="w-full"
+            size="lg"
+            onClick={() => {
+              setRevealed(true);
+              revealedAtRef.current = Date.now();
+            }}
+          >
             Afficher la réponse
           </Button>
         ) : (
           <div className="grid grid-cols-2 gap-3">
+            {dictationMode && dictationInput.trim() && (
+              <p className="col-span-2 -mt-1 mb-1 text-center text-xs text-foreground-subtle">
+                Votre réponse : <span className="italic">{dictationInput}</span>
+              </p>
+            )}
             <Button variant="secondary" size="lg" onClick={() => handleRate("again")} disabled={isPending}>
               <X className="h-4 w-4" /> Incorrect
             </Button>

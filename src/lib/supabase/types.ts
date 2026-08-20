@@ -179,6 +179,7 @@ export type ElProfesorBookRow = {
   author: string | null;
   edition: string | null;
   cover_url: string | null;
+  theme: string | null;
   order_index: number;
   created_by: string | null;
   created_at: string;
@@ -265,6 +266,17 @@ export type ElProfesorReviewLogRow = {
   reviewed_at: string;
   rating: ElProfesorReviewRating;
   source: ElProfesorReviewSource;
+  duration_ms: number | null;
+};
+
+export type ElProfesorContentLogRow = {
+  id: string;
+  actor_id: string | null;
+  target_type: string;
+  target_id: string;
+  action: string;
+  detail: string | null;
+  created_at: string;
 };
 
 export type ElProfesorExtractionJobRow = {
@@ -440,6 +452,12 @@ export type Database = {
           source: ElProfesorReviewSource;
         };
         Update: Partial<ElProfesorReviewLogRow>;
+        Relationships: [];
+      };
+      el_profesor_content_log: {
+        Row: ElProfesorContentLogRow;
+        Insert: Partial<ElProfesorContentLogRow> & { target_type: string; target_id: string; action: string };
+        Update: Partial<ElProfesorContentLogRow>;
         Relationships: [];
       };
       el_profesor_extraction_jobs: {

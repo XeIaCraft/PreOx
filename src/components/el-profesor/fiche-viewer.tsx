@@ -13,6 +13,8 @@ import {
   FileText,
   Copy,
   Check,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { FlagButton } from "@/components/el-profesor/flag-button";
@@ -247,6 +249,41 @@ function CopyFicheButton({ title, summary, blocks }: { title: string; summary?: 
   );
 }
 
+/** Text-to-speech read-aloud via the browser's SpeechSynthesis API — no backend involved, purely a client-side accessibility aid. */
+function SpeakFicheButton({ title, summary, blocks }: { title: string; summary?: string; blocks: FicheBlock[] }) {
+  const [speaking, setSpeaking] = useState(false);
+
+  function handleToggle() {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    const text = [title, summary, ...blocks.map((b) => getBlockPlainText(b))].filter(Boolean).join(". ");
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "fr-FR";
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+    setSpeaking(true);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleToggle}
+      className="flex shrink-0 items-center gap-1 text-xs text-foreground-subtle hover:text-primary-strong"
+      aria-label={speaking ? "Arrêter la lecture" : "Lire la fiche à voix haute"}
+      title={speaking ? "Arrêter la lecture" : "Lire la fiche à voix haute"}
+    >
+      {speaking ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+      {speaking ? "Arrêter" : "Écouter"}
+    </button>
+  );
+}
+
 export function FicheViewer({
   title,
   summary,
@@ -264,7 +301,10 @@ export function FicheViewer({
     <div>
       <div className="flex items-start justify-between gap-3">
         <h3 className="font-serif-display text-xl font-medium text-foreground">{title}</h3>
-        <CopyFicheButton title={title} summary={summary} blocks={blocks} />
+        <div className="flex shrink-0 items-center gap-3">
+          <SpeakFicheButton title={title} summary={summary} blocks={blocks} />
+          <CopyFicheButton title={title} summary={summary} blocks={blocks} />
+        </div>
       </div>
       {summary && <p className={`mt-1 text-foreground-subtle ${SUMMARY_TEXT_SIZE[fontScale]}`}>{summary}</p>}
       <BlockNav blocks={blocks} />

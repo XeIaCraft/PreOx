@@ -110,6 +110,20 @@ Réponds uniquement avec le JSON demandé, structuré exactement selon le schém
 `.trim();
 }
 
+export function buildMnemonicPrompt(subEntityName: string, sourceText: string): string {
+  return `
+${EXPERT_READER_CONTEXT}
+
+Voici le contenu déjà rédigé pour la sous-entité « ${subEntityName} » :
+
+« ${sourceText} »
+
+Ta tâche : propose UN SEUL moyen mnémotechnique efficace (acronyme, phrase, image mentale...) en français pour retenir ce contenu précis — court, mémorable, directement utile pour un examen ou la pratique clinique. Si le contenu ne s'y prête vraiment pas (trop abstrait, aucune liste ou séquence à retenir), réponds quand même avec le meilleur compromis possible plutôt que de refuser.
+
+Réponds uniquement avec le JSON demandé (un champ "text"), structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildVerificationPrompt(extractionJson: string): string {
   return `
 Tu reçois le document source (chapitre PDF) et, ci-dessous, un JSON d'extraction déjà produit à partir de ce document (sous-entités, fiches, blocs avec citations, flashcards). Ta seule tâche : vérifier la fidélité de chaque bloc et chaque flashcard à sa citation et au document source.

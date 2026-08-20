@@ -13,6 +13,9 @@ import {
   getMostDifficultFlashcardsGlobal,
   getDailyCard,
   getBookmarkedEntities,
+  getGlobalChapterMasteryPercentages,
+  getStaleChaptersForAdmin,
+  getReviewTimeStats,
 } from "@/lib/el-profesor/dal";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { ToastProvider } from "@/components/ui/toast";
@@ -38,6 +41,9 @@ export default async function ElProfesorPage() {
     mostDifficultGlobal,
     dailyCard,
     bookmarks,
+    globalMastery,
+    staleChapters,
+    reviewTimeStats,
   ] = await Promise.all([
     getDueCountsByChapter(profile.id, allChapters),
     isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
@@ -51,6 +57,9 @@ export default async function ElProfesorPage() {
     isAdmin ? getMostDifficultFlashcardsGlobal() : Promise.resolve([]),
     getDailyCard(profile.id, allChapters),
     getBookmarkedEntities(profile.id),
+    getGlobalChapterMasteryPercentages(allChapters),
+    isAdmin ? getStaleChaptersForAdmin(allChapters, rawBooks) : Promise.resolve([]),
+    getReviewTimeStats(profile.id),
   ]);
 
   return (
@@ -71,6 +80,9 @@ export default async function ElProfesorPage() {
         mostDifficultGlobal={mostDifficultGlobal}
         dailyCard={dailyCard}
         bookmarks={bookmarks}
+        globalMastery={globalMastery}
+        staleChapters={staleChapters}
+        reviewTimeStats={reviewTimeStats}
       />
     </ToastProvider>
   );

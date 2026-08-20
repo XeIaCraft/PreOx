@@ -4,9 +4,10 @@ import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { updateFlashcard, deleteFlashcard } from "@/app/apps/el-profesor/actions/extraction";
+import { updateFlashcard, deleteFlashcard, getFlashcardHistory } from "@/app/apps/el-profesor/actions/extraction";
 import { FlagsList } from "@/components/el-profesor/flags-list";
 import { EditableCitations } from "@/components/el-profesor/editable-citations";
+import { EditHistory } from "@/components/el-profesor/block-editor";
 import { useToast } from "@/components/ui/toast";
 import type { Citation, Flag, Flashcard } from "@/lib/el-profesor/types";
 
@@ -73,6 +74,9 @@ export function FlashcardEditor({
       <FlagsList flags={flags} onResolved={onChanged} />
 
       <EditableCitations citations={citations} onChange={setCitations} onCitationClick={onCitationClick} />
+
+      <EditHistory targetId={flashcard.id} fetcher={getFlashcardHistory} />
+
       <div className="mt-2 flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={handleDelete} disabled={isPending}>
           <Trash2 className="h-3.5 w-3.5" /> Supprimer

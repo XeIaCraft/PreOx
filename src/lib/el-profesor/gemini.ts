@@ -1,7 +1,7 @@
 import "server-only";
 
 import { GeminiError, parseGeminiJson } from "@/lib/gemini-shared";
-import { buildExtractionPrompt, buildVerificationPrompt, buildComplementaryPrompt, buildSelectionPrompt } from "@/lib/el-profesor/prompts";
+import { buildExtractionPrompt, buildVerificationPrompt, buildComplementaryPrompt, buildSelectionPrompt, buildMnemonicPrompt } from "@/lib/el-profesor/prompts";
 import type { ComplementaryResult, ExtractionResult, VerificationResult, SelectionResult, BlockType } from "@/lib/el-profesor/types";
 
 const FILES_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files";
@@ -142,6 +142,14 @@ const SELECTION_RESPONSE_SCHEMA = {
     flashcard: FLASHCARD_ITEM_SCHEMA,
   },
   required: ["block"],
+};
+
+const MNEMONIC_RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    text: { type: "STRING" },
+  },
+  required: ["text"],
 };
 
 const VERIFICATION_RESPONSE_SCHEMA = {
@@ -352,6 +360,13 @@ export async function generateFromSelection(
   const instructions = buildSelectionPrompt(subEntityName, chapterTitle, page, quote);
   const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SELECTION_RESPONSE_SCHEMA);
   return result as SelectionResult;
+}
+
+/** Generates a single mnemonic suggestion (as plain text) for a block that doesn't already have one. */
+export async function generateMnemonic(apiKey: string, model: string, subEntityName: string, sourceText: string): Promise<{ text: string }> {
+  const instructions = buildMnemonicPrompt(subEntityName, sourceText);
+  const result = await callGeminiJson(apiKey, model, [{ text: instructions }], MNEMONIC_RESPONSE_SCHEMA);
+  return result as { text: string };
 }
 
 export async function verifyExtraction(

@@ -5,7 +5,27 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/logo";
 
-export function CertificateModal({ bookTitle, userName, onClose }: { bookTitle: string; userName: string; onClose: () => void }) {
+function formatDuration(ms: number): string {
+  const totalMinutes = Math.round(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return `${hours} h ${minutes.toString().padStart(2, "0")}`;
+  return `${minutes} min`;
+}
+
+export function CertificateModal({
+  bookTitle,
+  userName,
+  flashcardCount,
+  totalDurationMs,
+  onClose,
+}: {
+  bookTitle: string;
+  userName: string;
+  flashcardCount?: number;
+  totalDurationMs?: number;
+  onClose: () => void;
+}) {
   const today = new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
 
   return (
@@ -28,6 +48,13 @@ export function CertificateModal({ bookTitle, userName, onClose }: { bookTitle: 
         <p className="mt-2 font-serif-display text-2xl font-medium text-foreground">{userName}</p>
         <p className="mt-2 text-sm text-foreground-muted">a maîtrisé l&rsquo;intégralité des flashcards du livre</p>
         <p className="mt-2 font-serif-display text-xl font-medium text-primary-strong">{bookTitle}</p>
+        {(!!flashcardCount || !!totalDurationMs) && (
+          <p className="mt-3 text-xs text-foreground-subtle">
+            {flashcardCount ? `${flashcardCount} flashcard${flashcardCount > 1 ? "s" : ""}` : ""}
+            {flashcardCount && totalDurationMs ? " · " : ""}
+            {totalDurationMs ? `${formatDuration(totalDurationMs)} de révision investis` : ""}
+          </p>
+        )}
         <p className="mt-6 text-xs text-foreground-subtle">El Profesor — {today}</p>
       </div>
     </Modal>

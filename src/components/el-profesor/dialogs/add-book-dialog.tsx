@@ -16,7 +16,7 @@ export function AddBookDialog({
   onClose,
   onSaved,
 }: {
-  book?: { id: string; title: string; author: string | null; edition: string | null };
+  book?: { id: string; title: string; author: string | null; edition: string | null; theme?: string | null };
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -25,13 +25,16 @@ export function AddBookDialog({
   const [title, setTitle] = useState(book?.title ?? "");
   const [author, setAuthor] = useState(book?.author ?? "");
   const [edition, setEdition] = useState(book?.edition ?? "");
+  const [theme, setTheme] = useState(book?.theme ?? "");
   const [uploadingCover, setUploadingCover] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   function handleSave() {
     if (!title.trim()) return;
     startTransition(async () => {
-      const result = book ? await updateBook(book.id, { title, author, edition }) : await createBook({ title, author, edition });
+      const result = book
+        ? await updateBook(book.id, { title, author, edition, theme })
+        : await createBook({ title, author, edition, theme });
       if (result.error) toast(result.error, { variant: "error" });
       else onSaved();
     });
@@ -72,6 +75,10 @@ export function AddBookDialog({
         <div className="space-y-1.5">
           <Label htmlFor="book-edition">Édition</Label>
           <Input id="book-edition" value={edition} onChange={(e) => setEdition(e.target.value)} placeholder="ex. 5e édition" />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="book-theme">Spécialité / thème</Label>
+          <Input id="book-theme" value={theme} onChange={(e) => setTheme(e.target.value)} placeholder="ex. Cardiologie" />
         </div>
         {book && (
           <div className="space-y-1.5">

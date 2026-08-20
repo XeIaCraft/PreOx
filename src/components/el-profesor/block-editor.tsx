@@ -1,15 +1,48 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
+import { Plus, Trash2, ChevronUp, ChevronDown, History, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { updateFicheBlock, deleteFicheBlock, moveFicheBlock } from "@/app/apps/el-profesor/actions/extraction";
+import {
+  updateFicheBlock,
+  deleteFicheBlock,
+  moveFicheBlock,
+  getFicheBlockHistory,
+  suggestMnemonicForBlock,
+} from "@/app/apps/el-profesor/actions/extraction";
 import { FlagsList } from "@/components/el-profesor/flags-list";
 import { EditableCitations } from "@/components/el-profesor/editable-citations";
 import { useToast } from "@/components/ui/toast";
 import type { Citation, FicheBlock, Flag, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
+import type { ContentLogEntry } from "@/lib/el-profesor/content-log";
+
+/** Lazily-loaded edit history — fetched only once the admin actually opens the <details>, since most blocks are never inspected. */
+export function EditHistory({ targetId, fetcher }: { targetId: string; fetcher: (id: string) => Promise<ContentLogEntry[]> }) {
+  const [entries, setEntries] = useState<ContentLogEntry[] | null>(null);
+
+  function handleToggle(e: React.SyntheticEvent<HTMLDetailsElement>) {
+    if (e.currentTarget.open && entries === null) fetcher(targetId).then(setEntries);
+  }
+
+  return (
+    <details className="mt-2" onToggle={handleToggle}>
+      <summary className="flex cursor-pointer items-center gap-1 text-[11px] text-foreground-subtle hover:text-foreground">
+        <History className="h-3 w-3" /> Historique des modifications
+      </summary>
+      <div className="mt-1.5 space-y-1">
+        {entries === null && <p className="text-[11px] text-foreground-subtle">Chargement…</p>}
+        {entries?.length === 0 && <p className="text-[11px] text-foreground-subtle">Aucune modification enregistrée.</p>}
+        {entries?.map((e) => (
+          <p key={e.id} className="text-[11px] text-foreground-subtle">
+            {new Date(e.createdAt).toLocaleString("fr-FR")} — {e.actorName} ({e.action})
+          </p>
+        ))}
+      </div>
+    </details>
+  );
+}
 
 const IS_TEXT_BLOCK = new Set([
   "definition_mecanisme",
@@ -225,6 +258,17 @@ export function BlockEditor({
     });
   }
 
+  function handleSuggestMnemonic() {
+    startTransition(async () => {
+      const result = await suggestMnemonicForBlock(block.id);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "", { variant: "success" });
+        onChanged();
+      }
+    });
+  }
+
   return (
     <div className="rounded-[var(--radius-md)] border border-border p-3">
       <div className="flex flex-wrap items-center justify-between gap-1.5">
@@ -280,7 +324,14 @@ export function BlockEditor({
 
       <EditableCitations citations={citations} onChange={setCitations} onCitationClick={onCitationClick} />
 
-      <div className="mt-2 flex justify-end gap-2">
+      <EditHistory targetId={block.id} fetcher={getFicheBlockHistory} />
+
+      <div className="mt-2 flex flex-wrap justify-end gap-2">
+        {block.blockType !== "mnemotechnique" && (
+          <Button variant="ghost" size="sm" onClick={handleSuggestMnemonic} disabled={isPending} title="Suggérer un moyen mnémotechnique par IA">
+            <Lightbulb className="h-3.5 w-3.5" /> Suggérer une mnémotechnique
+          </Button>
+        )}
         <Button variant="ghost" size="sm" onClick={handleDelete} disabled={isPending}>
           <Trash2 className="h-3.5 w-3.5" /> Supprimer
         </Button>
