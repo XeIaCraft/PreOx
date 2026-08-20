@@ -22,12 +22,19 @@ export function FlashcardReviewer({
   source,
   cards,
   cappedFrom,
+  badgeLabel,
+  emptyMessage,
 }: {
-  chapterId: string;
+  chapterId?: string;
   source: ReviewSource;
   cards: Flashcard[];
   cappedFrom?: number | null;
+  /** Overrides the "Planifiée"/"Libre" badge — used by cross-chapter modes (révision globale, carnet d'erreurs). */
+  badgeLabel?: string;
+  /** Overrides the default "nothing to review" copy. */
+  emptyMessage?: string;
 }) {
+  const backHref = chapterId ? `/apps/el-profesor/chapters/${chapterId}` : "/apps/el-profesor";
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [index, setIndex] = useState(0);
@@ -124,10 +131,11 @@ export function FlashcardReviewer({
     return (
       <div className="mx-auto max-w-md px-4 py-16 text-center">
         <p className="text-foreground-muted">
-          {source === "scheduled" ? "Rien à réviser aujourd'hui pour ce chapitre." : "Aucune flashcard publiée pour ce chapitre."}
+          {emptyMessage ??
+            (source === "scheduled" ? "Rien à réviser aujourd'hui pour ce chapitre." : "Aucune flashcard publiée pour ce chapitre.")}
         </p>
-        <Link href={`/apps/el-profesor/chapters/${chapterId}`} className="mt-4 inline-block">
-          <Button variant="secondary">Voir les fiches</Button>
+        <Link href={backHref} className="mt-4 inline-block">
+          <Button variant="secondary">{chapterId ? "Voir les fiches" : "Retour à la bibliothèque"}</Button>
         </Link>
       </div>
     );
@@ -152,14 +160,16 @@ export function FlashcardReviewer({
   return (
     <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-xl flex-col px-4 py-6">
       <div className="flex items-center justify-between">
-        <Link href={`/apps/el-profesor/chapters/${chapterId}`}>
+        <Link href={backHref}>
           <Button variant="ghost" size="icon" aria-label="Retour">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
         <div className="flex items-center gap-2">
           {undoButton}
-          <Badge variant={source === "scheduled" ? "primary" : "neutral"}>{source === "scheduled" ? "Planifiée" : "Libre"}</Badge>
+          <Badge variant={source === "scheduled" ? "primary" : "neutral"}>
+            {badgeLabel ?? (source === "scheduled" ? "Planifiée" : "Libre")}
+          </Badge>
           <span className="text-xs text-foreground-subtle">
             {index + 1} / {cards.length}
           </span>
@@ -173,7 +183,7 @@ export function FlashcardReviewer({
         />
       </div>
 
-      {cappedFrom && (
+      {cappedFrom && chapterId && (
         <p className="mt-2 text-center text-xs text-foreground-subtle">
           Session limitée à {cards.length} cartes sur {cappedFrom}.{" "}
           <Link href={`/apps/el-profesor/chapters/${chapterId}/review?mode=free&all=1`} className="underline hover:text-foreground">

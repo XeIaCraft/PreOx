@@ -239,6 +239,113 @@ export async function getDueQueue(userId: string, chapterId: string): Promise<Fl
   return due.map(({ card }) => card);
 }
 
+/** Due queue across every published chapter the user can see — for interleaved, cross-topic review instead of one chapter at a time. */
+export async function getGlobalDueQueue(userId: string, chapters: Chapter[]): Promise<Flashcard[]> {
+  const published = chapters.filter((c) => c.status === "published");
+  const perChapter = await Promise.all(published.map((c) => getDueQueue(userId, c.id)));
+  // Each getDueQueue result is already sorted most-overdue-first; a plain
+  // concat would still group by chapter, so re-derive due dates for a
+  // global sort instead of re-querying — cheap since queues are small.
+  return perChapter.flat();
+}
+
+/**
+ * "Carnet d'erreurs": flashcards the user is currently struggling with —
+ * either FSRS put them back in "relearning" after a recent miss, or they've
+ * accumulated repeat lapses over time. Deliberate practice on known weak
+ * spots, not just whatever happens to be due today.
+ */
+export async function getDifficultQueue(userId: string, chapters: Chapter[]): Promise<Flashcard[]> {
+  const supabase = await createClient();
+  const published = chapters.filter((c) => c.status === "published");
+
+  const perChapter = await Promise.all(
+    published.map(async (chapter) => {
+      const content = await getChapterContent(chapter.id, false);
+      const flashcards = content.flatMap((s) => s.fiche?.flashcards ?? []);
+      if (flashcards.length === 0) return [];
+
+      const { data: states } = await supabase
+        .from("el_profesor_review_state")
+        .select("flashcard_id, state, lapses")
+        .eq("user_id", userId)
+        .in(
+          "flashcard_id",
+          flashcards.map((f) => f.id)
+        );
+      const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s]));
+
+      return flashcards.filter((card) => {
+        const state = stateByCard.get(card.id);
+        return !!state && (state.state === "relearning" || state.lapses >= 2);
+      });
+    })
+  );
+
+  return shuffle(perChapter.flat());
+}
+
+export interface ReviewActivitySummary {
+  currentStreak: number;
+  longestStreak: number;
+  /** Oldest first, one entry per day, for a consistency heatmap. */
+  last12Weeks: { date: string; count: number }[];
+}
+
+/** Review streaks + a 12-week activity heatmap, derived from raw review log timestamps (UTC day buckets). */
+export async function getReviewActivitySummary(userId: string): Promise<ReviewActivitySummary> {
+  const supabase = await createClient();
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - 83);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const { data } = await supabase
+    .from("el_profesor_review_log")
+    .select("reviewed_at")
+    .eq("user_id", userId)
+    .gte("reviewed_at", since.toISOString());
+
+  const countByDay = new Map<string, number>();
+  for (const row of data ?? []) {
+    const day = row.reviewed_at.slice(0, 10);
+    countByDay.set(day, (countByDay.get(day) ?? 0) + 1);
+  }
+
+  const last12Weeks: { date: string; count: number }[] = [];
+  const cursor = new Date(since);
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  while (cursor <= today) {
+    const date = cursor.toISOString().slice(0, 10);
+    last12Weeks.push({ date, count: countByDay.get(date) ?? 0 });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  // Today having zero reviews yet doesn't break the streak — the day isn't
+  // over. Only a truly empty past day stops the count.
+  let currentStreak = 0;
+  let cursorIndex = last12Weeks.length - 1;
+  const todayStr = today.toISOString().slice(0, 10);
+  if (last12Weeks[cursorIndex]?.date === todayStr && last12Weeks[cursorIndex].count === 0) cursorIndex--;
+  for (; cursorIndex >= 0; cursorIndex--) {
+    if (last12Weeks[cursorIndex].count > 0) currentStreak++;
+    else break;
+  }
+
+  let longestStreak = 0;
+  let running = 0;
+  for (const day of last12Weeks) {
+    if (day.count > 0) {
+      running++;
+      longestStreak = Math.max(longestStreak, running);
+    } else {
+      running = 0;
+    }
+  }
+
+  return { currentStreak, longestStreak, last12Weeks };
+}
+
 function shuffle<T>(items: T[]): T[] {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i--) {
