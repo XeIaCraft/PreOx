@@ -74,7 +74,10 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
     await supabase
       .from("el_profesor_extraction_jobs")
       .insert({ chapter_id: chapterId, status: "succeeded", raw_output: extraction as unknown as never });
-    await supabase.from("el_profesor_chapters").update({ status: "draft_ready" }).eq("id", chapterId);
+    await supabase
+      .from("el_profesor_chapters")
+      .update({ status: "draft_ready", estimated_remaining_passes: extraction.estimated_remaining_passes })
+      .eq("id", chapterId);
 
     revalidatePath("/apps/el-profesor");
     return { success: "Extraction terminée. Relisez le contenu généré avant publication." };
@@ -285,7 +288,10 @@ export async function extractChapterComplementary(chapterId: string): Promise<Ac
     await supabase
       .from("el_profesor_extraction_jobs")
       .insert({ chapter_id: chapterId, status: "succeeded", raw_output: complementary as unknown as never });
-    await supabase.from("el_profesor_chapters").update({ status: originalStatus }).eq("id", chapterId);
+    await supabase
+      .from("el_profesor_chapters")
+      .update({ status: originalStatus, estimated_remaining_passes: complementary.estimated_remaining_passes })
+      .eq("id", chapterId);
 
     revalidatePath("/apps/el-profesor");
     if (addedCount === 0) {
@@ -396,4 +402,36 @@ export async function deleteFlashcard(flashcardId: string): Promise<ActionState>
   if (error) return { error: "Impossible de supprimer cette flashcard." };
   revalidatePath("/apps/el-profesor");
   return { success: "Flashcard supprimée." };
+}
+
+/** Swaps a block's order_index with its previous/next sibling within the same fiche. No-op at either end. */
+export async function moveFicheBlock(blockId: string, direction: "up" | "down"): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: block } = await supabase.from("el_profesor_fiche_blocks").select("id, fiche_id, order_index").eq("id", blockId).single();
+  if (!block) return { error: "Bloc introuvable." };
+
+  const { data: siblings } = await supabase
+    .from("el_profesor_fiche_blocks")
+    .select("id, order_index")
+    .eq("fiche_id", block.fiche_id)
+    .order("order_index", { ascending: true });
+  const list = siblings ?? [];
+  const index = list.findIndex((b) => b.id === blockId);
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (index === -1 || targetIndex < 0 || targetIndex >= list.length) {
+    return { success: "OK" };
+  }
+
+  const target = list[targetIndex];
+  const current = list[index];
+  const [error1, error2] = await Promise.all([
+    supabase.from("el_profesor_fiche_blocks").update({ order_index: target.order_index }).eq("id", current.id).then((r) => r.error),
+    supabase.from("el_profesor_fiche_blocks").update({ order_index: current.order_index }).eq("id", target.id).then((r) => r.error),
+  ]);
+  if (error1 || error2) return { error: "Impossible de réordonner ce bloc." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Bloc déplacé." };
 }

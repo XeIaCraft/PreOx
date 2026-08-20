@@ -15,13 +15,17 @@ export function ChapterView({
   chapterId,
   chapterTitle,
   subEntities,
+  initialEntityId,
 }: {
   chapterId: string;
   chapterTitle: string;
   subEntities: SubEntityWithFiche[];
+  initialEntityId?: string;
 }) {
   const withFiche = subEntities.filter((s) => s.fiche);
-  const [selectedId, setSelectedId] = useState(withFiche[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState(
+    (initialEntityId && withFiche.some((s) => s.id === initialEntityId) ? initialEntityId : withFiche[0]?.id) ?? null
+  );
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<PdfHighlight>(null);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);

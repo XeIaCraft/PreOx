@@ -2,12 +2,19 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, X, PartyPopper } from "lucide-react";
+import { ArrowLeft, Check, X, PartyPopper, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { submitReview } from "@/app/apps/el-profesor/actions/review";
+import { submitReview, undoReview } from "@/app/apps/el-profesor/actions/review";
 import { useToast } from "@/components/ui/toast";
-import type { Flashcard, ReviewSource } from "@/lib/el-profesor/types";
+import type { Flashcard, ReviewSource, ReviewState } from "@/lib/el-profesor/types";
+
+interface LastAction {
+  index: number;
+  flashcardId: string;
+  logId: string;
+  previousState: ReviewState | null | undefined;
+}
 
 export function FlashcardReviewer({
   chapterId,
@@ -23,22 +30,46 @@ export function FlashcardReviewer({
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [done, setDone] = useState(0);
+  const [lastAction, setLastAction] = useState<LastAction | null>(null);
 
   const current = cards[index];
 
   function handleRate(rating: "again" | "good") {
     if (!current) return;
+    const answeredIndex = index;
     startTransition(async () => {
       const result = await submitReview(current.id, rating, source);
-      if (result.error) {
-        toast(result.error, { variant: "error" });
+      if (result.error || !result.logId) {
+        toast(result.error ?? "Impossible d'enregistrer cette révision.", { variant: "error" });
         return;
       }
+      setLastAction({ index: answeredIndex, flashcardId: current.id, logId: result.logId, previousState: result.previousState });
       setDone((d) => d + 1);
       setRevealed(false);
       setIndex((i) => i + 1);
     });
   }
+
+  function handleUndo() {
+    if (!lastAction) return;
+    startTransition(async () => {
+      const result = await undoReview(lastAction.flashcardId, lastAction.logId, source, lastAction.previousState ?? null);
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      setDone((d) => Math.max(0, d - 1));
+      setIndex(lastAction.index);
+      setRevealed(true);
+      setLastAction(null);
+    });
+  }
+
+  const undoButton = lastAction && (
+    <Button variant="ghost" size="sm" onClick={handleUndo} disabled={isPending}>
+      <Undo2 className="h-3.5 w-3.5" /> Annuler
+    </Button>
+  );
 
   if (cards.length === 0) {
     return (
@@ -59,9 +90,12 @@ export function FlashcardReviewer({
         <PartyPopper className="mx-auto h-8 w-8 text-primary-strong" />
         <p className="mt-3 text-lg font-medium text-foreground">Session terminée</p>
         <p className="mt-1 text-sm text-foreground-muted">{done} carte(s) révisée(s).</p>
-        <Link href="/apps/el-profesor" className="mt-5 inline-block">
-          <Button>Retour à la bibliothèque</Button>
-        </Link>
+        <div className="mt-5 flex items-center justify-center gap-2">
+          <Link href="/apps/el-profesor">
+            <Button>Retour à la bibliothèque</Button>
+          </Link>
+          {undoButton}
+        </div>
       </div>
     );
   }
@@ -75,6 +109,7 @@ export function FlashcardReviewer({
           </Button>
         </Link>
         <div className="flex items-center gap-2">
+          {undoButton}
           <Badge variant={source === "scheduled" ? "primary" : "neutral"}>{source === "scheduled" ? "Planifiée" : "Libre"}</Badge>
           <span className="text-xs text-foreground-subtle">
             {index + 1} / {cards.length}

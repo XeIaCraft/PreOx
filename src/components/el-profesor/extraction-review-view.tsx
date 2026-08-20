@@ -172,8 +172,14 @@ export function ExtractionReviewView({
               ) : (
                 <>
                   <div className="mt-3 space-y-3">
-                    {visibleBlocks.map((block) => (
-                      <BlockEditor key={block.id} block={block} onChanged={refresh} onCitationClick={handleCitationClick} />
+                    {visibleBlocks.map((block, i) => (
+                      <BlockEditor
+                        key={block.id}
+                        block={block}
+                        onChanged={refresh}
+                        onCitationClick={handleCitationClick}
+                        reorder={onlyFlagged ? undefined : { isFirst: i === 0, isLast: i === visibleBlocks.length - 1 }}
+                      />
                     ))}
                   </div>
 

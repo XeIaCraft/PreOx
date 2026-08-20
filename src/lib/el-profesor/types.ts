@@ -51,6 +51,7 @@ export type Chapter = {
   pdfPageCount: number | null;
   status: ChapterStatus;
   extractionError: string | null;
+  estimatedRemainingPasses: number | null;
 };
 
 export type SubEntity = {
@@ -130,6 +131,7 @@ export type ExtractedSubEntity = {
 
 export type ExtractionResult = {
   sub_entities: ExtractedSubEntity[];
+  estimated_remaining_passes: number;
 };
 
 export type VerificationFlag = {
@@ -155,4 +157,5 @@ export type ComplementaryAddition = {
 export type ComplementaryResult = {
   additions_for_existing: ComplementaryAddition[];
   new_sub_entities: ExtractedSubEntity[];
+  estimated_remaining_passes: number;
 };

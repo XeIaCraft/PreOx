@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { updateFicheBlock, deleteFicheBlock } from "@/app/apps/el-profesor/actions/extraction";
+import { updateFicheBlock, deleteFicheBlock, moveFicheBlock } from "@/app/apps/el-profesor/actions/extraction";
 import { useToast } from "@/components/ui/toast";
 import type { Citation, FicheBlock, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
 
@@ -143,10 +143,12 @@ export function BlockEditor({
   block,
   onChanged,
   onCitationClick,
+  reorder,
 }: {
   block: FicheBlock;
   onChanged: () => void;
   onCitationClick?: (c: Citation) => void;
+  reorder?: { isFirst: boolean; isLast: boolean };
 }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -169,10 +171,42 @@ export function BlockEditor({
     });
   }
 
+  function handleMove(direction: "up" | "down") {
+    startTransition(async () => {
+      const result = await moveFicheBlock(block.id, direction);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
   return (
     <div className="rounded-[var(--radius-md)] border border-border p-3">
       <div className="flex flex-wrap items-center justify-between gap-1.5">
-        <span className="text-xs font-medium uppercase tracking-wide text-foreground-subtle">{block.blockType}</span>
+        <div className="flex items-center gap-1">
+          {reorder && (
+            <div className="flex flex-col">
+              <button
+                type="button"
+                onClick={() => handleMove("up")}
+                disabled={reorder.isFirst || isPending}
+                aria-label="Monter ce bloc"
+                className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+              >
+                <ChevronUp className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleMove("down")}
+                disabled={reorder.isLast || isPending}
+                aria-label="Descendre ce bloc"
+                className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+          <span className="text-xs font-medium uppercase tracking-wide text-foreground-subtle">{block.blockType}</span>
+        </div>
         <div className="flex gap-1.5">
           {block.status === "draft" && <Badge variant="neutral">Brouillon</Badge>}
           {block.needsReview && <Badge variant="accent">À vérifier</Badge>}

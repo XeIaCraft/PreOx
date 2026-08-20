@@ -155,9 +155,11 @@ Le rôle **admin** donne accès à `/admin` (protégé) en plus de `/apps`.
    « El Profesor » + création du bucket de stockage privé des PDF de
    chapitres), puis celui de
    `supabase/migrations/20260101000003_el_profesor_block_status.sql`
-   (statut brouillon/publié par bloc de contenu, RLS renforcée). *(Si vous
-   utilisez la CLI Supabase : `supabase db push` applique tout dans
-   l'ordre.)*
+   (statut brouillon/publié par bloc de contenu, RLS renforcée), puis celui
+   de `supabase/migrations/20260101000004_el_profesor_remaining_passes.sql`
+   (estimation par l'IA du nombre de passes de complément restantes).
+   *(Si vous utilisez la CLI Supabase : `supabase db push` applique tout
+   dans l'ordre.)*
 3. **Charger les modules du hub** : exécutez `supabase/seed.sql` — il active
    « À table » (`status='available'`, route `/apps/a-table`) et
    « El Profesor » (`status='available'`, route `/apps/el-profesor`), et

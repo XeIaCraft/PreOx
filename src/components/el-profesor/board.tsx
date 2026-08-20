@@ -7,12 +7,29 @@ import { GraduationCap, Plus, Trash2, Sparkles, BookOpen, ClipboardCheck, Search
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
+import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog";
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { deleteBook, deleteChapter } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
-import type { BookWithChapters, ChapterDueCounts } from "@/lib/el-profesor/dal";
+import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts } from "@/lib/el-profesor/dal";
 import type { ChapterStatus } from "@/lib/el-profesor/types";
+
+function MasteryBar({ counts }: { counts: { total: number; new: number; learning: number; acquired: number } }) {
+  if (counts.total === 0) return null;
+  const pct = (n: number) => `${(n / counts.total) * 100}%`;
+  return (
+    <div className="mt-2">
+      <div className="flex h-1.5 overflow-hidden rounded-full bg-surface-muted">
+        <div className="bg-success" style={{ width: pct(counts.acquired) }} />
+        <div className="bg-accent" style={{ width: pct(counts.learning) }} />
+      </div>
+      <p className="mt-1 text-[11px] text-foreground-subtle">
+        {counts.acquired} acquise{counts.acquired > 1 ? "s" : ""} · {counts.learning} en cours · {counts.new} nouvelle{counts.new > 1 ? "s" : ""}
+      </p>
+    </div>
+  );
+}
 
 const STATUS_LABEL: Record<ChapterStatus, string> = {
   pending: "PDF importé",
@@ -36,11 +53,13 @@ export function ElProfesorBoard({
   books,
   dueCounts,
   needsReviewCounts,
+  masteryCounts,
   isAdmin,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
   needsReviewCounts: ChapterDueCounts;
+  masteryCounts: ChapterMasteryCounts;
   isAdmin: boolean;
 }) {
   const router = useRouter();
@@ -118,6 +137,12 @@ export function ElProfesorBoard({
         )}
       </div>
 
+      {books.length > 0 && (
+        <div className="mt-6">
+          <LibrarySearch />
+        </div>
+      )}
+
       {books.length === 0 && (
         <div className="mt-10 rounded-[var(--radius-lg)] border border-dashed border-border p-8 text-center text-sm text-foreground-muted">
           Aucun livre pour l&apos;instant.{isAdmin ? " Ajoutez-en un pour commencer." : " Un administrateur doit d'abord en importer."}
@@ -169,6 +194,7 @@ export function ElProfesorBoard({
                     {chapter.status === "failed" && chapter.extractionError && (
                       <p className="mt-1.5 text-xs text-danger">{chapter.extractionError}</p>
                     )}
+                    {chapter.status === "published" && masteryCounts[chapter.id] && <MasteryBar counts={masteryCounts[chapter.id]} />}
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       {chapter.status === "published" && (
@@ -211,8 +237,19 @@ export function ElProfesorBoard({
                         </Link>
                       )}
                       {isAdmin && (chapter.status === "draft_ready" || chapter.status === "published") && (
-                        <Button variant="secondary" size="sm" onClick={() => handleComplement(chapter.id)} disabled={busy} title="Relit le PDF et ne génère que les notions pas encore couvertes">
-                          <SearchCheck className="h-3.5 w-3.5" /> {busy ? "Analyse…" : "Compléter"}
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleComplement(chapter.id)}
+                          disabled={busy}
+                          title="Relit le PDF et ne génère que les notions pas encore couvertes"
+                        >
+                          <SearchCheck className="h-3.5 w-3.5" />
+                          {busy
+                            ? "Analyse…"
+                            : chapter.estimatedRemainingPasses
+                              ? `Compléter (≈${chapter.estimatedRemainingPasses})`
+                              : "Compléter"}
                         </Button>
                       )}
                       {isAdmin && (

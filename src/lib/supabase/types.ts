@@ -162,6 +162,7 @@ export type ElProfesorChapterRow = {
   pdf_page_count: number | null;
   status: ElProfesorChapterStatus;
   extraction_error: string | null;
+  estimated_remaining_passes: number | null;
   created_at: string;
   updated_at: string;
 };

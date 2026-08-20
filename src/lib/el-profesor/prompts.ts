@@ -11,7 +11,7 @@ const BLOCK_TYPES_DOC = `
 `.trim();
 
 const EXPERT_READER_CONTEXT = `
-Le lecteur est un(e) anesthésiste-réanimateur belge visant une maîtrise de niveau expert (registre des référentiels européens UEMS/EBA/EDAIC), pas une première lecture d'étudiant. Calibre systématiquement la profondeur du contenu — fiches ET flashcards — en conséquence : ce qui compte, c'est ce qui permet de reconnaître une situation, décider, agir et prioriser en clinique ou de trancher une distinction piégeuse à l'oral, pas seulement mémoriser une définition isolée.
+Le lecteur est un(e) anesthésiste-réanimateur belge (en formation ou déjà spécialiste) qui vise une maîtrise théorique de niveau EXPERT (registre des référentiels européens UEMS/EBA/EDAIC) — être étudiant n'abaisse pas l'exigence de profondeur. Calibre systématiquement la profondeur du contenu — fiches ET flashcards — en conséquence : ce qui compte, c'est ce qui permet de reconnaître une situation, décider, agir et prioriser en clinique ou de trancher une distinction piégeuse à l'oral, pas seulement mémoriser une définition isolée.
 `.trim();
 
 const FLASHCARD_QUALITY_DOC = `
@@ -56,6 +56,8 @@ ${FLASHCARD_QUALITY_DOC}
 
 Chaque flashcard : une question précise et sans ambiguïté au recto ("front"), la réponse exacte attendue au verso ("back"), et sa/ses citation(s) source.
 
+4. Indique enfin "estimated_remaining_passes" : ton estimation honnête du nombre de passes de complément supplémentaires ("Compléter l'extraction", qui relit le PDF pour combler les trous) probablement encore nécessaires pour une couverture quasi-exhaustive de ce chapitre. Base-toi sur la longueur/densité réelle du chapitre et sur ce que tu sens avoir pu couvrir en une seule lecture — 0 si le chapitre est court/simple et que tu es confiant d'avoir tout couvert, un chiffre plus élevé (2, 3...) pour un chapitre long ou très dense où une seule passe ne peut raisonnablement pas tout capter.
+
 Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
 `.trim();
 }
@@ -83,6 +85,8 @@ Pour les flashcards en particulier, regarde si le résumé ci-dessus laisse des 
 ${FLASHCARD_QUALITY_DOC}
 
 Mêmes règles strictes que pour l'extraction initiale : chaque bloc et chaque flashcard doit citer verbatim (page + texte exact) le passage du livre qui le fonde, les tableaux comparatifs vont dans un vrai tableau, les protocoles par paliers dans une liste d'étapes structurée.
+
+Indique enfin "estimated_remaining_passes" : ta nouvelle estimation, APRÈS cette passe de complément, du nombre de passes encore probablement nécessaires pour une couverture quasi-exhaustive — 0 si tu es maintenant confiant que le chapitre est couvert dans son ensemble.
 
 Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
 `.trim();

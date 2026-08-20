@@ -96,12 +96,19 @@ const SUB_ENTITY_ITEM_SCHEMA = {
   required: ["name", "summary", "fiche"],
 };
 
+const ESTIMATED_REMAINING_PASSES_SCHEMA = {
+  type: "INTEGER",
+  description:
+    "Ton estimation honnête du nombre de passes de complément (gap-fill) encore probablement nécessaires pour une couverture quasi-exhaustive de ce chapitre. 0 si tu penses avoir couvert l'essentiel.",
+};
+
 const EXTRACTION_RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
     sub_entities: { type: "ARRAY", items: SUB_ENTITY_ITEM_SCHEMA },
+    estimated_remaining_passes: ESTIMATED_REMAINING_PASSES_SCHEMA,
   },
-  required: ["sub_entities"],
+  required: ["sub_entities", "estimated_remaining_passes"],
 };
 
 const COMPLEMENTARY_RESPONSE_SCHEMA = {
@@ -120,8 +127,9 @@ const COMPLEMENTARY_RESPONSE_SCHEMA = {
       },
     },
     new_sub_entities: { type: "ARRAY", items: SUB_ENTITY_ITEM_SCHEMA },
+    estimated_remaining_passes: ESTIMATED_REMAINING_PASSES_SCHEMA,
   },
-  required: ["additions_for_existing", "new_sub_entities"],
+  required: ["additions_for_existing", "new_sub_entities", "estimated_remaining_passes"],
 };
 
 const VERIFICATION_RESPONSE_SCHEMA = {

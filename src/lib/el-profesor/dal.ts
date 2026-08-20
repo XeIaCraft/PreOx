@@ -60,6 +60,7 @@ function toChapter(row: ElProfesorChapterRow): Chapter {
     pdfPageCount: row.pdf_page_count,
     status: row.status,
     extractionError: row.extraction_error,
+    estimatedRemainingPasses: row.estimated_remaining_passes,
   };
 }
 
@@ -244,6 +245,54 @@ export async function getDueCountsByChapter(userId: string, chapters: Chapter[])
         counts[chapter.id] = due.length;
       })
   );
+  return counts;
+}
+
+export type ChapterMasteryCounts = Record<string, { total: number; new: number; learning: number; acquired: number }>;
+
+/**
+ * Per-chapter breakdown of the user's own memorization progress, for the
+ * dashboard's motivational progress indicator. "new" = never reviewed,
+ * "learning" = FSRS learning/relearning state, "acquired" = FSRS review
+ * state (graduated past the initial learning phase).
+ */
+export async function getMasteryCountsByChapter(userId: string, chapters: Chapter[]): Promise<ChapterMasteryCounts> {
+  const counts: ChapterMasteryCounts = {};
+  const supabase = await createClient();
+
+  await Promise.all(
+    chapters
+      .filter((c) => c.status === "published")
+      .map(async (chapter) => {
+        const content = await getChapterContent(chapter.id, false);
+        const flashcards = content.flatMap((s) => s.fiche?.flashcards ?? []);
+        const total = flashcards.length;
+        if (total === 0) {
+          counts[chapter.id] = { total: 0, new: 0, learning: 0, acquired: 0 };
+          return;
+        }
+
+        const { data: states } = await supabase
+          .from("el_profesor_review_state")
+          .select("flashcard_id, state")
+          .eq("user_id", userId)
+          .in(
+            "flashcard_id",
+            flashcards.map((f) => f.id)
+          );
+        const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s.state]));
+
+        let learning = 0;
+        let acquired = 0;
+        for (const card of flashcards) {
+          const state = stateByCard.get(card.id);
+          if (state === "review") acquired++;
+          else if (state === "learning" || state === "relearning") learning++;
+        }
+        counts[chapter.id] = { total, new: total - stateByCard.size, learning, acquired };
+      })
+  );
+
   return counts;
 }
 
