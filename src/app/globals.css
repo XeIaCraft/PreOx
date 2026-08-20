@@ -161,18 +161,19 @@ body {
   text-wrap: balance;
 }
 
-/* Print a single fiche cleanly ("Imprimer" in the chapter view): hide
-   everything except #fiche-print-area, then let that element take over
-   the page instead of being confined to its normal in-flow box. */
+/* Print a single element cleanly (El Profesor's "Imprimer cette fiche",
+   À table's "Imprimer la liste"): hide everything except whichever one
+   element carries .print-area, then let it take over the page instead of
+   being confined to its normal in-flow box. */
 @media print {
   body * {
     visibility: hidden;
   }
-  #fiche-print-area,
-  #fiche-print-area * {
+  .print-area,
+  .print-area * {
     visibility: visible;
   }
-  #fiche-print-area {
+  .print-area {
     position: absolute;
     left: 0;
     top: 0;

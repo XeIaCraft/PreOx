@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useTransition } from "react";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, Printer } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { buildShoppingList } from "@/lib/a-table/shopping";
@@ -64,16 +64,22 @@ export function ShoppingDialog({
       title="Liste de courses"
       onClose={onClose}
       footer={
-        <Button variant="secondary" onClick={handleReset} disabled={isPending}>
-          <RotateCcw className="h-4 w-4" />
-          Recommencer la liste
-        </Button>
+        <>
+          <Button variant="secondary" onClick={() => window.print()} disabled={items.length === 0}>
+            <Printer className="h-4 w-4" />
+            Imprimer
+          </Button>
+          <Button variant="secondary" onClick={handleReset} disabled={isPending}>
+            <RotateCcw className="h-4 w-4" />
+            Recommencer la liste
+          </Button>
+        </>
       }
     >
       {items.length === 0 ? (
         <p className="py-10 text-center text-sm text-foreground-subtle">Aucun repas planifié pour le moment.</p>
       ) : (
-        <div className="space-y-5">
+        <div className="print-area space-y-5">
           {CATEGORY_ORDER.map((category) => {
             const categoryItems = unchecked.filter((i) => i.category === category.key);
             if (categoryItems.length === 0) return null;

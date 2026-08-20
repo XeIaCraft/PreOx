@@ -275,10 +275,9 @@ export function ChapterView({
               <div className="h-full bg-primary transition-[width]" style={{ width: `${scrollProgress}%` }} />
             </div>
             <div
-              id="fiche-print-area"
               ref={contentRef}
               onScroll={handleContentScroll}
-              className="h-full min-h-0 rounded-[var(--radius-lg)] border border-border bg-surface p-5 print:overflow-visible print:rounded-none print:border-0 print:p-0 md:overflow-y-auto lg:overflow-y-auto"
+              className="print-area h-full min-h-0 rounded-[var(--radius-lg)] border border-border bg-surface p-5 print:overflow-visible print:rounded-none print:border-0 print:p-0 md:overflow-y-auto lg:overflow-y-auto"
               onPointerDown={handleContentPointerDown}
               onPointerUp={handleContentPointerUp}
             >
