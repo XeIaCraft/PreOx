@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Link2, Star, Keyboard } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Link2, Star, Keyboard, Download, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -53,6 +53,7 @@ export function ChapterView({
   const [bookmarks, setBookmarks] = useState(() => new Set(bookmarkedIds ?? []));
   const [bookmarkPending, setBookmarkPending] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -71,6 +72,11 @@ export function ChapterView({
       if (e.key === "?") {
         e.preventDefault();
         setShortcutsOpen(true);
+        return;
+      }
+      if (e.key.toLowerCase() === "f" && window.matchMedia("(min-width: 768px)").matches) {
+        e.preventDefault();
+        setFocusMode((v) => !v);
         return;
       }
       if (e.key === "ArrowUp" || e.key === "ArrowDown") {
@@ -259,14 +265,39 @@ export function ChapterView({
           >
             <Keyboard className="h-4 w-4" />
           </Button>
+          {pdfUrl && (
+            <a
+              href={pdfUrl}
+              download
+              target="_blank"
+              rel="noreferrer"
+              title="Télécharger le PDF"
+              aria-label="Télécharger le PDF"
+              className="hidden h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-foreground-muted hover:bg-surface-muted hover:text-foreground sm:inline-flex"
+            >
+              <Download className="h-4 w-4" />
+            </a>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden md:inline-flex"
+            onClick={() => setFocusMode((v) => !v)}
+            aria-label={focusMode ? "Quitter le mode lecture" : "Mode lecture (masquer les panneaux)"}
+            title={focusMode ? "Quitter le mode lecture" : "Mode lecture"}
+          >
+            {focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </Button>
           <Button variant="secondary" size="sm" className="md:hidden" onClick={() => setPdfModalOpen(true)}>
             <FileText className="h-3.5 w-3.5" /> PDF
           </Button>
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 gap-4 lg:grid lg:grid-cols-[220px_1fr_1fr] lg:overflow-hidden">
-        <div className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 print:hidden lg:mx-0 lg:mb-0 lg:flex-col lg:overflow-y-auto lg:overflow-x-visible lg:rounded-[var(--radius-lg)] lg:border lg:border-border lg:bg-surface lg:p-2 lg:px-2 lg:pb-2">
+      <div className={`min-h-0 flex-1 gap-4 lg:grid lg:overflow-hidden ${focusMode ? "lg:grid-cols-1" : "lg:grid-cols-[220px_1fr_1fr]"}`}>
+        <div
+          className={`-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 print:hidden lg:mx-0 lg:mb-0 lg:flex-col lg:overflow-y-auto lg:overflow-x-visible lg:rounded-[var(--radius-lg)] lg:border lg:border-border lg:bg-surface lg:p-2 lg:px-2 lg:pb-2 ${focusMode ? "hidden" : ""}`}
+        >
           {withFiche.map((sub) => (
             <button
               key={sub.id}
@@ -278,6 +309,7 @@ export function ChapterView({
                   : "bg-surface-muted text-foreground-muted lg:bg-transparent lg:hover:bg-surface-muted"
               }`}
             >
+              {bookmarks.has(sub.id) && <Star className="mr-1 inline h-3 w-3 fill-accent text-accent" />}
               {sub.name}
             </button>
           ))}
@@ -286,8 +318,8 @@ export function ChapterView({
         {/* Content + PDF: side by side from the md (tablet) breakpoint up, so
             tablets get a real reading view instead of inheriting the mobile
             stack or squeezing into the desktop's 3-column layout. */}
-        <div className="min-h-0 gap-4 md:grid md:grid-cols-2 lg:contents">
-          <div className="relative min-h-0">
+        <div className={`min-h-0 gap-4 md:grid lg:contents ${focusMode ? "md:grid-cols-1" : "md:grid-cols-2"}`}>
+          <div className={`relative min-h-0 ${focusMode ? "md:mx-auto md:w-full md:max-w-3xl" : ""}`}>
             <div className="absolute inset-x-0 top-0 z-10 h-0.5 overflow-hidden rounded-t-[var(--radius-lg)] print:hidden">
               <div className="h-full bg-primary transition-[width]" style={{ width: `${scrollProgress}%` }} />
             </div>
@@ -312,7 +344,9 @@ export function ChapterView({
             </div>
           </div>
 
-          <div className="hidden min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface print:hidden md:block">
+          <div
+            className={`min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface print:hidden ${focusMode ? "hidden" : "hidden md:block"}`}
+          >
             {pdfUrl ? (
               <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />
             ) : (
@@ -323,7 +357,18 @@ export function ChapterView({
       </div>
 
       {pdfModalOpen && (
-        <Modal title="Document source" onClose={() => setPdfModalOpen(false)} size="xl">
+        <Modal
+          title="Document source"
+          onClose={() => setPdfModalOpen(false)}
+          size="xl"
+          footer={
+            pdfUrl && (
+              <a href={pdfUrl} download target="_blank" rel="noreferrer" className="text-sm text-primary-strong underline">
+                Télécharger le PDF
+              </a>
+            )
+          }
+        >
           <div className="-m-4 h-[75vh]">
             {pdfUrl ? (
               <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />

@@ -16,6 +16,7 @@ const GROUPS: ShortcutGroup[] = [
     title: "Consultation d'une fiche",
     shortcuts: [
       { keys: ["↑", "↓"], description: "Notion précédente / suivante" },
+      { keys: ["F"], description: "Mode lecture (masquer les panneaux, tablette/PC)" },
       { keys: ["Glisser"], description: "Sur mobile : changer de notion" },
     ],
   },

@@ -86,6 +86,15 @@ export function FlashcardReviewer({
     });
   }
 
+  function handleRestart() {
+    setIndex(0);
+    setRevealed(false);
+    setDone(0);
+    setTally({ again: 0, good: 0 });
+    setStruggled([]);
+    setLastAction(null);
+  }
+
   function handleUndo() {
     if (!lastAction) return;
     startTransition(async () => {
@@ -205,6 +214,11 @@ export function FlashcardReviewer({
           <Link href="/apps/el-profesor">
             <Button>Retour à la bibliothèque</Button>
           </Link>
+          {done > 0 && (
+            <Button variant="secondary" onClick={handleRestart}>
+              Recommencer
+            </Button>
+          )}
           {undoButton}
         </div>
       </div>

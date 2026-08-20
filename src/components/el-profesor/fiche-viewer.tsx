@@ -219,6 +219,34 @@ function BlockNav({ blocks }: { blocks: FicheBlock[] }) {
   );
 }
 
+function CopyFicheButton({ title, summary, blocks }: { title: string; summary?: string; blocks: FicheBlock[] }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    const parts = [title, summary, ...blocks.map((b) => `${BLOCK_META[b.blockType].label}\n${getBlockPlainText(b)}`)];
+    navigator.clipboard
+      .writeText(parts.filter(Boolean).join("\n\n"))
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {});
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="flex shrink-0 items-center gap-1 text-xs text-foreground-subtle hover:text-primary-strong"
+      aria-label="Copier le texte de la fiche"
+      title="Copier tout le texte de la fiche"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? "Copié" : "Copier la fiche"}
+    </button>
+  );
+}
+
 export function FicheViewer({
   title,
   summary,
@@ -234,7 +262,10 @@ export function FicheViewer({
 }) {
   return (
     <div>
-      <h3 className="font-serif-display text-xl font-medium text-foreground">{title}</h3>
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="font-serif-display text-xl font-medium text-foreground">{title}</h3>
+        <CopyFicheButton title={title} summary={summary} blocks={blocks} />
+      </div>
       {summary && <p className={`mt-1 text-foreground-subtle ${SUMMARY_TEXT_SIZE[fontScale]}`}>{summary}</p>}
       <BlockNav blocks={blocks} />
       <div className="mt-4 space-y-4">

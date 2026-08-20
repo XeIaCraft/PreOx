@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star } from "lucide-react";
+import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getDailyGoal, setDailyGoal } from "@/lib/el-profesor/local-prefs";
 import type { ReviewActivitySummary, BookmarkedEntity } from "@/lib/el-profesor/dal";
@@ -188,6 +188,18 @@ export function LearningWidgets({
   const activeDays = last7.filter((d) => d.count > 0).length;
   const todayCount = activity.last12Weeks[activity.last12Weeks.length - 1]?.count ?? 0;
 
+  function handleExportActivity() {
+    const header = ["Date", "Cartes révisées"];
+    const rows = activity.last12Weeks.map((d) => [d.date, String(d.count)]);
+    const csv = [header, ...rows].map((row) => row.map((v) => `"${v.replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "el-profesor-activite.csv";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
   return (
     <div className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -204,6 +216,15 @@ export function LearningWidgets({
         </div>
         <DailyGoalRing todayCount={todayCount} />
         <ActivityHeatmap days={activity.last12Weeks} />
+        <button
+          type="button"
+          onClick={handleExportActivity}
+          title="Exporter mon activité en CSV"
+          aria-label="Exporter mon activité en CSV"
+          className="rounded p-1.5 text-foreground-subtle hover:bg-surface-muted hover:text-foreground"
+        >
+          <Download className="h-4 w-4" />
+        </button>
       </div>
 
       {weekCount > 0 && (
