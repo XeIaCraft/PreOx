@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Link2 } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Link2, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -12,6 +12,7 @@ import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
+import { toggleBookmark } from "@/app/apps/el-profesor/actions/bookmarks";
 import { getLastSubEntity, setLastSubEntity, setLastChapter, getFontScale, setFontScale, type FontScale } from "@/lib/el-profesor/local-prefs";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
 import type { Citation } from "@/lib/el-profesor/types";
@@ -21,11 +22,13 @@ export function ChapterView({
   chapterTitle,
   subEntities,
   initialEntityId,
+  bookmarkedIds,
 }: {
   chapterId: string;
   chapterTitle: string;
   subEntities: SubEntityWithFiche[];
   initialEntityId?: string;
+  bookmarkedIds?: string[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -46,6 +49,8 @@ export function ChapterView({
   const [searchOpen, setSearchOpen] = useState(false);
   const [fontScale, setFontScaleState] = useState<FontScale>(() => getFontScale() ?? "md");
   const [scrollProgress, setScrollProgress] = useState(0);
+  const [bookmarks, setBookmarks] = useState(() => new Set(bookmarkedIds ?? []));
+  const [bookmarkPending, setBookmarkPending] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -132,6 +137,31 @@ export function ChapterView({
     setScrollProgress(max > 0 ? Math.min(100, (el.scrollTop / max) * 100) : 0);
   }
 
+  function handleToggleBookmark() {
+    if (!selectedId || bookmarkPending) return;
+    const wasBookmarked = bookmarks.has(selectedId);
+    setBookmarks((prev) => {
+      const next = new Set(prev);
+      if (wasBookmarked) next.delete(selectedId);
+      else next.add(selectedId);
+      return next;
+    });
+    setBookmarkPending(true);
+    toggleBookmark(selectedId)
+      .then((result) => {
+        if (result.error) {
+          toast(result.error, { variant: "error" });
+          setBookmarks((prev) => {
+            const next = new Set(prev);
+            if (wasBookmarked) next.add(selectedId);
+            else next.delete(selectedId);
+            return next;
+          });
+        }
+      })
+      .finally(() => setBookmarkPending(false));
+  }
+
   function handleCopyLink() {
     const url = `${window.location.origin}/apps/el-profesor/chapters/${chapterId}${selectedId ? `?entity=${selectedId}` : ""}`;
     navigator.clipboard
@@ -186,6 +216,16 @@ export function ChapterView({
               <Plus className="h-3 w-3" />
             </Button>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleToggleBookmark}
+            disabled={!selectedId}
+            aria-label={selectedId && bookmarks.has(selectedId) ? "Retirer des favoris" : "Ajouter aux favoris"}
+            title={selectedId && bookmarks.has(selectedId) ? "Retirer des favoris" : "Ajouter aux favoris"}
+          >
+            <Star className={`h-4 w-4 ${selectedId && bookmarks.has(selectedId) ? "fill-accent text-accent" : ""}`} />
+          </Button>
           <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)} aria-label="Rechercher dans la bibliothèque">
             <Search className="h-4 w-4" />
           </Button>

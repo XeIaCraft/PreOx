@@ -261,6 +261,13 @@ export type ElProfesorSettingsRow = {
   updated_at: string;
 };
 
+export type ElProfesorBookmarkRow = {
+  id: string;
+  user_id: string;
+  sub_entity_id: string;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -393,6 +400,12 @@ export type Database = {
         Row: ElProfesorSettingsRow;
         Insert: Partial<ElProfesorSettingsRow>;
         Update: Partial<ElProfesorSettingsRow>;
+        Relationships: [];
+      };
+      el_profesor_bookmarks: {
+        Row: ElProfesorBookmarkRow;
+        Insert: Partial<ElProfesorBookmarkRow> & { user_id: string; sub_entity_id: string };
+        Update: Partial<ElProfesorBookmarkRow>;
         Relationships: [];
       };
     };

@@ -2,11 +2,37 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap } from "lucide-react";
+import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getDailyGoal, setDailyGoal } from "@/lib/el-profesor/local-prefs";
-import type { ReviewActivitySummary } from "@/lib/el-profesor/dal";
+import type { ReviewActivitySummary, BookmarkedEntity } from "@/lib/el-profesor/dal";
 import type { Flashcard } from "@/lib/el-profesor/types";
+
+/** Quick-access list of the user's bookmarked fiches, when there are any. */
+export function BookmarksList({ bookmarks }: { bookmarks: BookmarkedEntity[] }) {
+  if (bookmarks.length === 0) return null;
+  return (
+    <div className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
+      <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+        <Star className="h-3.5 w-3.5 fill-accent text-accent" /> Mes favoris
+      </p>
+      <div className="mt-2 space-y-1">
+        {bookmarks.map((b) => (
+          <Link
+            key={b.subEntityId}
+            href={`/apps/el-profesor/chapters/${b.chapterId}?entity=${b.subEntityId}`}
+            className="block rounded-[var(--radius-sm)] px-2 py-1.5 hover:bg-surface-muted"
+          >
+            <p className="text-sm font-medium text-foreground">{b.subEntityName}</p>
+            <p className="text-xs text-foreground-subtle">
+              {b.bookTitle} — {b.chapterTitle}
+            </p>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const GOAL_PRESETS = [10, 15, 20, 30];
 

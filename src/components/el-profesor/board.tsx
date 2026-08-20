@@ -15,11 +15,11 @@ import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog"
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
-import { LearningWidgets, DailyCard, LibraryStats } from "@/components/el-profesor/learning-widgets";
+import { LearningWidgets, DailyCard, LibraryStats, BookmarksList } from "@/components/el-profesor/learning-widgets";
 import { deleteBook, deleteChapter } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import { getLastChapter } from "@/lib/el-profesor/local-prefs";
-import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts, ReviewActivitySummary } from "@/lib/el-profesor/dal";
+import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts, ReviewActivitySummary, BookmarkedEntity } from "@/lib/el-profesor/dal";
 import type { ChapterStatus, Flashcard } from "@/lib/el-profesor/types";
 
 function MasteryBar({ counts }: { counts: { total: number; new: number; learning: number; acquired: number } }) {
@@ -92,6 +92,7 @@ export function ElProfesorBoard({
   difficultCount,
   activity,
   dailyCard,
+  bookmarks,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -103,6 +104,7 @@ export function ElProfesorBoard({
   difficultCount: number;
   activity: ReviewActivitySummary;
   dailyCard: Flashcard | null;
+  bookmarks: BookmarkedEntity[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -243,6 +245,8 @@ export function ElProfesorBoard({
       )}
 
       {dailyCard && <DailyCard card={dailyCard} />}
+
+      <BookmarksList bookmarks={bookmarks} />
 
       {books.length > 0 && (
         <LearningWidgets

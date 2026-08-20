@@ -117,6 +117,64 @@ export async function getOpenFlagsByTarget(targetIds: string[]): Promise<Record<
   return byTarget;
 }
 
+export interface BookmarkedEntity {
+  subEntityId: string;
+  subEntityName: string;
+  chapterId: string;
+  chapterTitle: string;
+  bookTitle: string;
+}
+
+/** Sub-entity ids the user has bookmarked — for showing a filled/outline star in the UI. */
+export async function getBookmarkedSubEntityIds(userId: string): Promise<Set<string>> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_bookmarks").select("sub_entity_id").eq("user_id", userId);
+  return new Set((data ?? []).map((row) => row.sub_entity_id));
+}
+
+/** Bookmarked sub-entities with enough context (book/chapter title) to render a quick-access list on the dashboard. */
+export async function getBookmarkedEntities(userId: string): Promise<BookmarkedEntity[]> {
+  const supabase = await createClient();
+  const { data: bookmarks } = await supabase
+    .from("el_profesor_bookmarks")
+    .select("sub_entity_id, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  const subEntityIds = (bookmarks ?? []).map((b) => b.sub_entity_id);
+  if (subEntityIds.length === 0) return [];
+
+  const { data: subEntities } = await supabase.from("el_profesor_sub_entities").select("id, name, chapter_id").in("id", subEntityIds);
+  const chapterIds = [...new Set((subEntities ?? []).map((s) => s.chapter_id))];
+  if (chapterIds.length === 0) return [];
+
+  const { data: chapters } = await supabase
+    .from("el_profesor_chapters")
+    .select("id, title, book_id")
+    .in("id", chapterIds)
+    .eq("status", "published");
+  const chapterById = new Map((chapters ?? []).map((c) => [c.id, c]));
+
+  const bookIds = [...new Set((chapters ?? []).map((c) => c.book_id))];
+  const { data: books } = bookIds.length > 0 ? await supabase.from("el_profesor_books").select("id, title").in("id", bookIds) : { data: [] };
+  const bookTitleById = new Map((books ?? []).map((b) => [b.id, b.title]));
+
+  const subEntityById = new Map((subEntities ?? []).map((s) => [s.id, s]));
+  const results: BookmarkedEntity[] = [];
+  for (const bookmark of bookmarks ?? []) {
+    const sub = subEntityById.get(bookmark.sub_entity_id);
+    const chapter = sub ? chapterById.get(sub.chapter_id) : undefined;
+    if (!sub || !chapter) continue; // chapter unpublished since bookmarking, or sub-entity deleted
+    results.push({
+      subEntityId: sub.id,
+      subEntityName: sub.name,
+      chapterId: chapter.id,
+      chapterTitle: chapter.title,
+      bookTitle: bookTitleById.get(chapter.book_id) ?? "",
+    });
+  }
+  return results;
+}
+
 function toReviewState(row: ElProfesorReviewStateRow): ReviewState {
   return {
     flashcardId: row.flashcard_id,
