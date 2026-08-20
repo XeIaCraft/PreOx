@@ -206,6 +206,8 @@ export type Preferences = {
   shopping_category_order?: string[];
   /** Auto-fetch a Pexels illustration on every AI generation (drafts, menu invité). Absent = enabled (legacy default). */
   auto_illustrate?: boolean;
+  /** Total weekly grocery budget (€); a banner warns when the planned week's cost exceeds it. Absent/null = no cap. */
+  weekly_budget_cap?: number | null;
 };
 
 export type GenerationRules = {

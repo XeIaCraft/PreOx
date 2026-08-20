@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -8,16 +8,18 @@ import { cn } from "@/lib/utils";
 import { addRecipe, importRecipe, importRecipeFromUrl } from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
 import { fileToBase64 } from "@/lib/client-file";
+import { findSimilarRecipe } from "@/lib/a-table/dedupe";
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
 interface AddRecipeDialogProps {
   existingTags?: string[];
+  existingRecipes?: { id: string; title: string }[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-export function AddRecipeDialog({ existingTags, onClose, onSaved }: AddRecipeDialogProps) {
+export function AddRecipeDialog({ existingTags, existingRecipes, onClose, onSaved }: AddRecipeDialogProps) {
   const { toast } = useToast();
   const [tab, setTab] = useState<"ai" | "manual">("ai");
   const [isPending, startTransition] = useTransition();
@@ -38,6 +40,11 @@ export function AddRecipeDialog({ existingTags, onClose, onSaved }: AddRecipeDia
   const [notes, setNotes] = useState("");
   const [tagsText, setTagsText] = useState("");
   const [pricePerServing, setPricePerServing] = useState("");
+
+  const similarRecipe = useMemo(
+    () => (existingRecipes ? findSimilarRecipe(title, existingRecipes) : null),
+    [title, existingRecipes]
+  );
 
   function handleImport() {
     if (!text.trim() && !photo) return;
@@ -200,6 +207,9 @@ export function AddRecipeDialog({ existingTags, onClose, onSaved }: AddRecipeDia
           <div className="space-y-1.5">
             <Label htmlFor="mr-title">Titre</Label>
             <Input id="mr-title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+            {similarRecipe && (
+              <p className="text-xs text-accent">Une recette similaire existe déjà : « {similarRecipe.title} ».</p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">

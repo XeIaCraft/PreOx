@@ -469,6 +469,15 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
         </div>
       </div>
 
+      {weekTotals.hasCost &&
+        data.settings.preferences.weekly_budget_cap != null &&
+        weekTotals.cost > data.settings.preferences.weekly_budget_cap && (
+          <div className="rounded-[var(--radius-md)] border border-danger/30 bg-danger-tint px-3 py-2 text-xs text-danger print:hidden">
+            Budget dépassé : {weekTotals.cost.toFixed(2)} € prévus cette semaine pour un plafond de{" "}
+            {data.settings.preferences.weekly_budget_cap.toFixed(2)} €.
+          </div>
+        )}
+
       {weekTotals.hasKcal && (data.settings.preferences.target_kcal_per_serving || weekTotals.macroPct) && (
         <div className="flex flex-wrap items-center gap-4 rounded-[var(--radius-md)] border border-border bg-surface-muted/50 px-3 py-2 text-xs text-foreground-muted print:hidden">
           {data.settings.preferences.target_kcal_per_serving && (
@@ -609,7 +618,9 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
         />
       )}
 
-      {modal?.type === "add" && <AddRecipeDialog existingTags={allTags} onClose={() => setModal(null)} onSaved={refresh} />}
+      {modal?.type === "add" && (
+        <AddRecipeDialog existingTags={allTags} existingRecipes={data.recipes} onClose={() => setModal(null)} onSaved={refresh} />
+      )}
 
       {modal?.type === "add_temp" && <TempIngredientDialog ingredient={null} onClose={() => setModal(null)} onSaved={refresh} />}
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { RotateCcw, Printer, Copy, Plus, X, ChevronUp, ChevronDown, ListOrdered } from "lucide-react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { RotateCcw, Printer, Copy, Plus, X, ChevronUp, ChevronDown, ListOrdered, WifiOff } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,27 @@ interface ShoppingDialogProps {
 }
 
 const DEFAULT_CATEGORIES = [...SHOPPING_CATEGORIES, SHOPPING_OTHER_CATEGORY];
+// Offline resilience: pending toggles are stored as the *desired* boolean per key
+// (not a replay log), so repeated offline toggles of the same item collapse
+// naturally instead of double-flipping once back online.
+const PENDING_KEY = "preox-a-table-shopping-pending";
+
+function readPending(): Record<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(PENDING_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePending(pending: Record<string, boolean>) {
+  try {
+    window.localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+  } catch {
+    // best-effort
+  }
+}
 
 export function ShoppingDialog({
   mealCards,
@@ -50,6 +71,48 @@ export function ShoppingDialog({
   const [order, setOrder] = useState<string[]>(
     () => categoryOrder?.length ? categoryOrder : DEFAULT_CATEGORIES.map((c) => c.key)
   );
+  const [pendingChecks, setPendingChecks] = useState<Record<string, boolean>>(() => readPending());
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+
+  const effectiveChecked = useMemo(() => ({ ...checked, ...pendingChecks }), [checked, pendingChecks]);
+
+  async function syncPending(pending: Record<string, boolean>) {
+    const keys = Object.keys(pending);
+    if (keys.length === 0) return;
+    let anySucceeded = false;
+    const stillPending = { ...pending };
+    for (const key of keys) {
+      try {
+        await toggleShoppingChecked(key);
+        delete stillPending[key];
+        anySucceeded = true;
+      } catch {
+        // stays pending, retried on the next reconnect
+      }
+    }
+    setPendingChecks(stillPending);
+    writePending(stillPending);
+    if (anySucceeded) onSaved();
+  }
+
+  useEffect(() => {
+    function handleOnline() {
+      setIsOnline(true);
+      void syncPending(readPending());
+    }
+    function handleOffline() {
+      setIsOnline(false);
+    }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    const timeout = navigator.onLine ? setTimeout(() => syncPending(readPending()), 0) : null;
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      if (timeout) clearTimeout(timeout);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const CATEGORY_ORDER = useMemo(() => {
     const byKey = new Map(DEFAULT_CATEGORIES.map((c) => [c.key, c]));
@@ -73,8 +136,8 @@ export function ShoppingDialog({
   }
 
   const items = useMemo(
-    () => buildShoppingList(mealCards, recipesById, guestMenus, appetite, exportedRecipeIds, checked, manualItems),
-    [mealCards, recipesById, guestMenus, appetite, exportedRecipeIds, checked, manualItems]
+    () => buildShoppingList(mealCards, recipesById, guestMenus, appetite, exportedRecipeIds, effectiveChecked, manualItems),
+    [mealCards, recipesById, guestMenus, appetite, exportedRecipeIds, effectiveChecked, manualItems]
   );
 
   const manualKeyByAggregateKey = useMemo(() => {
@@ -87,9 +150,27 @@ export function ShoppingDialog({
   const checkedItems = items.filter((i) => i.checked);
 
   function handleToggle(key: string) {
+    const desired = !effectiveChecked[key];
+    setPendingChecks((prev) => {
+      const next = { ...prev, [key]: desired };
+      if (checked[key] === desired) delete next[key];
+      writePending(next);
+      return next;
+    });
+    if (!navigator.onLine) return;
     startTransition(async () => {
-      await toggleShoppingChecked(key);
-      onSaved();
+      try {
+        await toggleShoppingChecked(key);
+        setPendingChecks((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          writePending(next);
+          return next;
+        });
+        onSaved();
+      } catch {
+        toast("Article en attente de synchronisation (hors-ligne).", { variant: "error" });
+      }
     });
   }
 
@@ -162,6 +243,17 @@ export function ShoppingDialog({
         </>
       }
     >
+      {!isOnline && (
+        <div className="mb-4 flex items-center gap-2 rounded-[var(--radius-sm)] border border-accent/30 bg-accent-tint px-3 py-2 text-xs text-accent print:hidden">
+          <WifiOff className="h-3.5 w-3.5 shrink-0" />
+          Mode hors-ligne — vos coches restent enregistrées ici et se synchroniseront au retour du réseau.
+        </div>
+      )}
+      {isOnline && Object.keys(pendingChecks).length > 0 && (
+        <div className="mb-4 flex items-center gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-muted/50 px-3 py-2 text-xs text-foreground-subtle print:hidden">
+          Synchronisation de {Object.keys(pendingChecks).length} article(s) en attente…
+        </div>
+      )}
       <details className="mb-4 print:hidden">
         <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-foreground-subtle">
           <ListOrdered className="h-3.5 w-3.5" /> Réorganiser les rayons (ordre du magasin)

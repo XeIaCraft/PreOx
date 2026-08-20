@@ -188,6 +188,18 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
+              <Label>Budget courses / semaine (€)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={prefs.weekly_budget_cap ?? ""}
+                onChange={(e) => setPref("weekly_budget_cap", e.target.value ? Number(e.target.value) : null)}
+                placeholder="Aucun plafond"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
               <Label>Temps de cuisson</Label>
               <Select value={prefs.time_profile} onChange={(e) => setPref("time_profile", e.target.value as Preferences["time_profile"])}>
                 {Object.entries(TIME_PROFILE_LABELS).map(([value, label]) => (
