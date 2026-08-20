@@ -8,6 +8,7 @@ import {
   getGlobalDueQueue,
   getDifficultQueue,
   getReviewActivitySummary,
+  getDailyCard,
 } from "@/lib/el-profesor/dal";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { ToastProvider } from "@/components/ui/toast";
@@ -20,7 +21,7 @@ export default async function ElProfesorPage() {
   // admins need visibility into the pipeline's in-progress state.
   const books = isAdmin ? rawBooks : rawBooks.map((b) => ({ ...b, chapters: b.chapters.filter((c) => c.status === "published") }));
   const allChapters = books.flatMap((b) => b.chapters);
-  const [dueCounts, needsReviewCounts, masteryCounts, geminiModel, globalDue, difficult, activity] = await Promise.all([
+  const [dueCounts, needsReviewCounts, masteryCounts, geminiModel, globalDue, difficult, activity, dailyCard] = await Promise.all([
     getDueCountsByChapter(profile.id, allChapters),
     isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
     getMasteryCountsByChapter(profile.id, allChapters),
@@ -28,6 +29,7 @@ export default async function ElProfesorPage() {
     getGlobalDueQueue(profile.id, allChapters),
     getDifficultQueue(profile.id, allChapters),
     getReviewActivitySummary(profile.id),
+    getDailyCard(profile.id, allChapters),
   ]);
 
   return (
@@ -42,6 +44,7 @@ export default async function ElProfesorPage() {
         globalDueCount={globalDue.length}
         difficultCount={difficult.length}
         activity={activity}
+        dailyCard={dailyCard}
       />
     </ToastProvider>
   );

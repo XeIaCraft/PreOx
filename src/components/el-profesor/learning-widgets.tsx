@@ -1,9 +1,38 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck } from "lucide-react";
+import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ReviewActivitySummary } from "@/lib/el-profesor/dal";
+import type { Flashcard } from "@/lib/el-profesor/types";
+
+/**
+ * Passive daily refresher: one already-mastered card, click to check your
+ * recall. Purely for a light retrieval-practice nudge on the dashboard —
+ * doesn't touch FSRS scheduling, so there's nothing to grade here.
+ */
+export function DailyCard({ card }: { card: Flashcard }) {
+  const [revealed, setRevealed] = useState(false);
+
+  return (
+    <button
+      type="button"
+      onClick={() => setRevealed((r) => !r)}
+      className="mt-6 block w-full rounded-[var(--radius-lg)] border border-accent/30 bg-accent-tint px-4 py-3.5 text-left"
+    >
+      <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-accent">
+        <Sparkles className="h-3 w-3" /> Carte du jour
+      </p>
+      <p className="mt-1.5 text-sm text-foreground">{card.front.text}</p>
+      {revealed ? (
+        <p className="mt-2 border-t border-accent/20 pt-2 text-sm font-medium text-accent">{card.back.text}</p>
+      ) : (
+        <p className="mt-1 text-xs text-foreground-subtle">Touchez pour voir la réponse</p>
+      )}
+    </button>
+  );
+}
 
 function ActivityHeatmap({ days }: { days: { date: string; count: number }[] }) {
   // Oldest-first list -> 12 columns (weeks) x 7 rows (days), left to right.

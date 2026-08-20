@@ -285,6 +285,39 @@ export async function getDifficultQueue(userId: string, chapters: Chapter[]): Pr
   return shuffle(perChapter.flat());
 }
 
+/**
+ * "Carte du jour": one already-mastered flashcard resurfaced as a passive
+ * daily refresher on the dashboard — a light retrieval-practice nudge that
+ * doesn't require starting a full session. Deterministic per UTC day (same
+ * card all day, a different one tomorrow) rather than re-randomized on
+ * every page load, and falls back to any published card while nothing is
+ * mastered yet.
+ */
+export async function getDailyCard(userId: string, chapters: Chapter[]): Promise<Flashcard | null> {
+  const supabase = await createClient();
+  const published = chapters.filter((c) => c.status === "published");
+
+  const perChapter = await Promise.all(published.map((c) => getChapterContent(c.id, false)));
+  const all = perChapter.flat().flatMap((s) => s.fiche?.flashcards ?? []);
+  if (all.length === 0) return null;
+
+  const { data: states } = await supabase
+    .from("el_profesor_review_state")
+    .select("flashcard_id")
+    .eq("user_id", userId)
+    .eq("state", "review")
+    .in(
+      "flashcard_id",
+      all.map((c) => c.id)
+    );
+  const masteredIds = new Set((states ?? []).map((s) => s.flashcard_id));
+  const pool = all.filter((c) => masteredIds.has(c.id));
+  const source = pool.length > 0 ? pool : all;
+
+  const dayIndex = Math.floor(Date.now() / 86_400_000);
+  return source[dayIndex % source.length];
+}
+
 export interface ReviewActivitySummary {
   currentStreak: number;
   longestStreak: number;
