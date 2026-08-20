@@ -19,6 +19,10 @@ export type Profile = {
   pinned_app_ids: string[];
   notify_email_digest: boolean;
   notify_push: boolean;
+  accent_theme: "forest" | "slate";
+  app_order: string[];
+  density: "comfortable" | "compact";
+  hidden_widgets: string[];
   created_at: string;
   updated_at: string;
 };

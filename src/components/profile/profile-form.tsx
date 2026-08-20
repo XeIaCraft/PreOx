@@ -3,12 +3,13 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Upload, User } from "lucide-react";
+import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { updateFullName, uploadAvatar } from "@/app/actions/profile";
-import { fileToBase64 } from "@/lib/client-file";
+import { InitialsAvatar } from "@/components/hub/initials-avatar";
+import { AvatarCropDialog } from "@/components/profile/avatar-crop-dialog";
 import type { Profile } from "@/lib/supabase/types";
 
 const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
@@ -18,6 +19,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [croppingFile, setCroppingFile] = useState<File | null>(null);
   const [fullName, setFullName] = useState(profile.full_name ?? "");
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -46,9 +48,13 @@ export function ProfileForm({ profile }: { profile: Profile }) {
       toast("Photo trop lourde (4 Mo maximum).", { variant: "error" });
       return;
     }
+    setCroppingFile(file);
+  }
+
+  function handleCropConfirm(base64: string, mimeType: string) {
+    setCroppingFile(null);
     setUploadingAvatar(true);
-    fileToBase64(file)
-      .then((base64) => uploadAvatar(base64, file.type))
+    uploadAvatar(base64, mimeType)
       .then((result) => {
         if (result.error) toast(result.error, { variant: "error" });
         else refresh();
@@ -66,7 +72,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
           {profile.avatar_url ? (
             <Image src={profile.avatar_url} alt="" fill sizes="64px" className="object-cover" />
           ) : (
-            <User className="h-7 w-7" />
+            <InitialsAvatar userId={profile.id} name={profile.full_name} email={profile.email} className="h-16 w-16 text-lg" />
           )}
         </span>
         <div>
@@ -96,6 +102,10 @@ export function ProfileForm({ profile }: { profile: Profile }) {
           </Button>
         </div>
       </div>
+
+      {croppingFile && (
+        <AvatarCropDialog file={croppingFile} onCancel={() => setCroppingFile(null)} onConfirm={handleCropConfirm} />
+      )}
     </div>
   );
 }

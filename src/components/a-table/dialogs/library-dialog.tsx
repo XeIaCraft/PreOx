@@ -189,7 +189,7 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
       ) : (
         <ul className="divide-y divide-border">
           {filtered.map((recipe) => (
-            <li key={recipe.id} className="flex items-center justify-between gap-3 py-2.5">
+            <li key={recipe.id} className="flex items-center justify-between gap-3 py-[var(--row-py)]">
               <button type="button" onClick={() => onOpenDetail(recipe.id)} className="flex-1 text-left">
                 <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                   {recipe.is_favorite && <Star className="h-3.5 w-3.5 fill-accent text-accent" />}

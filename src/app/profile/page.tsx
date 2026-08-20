@@ -7,6 +7,7 @@ import { AccountDataSection } from "@/components/profile/account-data-section";
 import { SessionsSection } from "@/components/profile/sessions-section";
 import { MfaSection } from "@/components/profile/mfa-section";
 import { NotificationPrefsSection } from "@/components/profile/notification-prefs-section";
+import { PersonalizationSection } from "@/components/profile/personalization-section";
 import { SetPasswordForm } from "@/components/auth/set-password-form";
 import { ToastProvider } from "@/components/ui/toast";
 import { listMySessions, listMyLoginHistory } from "@/app/actions/security";
@@ -39,6 +40,8 @@ export default async function ProfilePage() {
             <SetPasswordForm next="/profile" />
           </div>
         </div>
+
+        <PersonalizationSection accentTheme={profile.accent_theme} density={profile.density} hiddenWidgets={profile.hidden_widgets} />
 
         <NotificationPrefsSection notifyEmailDigest={profile.notify_email_digest} notifyPush={profile.notify_push} />
 

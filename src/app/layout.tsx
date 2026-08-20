@@ -3,13 +3,17 @@ import { Inter, Fraunces } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 
-// Applies a stored explicit theme choice (see ThemeToggle) before first
-// paint, so a returning user with data-theme="dark" saved never sees a
-// flash of the light theme while the page hydrates.
+// Applies stored theme/accent/density choices (see ThemeToggle and the
+// Personnalisation section in Profil) before first paint, so a returning
+// user never sees a flash of the defaults while the page hydrates.
 const THEME_INIT_SCRIPT = `
 try {
   var t = localStorage.getItem("preox-theme");
   if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  var a = localStorage.getItem("preox-accent");
+  if (a === "slate") document.documentElement.setAttribute("data-accent", a);
+  var d = localStorage.getItem("preox-density");
+  if (d === "compact") document.documentElement.setAttribute("data-density", d);
 } catch (e) {}
 `;
 

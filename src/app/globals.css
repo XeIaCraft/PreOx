@@ -31,6 +31,37 @@
   --radius-xl: 1.5rem;
 
   --shadow-color: 20 30% 10%;
+
+  /* List row density (Profil → Personnalisation). Consumed as py-[var(--row-py)]
+     on the hub's highest-traffic lists — see the "density" personalization
+     item for which surfaces currently opt in. */
+  --row-py: 0.875rem;
+}
+
+/* Accent theme (Profil → Personnalisation) — an alternate primary palette,
+   orthogonal to light/dark. Default ("forest") needs no override; "slate"
+   swaps just the primary hues, light and dark alike, everything else
+   (background/surface/border/accent-gold/danger/success) stays shared. */
+[data-accent="slate"] {
+  --primary: #3b5a72;
+  --primary-strong: #294053;
+  --primary-tint: #e3ebf0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])[data-accent="slate"] {
+    --primary: #8fb2cc;
+    --primary-strong: #b7d2e4;
+    --primary-tint: #1a2732;
+  }
+}
+:root[data-theme="dark"][data-accent="slate"] {
+  --primary: #8fb2cc;
+  --primary-strong: #b7d2e4;
+  --primary-tint: #1a2732;
+}
+
+:root[data-density="compact"] {
+  --row-py: 0.5rem;
 }
 
 @theme inline {

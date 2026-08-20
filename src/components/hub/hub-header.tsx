@@ -1,7 +1,8 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ShieldCheck, LogOut, User } from "lucide-react";
+import { ShieldCheck, LogOut } from "lucide-react";
 import { Logo } from "@/components/logo";
+import { InitialsAvatar } from "@/components/hub/initials-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/hub/theme-toggle";
@@ -42,7 +43,7 @@ export function HubHeader({ profile, section }: { profile: Profile; section?: st
               {profile.avatar_url ? (
                 <Image src={profile.avatar_url} alt="" fill sizes="32px" className="object-cover" />
               ) : (
-                <User className="h-4 w-4" />
+                <InitialsAvatar userId={profile.id} name={profile.full_name} email={profile.email} className="h-8 w-8 text-xs" />
               )}
             </span>
             <div className="hidden min-w-0 text-right leading-tight lg:block">

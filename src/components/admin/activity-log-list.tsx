@@ -41,7 +41,7 @@ export function ActivityLogList({ entries }: { entries: ActivityEntryView[] }) {
       ) : (
         <ul className="mt-2 divide-y divide-border">
           {entries.map((entry) => (
-            <li key={entry.id} className="px-5 py-3 text-sm">
+            <li key={entry.id} className="px-5 py-[var(--row-py)] text-sm">
               <span className="font-medium text-foreground">{entry.actorLabel}</span>{" "}
               <span className="text-foreground-muted">{entry.actionLabel}</span>{" "}
               {entry.targetLabel && <span className="font-medium text-foreground">{entry.targetLabel}</span>}

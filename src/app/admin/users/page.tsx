@@ -53,21 +53,21 @@ export default async function AdminUsersPage() {
             <tbody className="divide-y divide-border">
               {(users ?? []).map((user) => (
                 <tr key={user.id} className="transition-colors hover:bg-surface-muted/60">
-                  <td className="px-5 py-3.5">
+                  <td className="px-5 py-[var(--row-py)]">
                     <Link href={`/admin/users/${user.id}`} className="block">
                       <p className="font-medium text-foreground">{user.full_name || "—"}</p>
                       <p className="text-xs text-foreground-subtle">{user.email}</p>
                     </Link>
                   </td>
-                  <td className="px-5 py-3.5">
+                  <td className="px-5 py-[var(--row-py)]">
                     <Badge variant={user.role === "admin" ? "accent" : "neutral"}>
                       {user.role === "admin" ? "Administrateur" : "Utilisateur"}
                     </Badge>
                   </td>
-                  <td className="px-5 py-3.5 text-foreground-muted">
+                  <td className="px-5 py-[var(--row-py)] text-foreground-muted">
                     {accessCounts.get(user.id) ?? 0}
                   </td>
-                  <td className="px-5 py-3.5 text-foreground-subtle">
+                  <td className="px-5 py-[var(--row-py)] text-foreground-subtle">
                     {new Date(user.created_at).toLocaleDateString("fr-FR")}
                   </td>
                 </tr>

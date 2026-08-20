@@ -3,6 +3,8 @@ import Link from "next/link";
 import { getCurrentProfile } from "@/lib/auth/dal";
 import { getAppsForProfile } from "@/lib/apps";
 import { AppCard } from "@/components/hub/app-card";
+import { AppReorder } from "@/components/hub/app-reorder";
+import { DismissibleWidget } from "@/components/hub/dismissible-widget";
 import { UnifiedSearch } from "@/components/hub/unified-search";
 import { listRecentApps } from "@/app/actions/discovery";
 import { createClient } from "@/lib/supabase/server";
@@ -19,11 +21,16 @@ export default async function AppsPage() {
   const hasATable = apps.some((app) => app.slug === "a-table" && app.hasAccess);
 
   const pinnedIds = new Set(profile.pinned_app_ids);
+  const orderIndex = new Map(profile.app_order.map((id, i) => [id, i]));
   const sortedApps = [...apps].sort((a, b) => {
     const aPinned = pinnedIds.has(a.id) ? 0 : 1;
     const bPinned = pinnedIds.has(b.id) ? 0 : 1;
-    return aPinned - bPinned;
+    if (aPinned !== bPinned) return aPinned - bPinned;
+    const aOrder = orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    return aOrder - bOrder;
   });
+  const hiddenWidgets = new Set(profile.hidden_widgets);
 
   const supabase = await createClient();
   const [recent, changelogResult] = await Promise.all([
@@ -78,66 +85,74 @@ export default async function AppsPage() {
         <UnifiedSearch hasElProfesor={hasElProfesor} hasATable={hasATable} />
       </div>
 
-      {todoItems.length > 0 && (
-        <div>
-          <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground-muted">
-            <ListChecks className="h-3.5 w-3.5" /> À traiter
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {todoItems.map((item) => (
-              <Link
-                key={item.key}
-                href={item.href}
-                className="flex items-center gap-2 rounded-full border border-accent/30 bg-accent-tint px-3 py-1.5 text-sm text-accent hover:border-accent/50"
-              >
-                {item.icon}
-                {item.label}
-              </Link>
-            ))}
+      {todoItems.length > 0 && !hiddenWidgets.has("todo") && (
+        <DismissibleWidget widgetKey="todo">
+          <div>
+            <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground-muted">
+              <ListChecks className="h-3.5 w-3.5" /> À traiter
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {todoItems.map((item) => (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  className="flex items-center gap-2 rounded-full border border-accent/30 bg-accent-tint px-3 py-1.5 text-sm text-accent hover:border-accent/50"
+                >
+                  {item.icon}
+                  {item.label}
+                </Link>
+              ))}
+            </div>
           </div>
-        </div>
+        </DismissibleWidget>
       )}
 
-      {changelog.length > 0 && (
-        <div className="rounded-[var(--radius-lg)] border border-border bg-surface-muted/50 p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-foreground-subtle">Nouveautés</p>
-            <Link href="/apps/nouveautes" className="text-xs text-primary-strong hover:underline">
-              Tout voir
-            </Link>
+      {changelog.length > 0 && !hiddenWidgets.has("changelog") && (
+        <DismissibleWidget widgetKey="changelog">
+          <div className="rounded-[var(--radius-lg)] border border-border bg-surface-muted/50 p-4">
+            <div className="flex items-center justify-between pr-6">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground-subtle">Nouveautés</p>
+              <Link href="/apps/nouveautes" className="text-xs text-primary-strong hover:underline">
+                Tout voir
+              </Link>
+            </div>
+            <ul className="mt-2 space-y-1.5">
+              {changelog.map((entry) => (
+                <li key={entry.id} className="text-sm">
+                  <span className="font-medium text-foreground">{entry.title}</span>{" "}
+                  <span className="text-foreground-subtle">
+                    — {new Date(entry.published_at).toLocaleDateString("fr-FR")}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
-          <ul className="mt-2 space-y-1.5">
-            {changelog.map((entry) => (
-              <li key={entry.id} className="text-sm">
-                <span className="font-medium text-foreground">{entry.title}</span>{" "}
-                <span className="text-foreground-subtle">
-                  — {new Date(entry.published_at).toLocaleDateString("fr-FR")}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        </DismissibleWidget>
       )}
 
-      {recentApps.length > 0 && (
-        <div>
-          <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground-muted">
-            <Clock className="h-3.5 w-3.5" /> Récemment consulté
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {recentApps.map((app) => (
-              <Link
-                key={app.id}
-                href={`/apps/${app.slug}`}
-                className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-foreground-muted hover:border-primary/30 hover:text-foreground"
-              >
-                {renderIcon(app.icon, "h-3.5 w-3.5")}
-                {app.name}
-              </Link>
-            ))}
+      {recentApps.length > 0 && !hiddenWidgets.has("recent") && (
+        <DismissibleWidget widgetKey="recent">
+          <div>
+            <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground-muted">
+              <Clock className="h-3.5 w-3.5" /> Récemment consulté
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {recentApps.map((app) => (
+                <Link
+                  key={app.id}
+                  href={`/apps/${app.slug}`}
+                  className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-foreground-muted hover:border-primary/30 hover:text-foreground"
+                >
+                  {renderIcon(app.icon, "h-3.5 w-3.5")}
+                  {app.name}
+                </Link>
+              ))}
+            </div>
           </div>
-        </div>
+        </DismissibleWidget>
       )}
+
+      {accessibleCount > 1 && <AppReorder apps={sortedApps.filter((a) => a.hasAccess)} />}
 
       {apps.length === 0 ? (
         <div className="rounded-[var(--radius-lg)] border border-dashed border-border-strong p-10 text-center text-foreground-muted">

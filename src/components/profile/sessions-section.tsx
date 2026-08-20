@@ -59,7 +59,7 @@ export function SessionsSection({ sessions, history }: { sessions: MySession[]; 
 
       <ul className="mt-4 divide-y divide-border">
         {sessions.map((s) => (
-          <li key={s.id} className="flex items-center justify-between gap-4 py-3">
+          <li key={s.id} className="flex items-center justify-between gap-4 py-[var(--row-py)]">
             <div className="flex min-w-0 items-center gap-3">
               <Monitor className="h-4 w-4 shrink-0 text-foreground-subtle" />
               <div className="min-w-0">
