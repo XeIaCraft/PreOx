@@ -10,20 +10,31 @@ const BLOCK_TYPES_DOC = `
 - "texte_libre" : tout contenu important qui ne rentre dans aucune des catégories ci-dessus — jamais un prétexte pour perdre de l'information, sert de filet de sécurité
 `.trim();
 
-const FLASHCARD_AXES_DOC = `
-- mécanisme d'action / physiopathologie
-- formule(s), posologie(s), valeur(s) numérique(s) ou seuil(s) à retenir par cœur
-- indication(s) précise(s)
-- contre-indication(s) et précaution(s) d'emploi
-- distinction / diagnostic différentiel avec une entité proche ou souvent confondue
-- particularité clinique ou piège fréquent propre à cette sous-entité
+const EXPERT_READER_CONTEXT = `
+Le lecteur est un(e) anesthésiste-réanimateur belge visant une maîtrise de niveau expert (registre des référentiels européens UEMS/EBA/EDAIC), pas une première lecture d'étudiant. Calibre systématiquement la profondeur du contenu — fiches ET flashcards — en conséquence : ce qui compte, c'est ce qui permet de reconnaître une situation, décider, agir et prioriser en clinique ou de trancher une distinction piégeuse à l'oral, pas seulement mémoriser une définition isolée.
+`.trim();
+
+const FLASHCARD_QUALITY_DOC = `
+Couverture : génère AUTANT DE FLASHCARDS QUE NÉCESSAIRE pour couvrir tout ce qui, dans les blocs déjà extraits, est réellement testable ou utile à la décision clinique — pas un nombre fixe, pas une seule carte générique par sous-entité. Une sous-entité riche et nuancée mérite beaucoup de cartes ; une sous-entité pauvre en mérite peu. N'invente rien pour atteindre un quota, et ne fusionne jamais deux faits distincts dans une carte vague — une carte = une idée testable et sans ambiguïté.
+
+Niveau attendu — des "items de maîtrise", pas du simple savoir : chaque fois que le contenu source le permet, préfère une question qui fait reconnaître, décider, agir ou prioriser plutôt qu'un pur rappel de définition. Angles à exploiter quand le texte les couvre réellement (liste d'exemples pour t'inspirer, pas une checklist à cocher une par une ni un minimum à atteindre) :
+- mécanisme / physiopathologie qui explique un effet ou une décision clinique
+- formule, posologie, seuil ou valeur critique à connaître par cœur
+- indication précise dans une situation clinique donnée
+- contre-indication ou précaution qui change concrètement la prise en charge
+- distinction avec une entité proche ou souvent confondue — piège de raisonnement classique
+- red flag ou signe qui ne doit jamais être manqué
+- conduite à tenir immédiate face à une situation décrite dans le texte
+- erreur classique, piège fréquent ou point qui fait la différence à l'oral
 `.trim();
 
 export function buildExtractionPrompt(chapterTitle: string): string {
   return `
 Tu es un assistant d'extraction pour du matériel pédagogique médical de haut niveau (anesthésie/médecine). Le document fourni est un chapitre de livre intitulé « ${chapterTitle} ». Certaines pages sont du texte natif propre, d'autres sont des scans/photos — lis-les comme des images si besoin.
 
-Objectif absolu : NE JAMAIS PERDRE D'INFORMATION IMPORTANTE. Un étudiant utilisera exclusivement ce que tu extrais pour réviser — tout ce que tu omets est perdu pour lui. En cas de doute sur l'importance d'une information, inclus-la plutôt que de l'omettre.
+${EXPERT_READER_CONTEXT}
+
+Objectif absolu : NE JAMAIS PERDRE D'INFORMATION IMPORTANTE. Le lecteur utilisera exclusivement ce que tu extrais pour réviser — tout ce que tu omets est perdu pour lui. En cas de doute sur l'importance d'une information, inclus-la plutôt que de l'omettre.
 
 Étapes :
 
@@ -39,9 +50,11 @@ Règles strictes pour chaque bloc :
 - Pour "protocole_paliers", remplis "content.steps" (liste ordonnée), pas "content.text".
 - Pour les autres types, remplis "content.text" avec le contenu synthétisé (mais fidèle et complet — ne résume pas au point de perdre une nuance importante).
 
-3. Pour chaque sous-entité, génère des flashcards de révision à partir UNIQUEMENT des faits déjà extraits et cités dans ses blocs (jamais directement depuis le texte brut, jamais un fait qui n'apparaît dans aucun bloc). Le lecteur est un(e) anesthésiste en formation : vise une couverture systématique de TOUS les axes suivants qui s'appliquent réellement à cette sous-entité, chacun en flashcard(s) séparée(s) plutôt qu'une seule question générique fourre-tout :
-${FLASHCARD_AXES_DOC}
-N'invente aucun axe que les blocs déjà extraits ne couvrent pas réellement — mais ne t'arrête pas après une flashcard si plusieurs axes distincts ont une base solide dans le texte. Chaque flashcard : une question précise et sans ambiguïté au recto ("front"), la réponse exacte attendue au verso ("back"), et sa/ses citation(s) source.
+3. Pour chaque sous-entité, génère des flashcards de révision à partir UNIQUEMENT des faits déjà extraits et cités dans ses blocs (jamais directement depuis le texte brut, jamais un fait qui n'apparaît dans aucun bloc).
+
+${FLASHCARD_QUALITY_DOC}
+
+Chaque flashcard : une question précise et sans ambiguïté au recto ("front"), la réponse exacte attendue au verso ("back"), et sa/ses citation(s) source.
 
 Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
 `.trim();
@@ -49,7 +62,11 @@ Réponds uniquement avec le JSON demandé, structuré exactement selon le schém
 
 export function buildComplementaryPrompt(chapterTitle: string, coverageSummaryJson: string): string {
   return `
-Tu es le même assistant d'extraction que précédemment, sur le même chapitre « ${chapterTitle} ». Une première extraction a déjà été faite. Voici un résumé de ce qui est déjà couvert (nom de chaque sous-entité, type et résumé de chacun de ses blocs déjà extraits, et les questions des flashcards déjà générées) :
+Tu es le même assistant d'extraction que précédemment, sur le même chapitre « ${chapterTitle} ». Une première extraction a déjà été faite.
+
+${EXPERT_READER_CONTEXT}
+
+Voici un résumé de ce qui est déjà couvert (nom de chaque sous-entité, type et résumé de chacun de ses blocs déjà extraits, et les questions des flashcards déjà générées) :
 
 ${coverageSummaryJson}
 
@@ -61,8 +78,9 @@ Pour chaque trou trouvé :
 
 S'il n'y a réellement plus rien d'important à ajouter, retourne "additions_for_existing" et "new_sub_entities" comme des tableaux vides — ne force pas la génération de contenu superflu ou redondant juste pour remplir la réponse.
 
-Le lecteur est un(e) anesthésiste en formation : en particulier pour les flashcards, vérifie que le résumé ci-dessus couvre déjà, pour chaque sous-entité, tous les axes suivants — ajoute ce qui manque parmi eux, avec une flashcard par axe distinct plutôt qu'une seule question fourre-tout :
-${FLASHCARD_AXES_DOC}
+Pour les flashcards en particulier, regarde si le résumé ci-dessus laisse des faits testables sans carte pour une sous-entité donnée — pas seulement des sous-entités entières manquantes. Mêmes exigences de couverture et de niveau que lors d'une extraction initiale :
+
+${FLASHCARD_QUALITY_DOC}
 
 Mêmes règles strictes que pour l'extraction initiale : chaque bloc et chaque flashcard doit citer verbatim (page + texte exact) le passage du livre qui le fonde, les tableaux comparatifs vont dans un vrai tableau, les protocoles par paliers dans une liste d'étapes structurée.
 
