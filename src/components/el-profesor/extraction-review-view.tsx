@@ -46,6 +46,17 @@ export function ExtractionReviewView({
     getChapterPdfUrl(chapterId).then((result) => setPdfUrl(result.url ?? null));
   }, [chapterId]);
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   function subEntityFlagged(sub: SubEntityWithFiche) {
     return !!sub.fiche && (sub.fiche.blocks.some((b) => b.needsReview) || sub.fiche.flashcards.some((c) => c.needsReview));
   }
@@ -292,7 +303,7 @@ export function ExtractionReviewView({
 
       {searchOpen && (
         <Modal title="Rechercher" onClose={() => setSearchOpen(false)} size="md">
-          <LibrarySearch />
+          <LibrarySearch autoFocus />
         </Modal>
       )}
 

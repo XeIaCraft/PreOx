@@ -11,7 +11,7 @@ import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
-import { getLastSubEntity, setLastSubEntity } from "@/lib/el-profesor/local-prefs";
+import { getLastSubEntity, setLastSubEntity, setLastChapter } from "@/lib/el-profesor/local-prefs";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
 import type { Citation } from "@/lib/el-profesor/types";
 
@@ -48,8 +48,23 @@ export function ChapterView({
   }, [chapterId]);
 
   useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
     if (selectedId) setLastSubEntity(chapterId, selectedId);
   }, [chapterId, selectedId]);
+
+  useEffect(() => {
+    setLastChapter(chapterId);
+  }, [chapterId]);
 
   const selected = withFiche.find((s) => s.id === selectedId) ?? null;
 
@@ -178,7 +193,7 @@ export function ChapterView({
 
       {searchOpen && (
         <Modal title="Rechercher" onClose={() => setSearchOpen(false)} size="md">
-          <LibrarySearch />
+          <LibrarySearch autoFocus />
         </Modal>
       )}
 

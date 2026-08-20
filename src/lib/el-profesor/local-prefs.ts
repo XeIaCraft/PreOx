@@ -33,6 +33,14 @@ export function setLastSubEntity(chapterId: string, subEntityId: string) {
   setItem(`last-entity:${chapterId}`, subEntityId);
 }
 
+export function getLastChapter(): string | null {
+  return getItem("last-chapter");
+}
+
+export function setLastChapter(chapterId: string) {
+  setItem("last-chapter", chapterId);
+}
+
 export function getPdfZoom(): number | null {
   const raw = getItem("pdf-zoom");
   const n = raw ? Number(raw) : NaN;

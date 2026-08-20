@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { GraduationCap, Plus, Trash2, Pencil, Sparkles, BookOpen, ClipboardCheck, SearchCheck } from "lucide-react";
+import { GraduationCap, Plus, Trash2, Pencil, Sparkles, BookOpen, ClipboardCheck, SearchCheck, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
@@ -13,6 +13,7 @@ import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-cha
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { deleteBook, deleteChapter } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
+import { getLastChapter } from "@/lib/el-profesor/local-prefs";
 import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts } from "@/lib/el-profesor/dal";
 import type { ChapterStatus } from "@/lib/el-profesor/types";
 
@@ -93,6 +94,20 @@ export function ElProfesorBoard({
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingStartedAt, setPendingStartedAt] = useState<number | null>(null);
+  // Lazy initializer (client-only read), same pattern used elsewhere for
+  // one-time localStorage reads — null on the server, resolved on mount.
+  const [resumeChapterId] = useState(() => getLastChapter());
+
+  let resume: { book: BookWithChapters; chapter: BookWithChapters["chapters"][number] } | null = null;
+  if (resumeChapterId) {
+    for (const book of books) {
+      const chapter = book.chapters.find((c) => c.id === resumeChapterId && c.status === "published");
+      if (chapter) {
+        resume = { book, chapter };
+        break;
+      }
+    }
+  }
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -153,7 +168,7 @@ export function ElProfesorBoard({
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 xl:max-w-6xl">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] bg-primary-tint text-primary-strong">
@@ -170,6 +185,21 @@ export function ElProfesorBoard({
           </Button>
         )}
       </div>
+
+      {resume && (
+        <Link
+          href={`/apps/el-profesor/chapters/${resume.chapter.id}`}
+          className="mt-6 flex items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-primary/30 bg-primary-tint px-4 py-3 text-primary-strong hover:border-primary/50"
+        >
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-wide opacity-80">Reprendre la lecture</p>
+            <p className="truncate text-sm font-medium">
+              {resume.chapter.title} <span className="opacity-70">— {resume.book.title}</span>
+            </p>
+          </div>
+          <ArrowRight className="h-4 w-4 shrink-0" />
+        </Link>
+      )}
 
       {books.length > 0 && (
         <div className="mt-6">
@@ -229,7 +259,7 @@ export function ElProfesorBoard({
               )}
             </div>
 
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {book.chapters.map((chapter) => {
                 const due = dueCounts[chapter.id] ?? 0;
                 const needsReview = needsReviewCounts[chapter.id] ?? 0;

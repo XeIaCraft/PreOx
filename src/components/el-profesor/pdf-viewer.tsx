@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, ZoomIn, ZoomOut, Layers } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, ZoomIn, ZoomOut, Layers, Maximize, Minimize } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getPdfZoom, setPdfZoom } from "@/lib/el-profesor/local-prefs";
 
@@ -82,11 +82,13 @@ export function PdfViewer({
   coverage?: CoverageEntry[];
   onSelection?: (selection: PdfSelection) => void;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const pdfRef = useRef<import("pdfjs-dist").PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [pageNum, setPageNum] = useState(1);
   const [pageInput, setPageInput] = useState("1");
   // Restores the last zoom level the user picked (any chapter/PDF). Lazy
@@ -121,6 +123,24 @@ export function PdfViewer({
   useEffect(() => {
     setPdfZoom(zoom);
   }, [zoom]);
+
+  // Mirrors the actual fullscreen state (also changes if the user exits
+  // via Esc or the browser's own UI, not just our button).
+  useEffect(() => {
+    function handleFullscreenChange() {
+      setIsFullscreen(document.fullscreenElement === containerRef.current);
+    }
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      containerRef.current?.requestFullscreen();
+    }
+  }
 
   // Tracks the scroll container's width so pages fit it (mobile/tablet/desktop alike).
   useEffect(() => {
@@ -272,7 +292,7 @@ export function PdfViewer({
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={containerRef} className="flex h-full flex-col bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="icon" onClick={() => goToPage(pageNum - 1)} disabled={pageNum <= 1} aria-label="Page précédente">
@@ -315,6 +335,16 @@ export function PdfViewer({
           <span className="w-9 text-center text-xs text-foreground-subtle">{Math.round(zoom * 100)}%</span>
           <Button variant="ghost" size="icon" onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + 0.15))} aria-label="Agrandir">
             <ZoomIn className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleFullscreen}
+            aria-label={isFullscreen ? "Quitter le plein écran" : "Plein écran"}
+            title={isFullscreen ? "Quitter le plein écran" : "Plein écran"}
+            className="hidden sm:inline-flex"
+          >
+            {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
           </Button>
         </div>
       </div>

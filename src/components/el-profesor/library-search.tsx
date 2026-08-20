@@ -6,12 +6,13 @@ import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { searchLibrary, type SearchResult } from "@/app/apps/el-profesor/actions/search";
 
-export function LibrarySearch() {
+export function LibrarySearch({ autoFocus }: { autoFocus?: boolean } = {}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -20,6 +21,20 @@ export function LibrarySearch() {
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Ctrl/Cmd+K jumps straight to search from anywhere on a page where this
+  // component is always mounted (e.g. the dashboard); pages that hide it
+  // behind a modal handle opening that modal themselves.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   function handleChange(value: string) {
@@ -43,10 +58,12 @@ export function LibrarySearch() {
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-subtle" />
         <Input
+          ref={inputRef}
           value={query}
           onChange={(e) => handleChange(e.target.value)}
           onFocus={() => setOpen(true)}
-          placeholder="Rechercher une notion, un médicament, une pathologie…"
+          autoFocus={autoFocus}
+          placeholder="Rechercher une notion, un médicament, une pathologie… (Ctrl+K)"
           className="pl-9 pr-9"
         />
         {query && (
