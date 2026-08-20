@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/toast";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog";
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
+import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { deleteBook, deleteChapter } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts } from "@/lib/el-profesor/dal";
@@ -69,6 +70,8 @@ type ModalState =
   | { type: "add_book" }
   | { type: "edit_book"; book: { id: string; title: string; author: string | null; edition: string | null } }
   | { type: "upload_chapter"; bookId: string; nextOrder: number }
+  | { type: "delete_book"; bookId: string; title: string; chapterCount: number }
+  | { type: "delete_chapter"; chapterId: string; title: string; flashcardCount: number }
   | null;
 
 export function ElProfesorBoard({
@@ -125,23 +128,27 @@ export function ElProfesorBoard({
     });
   }
 
-  function handleDeleteChapter(chapterId: string) {
-    if (!confirm("Supprimer ce chapitre et tout son contenu généré ?")) return;
+  function confirmDeleteChapter(chapterId: string) {
     setPendingId(chapterId);
     startTransition(async () => {
       const result = await deleteChapter(chapterId);
       setPendingId(null);
       if (result.error) toast(result.error, { variant: "error" });
-      else refresh();
+      else {
+        setModal(null);
+        refresh();
+      }
     });
   }
 
-  function handleDeleteBook(bookId: string) {
-    if (!confirm("Supprimer ce livre et tous ses chapitres ?")) return;
+  function confirmDeleteBook(bookId: string) {
     startTransition(async () => {
       const result = await deleteBook(bookId);
       if (result.error) toast(result.error, { variant: "error" });
-      else refresh();
+      else {
+        setModal(null);
+        refresh();
+      }
     });
   }
 
@@ -210,7 +217,12 @@ export function ElProfesorBoard({
                   >
                     <Plus className="h-3.5 w-3.5" /> Chapitre
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleDeleteBook(book.id)} aria-label="Supprimer le livre">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setModal({ type: "delete_book", bookId: book.id, title: book.title, chapterCount: book.chapters.length })}
+                    aria-label="Supprimer le livre"
+                  >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -304,7 +316,19 @@ export function ElProfesorBoard({
                         </Button>
                       )}
                       {isAdmin && (
-                        <Button variant="ghost" size="icon" onClick={() => handleDeleteChapter(chapter.id)} aria-label="Supprimer le chapitre">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() =>
+                            setModal({
+                              type: "delete_chapter",
+                              chapterId: chapter.id,
+                              title: chapter.title,
+                              flashcardCount: masteryCounts[chapter.id]?.total ?? 0,
+                            })
+                          }
+                          aria-label="Supprimer le chapitre"
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
@@ -345,6 +369,37 @@ export function ElProfesorBoard({
             setModal(null);
             refresh();
           }}
+        />
+      )}
+      {modal?.type === "delete_book" && (
+        <ConfirmDeleteDialog
+          title="Supprimer le livre ?"
+          itemName={modal.title}
+          consequences={[
+            modal.chapterCount > 0
+              ? `${modal.chapterCount} chapitre${modal.chapterCount > 1 ? "s" : ""} et tout leur contenu (fiches, flashcards, historique de révision)`
+              : "Aucun chapitre pour l'instant",
+            "Le PDF de chaque chapitre",
+          ]}
+          isPending={isPending}
+          onConfirm={() => confirmDeleteBook(modal.bookId)}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.type === "delete_chapter" && (
+        <ConfirmDeleteDialog
+          title="Supprimer le chapitre ?"
+          itemName={modal.title}
+          consequences={[
+            "Toutes les fiches et blocs générés pour ce chapitre",
+            modal.flashcardCount > 0
+              ? `${modal.flashcardCount} flashcard${modal.flashcardCount > 1 ? "s" : ""} et leur historique de révision`
+              : "Les flashcards associées et leur historique de révision",
+            "Le PDF source",
+          ]}
+          isPending={isPending}
+          onConfirm={() => confirmDeleteChapter(modal.chapterId)}
+          onClose={() => setModal(null)}
         />
       )}
     </div>
