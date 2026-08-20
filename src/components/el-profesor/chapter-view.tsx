@@ -11,6 +11,7 @@ import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
+import { getLastSubEntity, setLastSubEntity } from "@/lib/el-profesor/local-prefs";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
 import type { Citation } from "@/lib/el-profesor/types";
 
@@ -27,9 +28,15 @@ export function ChapterView({
 }) {
   const router = useRouter();
   const withFiche = subEntities.filter((s) => s.fiche);
-  const [selectedId, setSelectedId] = useState(
-    (initialEntityId && withFiche.some((s) => s.id === initialEntityId) ? initialEntityId : withFiche[0]?.id) ?? null
-  );
+  // Resumes the last sub-entity viewed in this chapter (localStorage) unless
+  // there's an explicit deep link. Lazy initializer, same pattern as the
+  // other one-time impure reads in this module — runs once at mount.
+  const [selectedId, setSelectedId] = useState(() => {
+    if (initialEntityId && withFiche.some((s) => s.id === initialEntityId)) return initialEntityId;
+    const saved = getLastSubEntity(chapterId);
+    if (saved && withFiche.some((s) => s.id === saved)) return saved;
+    return withFiche[0]?.id ?? null;
+  });
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<PdfHighlight>(null);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
@@ -39,6 +46,10 @@ export function ChapterView({
   useEffect(() => {
     getChapterPdfUrl(chapterId).then((result) => setPdfUrl(result.url ?? null));
   }, [chapterId]);
+
+  useEffect(() => {
+    if (selectedId) setLastSubEntity(chapterId, selectedId);
+  }, [chapterId, selectedId]);
 
   const selected = withFiche.find((s) => s.id === selectedId) ?? null;
 

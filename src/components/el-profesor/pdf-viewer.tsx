@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, ZoomIn, ZoomOut, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getPdfZoom, setPdfZoom } from "@/lib/el-profesor/local-prefs";
 
 export type PdfHighlight = { page: number; quote: string } | null;
 export type CoverageKind = "block" | "flashcard";
@@ -66,7 +67,13 @@ export function PdfViewer({
   const [numPages, setNumPages] = useState(0);
   const [pageNum, setPageNum] = useState(1);
   const [pageInput, setPageInput] = useState("1");
-  const [zoom, setZoom] = useState(1);
+  // Restores the last zoom level the user picked (any chapter/PDF). Lazy
+  // initializer, same one-time-impure-read pattern used elsewhere in this
+  // codebase (e.g. `useState(() => Date.now())`).
+  const [zoom, setZoom] = useState(() => {
+    const saved = getPdfZoom();
+    return saved && saved >= MIN_ZOOM && saved <= MAX_ZOOM ? saved : 1;
+  });
   const [containerWidth, setContainerWidth] = useState(0);
   const [rects, setRects] = useState<Rect[]>([]);
   const [coverageRects, setCoverageRects] = useState<{ rect: Rect; kind: CoverageKind }[]>([]);
@@ -88,6 +95,10 @@ export function PdfViewer({
       setPageInput(String(highlight.page));
     }
   }
+
+  useEffect(() => {
+    setPdfZoom(zoom);
+  }, [zoom]);
 
   // Tracks the scroll container's width so pages fit it (mobile/tablet/desktop alike).
   useEffect(() => {
