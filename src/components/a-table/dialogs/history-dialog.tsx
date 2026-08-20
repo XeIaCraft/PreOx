@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, RotateCcw } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
-import { removeHistoryEntry, restoreHistoryEntry } from "@/app/apps/a-table/actions/planning";
+import { removeHistoryEntry, restoreHistoryEntry, addRecipeToBacklog } from "@/app/apps/a-table/actions/planning";
 import { useToast } from "@/components/ui/toast";
 import type { HistoryEntry, Recipe } from "@/lib/a-table/types";
 
@@ -24,6 +24,17 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
     const cutoff = now - days * 24 * 60 * 60 * 1000;
     return history.filter((h) => new Date(h.cooked_at).getTime() >= cutoff);
   }, [history, days, now]);
+
+  function handleRecook(recipeId: string) {
+    startTransition(async () => {
+      const result = await addRecipeToBacklog(recipeId);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "", { variant: "success" });
+        onSaved();
+      }
+    });
+  }
 
   function handleRemove(entry: HistoryEntry) {
     startTransition(async () => {
@@ -73,14 +84,28 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
                     {new Date(entry.cooked_at).toLocaleDateString("fr-FR")} · {entry.servings} pers.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleRemove(entry)}
-                  disabled={isPending}
-                  className="rounded p-1.5 text-foreground-subtle hover:bg-danger-tint hover:text-danger"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {recipe && (
+                    <button
+                      type="button"
+                      onClick={() => handleRecook(recipe.id)}
+                      disabled={isPending}
+                      title="Recuisiner"
+                      className="rounded p-1.5 text-foreground-subtle hover:bg-primary-tint hover:text-primary-strong"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(entry)}
+                    disabled={isPending}
+                    title="Supprimer"
+                    className="rounded p-1.5 text-foreground-subtle hover:bg-danger-tint hover:text-danger"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </li>
             );
           })}
