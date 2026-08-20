@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/dal";
 import { createClient } from "@/lib/supabase/server";
 import { logActivity } from "@/lib/activity-log";
+import { notifyUser } from "@/lib/notifications";
 
 export interface ActionState {
   error?: string;
@@ -79,6 +80,15 @@ export async function setGroupAppAccess(groupId: string, appId: string, granted:
   }
 
   await logActivity(admin.id, granted ? "grant_group_app_access" : "revoke_group_app_access", groupId, { appId });
+  if (granted) {
+    const [{ data: app }, { data: members }] = await Promise.all([
+      supabase.from("apps").select("name, slug").eq("id", appId).single(),
+      supabase.from("user_group_members").select("user_id").eq("group_id", groupId),
+    ]);
+    if (app) {
+      await Promise.all((members ?? []).map((m) => notifyUser(m.user_id, `Nouveau module : ${app.name}`, "Vous y avez maintenant accès.", `/apps/${app.slug}`)));
+    }
+  }
   revalidatePath(`/admin/groups/${groupId}`);
   revalidatePath("/apps");
   return { success: "Accès du groupe mis à jour." };

@@ -7,7 +7,7 @@ import { UnifiedSearch } from "@/components/hub/unified-search";
 import { listRecentApps } from "@/app/actions/discovery";
 import { createClient } from "@/lib/supabase/server";
 import { renderIcon } from "@/lib/icon-map";
-import { Clock } from "lucide-react";
+import { Clock, ListChecks, GraduationCap, AlertTriangle, ShieldAlert } from "lucide-react";
 
 export const metadata: Metadata = { title: "Vos modules" };
 
@@ -33,6 +33,35 @@ export default async function AppsPage() {
   const recentApps = recent.map((r) => apps.find((a) => a.id === r.appId)).filter((a): a is (typeof apps)[number] => Boolean(a && a.hasAccess));
   const changelog = changelogResult.data ?? [];
 
+  const isAdmin = profile.role === "admin";
+  const now = new Date();
+  const soon = new Date();
+  soon.setDate(soon.getDate() + 2);
+  const [{ count: dueCount }, { count: expiringCount }, { count: openFlagsCount }] = await Promise.all([
+    hasElProfesor
+      ? supabase.from("el_profesor_review_state").select("id", { count: "exact", head: true }).eq("user_id", profile.id).lte("due", now.toISOString())
+      : Promise.resolve({ count: 0 }),
+    hasATable
+      ? supabase
+          .from("a_table_temporary_ingredients")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", profile.id)
+          .neq("date_limit", "")
+          .lte("date_limit", soon.toISOString().slice(0, 10))
+      : Promise.resolve({ count: 0 }),
+    isAdmin ? supabase.from("el_profesor_flags").select("id", { count: "exact", head: true }).eq("status", "open") : Promise.resolve({ count: 0 }),
+  ]);
+
+  const todoItems = [
+    dueCount ? { key: "due", icon: <GraduationCap className="h-3.5 w-3.5" />, label: `${dueCount} carte${dueCount > 1 ? "s" : ""} à réviser`, href: "/apps/el-profesor" } : null,
+    expiringCount
+      ? { key: "expiring", icon: <AlertTriangle className="h-3.5 w-3.5" />, label: `${expiringCount} aliment${expiringCount > 1 ? "s" : ""} à utiliser vite`, href: "/apps/a-table" }
+      : null,
+    openFlagsCount
+      ? { key: "flags", icon: <ShieldAlert className="h-3.5 w-3.5" />, label: `${openFlagsCount} signalement${openFlagsCount > 1 ? "s" : ""} à traiter`, href: "/apps/el-profesor" }
+      : null,
+  ].filter((item): item is NonNullable<typeof item> => item !== null);
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -48,6 +77,26 @@ export default async function AppsPage() {
         </div>
         <UnifiedSearch hasElProfesor={hasElProfesor} hasATable={hasATable} />
       </div>
+
+      {todoItems.length > 0 && (
+        <div>
+          <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground-muted">
+            <ListChecks className="h-3.5 w-3.5" /> À traiter
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {todoItems.map((item) => (
+              <Link
+                key={item.key}
+                href={item.href}
+                className="flex items-center gap-2 rounded-full border border-accent/30 bg-accent-tint px-3 py-1.5 text-sm text-accent hover:border-accent/50"
+              >
+                {item.icon}
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {changelog.length > 0 && (
         <div className="rounded-[var(--radius-lg)] border border-border bg-surface-muted/50 p-4">

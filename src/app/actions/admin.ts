@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getSiteURL } from "@/lib/site-url";
 import { ICON_OPTIONS } from "@/lib/icon-map";
 import { logActivity } from "@/lib/activity-log";
+import { notifyUser } from "@/lib/notifications";
 
 export interface ActionState {
   error?: string;
@@ -119,6 +120,10 @@ export async function setAppAccess(userId: string, appId: string, granted: boole
   }
 
   await logActivity(admin.id, granted ? "grant_app_access" : "revoke_app_access", userId, { appId });
+  if (granted) {
+    const { data: app } = await supabase.from("apps").select("name, slug").eq("id", appId).single();
+    if (app) await notifyUser(userId, `Nouveau module : ${app.name}`, "Vous y avez maintenant accès.", `/apps/${app.slug}`);
+  }
   revalidatePath(`/admin/users/${userId}`);
   revalidatePath("/apps");
   return { success: "Accès mis à jour." };

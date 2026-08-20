@@ -17,6 +17,8 @@ export type Profile = {
   avatar_url: string | null;
   role: UserRole;
   pinned_app_ids: string[];
+  notify_email_digest: boolean;
+  notify_push: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -369,6 +371,33 @@ export type ChangelogEntryRow = {
   created_by: string | null;
 };
 
+export type NotificationRow = {
+  id: string;
+  user_id: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  read: boolean;
+  created_at: string;
+};
+
+export type PushSubscriptionRow = {
+  id: string;
+  user_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  created_at: string;
+};
+
+export type FeedbackReportRow = {
+  id: string;
+  user_id: string;
+  message: string;
+  page_url: string | null;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -579,6 +608,24 @@ export type Database = {
         Row: ChangelogEntryRow;
         Insert: Partial<ChangelogEntryRow> & { title: string; body: string };
         Update: Partial<ChangelogEntryRow>;
+        Relationships: [];
+      };
+      notifications: {
+        Row: NotificationRow;
+        Insert: Partial<NotificationRow> & { user_id: string; title: string };
+        Update: Partial<NotificationRow>;
+        Relationships: [];
+      };
+      push_subscriptions: {
+        Row: PushSubscriptionRow;
+        Insert: Partial<PushSubscriptionRow> & { user_id: string; endpoint: string; p256dh: string; auth: string };
+        Update: Partial<PushSubscriptionRow>;
+        Relationships: [];
+      };
+      feedback_reports: {
+        Row: FeedbackReportRow;
+        Insert: Partial<FeedbackReportRow> & { user_id: string; message: string };
+        Update: Partial<FeedbackReportRow>;
         Relationships: [];
       };
     };

@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getSiteURL } from "@/lib/site-url";
 import { sendEmail } from "@/lib/email";
+import { notifyUser } from "@/lib/notifications";
 
 export interface ActionState {
   error?: string;
@@ -80,6 +81,10 @@ async function logLoginAndAlertIfNewDevice(userId: string, email: string): Promi
 <p><strong>Appareil :</strong> ${userAgent ?? "inconnu"}<br><strong>Date :</strong> ${new Date().toLocaleString("fr-FR")}</p>
 <p>Si c'était vous, aucune action n'est requise. Sinon, changez votre mot de passe immédiatement depuis votre profil.</p>`,
       });
+      // Security alert — always in-app too, independent of the notify_push
+      // preference gate inside notifyUser (that gate only affects whether a
+      // push is ALSO sent; the in-app entry itself always gets created).
+      await notifyUser(userId, "Nouvelle connexion détectée", `Depuis un appareil non reconnu : ${userAgent ?? "inconnu"}`, "/profile");
     }
   } catch (err) {
     console.error("logLoginAndAlertIfNewDevice failed:", err);
