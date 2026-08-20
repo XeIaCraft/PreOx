@@ -4,18 +4,10 @@ import { ToastProvider } from "@/components/ui/toast";
 import type { Flashcard } from "@/lib/el-profesor/types";
 
 // Free (out-of-schedule) review loads every published flashcard for the
-// chapter at once — fine for most chapters, but a large one can mean
-// dozens of cards in a single sitting. Cap by default; ?all=1 opts out.
+// chapter at once (already shuffled by getFreeReviewQueue) — fine for most
+// chapters, but a large one can mean dozens of cards in a single sitting.
+// Cap by default; ?all=1 opts out.
 const FREE_SESSION_CAP = 30;
-
-function shuffle<T>(items: T[]): T[] {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
 
 export default async function ReviewPage({
   params,
@@ -34,7 +26,7 @@ export default async function ReviewPage({
   let queue = fullQueue;
   let cappedFrom: number | null = null;
   if (source === "free" && all !== "1" && fullQueue.length > FREE_SESSION_CAP) {
-    queue = shuffle(fullQueue).slice(0, FREE_SESSION_CAP);
+    queue = fullQueue.slice(0, FREE_SESSION_CAP);
     cappedFrom = fullQueue.length;
   }
 

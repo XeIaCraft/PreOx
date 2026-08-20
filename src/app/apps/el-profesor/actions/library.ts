@@ -33,6 +33,21 @@ export async function createBook(input: { title: string; author?: string; editio
   return { success: "Livre créé.", bookId: data.id };
 }
 
+export async function updateBook(bookId: string, input: { title: string; author?: string; edition?: string }): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  if (!input.title.trim()) return { error: "Le titre du livre est obligatoire." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_books")
+    .update({ title: input.title.trim(), author: input.author?.trim() || null, edition: input.edition?.trim() || null })
+    .eq("id", bookId);
+  if (error) return { error: "Impossible de mettre à jour le livre." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Livre mis à jour." };
+}
+
 export async function deleteBook(bookId: string): Promise<ActionState> {
   await requireElProfesorAdmin();
   const supabase = await createClient();

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { GraduationCap, Plus, Trash2, Sparkles, BookOpen, ClipboardCheck, SearchCheck } from "lucide-react";
+import { GraduationCap, Plus, Trash2, Pencil, Sparkles, BookOpen, ClipboardCheck, SearchCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
@@ -47,7 +47,11 @@ const STATUS_VARIANT: Record<ChapterStatus, "neutral" | "accent" | "success" | "
   failed: "danger",
 };
 
-type ModalState = { type: "add_book" } | { type: "upload_chapter"; bookId: string; nextOrder: number } | null;
+type ModalState =
+  | { type: "add_book" }
+  | { type: "edit_book"; book: { id: string; title: string; author: string | null; edition: string | null } }
+  | { type: "upload_chapter"; bookId: string; nextOrder: number }
+  | null;
 
 export function ElProfesorBoard({
   books,
@@ -164,6 +168,19 @@ export function ElProfesorBoard({
               {isAdmin && (
                 <div className="flex items-center gap-2">
                   <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() =>
+                      setModal({
+                        type: "edit_book",
+                        book: { id: book.id, title: book.title, author: book.author, edition: book.edition },
+                      })
+                    }
+                    aria-label="Modifier le livre"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
                     variant="secondary"
                     size="sm"
                     onClick={() => setModal({ type: "upload_chapter", bookId: book.id, nextOrder: book.chapters.length })}
@@ -268,6 +285,16 @@ export function ElProfesorBoard({
 
       {modal?.type === "add_book" && (
         <AddBookDialog
+          onClose={() => setModal(null)}
+          onSaved={() => {
+            setModal(null);
+            refresh();
+          }}
+        />
+      )}
+      {modal?.type === "edit_book" && (
+        <AddBookDialog
+          book={modal.book}
           onClose={() => setModal(null)}
           onSaved={() => {
             setModal(null);

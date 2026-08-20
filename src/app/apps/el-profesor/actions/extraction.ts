@@ -435,3 +435,39 @@ export async function moveFicheBlock(blockId: string, direction: "up" | "down"):
   revalidatePath("/apps/el-profesor");
   return { success: "Bloc déplacé." };
 }
+
+/** Swaps a sub-entity's order_index with its previous/next sibling within the chapter. No-op at either end. */
+export async function moveSubEntity(subEntityId: string, direction: "up" | "down"): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: subEntity } = await supabase
+    .from("el_profesor_sub_entities")
+    .select("id, chapter_id, order_index")
+    .eq("id", subEntityId)
+    .single();
+  if (!subEntity) return { error: "Sous-entité introuvable." };
+
+  const { data: siblings } = await supabase
+    .from("el_profesor_sub_entities")
+    .select("id, order_index")
+    .eq("chapter_id", subEntity.chapter_id)
+    .order("order_index", { ascending: true });
+  const list = siblings ?? [];
+  const index = list.findIndex((s) => s.id === subEntityId);
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (index === -1 || targetIndex < 0 || targetIndex >= list.length) {
+    return { success: "OK" };
+  }
+
+  const target = list[targetIndex];
+  const current = list[index];
+  const [error1, error2] = await Promise.all([
+    supabase.from("el_profesor_sub_entities").update({ order_index: target.order_index }).eq("id", current.id).then((r) => r.error),
+    supabase.from("el_profesor_sub_entities").update({ order_index: current.order_index }).eq("id", target.id).then((r) => r.error),
+  ]);
+  if (error1 || error2) return { error: "Impossible de réordonner cette sous-entité." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Sous-entité déplacée." };
+}

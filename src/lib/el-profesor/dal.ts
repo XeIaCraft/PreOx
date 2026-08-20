@@ -227,17 +227,30 @@ export async function getDueQueue(userId: string, chapterId: string): Promise<Fl
   const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s as ElProfesorReviewStateRow]));
   const now = Date.now();
 
-  return flashcards.filter((card) => {
-    const state = stateByCard.get(card.id);
-    if (!state) return true; // never reviewed — always due
-    return new Date(state.due).getTime() <= now;
-  });
+  const due = flashcards
+    .map((card) => ({ card, dueAt: stateByCard.get(card.id)?.due }))
+    .filter(({ dueAt }) => !dueAt || new Date(dueAt).getTime() <= now);
+
+  // Most-overdue first (never-reviewed cards sort as "due now", after any
+  // genuinely overdue review), so lapsed knowledge gets priority over new material.
+  due.sort((a, b) => (a.dueAt ? new Date(a.dueAt).getTime() : now) - (b.dueAt ? new Date(b.dueAt).getTime() : now));
+
+  return due.map(({ card }) => card);
 }
 
-/** Every published flashcard for a chapter, ignoring due dates — free/on-demand review. */
+function shuffle<T>(items: T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+/** Every published flashcard for a chapter, ignoring due dates — free/on-demand review, shuffled for variety across sessions. */
 export async function getFreeReviewQueue(chapterId: string): Promise<Flashcard[]> {
   const content = await getChapterContent(chapterId, false);
-  return content.flatMap((s) => s.fiche?.flashcards ?? []);
+  return shuffle(content.flatMap((s) => s.fiche?.flashcards ?? []));
 }
 
 export async function getReviewState(userId: string, flashcardId: string): Promise<ReviewState | null> {

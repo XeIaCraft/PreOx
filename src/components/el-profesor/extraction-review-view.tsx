@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, FileText, PartyPopper, Search } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronUp, ChevronDown, FileText, PartyPopper, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -14,7 +14,7 @@ import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { BlockEditor } from "@/components/el-profesor/block-editor";
 import { FlashcardEditor } from "@/components/el-profesor/flashcard-editor";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
-import { publishFiche, finalizeChapterPublication } from "@/app/apps/el-profesor/actions/extraction";
+import { publishFiche, finalizeChapterPublication, moveSubEntity } from "@/app/apps/el-profesor/actions/extraction";
 import { useToast } from "@/components/ui/toast";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
 import type { Citation, Flag } from "@/lib/el-profesor/types";
@@ -86,6 +86,14 @@ export function ExtractionReviewView({
     startTransition(() => router.refresh());
   }
 
+  function handleMoveSubEntity(subEntityId: string, direction: "up" | "down") {
+    startTransition(async () => {
+      const result = await moveSubEntity(subEntityId, direction);
+      if (result.error) toast(result.error, { variant: "error" });
+      else refresh();
+    });
+  }
+
   function handlePublishFiche(ficheId: string) {
     startTransition(async () => {
       const result = await publishFiche(ficheId);
@@ -152,29 +160,52 @@ export function ExtractionReviewView({
 
       <div className="min-h-0 flex-1 gap-4 lg:grid lg:grid-cols-[220px_1fr_1fr] lg:overflow-hidden">
         <div className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:mx-0 lg:mb-0 lg:flex-col lg:overflow-y-auto lg:overflow-x-visible lg:rounded-[var(--radius-lg)] lg:border lg:border-border lg:bg-surface lg:p-2 lg:px-2 lg:pb-2">
-          {visibleSubEntities.map((sub) => {
+          {visibleSubEntities.map((sub, i) => {
             const hasDraft =
               sub.fiche!.status !== "published" ||
               sub.fiche!.blocks.some((b) => b.status !== "published") ||
               sub.fiche!.flashcards.some((c) => c.status !== "published");
             const cardCount = sub.fiche!.flashcards.length;
             return (
-              <button
-                key={sub.id}
-                type="button"
-                onClick={() => setSelectedId(sub.id)}
-                className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-3.5 py-2 text-sm transition-colors lg:w-full lg:shrink lg:justify-between lg:whitespace-normal lg:rounded-[var(--radius-sm)] lg:px-3 lg:py-2 lg:text-left ${
-                  sub.id === selectedId
-                    ? "bg-primary-tint text-primary-strong"
-                    : "bg-surface-muted text-foreground-muted lg:bg-transparent lg:hover:bg-surface-muted"
-                }`}
-              >
-                <span>{sub.name}</span>
-                <span className="flex shrink-0 gap-1.5">
-                  {cardCount === 0 && <Badge variant="danger">0 carte</Badge>}
-                  {hasDraft ? <Badge variant="accent">Brouillon</Badge> : <Badge variant="success">OK</Badge>}
-                </span>
-              </button>
+              <div key={sub.id} className="flex shrink-0 items-center gap-0.5 lg:w-full">
+                {!onlyFlagged && (
+                  <div className="hidden shrink-0 flex-col lg:flex">
+                    <button
+                      type="button"
+                      onClick={() => handleMoveSubEntity(sub.id, "up")}
+                      disabled={i === 0}
+                      aria-label="Monter cette sous-entité"
+                      className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                    >
+                      <ChevronUp className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveSubEntity(sub.id, "down")}
+                      disabled={i === visibleSubEntities.length - 1}
+                      aria-label="Descendre cette sous-entité"
+                      className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                    >
+                      <ChevronDown className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(sub.id)}
+                  className={`flex min-w-0 flex-1 items-center gap-2 whitespace-nowrap rounded-full px-3.5 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 lg:w-full lg:justify-between lg:whitespace-normal lg:rounded-[var(--radius-sm)] lg:px-3 lg:py-2 lg:text-left ${
+                    sub.id === selectedId
+                      ? "bg-primary-tint text-primary-strong"
+                      : "bg-surface-muted text-foreground-muted lg:bg-transparent lg:hover:bg-surface-muted"
+                  }`}
+                >
+                  <span>{sub.name}</span>
+                  <span className="flex shrink-0 gap-1.5">
+                    {cardCount === 0 && <Badge variant="danger">0 carte</Badge>}
+                    {hasDraft ? <Badge variant="accent">Brouillon</Badge> : <Badge variant="success">OK</Badge>}
+                  </span>
+                </button>
+              </div>
             );
           })}
         </div>
