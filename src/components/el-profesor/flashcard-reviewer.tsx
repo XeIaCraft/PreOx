@@ -15,6 +15,8 @@ interface LastAction {
   flashcardId: string;
   logId: string;
   previousState: ReviewState | null | undefined;
+  rating: "again" | "good";
+  front: string;
 }
 
 const COMPLETION_MESSAGES = [
@@ -48,6 +50,8 @@ export function FlashcardReviewer({
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [done, setDone] = useState(0);
+  const [tally, setTally] = useState({ again: 0, good: 0 });
+  const [struggled, setStruggled] = useState<string[]>([]);
   const [lastAction, setLastAction] = useState<LastAction | null>(null);
   // Picked once per session mount so it stays stable across re-renders but varies session to session.
   const [completionMessage] = useState(() => COMPLETION_MESSAGES[Math.floor(Math.random() * COMPLETION_MESSAGES.length)]);
@@ -64,8 +68,17 @@ export function FlashcardReviewer({
         toast(result.error ?? "Impossible d'enregistrer cette révision.", { variant: "error" });
         return;
       }
-      setLastAction({ index: answeredIndex, flashcardId: current.id, logId: result.logId, previousState: result.previousState });
+      setLastAction({
+        index: answeredIndex,
+        flashcardId: current.id,
+        logId: result.logId,
+        previousState: result.previousState,
+        rating,
+        front: current.front.text,
+      });
       setDone((d) => d + 1);
+      setTally((t) => (rating === "again" ? { ...t, again: t.again + 1 } : { ...t, good: t.good + 1 }));
+      if (rating === "again") setStruggled((s) => [...s, current.front.text]);
       setRevealed(false);
       setIndex((i) => i + 1);
     });
@@ -80,6 +93,10 @@ export function FlashcardReviewer({
         return;
       }
       setDone((d) => Math.max(0, d - 1));
+      setTally((t) =>
+        lastAction.rating === "again" ? { ...t, again: Math.max(0, t.again - 1) } : { ...t, good: Math.max(0, t.good - 1) }
+      );
+      if (lastAction.rating === "again") setStruggled((s) => s.filter((f) => f !== lastAction.front));
       setIndex(lastAction.index);
       setRevealed(true);
       setLastAction(null);
@@ -157,6 +174,26 @@ export function FlashcardReviewer({
         <PartyPopper className="mx-auto h-8 w-8 animate-bounce text-primary-strong" />
         <p className="mt-3 text-lg font-medium text-foreground">{completionMessage}</p>
         <p className="mt-1 text-sm text-foreground-muted">{done} carte(s) révisée(s).</p>
+        {done > 0 && (
+          <p className="mt-1 text-xs text-foreground-subtle">
+            <span className="text-success">{tally.good} correcte{tally.good > 1 ? "s" : ""}</span>
+            {" · "}
+            <span className="text-danger">{tally.again} à revoir</span>
+          </p>
+        )}
+        {struggled.length > 0 && (
+          <div className="mt-4 rounded-[var(--radius-md)] border border-border bg-surface-muted p-3 text-left">
+            <p className="text-xs font-medium uppercase tracking-wide text-foreground-subtle">Points à retravailler</p>
+            <ul className="mt-1.5 space-y-1 text-sm text-foreground-muted">
+              {struggled.slice(0, 5).map((front, i) => (
+                <li key={i} className="line-clamp-1">
+                  • {front}
+                </li>
+              ))}
+              {struggled.length > 5 && <li className="text-xs text-foreground-subtle">+ {struggled.length - 5} autre(s)</li>}
+            </ul>
+          </div>
+        )}
         <div className="mt-5 flex items-center justify-center gap-2">
           <Link href="/apps/el-profesor">
             <Button>Retour à la bibliothèque</Button>
@@ -204,8 +241,21 @@ export function FlashcardReviewer({
       </div>
 
       {cappedFrom && chapterId && (
-        <p className="mt-2 text-center text-xs text-foreground-subtle">
-          Session limitée à {cards.length} cartes sur {cappedFrom}.{" "}
+        <p className="mt-2 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-center text-xs text-foreground-subtle">
+          <span>
+            Session limitée à {cards.length} cartes sur {cappedFrom} —
+          </span>
+          {[10, 20, 30]
+            .filter((n) => n !== cards.length && n < cappedFrom)
+            .map((n) => (
+              <Link
+                key={n}
+                href={`/apps/el-profesor/chapters/${chapterId}/review?mode=free&limit=${n}`}
+                className="underline hover:text-foreground"
+              >
+                {n} cartes
+              </Link>
+            ))}
           <Link href={`/apps/el-profesor/chapters/${chapterId}/review?mode=free&all=1`} className="underline hover:text-foreground">
             Tout réviser
           </Link>

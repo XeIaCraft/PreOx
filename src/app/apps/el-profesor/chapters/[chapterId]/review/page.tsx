@@ -14,20 +14,24 @@ export default async function ReviewPage({
   searchParams,
 }: {
   params: Promise<{ chapterId: string }>;
-  searchParams: Promise<{ mode?: string; all?: string }>;
+  searchParams: Promise<{ mode?: string; all?: string; limit?: string }>;
 }) {
   const profile = await requireElProfesorAccess();
   const { chapterId } = await params;
-  const { mode, all } = await searchParams;
+  const { mode, all, limit } = await searchParams;
   const source = mode === "free" ? "free" : "scheduled";
 
   const fullQueue: Flashcard[] = source === "free" ? await getFreeReviewQueue(chapterId) : await getDueQueue(profile.id, chapterId);
 
   let queue = fullQueue;
   let cappedFrom: number | null = null;
-  if (source === "free" && all !== "1" && fullQueue.length > FREE_SESSION_CAP) {
-    queue = fullQueue.slice(0, FREE_SESSION_CAP);
-    cappedFrom = fullQueue.length;
+  if (source === "free" && all !== "1") {
+    const parsedLimit = limit ? Number(limit) : FREE_SESSION_CAP;
+    const cap = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : FREE_SESSION_CAP;
+    if (fullQueue.length > cap) {
+      queue = fullQueue.slice(0, cap);
+      cappedFrom = fullQueue.length;
+    }
   }
 
   return (
