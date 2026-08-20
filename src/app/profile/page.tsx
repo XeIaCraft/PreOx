@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { requireProfile } from "@/lib/auth/dal";
 import { ProfileForm } from "@/components/profile/profile-form";
 import { AccountDataSection } from "@/components/profile/account-data-section";
@@ -14,6 +16,10 @@ export default async function ProfilePage() {
     <ToastProvider>
       <div className="space-y-8">
         <div>
+          <Link href="/apps" className="mb-3 inline-flex items-center gap-1.5 text-sm text-foreground-subtle hover:text-foreground">
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Retour aux modules
+          </Link>
           <h1 className="font-serif-display text-2xl font-medium text-foreground">Mon profil</h1>
           <p className="mt-1.5 text-foreground-muted">{profile.email}</p>
         </div>

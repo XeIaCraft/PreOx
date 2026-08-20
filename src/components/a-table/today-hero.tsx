@@ -37,10 +37,12 @@ const WEEKDAY_KEYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "f
 export function TodayHero({ card, recipe, onOpenDetail, onCook, onScrollToGenerator }: TodayHeroProps) {
   const hour = new Date().getHours();
   const period = hour < 12 ? "morning" : hour < 18 ? "midday" : "evening";
+  // Built from the app's own theme tokens (not fixed hex) so the card stays
+  // legible in dark mode instead of keeping a light-mode-only pastel wash.
   const gradients: Record<string, string> = {
-    morning: "linear-gradient(135deg,#fdf6e3,#f5e6c8)",
-    midday: "linear-gradient(135deg,#eaf2ec,#d3e6da)",
-    evening: "linear-gradient(135deg,#e9e3f0,#d3c7e0)",
+    morning: "linear-gradient(135deg,var(--accent-tint),var(--surface))",
+    midday: "linear-gradient(135deg,var(--primary-tint),var(--surface))",
+    evening: "linear-gradient(135deg,var(--surface-muted),var(--surface))",
   };
 
   return (

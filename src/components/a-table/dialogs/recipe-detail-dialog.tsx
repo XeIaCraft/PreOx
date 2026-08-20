@@ -136,12 +136,12 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
-        <Button variant={recipe.is_favorite ? "primary" : "secondary"} size="sm" onClick={handleFavorite} disabled={isPending}>
+      <div className="mb-2 -mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-1 print:hidden">
+        <Button className="shrink-0" variant={recipe.is_favorite ? "primary" : "secondary"} size="sm" onClick={handleFavorite} disabled={isPending}>
           <Star className="h-4 w-4" />
           {recipe.is_favorite ? "Favori" : "Ajouter aux favoris"}
         </Button>
-        <Button variant="secondary" size="sm" onClick={handleFetchImage} disabled={isPending}>
+        <Button className="shrink-0" variant="secondary" size="sm" onClick={handleFetchImage} disabled={isPending}>
           <ImageIcon className="h-4 w-4" />
           Illustrer
         </Button>
@@ -155,36 +155,36 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
             e.target.value = "";
           }}
         />
-        <Button variant="secondary" size="sm" onClick={() => photoInputRef.current?.click()} disabled={uploadingPhoto}>
+        <Button className="shrink-0" variant="secondary" size="sm" onClick={() => photoInputRef.current?.click()} disabled={uploadingPhoto}>
           <Upload className="h-4 w-4" />
           {uploadingPhoto ? "Envoi…" : "Ma photo"}
         </Button>
-        <Button variant="secondary" size="sm" onClick={handleDuplicate} disabled={isPending}>
+        <Button className="shrink-0" variant="secondary" size="sm" onClick={handleDuplicate} disabled={isPending}>
           <Copy className="h-4 w-4" />
           Dupliquer
         </Button>
-        <Button variant="secondary" size="sm" onClick={() => window.print()}>
+        <Button className="shrink-0" variant="secondary" size="sm" onClick={() => window.print()}>
           <Printer className="h-4 w-4" />
           Imprimer
         </Button>
-        <Button variant="secondary" size="sm" onClick={handlePrintCard} title="Imprimer au format fiche de cuisine (compact)">
+        <Button className="shrink-0" variant="secondary" size="sm" onClick={handlePrintCard} title="Imprimer au format fiche de cuisine (compact)">
           <Printer className="h-4 w-4" />
           Carte
         </Button>
-        <Button variant="secondary" size="sm" onClick={handleSuggestWine} disabled={loadingWine}>
+        <Button className="shrink-0" variant="secondary" size="sm" onClick={handleSuggestWine} disabled={loadingWine}>
           <Wine className="h-4 w-4" />
           {loadingWine ? "Recherche…" : "Suggérer un vin"}
         </Button>
-        <Button variant={recipe.share_token ? "primary" : "secondary"} size="sm" onClick={handleShare} disabled={isPending}>
+        <Button className="shrink-0" variant={recipe.share_token ? "primary" : "secondary"} size="sm" onClick={handleShare} disabled={isPending}>
           <Share2 className="h-4 w-4" />
           {recipe.share_token ? "Partagée (copier)" : "Partager"}
         </Button>
-        {onCookMode && (
-          <Button variant="outline" size="sm" onClick={onCookMode}>
-            Mode recette
-          </Button>
-        )}
       </div>
+      {onCookMode && (
+        <Button className="mb-4 w-full print:hidden" variant="outline" size="sm" onClick={onCookMode}>
+          Mode recette
+        </Button>
+      )}
 
       <div className={printFormat === "full" ? "print-area" : ""}>
       <h1 className="hidden font-serif-display text-xl font-medium text-foreground print:mb-4 print:block">{recipe.title}</h1>

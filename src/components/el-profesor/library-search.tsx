@@ -45,7 +45,7 @@ export function LibrarySearch({ autoFocus, bookId, bookTitle }: { autoFocus?: bo
     return (
       <>
         {text.slice(0, index)}
-        <mark className="rounded-sm bg-accent-tint text-accent-foreground">{text.slice(index, index + trimmed.length)}</mark>
+        <mark className="rounded-sm bg-accent-tint text-accent">{text.slice(index, index + trimmed.length)}</mark>
         {text.slice(index + trimmed.length)}
       </>
     );

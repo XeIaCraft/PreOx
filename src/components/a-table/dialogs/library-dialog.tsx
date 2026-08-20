@@ -113,14 +113,14 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
         <button
           type="button"
           onClick={() => setFavoritesOnly((v) => !v)}
-          className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm ${favoritesOnly ? "border-accent bg-accent-tint text-accent-foreground" : "border-border text-foreground-muted"}`}
+          className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm ${favoritesOnly ? "border-accent bg-accent-tint text-accent" : "border-border text-foreground-muted"}`}
         >
           <Star className="h-3.5 w-3.5" /> Favoris
         </button>
         <button
           type="button"
           onClick={() => setNeverCookedOnly((v) => !v)}
-          className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm ${neverCookedOnly ? "border-accent bg-accent-tint text-accent-foreground" : "border-border text-foreground-muted"}`}
+          className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm ${neverCookedOnly ? "border-accent bg-accent-tint text-accent" : "border-border text-foreground-muted"}`}
         >
           <Sparkle className="h-3.5 w-3.5" /> À essayer
         </button>

@@ -11,32 +11,32 @@ import type { Profile } from "@/lib/supabase/types";
 export function HubHeader({ profile, section }: { profile: Profile; section?: string }) {
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-sm">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <div className="flex items-center gap-4">
-          <Link href="/apps">
+      {/* min-w-0 on both sides + truncate on the breadcrumb is what keeps this row from
+          overflowing/clipping on narrow phones instead of silently hiding content. */}
+      <div className="mx-auto flex h-auto min-h-16 max-w-6xl flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-2 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link href="/apps" className="shrink-0">
             <Logo />
           </Link>
           {section && (
-            <>
-              <span className="hidden text-border-strong sm:inline">/</span>
-              <span className="hidden text-sm font-medium text-foreground-muted sm:inline">
-                {section}
-              </span>
-            </>
+            <span className="hidden min-w-0 items-center gap-3 text-sm font-medium text-foreground-muted md:flex">
+              <span className="text-border-strong">/</span>
+              <span className="truncate">{section}</span>
+            </span>
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {profile.role === "admin" && (
             <Link href="/admin">
               <Button variant="secondary" size="sm">
                 <ShieldCheck className="h-4 w-4" />
-                Administration
+                <span className="hidden sm:inline">Administration</span>
               </Button>
             </Link>
           )}
 
-          <Link href="/profile" className="hidden items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-surface-muted sm:flex">
+          <Link href="/profile" className="flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-surface-muted">
             <span className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-tint text-primary-strong">
               {profile.avatar_url ? (
                 <Image src={profile.avatar_url} alt="" fill sizes="32px" className="object-cover" />
@@ -44,8 +44,8 @@ export function HubHeader({ profile, section }: { profile: Profile; section?: st
                 <User className="h-4 w-4" />
               )}
             </span>
-            <div className="text-right leading-tight">
-              <p className="text-sm font-medium text-foreground">
+            <div className="hidden min-w-0 text-right leading-tight lg:block">
+              <p className="truncate text-sm font-medium text-foreground">
                 {profile.full_name || profile.email}
               </p>
               <Badge variant={profile.role === "admin" ? "accent" : "neutral"} className="mt-0.5">
