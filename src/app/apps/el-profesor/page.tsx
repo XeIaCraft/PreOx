@@ -16,6 +16,7 @@ import {
   getGlobalChapterMasteryPercentages,
   getStaleChaptersForAdmin,
   getReviewTimeStats,
+  getFlagStatsByBlockType,
 } from "@/lib/el-profesor/dal";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { ToastProvider } from "@/components/ui/toast";
@@ -44,6 +45,7 @@ export default async function ElProfesorPage() {
     globalMastery,
     staleChapters,
     reviewTimeStats,
+    flagStatsByBlockType,
   ] = await Promise.all([
     getDueCountsByChapter(profile.id, allChapters),
     isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
@@ -60,6 +62,7 @@ export default async function ElProfesorPage() {
     getGlobalChapterMasteryPercentages(allChapters),
     isAdmin ? getStaleChaptersForAdmin(allChapters, rawBooks) : Promise.resolve([]),
     getReviewTimeStats(profile.id),
+    isAdmin ? getFlagStatsByBlockType() : Promise.resolve([]),
   ]);
 
   return (
@@ -83,6 +86,7 @@ export default async function ElProfesorPage() {
         globalMastery={globalMastery}
         staleChapters={staleChapters}
         reviewTimeStats={reviewTimeStats}
+        flagStatsByBlockType={flagStatsByBlockType}
       />
     </ToastProvider>
   );

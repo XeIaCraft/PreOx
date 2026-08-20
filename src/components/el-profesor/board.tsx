@@ -31,6 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
+import { NotesSearchDialog } from "@/components/el-profesor/notes-search-dialog";
 import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog";
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
@@ -53,8 +54,21 @@ import type {
   BookmarkedEntity,
   ChapterMasteryPercentile,
   StaleChapterAlert,
+  BlockTypeFlagStat,
 } from "@/lib/el-profesor/dal";
-import type { ChapterStatus, Flashcard } from "@/lib/el-profesor/types";
+import type { ChapterStatus, Flashcard, BlockType } from "@/lib/el-profesor/types";
+
+const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
+  definition_mecanisme: "Définition / mécanisme",
+  valeurs_seuils: "Valeurs & seuils",
+  tableau_comparatif: "Tableau comparatif",
+  protocole_paliers: "Protocole",
+  mnemotechnique: "Mnémotechnique",
+  perle_clinique: "Perle clinique",
+  piege_erreur: "Piège fréquent",
+  formule: "Formule",
+  texte_libre: "Note",
+};
 
 function MasteryBar({ counts }: { counts: { total: number; new: number; learning: number; acquired: number } }) {
   if (counts.total === 0) return null;
@@ -151,6 +165,7 @@ type ModalState =
   | { type: "delete_chapter"; chapterId: string; title: string; flashcardCount: number }
   | { type: "gemini_settings" }
   | { type: "search_book"; bookId: string; bookTitle: string }
+  | { type: "search_notes" }
   | null;
 
 export function ElProfesorBoard({
@@ -172,6 +187,7 @@ export function ElProfesorBoard({
   globalMastery,
   staleChapters,
   reviewTimeStats,
+  flagStatsByBlockType,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -191,6 +207,7 @@ export function ElProfesorBoard({
   globalMastery: Record<string, ChapterMasteryPercentile>;
   staleChapters: StaleChapterAlert[];
   reviewTimeStats: { totalMs: number; last7DaysMs: number };
+  flagStatsByBlockType: BlockTypeFlagStat[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -476,6 +493,24 @@ export function ElProfesorBoard({
         </div>
       )}
 
+      {isAdmin && flagStatsByBlockType.length > 0 && (
+        <div className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
+          <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+            <ShieldAlert className="h-3.5 w-3.5" /> Signalements par type de bloc
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {flagStatsByBlockType.map((stat) => (
+              <li key={stat.blockType} className="flex items-center justify-between gap-2 text-sm">
+                <span className="text-foreground-muted">{BLOCK_TYPE_LABELS[stat.blockType]}</span>
+                <Badge variant="danger" className="shrink-0">
+                  {stat.flagCount}×
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {isAdmin && staleChapters.length > 0 && (
         <div className="mt-6 rounded-[var(--radius-lg)] border border-accent/30 bg-accent-tint/40 p-4">
           <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-accent">
@@ -499,6 +534,13 @@ export function ElProfesorBoard({
       {books.length > 0 && (
         <div className="mt-6">
           <LibrarySearch />
+          <button
+            type="button"
+            onClick={() => setModal({ type: "search_notes" })}
+            className="mt-1.5 text-xs text-foreground-subtle underline hover:text-foreground"
+          >
+            Rechercher dans mes notes
+          </button>
         </div>
       )}
 
@@ -881,6 +923,8 @@ export function ElProfesorBoard({
           <LibrarySearch autoFocus bookId={modal.bookId} bookTitle={modal.bookTitle} />
         </Modal>
       )}
+
+      {modal?.type === "search_notes" && <NotesSearchDialog onClose={() => setModal(null)} />}
       {modal?.type === "gemini_settings" && (
         <GeminiSettingsDialog
           currentModel={geminiModel ?? "gemini-flash-latest"}

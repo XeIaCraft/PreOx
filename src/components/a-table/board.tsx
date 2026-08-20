@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus, Sparkles } from "lucide-react";
+import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus, Sparkles, CookingPot } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
 import { A_TABLE_ONBOARDING_STEPS } from "@/components/a-table/onboarding-steps";
@@ -20,6 +20,7 @@ import { RecipeDetailDialog } from "@/components/a-table/dialogs/recipe-detail-d
 import { AddRecipeDialog } from "@/components/a-table/dialogs/add-recipe-dialog";
 import { TempIngredientDialog } from "@/components/a-table/dialogs/temp-ingredient-dialog";
 import { LibraryDialog } from "@/components/a-table/dialogs/library-dialog";
+import { BatchCookDialog } from "@/components/a-table/dialogs/batch-cook-dialog";
 import { CollectionsDialog } from "@/components/a-table/dialogs/collections-dialog";
 import { RateDialog } from "@/components/a-table/dialogs/rate-dialog";
 import { HistoryDialog } from "@/components/a-table/dialogs/history-dialog";
@@ -55,6 +56,7 @@ type ModalState =
   | { type: "add_pantry" }
   | { type: "edit_temp"; ingredient: TemporaryIngredient }
   | { type: "library" }
+  | { type: "batch_cook" }
   | { type: "collections" }
   | { type: "rate"; recipeId: string; recipeTitle: string }
   | { type: "history" }
@@ -97,11 +99,13 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
     let mealCount = 0;
     let hasKcal = false;
     let hasCost = false;
+    let cookingMinutes = 0;
     for (const card of data.mealCards) {
       if (card.status !== "active" || !WEEKDAY_PLACEMENTS.includes(card.placement)) continue;
       const recipe = recipesById.get(card.recipe_id);
       if (!recipe) continue;
       mealCount += 1;
+      if (recipe.cooking_minutes != null) cookingMinutes += recipe.cooking_minutes;
       const factor = scaleFactor(recipe.servings, card.servings || recipe.servings, data.settings.preferences.appetite);
       if (recipe.nutrition.kcal != null) {
         kcal += recipe.nutrition.kcal * factor;
@@ -127,6 +131,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       hasCost,
       avgKcalPerMeal: mealCount > 0 ? Math.round(kcal / mealCount) : 0,
       macroPct,
+      cookingMinutes,
     };
   }, [data.mealCards, data.settings.preferences.appetite, recipesById]);
   const allergyRecipeIds = useMemo(() => {
@@ -334,6 +339,9 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           <Button variant="secondary" size="sm" onClick={() => setModal({ type: "library" })}>
             <BookOpen className="h-4 w-4" /> Mes recettes
           </Button>
+          <Button variant="secondary" size="sm" onClick={() => setModal({ type: "batch_cook" })}>
+            <CookingPot className="h-4 w-4" /> Cuisiner en lot
+          </Button>
           <Button variant="secondary" size="sm" onClick={() => setModal({ type: "collections" })}>
             <FolderHeart className="h-4 w-4" /> Collections
           </Button>
@@ -446,11 +454,14 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
         <div className="flex items-center gap-3">
           <p className="text-sm font-medium text-foreground-muted">Semaine</p>
-          {(weekTotals.hasKcal || weekTotals.hasCost) && (
+          {(weekTotals.hasKcal || weekTotals.hasCost || weekTotals.cookingMinutes > 0) && (
             <p className="text-xs text-foreground-subtle">
               {weekTotals.hasKcal && `${weekTotals.kcal} kcal`}
               {weekTotals.hasKcal && weekTotals.hasCost && " · "}
               {weekTotals.hasCost && `${weekTotals.cost.toFixed(2)} €`}
+              {(weekTotals.hasKcal || weekTotals.hasCost) && weekTotals.cookingMinutes > 0 && " · "}
+              {weekTotals.cookingMinutes > 0 &&
+                `${weekTotals.cookingMinutes >= 60 ? `${Math.floor(weekTotals.cookingMinutes / 60)} h ${(weekTotals.cookingMinutes % 60).toString().padStart(2, "0")}` : `${weekTotals.cookingMinutes} min`} en cuisine`}
             </p>
           )}
         </div>
@@ -580,6 +591,14 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           onClose={() => setModal(null)}
           onSaved={refresh}
           onOpenDetail={(recipeId) => setModal({ type: "detail", recipeId })}
+        />
+      )}
+
+      {modal?.type === "batch_cook" && (
+        <BatchCookDialog
+          recipes={data.recipes}
+          onClose={() => setModal(null)}
+          onSaved={refresh}
         />
       )}
 

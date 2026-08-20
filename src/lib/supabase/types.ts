@@ -73,6 +73,7 @@ export type ATableRecipeRow = {
   last_cooked_at: string | null;
   times_cooked: number;
   ratings: Json;
+  share_token: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -214,6 +215,7 @@ export type ElProfesorFicheRow = {
   sub_entity_id: string;
   title: string;
   status: ElProfesorContentStatus;
+  share_token: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Pencil, X } from "lucide-react";
+import { Plus, Pencil, X, AlertTriangle } from "lucide-react";
 import type { TemporaryIngredient } from "@/lib/a-table/types";
 
 interface TempIngredientsRowProps {
@@ -10,16 +10,38 @@ interface TempIngredientsRowProps {
   onRemove: (id: string) => void;
 }
 
+/** Days until the ingredient's date_limit, or null if unset. Negative means already past. */
+function daysUntil(dateLimit: string): number | null {
+  if (!dateLimit) return null;
+  const target = new Date(dateLimit);
+  if (Number.isNaN(target.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
+
 export function TempIngredientsRow({ items, onAdd, onEdit, onRemove }: TempIngredientsRowProps) {
   return (
     <div>
       <p className="mb-2 text-sm font-medium text-foreground-muted">Aliments à utiliser rapidement</p>
       <div className="flex flex-wrap gap-2">
-        {items.map((item) => (
+        {items.map((item) => {
+          const days = daysUntil(item.date_limit);
+          const urgent = days != null && days <= 2;
+          return (
           <div
             key={item.id}
-            className="flex items-center gap-1.5 rounded-full border border-border bg-surface py-1.5 pl-3 pr-1.5 text-sm"
+            className={`flex items-center gap-1.5 rounded-full border py-1.5 pl-3 pr-1.5 text-sm ${
+              urgent ? "border-danger/40 bg-danger-tint" : "border-border bg-surface"
+            }`}
           >
+            {urgent && (
+              <AlertTriangle
+                className="h-3.5 w-3.5 shrink-0 text-danger"
+                aria-label={days! < 0 ? "Date limite dépassée" : days === 0 ? "Date limite aujourd'hui" : "Date limite proche"}
+              />
+            )}
             <span>
               {item.quantity ? `${item.quantity} ${item.unit} ` : ""}
               {item.name}
@@ -35,7 +57,8 @@ export function TempIngredientsRow({ items, onAdd, onEdit, onRemove }: TempIngre
               <X className="h-3 w-3" />
             </button>
           </div>
-        ))}
+          );
+        })}
         <button
           type="button"
           onClick={onAdd}

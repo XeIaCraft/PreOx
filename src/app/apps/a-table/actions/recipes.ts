@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "node:crypto";
 import { requireATableAccess } from "@/lib/a-table/dal";
 import { createClient } from "@/lib/supabase/server";
 import { callGemini, GeminiError, validStepLabels } from "@/lib/a-table/gemini";
@@ -170,6 +171,24 @@ export async function setRecipeArchived(recipeId: string, archived: boolean): Pr
 
   revalidatePath("/apps/a-table");
   return { success: archived ? "Recette archivée." : "Recette désarchivée." };
+}
+
+/** Toggles a public, read-only share link for a recipe — generates a fresh opaque token when enabling, clears it (revoking any previously shared link) when disabling. */
+export async function toggleRecipeShare(recipeId: string, share: boolean): Promise<ActionState & { shareToken?: string | null }> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const shareToken = share ? randomUUID() : null;
+  const { error } = await supabase
+    .from("a_table_recipes")
+    .update({ share_token: shareToken })
+    .eq("id", recipeId)
+    .eq("user_id", profile.id);
+
+  if (error) return { error: "Impossible de mettre à jour le partage." };
+
+  revalidatePath("/apps/a-table");
+  return { success: share ? "Lien de partage créé." : "Partage désactivé.", shareToken };
 }
 
 export async function duplicateRecipe(recipeId: string): Promise<ActionState> {

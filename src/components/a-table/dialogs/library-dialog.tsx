@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Search, Star, Archive, ArchiveRestore, Plus, Download } from "lucide-react";
+import { Search, Star, Archive, ArchiveRestore, Plus, Download, Sparkle } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Input, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,7 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [neverCookedOnly, setNeverCookedOnly] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [sort, setSort] = useState<SortKey>("recent");
@@ -47,6 +48,7 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
     const result = recipes.filter((r) => {
       if (r.is_archived !== showArchived) return false;
       if (favoritesOnly && !r.is_favorite) return false;
+      if (neverCookedOnly && r.times_cooked > 0) return false;
       if (activeTag && !r.tags.includes(activeTag)) return false;
       if (search) {
         const term = search.toLowerCase();
@@ -61,7 +63,7 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
       if (sort === "most_cooked") return b.times_cooked - a.times_cooked;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [recipes, search, favoritesOnly, showArchived, activeTag, sort]);
+  }, [recipes, search, favoritesOnly, neverCookedOnly, showArchived, activeTag, sort]);
 
   function handleExportCsv() {
     const header = ["Titre", "Portions", "Temps (min)", "Tags", "Favori", "Fois cuisinée"];
@@ -117,6 +119,13 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
         </button>
         <button
           type="button"
+          onClick={() => setNeverCookedOnly((v) => !v)}
+          className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm ${neverCookedOnly ? "border-accent bg-accent-tint text-accent-foreground" : "border-border text-foreground-muted"}`}
+        >
+          <Sparkle className="h-3.5 w-3.5" /> À essayer
+        </button>
+        <button
+          type="button"
           onClick={() => setShowArchived((v) => !v)}
           className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm ${showArchived ? "border-primary/40 bg-primary-tint text-primary-strong" : "border-border text-foreground-muted"}`}
         >
@@ -157,7 +166,7 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
 
       {filtered.length === 0 ? (
         <div className="py-10 text-center text-sm text-foreground-subtle">
-          {search.trim() || favoritesOnly || activeTag ? (
+          {search.trim() || favoritesOnly || neverCookedOnly || activeTag ? (
             <>
               <p>Aucun résultat pour ces filtres.</p>
               <button
@@ -165,6 +174,7 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
                 onClick={() => {
                   setSearch("");
                   setFavoritesOnly(false);
+                  setNeverCookedOnly(false);
                   setActiveTag(null);
                 }}
                 className="mt-2 underline hover:text-foreground"

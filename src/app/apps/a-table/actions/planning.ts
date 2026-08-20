@@ -275,6 +275,43 @@ export async function addRecipeToBacklog(recipeId: string, servings?: number): P
   return { success: "Ajouté à « À cuisiner »." };
 }
 
+/** "Batch cooking": places the same recipe on several days at once (cook once, eat the leftovers reheated), instead of dragging it onto each day individually. */
+export async function batchAddRecipeToDays(recipeId: string, servings: number, placements: Placement[]): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const targetDays = placements.filter((p) => WEEKDAY_PLACEMENTS.includes(p));
+  if (targetDays.length === 0) return { error: "Choisissez au moins un jour." };
+
+  const supabase = await createClient();
+  const { data: recipe } = await supabase.from("a_table_recipes").select("servings").eq("id", recipeId).eq("user_id", profile.id).single();
+  if (!recipe) return { error: "Recette introuvable." };
+
+  const { data: positions } = await supabase
+    .from("a_table_meal_cards")
+    .select("placement, position")
+    .eq("user_id", profile.id)
+    .eq("status", "active")
+    .in("placement", targetDays);
+  const nextPosition = new Map<Placement, number>();
+  for (const row of positions ?? []) {
+    const current = nextPosition.get(row.placement as Placement) ?? -1;
+    if (row.position > current) nextPosition.set(row.placement as Placement, row.position);
+  }
+
+  const rows = targetDays.map((placement) => ({
+    user_id: profile.id,
+    recipe_id: recipeId,
+    placement,
+    position: (nextPosition.get(placement) ?? -1) + 1,
+    servings: servings || recipe.servings,
+  }));
+
+  const { error } = await supabase.from("a_table_meal_cards").insert(rows);
+  if (error) return { error: "Impossible de placer la recette sur ces jours." };
+
+  revalidatePath("/apps/a-table");
+  return { success: `Recette placée sur ${targetDays.length} jour${targetDays.length > 1 ? "s" : ""}.` };
+}
+
 export async function removeHistoryEntry(historyId: string): Promise<ActionState> {
   const profile = await requireATableAccess();
   const supabase = await createClient();

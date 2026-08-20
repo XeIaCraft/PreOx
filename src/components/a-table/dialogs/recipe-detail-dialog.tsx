@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import Image from "next/image";
-import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy, Minus, Plus, Upload, Wine } from "lucide-react";
+import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy, Minus, Plus, Upload, Wine, Share2 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   duplicateRecipe,
   uploadRecipePhoto,
   suggestWineForRecipe,
+  toggleRecipeShare,
 } from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
 import { scaleFactor } from "@/lib/a-table/shopping";
@@ -109,6 +110,24 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
     });
   }
 
+  function handleShare() {
+    startTransition(async () => {
+      const result = await toggleRecipeShare(recipe.id, !recipe.share_token);
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      onSaved();
+      if (result.shareToken) {
+        const url = `${window.location.origin}/share/recipe/${result.shareToken}`;
+        navigator.clipboard.writeText(url).catch(() => {});
+        toast("Lien copié dans le presse-papier.", { variant: "success" });
+      } else {
+        toast("Partage désactivé — l'ancien lien ne fonctionne plus.", { variant: "success" });
+      }
+    });
+  }
+
   return (
     <Modal title={recipe.title} onClose={onClose} size="lg">
       {recipe.image_url && (
@@ -155,6 +174,10 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
         <Button variant="secondary" size="sm" onClick={handleSuggestWine} disabled={loadingWine}>
           <Wine className="h-4 w-4" />
           {loadingWine ? "Recherche…" : "Suggérer un vin"}
+        </Button>
+        <Button variant={recipe.share_token ? "primary" : "secondary"} size="sm" onClick={handleShare} disabled={isPending}>
+          <Share2 className="h-4 w-4" />
+          {recipe.share_token ? "Partagée (copier)" : "Partager"}
         </Button>
         {onCookMode && (
           <Button variant="outline" size="sm" onClick={onCookMode}>

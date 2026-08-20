@@ -70,6 +70,7 @@ export type Fiche = {
   subEntityId: string;
   title: string;
   status: ContentStatus;
+  shareToken: string | null;
 };
 
 export type FicheBlock = {

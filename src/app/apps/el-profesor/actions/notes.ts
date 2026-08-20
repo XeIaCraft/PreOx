@@ -33,6 +33,62 @@ export async function saveMyNote(subEntityId: string, content: string): Promise<
   return { success: "" };
 }
 
+export interface NoteSearchResult {
+  subEntityId: string;
+  subEntityName: string;
+  chapterId: string;
+  chapterTitle: string;
+  bookTitle: string;
+  snippet: string;
+}
+
+/** Full-text search (ilike) across the current user's own personal notes only — never other users' notes. */
+export async function searchMyNotes(query: string): Promise<NoteSearchResult[]> {
+  const profile = await requireElProfesorAccess();
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+
+  const supabase = await createClient();
+  const { data: notes } = await supabase
+    .from("el_profesor_notes")
+    .select("sub_entity_id, content")
+    .eq("user_id", profile.id)
+    .ilike("content", `%${trimmed}%`)
+    .limit(30);
+  if (!notes || notes.length === 0) return [];
+
+  const subEntityIds = notes.map((n) => n.sub_entity_id);
+  const { data: subEntities } = await supabase.from("el_profesor_sub_entities").select("id, name, chapter_id").in("id", subEntityIds);
+  const subEntityById = new Map((subEntities ?? []).map((s) => [s.id, s]));
+
+  const chapterIds = [...new Set((subEntities ?? []).map((s) => s.chapter_id))];
+  const { data: chapters } = chapterIds.length > 0 ? await supabase.from("el_profesor_chapters").select("id, title, book_id").in("id", chapterIds) : { data: [] };
+  const chapterById = new Map((chapters ?? []).map((c) => [c.id, c]));
+
+  const bookIds = [...new Set((chapters ?? []).map((c) => c.book_id))];
+  const { data: books } = bookIds.length > 0 ? await supabase.from("el_profesor_books").select("id, title").in("id", bookIds) : { data: [] };
+  const bookTitleById = new Map((books ?? []).map((b) => [b.id, b.title]));
+
+  const results: NoteSearchResult[] = [];
+  for (const note of notes) {
+    const sub = subEntityById.get(note.sub_entity_id);
+    const chapter = sub ? chapterById.get(sub.chapter_id) : undefined;
+    if (!sub || !chapter) continue;
+    const idx = note.content.toLowerCase().indexOf(trimmed.toLowerCase());
+    const start = Math.max(0, idx - 40);
+    const snippet = `${start > 0 ? "…" : ""}${note.content.slice(start, start + 120)}${note.content.length > start + 120 ? "…" : ""}`;
+    results.push({
+      subEntityId: sub.id,
+      subEntityName: sub.name,
+      chapterId: chapter.id,
+      chapterTitle: chapter.title,
+      bookTitle: bookTitleById.get(chapter.book_id) ?? "",
+      snippet,
+    });
+  }
+  return results;
+}
+
 export interface BookNotesExport {
   content: string;
   hasNotes: boolean;

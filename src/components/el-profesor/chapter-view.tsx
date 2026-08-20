@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2 } from "lucide-react";
 import { QuizMode } from "@/components/el-profesor/quiz-mode";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -16,6 +16,7 @@ import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { toggleBookmark } from "@/app/apps/el-profesor/actions/bookmarks";
 import { getMyNote, saveMyNote } from "@/app/apps/el-profesor/actions/notes";
+import { toggleFicheShare } from "@/app/apps/el-profesor/actions/share";
 import {
   getLastSubEntity,
   setLastSubEntity,
@@ -220,6 +221,24 @@ export function ChapterView({
       .catch(() => toast("Impossible de copier le lien.", { variant: "error" }));
   }
 
+  function handleShare() {
+    if (!selected?.fiche) return;
+    const fiche = selected.fiche;
+    toggleFicheShare(fiche.id, !fiche.shareToken).then((result) => {
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      router.refresh();
+      if (result.shareToken) {
+        navigator.clipboard.writeText(`${window.location.origin}/share/fiche/${result.shareToken}`).catch(() => {});
+        toast("Lien de partage copié.", { variant: "success" });
+      } else {
+        toast("Partage désactivé.", { variant: "success" });
+      }
+    });
+  }
+
   function handleCitationClick(citation: Citation) {
     setHighlight({ page: citation.page, quote: citation.quote });
     // Below lg there's no room for a persistent PDF panel — jump straight
@@ -292,6 +311,18 @@ export function ChapterView({
           <Button variant="ghost" size="icon" onClick={handleCopyLink} aria-label="Copier le lien de cette fiche" title="Copier le lien">
             <Link2 className="h-4 w-4" />
           </Button>
+          {selected?.fiche && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleShare}
+              aria-label={selected.fiche.shareToken ? "Fiche partagée publiquement (cliquer pour copier / désactiver)" : "Partager cette fiche"}
+              title={selected.fiche.shareToken ? "Partagée publiquement — cliquer pour copier le lien, re-cliquer pour désactiver" : "Partager cette fiche (lien public en lecture seule)"}
+              className={selected.fiche.shareToken ? "text-primary-strong" : ""}
+            >
+              <Share2 className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"

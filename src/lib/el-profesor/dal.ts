@@ -9,6 +9,7 @@ import { EL_PROFESOR_GEMINI_MODEL_DEFAULT } from "./gemini";
 import type { Profile } from "@/lib/supabase/types";
 import type {
   Book,
+  BlockType,
   Chapter,
   ChapterStatus,
   SubEntity,
@@ -83,7 +84,7 @@ function toSubEntity(row: ElProfesorSubEntityRow): SubEntity {
 }
 
 function toFiche(row: ElProfesorFicheRow): Fiche {
-  return { id: row.id, subEntityId: row.sub_entity_id, title: row.title, status: row.status };
+  return { id: row.id, subEntityId: row.sub_entity_id, title: row.title, status: row.status, shareToken: row.share_token };
 }
 
 function toFicheBlock(row: ElProfesorFicheBlockRow): FicheBlock {
@@ -750,6 +751,38 @@ export async function getReviewTimeStats(userId: string): Promise<ReviewTimeStat
     if (new Date(row.reviewed_at).getTime() >= sinceTime) last7DaysMs += ms;
   }
   return { totalMs, last7DaysMs };
+}
+
+export interface BlockTypeFlagStat {
+  blockType: BlockType;
+  flagCount: number;
+}
+
+/**
+ * Admin-only content-quality signal, reinterpreted from "review difficulty
+ * per block type": flashcards aren't linked to a specific block in the
+ * schema (extraction generates them as sibling arrays on the same
+ * sub-entity, not tied 1:1 to a block), so per-block-type review difficulty
+ * isn't something the data can actually answer. What IS precisely
+ * trackable: which block types get flagged as erroneous most often — a
+ * comparable quality signal, grounded in real block→flag links.
+ */
+export async function getFlagStatsByBlockType(): Promise<BlockTypeFlagStat[]> {
+  const supabase = await createClient();
+  const { data: flags } = await supabase.from("el_profesor_flags").select("target_id").eq("target_type", "block");
+  if (!flags || flags.length === 0) return [];
+
+  const blockIds = [...new Set(flags.map((f) => f.target_id))];
+  const { data: blocks } = await supabase.from("el_profesor_fiche_blocks").select("id, block_type").in("id", blockIds);
+  const typeByBlock = new Map((blocks ?? []).map((b) => [b.id, b.block_type as BlockType]));
+
+  const counts = new Map<BlockType, number>();
+  for (const flag of flags) {
+    const type = typeByBlock.get(flag.target_id);
+    if (type) counts.set(type, (counts.get(type) ?? 0) + 1);
+  }
+
+  return [...counts.entries()].map(([blockType, flagCount]) => ({ blockType, flagCount })).sort((a, b) => b.flagCount - a.flagCount);
 }
 
 export interface BookCertificateStats {
