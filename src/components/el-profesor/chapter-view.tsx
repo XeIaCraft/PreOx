@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Link2, Star } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Link2, Star, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -11,6 +11,7 @@ import { FicheViewer } from "@/components/el-profesor/fiche-viewer";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
+import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { toggleBookmark } from "@/app/apps/el-profesor/actions/bookmarks";
 import { getLastSubEntity, setLastSubEntity, setLastChapter, getFontScale, setFontScale, type FontScale } from "@/lib/el-profesor/local-prefs";
@@ -51,6 +52,7 @@ export function ChapterView({
   const [scrollProgress, setScrollProgress] = useState(0);
   const [bookmarks, setBookmarks] = useState(() => new Set(bookmarkedIds ?? []));
   const [bookmarkPending, setBookmarkPending] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -66,6 +68,11 @@ export function ChapterView({
       }
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) return;
+      if (e.key === "?") {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
       if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedId((current) => {
@@ -242,6 +249,16 @@ export function ChapterView({
           >
             <Printer className="h-4 w-4" />
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden sm:inline-flex"
+            onClick={() => setShortcutsOpen(true)}
+            aria-label="Raccourcis clavier"
+            title="Raccourcis clavier (?)"
+          >
+            <Keyboard className="h-4 w-4" />
+          </Button>
           <Button variant="secondary" size="sm" className="md:hidden" onClick={() => setPdfModalOpen(true)}>
             <FileText className="h-3.5 w-3.5" /> PDF
           </Button>
@@ -322,6 +339,8 @@ export function ChapterView({
           <LibrarySearch autoFocus />
         </Modal>
       )}
+
+      {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
 
       {pendingSelection && (
         <ProposeFromSelectionDialog

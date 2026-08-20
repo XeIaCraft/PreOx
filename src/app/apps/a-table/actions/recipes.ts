@@ -148,6 +148,40 @@ export async function setRecipeArchived(recipeId: string, archived: boolean): Pr
   return { success: archived ? "Recette archivée." : "Recette désarchivée." };
 }
 
+export async function duplicateRecipe(recipeId: string): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const { data: recipe } = await supabase
+    .from("a_table_recipes")
+    .select("*")
+    .eq("id", recipeId)
+    .eq("user_id", profile.id)
+    .single();
+
+  if (!recipe) return { error: "Recette introuvable." };
+
+  const { error } = await supabase.from("a_table_recipes").insert({
+    user_id: profile.id,
+    title: `${recipe.title} (copie)`,
+    source_kind: "personal_manual",
+    servings: recipe.servings,
+    cooking_minutes: recipe.cooking_minutes,
+    tags: recipe.tags,
+    ingredients: recipe.ingredients,
+    steps: recipe.steps,
+    step_labels: recipe.step_labels,
+    notes: recipe.notes,
+    nutrition: recipe.nutrition,
+    price_per_serving: recipe.price_per_serving,
+  });
+
+  if (error) return { error: "Impossible de dupliquer la recette." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "Recette dupliquée dans « Mes recettes »." };
+}
+
 export async function fetchRecipeImage(recipeId: string): Promise<ActionState> {
   const profile = await requireATableAccess();
   const supabase = await createClient();

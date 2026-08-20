@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, X, PartyPopper, Undo2, Info } from "lucide-react";
+import { ArrowLeft, Check, X, PartyPopper, Undo2, Info, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { submitReview, undoReview } from "@/app/apps/el-profesor/actions/review";
 import { FlagButton } from "@/components/el-profesor/flag-button";
+import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { useToast } from "@/components/ui/toast";
 import type { Flashcard, ReviewSource, ReviewState } from "@/lib/el-profesor/types";
 
@@ -53,6 +54,7 @@ export function FlashcardReviewer({
   const [tally, setTally] = useState({ again: 0, good: 0 });
   const [struggled, setStruggled] = useState<string[]>([]);
   const [lastAction, setLastAction] = useState<LastAction | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Picked once per session mount so it stays stable across re-renders but varies session to session.
   const [completionMessage] = useState(() => COMPLETION_MESSAGES[Math.floor(Math.random() * COMPLETION_MESSAGES.length)]);
   const swipeStartX = useRef<number | null>(null);
@@ -115,6 +117,11 @@ export function FlashcardReviewer({
           e.preventDefault();
           handleUndo();
         }
+        return;
+      }
+      if (e.key === "?") {
+        e.preventDefault();
+        setShortcutsOpen(true);
         return;
       }
       if (!current || isPending) return;
@@ -230,8 +237,20 @@ export function FlashcardReviewer({
           <span className="text-xs text-foreground-subtle">
             {index + 1} / {cards.length}
           </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden sm:inline-flex"
+            onClick={() => setShortcutsOpen(true)}
+            aria-label="Raccourcis clavier"
+            title="Raccourcis clavier (?)"
+          >
+            <Keyboard className="h-4 w-4" />
+          </Button>
         </div>
       </div>
+
+      {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
 
       <div className="mt-3 h-1 overflow-hidden rounded-full bg-surface-muted">
         <div

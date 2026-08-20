@@ -2,11 +2,11 @@
 
 import { useTransition } from "react";
 import Image from "next/image";
-import { Star, Image as ImageIcon, Clock, Users, Euro } from "lucide-react";
+import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { Button } from "@/components/ui/button";
-import { toggleFavorite, fetchRecipeImage, refineRecipe } from "@/app/apps/a-table/actions/recipes";
+import { toggleFavorite, fetchRecipeImage, refineRecipe, duplicateRecipe } from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
 import { scaleFactor } from "@/lib/a-table/shopping";
 import type { Appetite, Recipe } from "@/lib/a-table/types";
@@ -41,6 +41,18 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
     });
   }
 
+  function handleDuplicate() {
+    startTransition(async () => {
+      const result = await duplicateRecipe(recipe.id);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "", { variant: "success" });
+        onSaved();
+        onClose();
+      }
+    });
+  }
+
   return (
     <Modal title={recipe.title} onClose={onClose} size="lg">
       {recipe.image_url && (
@@ -49,7 +61,7 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
         <Button variant={recipe.is_favorite ? "primary" : "secondary"} size="sm" onClick={handleFavorite} disabled={isPending}>
           <Star className="h-4 w-4" />
           {recipe.is_favorite ? "Favori" : "Ajouter aux favoris"}
@@ -58,6 +70,14 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
           <ImageIcon className="h-4 w-4" />
           Illustrer
         </Button>
+        <Button variant="secondary" size="sm" onClick={handleDuplicate} disabled={isPending}>
+          <Copy className="h-4 w-4" />
+          Dupliquer
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => window.print()}>
+          <Printer className="h-4 w-4" />
+          Imprimer
+        </Button>
         {onCookMode && (
           <Button variant="outline" size="sm" onClick={onCookMode}>
             Mode recette
@@ -65,6 +85,8 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
         )}
       </div>
 
+      <div className="print-area">
+      <h1 className="hidden font-serif-display text-xl font-medium text-foreground print:mb-4 print:block">{recipe.title}</h1>
       <div className="mb-4 flex flex-wrap gap-4 text-sm text-foreground-muted">
         {recipe.cooking_minutes != null && (
           <span className="flex items-center gap-1">
@@ -122,8 +144,9 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
       {recipe.notes && (
         <div className="mt-4 rounded-[var(--radius-sm)] bg-surface-muted p-3 text-sm text-foreground-muted">{recipe.notes}</div>
       )}
+      </div>
 
-      <div className="mt-6">
+      <div className="mt-6 print:hidden">
         <RefineBox onSubmit={(message) => refineRecipe(recipe.id, message)} onApplied={onSaved} />
       </div>
     </Modal>

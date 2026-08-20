@@ -23,15 +23,23 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
   const [search, setSearch] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+
+  const allTags = useMemo(() => {
+    const tags = new Set<string>();
+    for (const r of recipes) for (const tag of r.tags) tags.add(tag);
+    return [...tags].sort((a, b) => a.localeCompare(b));
+  }, [recipes]);
 
   const filtered = useMemo(() => {
     return recipes.filter((r) => {
       if (r.is_archived !== showArchived) return false;
       if (favoritesOnly && !r.is_favorite) return false;
+      if (activeTag && !r.tags.includes(activeTag)) return false;
       if (search && !r.title.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-  }, [recipes, search, favoritesOnly, showArchived]);
+  }, [recipes, search, favoritesOnly, showArchived, activeTag]);
 
   function handleArchiveToggle(recipe: Recipe) {
     startTransition(async () => {
@@ -75,9 +83,24 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
         </button>
       </div>
 
+      {allTags.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          {allTags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => setActiveTag((t) => (t === tag ? null : tag))}
+              className={`rounded-full border px-2.5 py-1 text-xs ${activeTag === tag ? "border-primary/40 bg-primary-tint text-primary-strong" : "border-border text-foreground-subtle hover:text-foreground"}`}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
+
       {filtered.length === 0 ? (
         <div className="py-10 text-center text-sm text-foreground-subtle">
-          {search.trim() || favoritesOnly ? (
+          {search.trim() || favoritesOnly || activeTag ? (
             <>
               <p>Aucun résultat pour ces filtres.</p>
               <button
@@ -85,6 +108,7 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
                 onClick={() => {
                   setSearch("");
                   setFavoritesOnly(false);
+                  setActiveTag(null);
                 }}
                 className="mt-2 underline hover:text-foreground"
               >
