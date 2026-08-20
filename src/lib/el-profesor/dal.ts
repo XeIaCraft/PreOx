@@ -376,6 +376,42 @@ export async function getDailyCard(userId: string, chapters: Chapter[]): Promise
   return source[dayIndex % source.length];
 }
 
+/** Per-chapter "carnet d'erreurs" counts — same criteria as getDifficultQueue, tallied by chapter for the dashboard cards. */
+export async function getDifficultCountsByChapter(userId: string, chapters: Chapter[]): Promise<ChapterDueCounts> {
+  const counts: ChapterDueCounts = {};
+  const supabase = await createClient();
+
+  await Promise.all(
+    chapters
+      .filter((c) => c.status === "published")
+      .map(async (chapter) => {
+        const content = await getChapterContent(chapter.id, false);
+        const flashcards = content.flatMap((s) => s.fiche?.flashcards ?? []);
+        if (flashcards.length === 0) {
+          counts[chapter.id] = 0;
+          return;
+        }
+
+        const { data: states } = await supabase
+          .from("el_profesor_review_state")
+          .select("flashcard_id, state, lapses")
+          .eq("user_id", userId)
+          .in(
+            "flashcard_id",
+            flashcards.map((f) => f.id)
+          );
+        const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s]));
+
+        counts[chapter.id] = flashcards.filter((card) => {
+          const state = stateByCard.get(card.id);
+          return !!state && (state.state === "relearning" || state.lapses >= 2);
+        }).length;
+      })
+  );
+
+  return counts;
+}
+
 export interface ReviewActivitySummary {
   currentStreak: number;
   longestStreak: number;

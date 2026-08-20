@@ -16,6 +16,7 @@ import {
   Settings,
   HelpCircle,
   Download,
+  ShieldAlert,
   ChevronUp,
   ChevronDown,
 } from "lucide-react";
@@ -106,6 +107,7 @@ export function ElProfesorBoard({
   geminiModel,
   globalDueCount,
   difficultCount,
+  difficultCounts,
   activity,
   dailyCard,
   bookmarks,
@@ -118,6 +120,7 @@ export function ElProfesorBoard({
   geminiModel: string | null;
   globalDueCount: number;
   difficultCount: number;
+  difficultCounts: ChapterDueCounts;
   activity: ReviewActivitySummary;
   dailyCard: Flashcard | null;
   bookmarks: BookmarkedEntity[];
@@ -411,6 +414,13 @@ export function ElProfesorBoard({
                       <p className="mt-1.5 text-xs text-danger">{chapter.extractionError}</p>
                     )}
                     {chapter.status === "published" && masteryCounts[chapter.id] && <MasteryBar counts={masteryCounts[chapter.id]} />}
+                    {chapter.status === "published" && (difficultCounts[chapter.id] ?? 0) > 0 && (
+                      <p className="mt-1 flex items-center gap-1 text-[11px] text-danger">
+                        <ShieldAlert className="h-3 w-3" /> {difficultCounts[chapter.id]} carte
+                        {(difficultCounts[chapter.id] ?? 0) > 1 ? "s" : ""} difficile
+                        {(difficultCounts[chapter.id] ?? 0) > 1 ? "s" : ""}
+                      </p>
+                    )}
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       {chapter.status === "published" && (

@@ -7,6 +7,7 @@ import {
   getElProfesorGeminiModel,
   getGlobalDueQueue,
   getDifficultQueue,
+  getDifficultCountsByChapter,
   getReviewActivitySummary,
   getDailyCard,
   getBookmarkedEntities,
@@ -22,7 +23,7 @@ export default async function ElProfesorPage() {
   // admins need visibility into the pipeline's in-progress state.
   const books = isAdmin ? rawBooks : rawBooks.map((b) => ({ ...b, chapters: b.chapters.filter((c) => c.status === "published") }));
   const allChapters = books.flatMap((b) => b.chapters);
-  const [dueCounts, needsReviewCounts, masteryCounts, geminiModel, globalDue, difficult, activity, dailyCard, bookmarks] =
+  const [dueCounts, needsReviewCounts, masteryCounts, geminiModel, globalDue, difficult, difficultCounts, activity, dailyCard, bookmarks] =
     await Promise.all([
       getDueCountsByChapter(profile.id, allChapters),
       isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
@@ -30,6 +31,7 @@ export default async function ElProfesorPage() {
       isAdmin ? getElProfesorGeminiModel() : Promise.resolve(null),
       getGlobalDueQueue(profile.id, allChapters),
       getDifficultQueue(profile.id, allChapters),
+      getDifficultCountsByChapter(profile.id, allChapters),
       getReviewActivitySummary(profile.id),
       getDailyCard(profile.id, allChapters),
       getBookmarkedEntities(profile.id),
@@ -46,6 +48,7 @@ export default async function ElProfesorPage() {
         geminiModel={geminiModel}
         globalDueCount={globalDue.length}
         difficultCount={difficult.length}
+        difficultCounts={difficultCounts}
         activity={activity}
         dailyCard={dailyCard}
         bookmarks={bookmarks}
