@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ShoppingBasket, BookOpen, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus } from "lucide-react";
+import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
 import { A_TABLE_ONBOARDING_STEPS } from "@/components/a-table/onboarding-steps";
@@ -18,6 +18,7 @@ import { RecipeDetailDialog } from "@/components/a-table/dialogs/recipe-detail-d
 import { AddRecipeDialog } from "@/components/a-table/dialogs/add-recipe-dialog";
 import { TempIngredientDialog } from "@/components/a-table/dialogs/temp-ingredient-dialog";
 import { LibraryDialog } from "@/components/a-table/dialogs/library-dialog";
+import { CollectionsDialog } from "@/components/a-table/dialogs/collections-dialog";
 import { RateDialog } from "@/components/a-table/dialogs/rate-dialog";
 import { HistoryDialog } from "@/components/a-table/dialogs/history-dialog";
 import { ShoppingDialog } from "@/components/a-table/dialogs/shopping-dialog";
@@ -47,6 +48,7 @@ type ModalState =
   | { type: "add_temp" }
   | { type: "edit_temp"; ingredient: TemporaryIngredient }
   | { type: "library" }
+  | { type: "collections" }
   | { type: "rate"; recipeId: string; recipeTitle: string }
   | { type: "history" }
   | { type: "shopping" }
@@ -81,24 +83,57 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
   const weekTotals = useMemo(() => {
     let kcal = 0;
     let cost = 0;
+    let protein = 0;
+    let carb = 0;
+    let fat = 0;
+    let mealCount = 0;
     let hasKcal = false;
     let hasCost = false;
     for (const card of data.mealCards) {
       if (card.status !== "active" || !WEEKDAY_PLACEMENTS.includes(card.placement)) continue;
       const recipe = recipesById.get(card.recipe_id);
       if (!recipe) continue;
+      mealCount += 1;
       const factor = scaleFactor(recipe.servings, card.servings || recipe.servings, data.settings.preferences.appetite);
       if (recipe.nutrition.kcal != null) {
         kcal += recipe.nutrition.kcal * factor;
         hasKcal = true;
       }
+      if (recipe.nutrition.protein_g != null) protein += recipe.nutrition.protein_g * factor;
+      if (recipe.nutrition.carb_g != null) carb += recipe.nutrition.carb_g * factor;
+      if (recipe.nutrition.fat_g != null) fat += recipe.nutrition.fat_g * factor;
       if (recipe.price_per_serving != null) {
         cost += recipe.price_per_serving * (card.servings || recipe.servings);
         hasCost = true;
       }
     }
-    return { kcal: Math.round(kcal), cost, hasKcal, hasCost };
+    const macroKcal = protein * 4 + carb * 4 + fat * 9;
+    const macroPct =
+      macroKcal > 0
+        ? { protein_pct: Math.round((protein * 4 * 100) / macroKcal), carb_pct: Math.round((carb * 4 * 100) / macroKcal), fat_pct: Math.round((fat * 9 * 100) / macroKcal) }
+        : null;
+    return {
+      kcal: Math.round(kcal),
+      cost,
+      hasKcal,
+      hasCost,
+      avgKcalPerMeal: mealCount > 0 ? Math.round(kcal / mealCount) : 0,
+      macroPct,
+    };
   }, [data.mealCards, data.settings.preferences.appetite, recipesById]);
+  const cookableWithLeftovers = useMemo(() => {
+    if (data.temporaryIngredients.length === 0) return [];
+    const leftoverNames = data.temporaryIngredients.map((t) => t.name.toLowerCase());
+    return data.recipes
+      .filter((r) => !r.is_archived)
+      .map((r) => ({
+        recipe: r,
+        matches: r.ingredients.filter((ing) => leftoverNames.some((name) => ing.name.toLowerCase().includes(name))).length,
+      }))
+      .filter((entry) => entry.matches > 0)
+      .sort((a, b) => b.matches - a.matches)
+      .slice(0, 4);
+  }, [data.temporaryIngredients, data.recipes]);
   const activeCards = useMemo(() => data.mealCards.filter((c) => c.status === "active"), [data.mealCards]);
   const backlogCards = useMemo(
     () => activeCards.filter((c) => c.placement === "backlog").sort((a, b) => a.position - b.position),
@@ -246,6 +281,9 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           <Button variant="secondary" size="sm" onClick={() => setModal({ type: "library" })}>
             <BookOpen className="h-4 w-4" /> Mes recettes
           </Button>
+          <Button variant="secondary" size="sm" onClick={() => setModal({ type: "collections" })}>
+            <FolderHeart className="h-4 w-4" /> Collections
+          </Button>
           <Button variant="secondary" size="sm" onClick={() => setModal({ type: "history" })}>
             <HistoryIcon className="h-4 w-4" /> Historique
           </Button>
@@ -278,6 +316,24 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
         onEdit={(ingredient) => setModal({ type: "edit_temp", ingredient })}
         onRemove={handleRemoveTempIngredient}
       />
+
+      {cookableWithLeftovers.length > 0 && (
+        <div className="rounded-[var(--radius-md)] border border-dashed border-primary/30 bg-primary-tint/30 px-3 py-2.5">
+          <p className="text-xs font-medium text-primary-strong">Avec ce qu&rsquo;il vous reste, vous pouvez cuisiner :</p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {cookableWithLeftovers.map(({ recipe }) => (
+              <button
+                key={recipe.id}
+                type="button"
+                onClick={() => setModal({ type: "detail", recipeId: recipe.id })}
+                className="rounded-full border border-primary/30 bg-surface px-3 py-1 text-xs text-foreground hover:border-primary/50"
+              >
+                {recipe.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <GeneratorBar defaultCount={data.settings.preferences.default_recipe_count} onGenerate={handleGenerate} isPending={isGenerating} />
 
@@ -346,6 +402,26 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           )}
         </div>
       </div>
+
+      {weekTotals.hasKcal && (data.settings.preferences.target_kcal_per_serving || weekTotals.macroPct) && (
+        <div className="flex flex-wrap items-center gap-4 rounded-[var(--radius-md)] border border-border bg-surface-muted/50 px-3 py-2 text-xs text-foreground-muted print:hidden">
+          {data.settings.preferences.target_kcal_per_serving && (
+            <span>
+              {weekTotals.avgKcalPerMeal} kcal/repas en moyenne{" "}
+              <span className="text-foreground-subtle">(objectif : {data.settings.preferences.target_kcal_per_serving})</span>
+            </span>
+          )}
+          {weekTotals.macroPct && (
+            <span>
+              Macros réelles : {weekTotals.macroPct.protein_pct}P / {weekTotals.macroPct.carb_pct}G / {weekTotals.macroPct.fat_pct}L{" "}
+              <span className="text-foreground-subtle">
+                (objectif : {data.settings.preferences.macro_ratios.protein_pct}/{data.settings.preferences.macro_ratios.carb_pct}/
+                {data.settings.preferences.macro_ratios.fat_pct})
+              </span>
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="print-area hidden print:block">
         <h1 className="mb-4 font-serif-display text-xl font-medium text-foreground">Menu de la semaine</h1>
@@ -432,6 +508,10 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           onSaved={refresh}
           onOpenDetail={(recipeId) => setModal({ type: "detail", recipeId })}
         />
+      )}
+
+      {modal?.type === "collections" && (
+        <CollectionsDialog collections={data.collections} recipes={data.recipes} onClose={() => setModal(null)} onSaved={refresh} />
       )}
 
       {modal?.type === "rate" && (

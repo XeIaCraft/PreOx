@@ -28,8 +28,17 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
   const [isPending, startTransition] = useTransition();
   const [previewServings, setPreviewServings] = useState(servings);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [printFormat, setPrintFormat] = useState<"full" | "card">("full");
   const photoInputRef = useRef<HTMLInputElement>(null);
   const factor = scaleFactor(recipe.servings, previewServings, appetite);
+
+  function handlePrintCard() {
+    setPrintFormat("card");
+    requestAnimationFrame(() => {
+      window.print();
+      setPrintFormat("full");
+    });
+  }
 
   function handleFavorite() {
     startTransition(async () => {
@@ -119,6 +128,10 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
           <Printer className="h-4 w-4" />
           Imprimer
         </Button>
+        <Button variant="secondary" size="sm" onClick={handlePrintCard} title="Imprimer au format fiche de cuisine (compact)">
+          <Printer className="h-4 w-4" />
+          Carte
+        </Button>
         {onCookMode && (
           <Button variant="outline" size="sm" onClick={onCookMode}>
             Mode recette
@@ -126,7 +139,7 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
         )}
       </div>
 
-      <div className="print-area">
+      <div className={printFormat === "full" ? "print-area" : ""}>
       <h1 className="hidden font-serif-display text-xl font-medium text-foreground print:mb-4 print:block">{recipe.title}</h1>
       <div className="mb-4 flex flex-wrap gap-4 text-sm text-foreground-muted">
         {recipe.cooking_minutes != null && (
@@ -207,6 +220,35 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
         <div className="mt-4 rounded-[var(--radius-sm)] bg-surface-muted p-3 text-sm text-foreground-muted">{recipe.notes}</div>
       )}
       </div>
+
+      {printFormat === "card" && (
+        <div className="print-area mx-auto hidden w-[9.5cm] text-[11px] leading-snug text-foreground print:block">
+          <h1 className="font-serif-display text-base font-medium">{recipe.title}</h1>
+          <p className="mt-0.5 text-foreground-subtle">
+            {previewServings} pers.
+            {recipe.cooking_minutes != null && ` · ${recipe.cooking_minutes} min`}
+          </p>
+          <div className="mt-2">
+            <p className="font-semibold uppercase tracking-wide text-[10px]">Ingrédients</p>
+            <ul className="mt-1 space-y-0.5">
+              {recipe.ingredients.map((ing, i) => (
+                <li key={i}>
+                  {typeof ing.quantity === "number" ? Math.round(ing.quantity * factor * 100) / 100 : (ing.quantity ?? "")} {ing.unit}{" "}
+                  {ing.name}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="mt-2">
+            <p className="font-semibold uppercase tracking-wide text-[10px]">Étapes</p>
+            <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+              {recipe.steps.map((step, i) => (
+                <li key={i}>{step}</li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 print:hidden">
         <RefineBox onSubmit={(message) => refineRecipe(recipe.id, message)} onApplied={onSaved} />

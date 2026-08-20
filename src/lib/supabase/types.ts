@@ -121,6 +121,15 @@ export type ATableGuestMenuRow = {
   wine_pairings: Json;
 };
 
+export type ATableCollectionRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  recipe_ids: string[];
+  created_at: string;
+  updated_at: string;
+};
+
 export type ATableSettingsRow = {
   user_id: string;
   preferences: Json;
@@ -326,6 +335,12 @@ export type Database = {
         Row: ATableGuestMenuRow;
         Insert: Partial<ATableGuestMenuRow> & { user_id: string; guests: number };
         Update: Partial<ATableGuestMenuRow>;
+        Relationships: [];
+      };
+      a_table_collections: {
+        Row: ATableCollectionRow;
+        Insert: Partial<ATableCollectionRow> & { user_id: string; name: string };
+        Update: Partial<ATableCollectionRow>;
         Relationships: [];
       };
       a_table_settings: {

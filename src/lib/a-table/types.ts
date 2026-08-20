@@ -230,6 +230,15 @@ export interface ATableSettings {
   updated_at: string;
 }
 
+export interface RecipeCollection {
+  id: string;
+  user_id: string;
+  name: string;
+  recipe_ids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ATableData {
   settings: ATableSettings;
   recipes: Recipe[];
@@ -238,4 +247,5 @@ export interface ATableData {
   temporaryIngredients: TemporaryIngredient[];
   guestMenus: GuestMenu[];
   history: HistoryEntry[];
+  collections: RecipeCollection[];
 }

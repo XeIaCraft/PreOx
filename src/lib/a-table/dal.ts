@@ -15,6 +15,7 @@ import type {
   Preferences,
   GenerationRules,
   Recipe,
+  RecipeCollection,
   ShoppingManualItem,
   TemporaryIngredient,
 } from "./types";
@@ -86,7 +87,7 @@ export async function getOrCreateSettings(userId: string): Promise<ATableSetting
 export async function getATableData(userId: string): Promise<ATableData> {
   const supabase = await createClient();
 
-  const [settings, recipesRes, cardsRes, draftsRes, tempRes, guestRes, historyRes] = await Promise.all([
+  const [settings, recipesRes, cardsRes, draftsRes, tempRes, guestRes, historyRes, collectionsRes] = await Promise.all([
     getOrCreateSettings(userId),
     supabase.from("a_table_recipes").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
     supabase.from("a_table_meal_cards").select("*").eq("user_id", userId).eq("status", "active"),
@@ -103,6 +104,7 @@ export async function getATableData(userId: string): Promise<ATableData> {
       .eq("user_id", userId)
       .order("cooked_at", { ascending: false })
       .limit(200),
+    supabase.from("a_table_collections").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
   ]);
 
   return {
@@ -111,6 +113,7 @@ export async function getATableData(userId: string): Promise<ATableData> {
     mealCards: (cardsRes.data ?? []) as unknown as MealCard[],
     drafts: (draftsRes.data ?? []) as unknown as Draft[],
     temporaryIngredients: (tempRes.data ?? []) as unknown as TemporaryIngredient[],
+    collections: (collectionsRes.data ?? []) as unknown as RecipeCollection[],
     guestMenus: (guestRes.data ?? []) as unknown as GuestMenu[],
     history: (historyRes.data ?? []) as unknown as HistoryEntry[],
   };
