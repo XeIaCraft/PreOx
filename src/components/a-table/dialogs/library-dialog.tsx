@@ -76,7 +76,25 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
       </div>
 
       {filtered.length === 0 ? (
-        <p className="py-10 text-center text-sm text-foreground-subtle">Aucune recette trouvée.</p>
+        <div className="py-10 text-center text-sm text-foreground-subtle">
+          {search.trim() || favoritesOnly ? (
+            <>
+              <p>Aucun résultat pour ces filtres.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setFavoritesOnly(false);
+                }}
+                className="mt-2 underline hover:text-foreground"
+              >
+                Réinitialiser
+              </button>
+            </>
+          ) : (
+            <p>{showArchived ? "Aucune recette archivée." : "Aucune recette pour l'instant — ajoutez-en une depuis le tableau."}</p>
+          )}
+        </div>
       ) : (
         <ul className="divide-y divide-border">
           {filtered.map((recipe) => (

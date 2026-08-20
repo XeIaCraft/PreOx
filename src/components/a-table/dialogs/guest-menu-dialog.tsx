@@ -28,7 +28,19 @@ function isComposed(course: GuestCourse): course is { items: GuestCourseDish[] }
   return "items" in course;
 }
 
-function DishCard({ dish, onRegenerate, onRefine, isPending }: { dish: GuestCourseDish; onRegenerate: () => void; onRefine: (m: string) => Promise<{ error?: string; success?: string }>; isPending: boolean }) {
+function DishCard({
+  dish,
+  onRegenerate,
+  onRefine,
+  onApplied,
+  isPending,
+}: {
+  dish: GuestCourseDish;
+  onRegenerate: () => void;
+  onRefine: (m: string) => Promise<{ error?: string; success?: string }>;
+  onApplied: () => void;
+  isPending: boolean;
+}) {
   return (
     <div className="rounded-[var(--radius-md)] border border-border p-3">
       <div className="flex items-start justify-between gap-2">
@@ -46,7 +58,7 @@ function DishCard({ dish, onRegenerate, onRefine, isPending }: { dish: GuestCour
         ))}
       </ul>
       <div className="mt-2">
-        <RefineBox onSubmit={onRefine} onApplied={() => {}} placeholder="Ajuster ce plat…" />
+        <RefineBox onSubmit={onRefine} onApplied={onApplied} placeholder="Ajuster ce plat…" />
       </div>
     </div>
   );
@@ -223,6 +235,7 @@ export function GuestMenuDialog({ menu, onClose, onSaved, onCreated }: GuestMenu
                       isPending={regeneratingKey === `${key}:${i}`}
                       onRegenerate={() => handleRegenerateCourse(key, i)}
                       onRefine={(m) => refineGuestCourse(menu.id, key, m, i)}
+                      onApplied={onSaved}
                     />
                   ))}
                 </div>
@@ -232,6 +245,7 @@ export function GuestMenuDialog({ menu, onClose, onSaved, onCreated }: GuestMenu
                   isPending={regeneratingKey === key}
                   onRegenerate={() => handleRegenerateCourse(key)}
                   onRefine={(m) => refineGuestCourse(menu.id, key, m)}
+                  onApplied={onSaved}
                 />
               )}
             </div>
