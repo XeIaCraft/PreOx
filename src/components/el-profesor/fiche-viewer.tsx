@@ -102,16 +102,19 @@ function BlockBody({ block }: { block: FicheBlock }) {
 
 export function FicheViewer({
   title,
+  summary,
   blocks,
   onCitationClick,
 }: {
   title: string;
+  summary?: string;
   blocks: FicheBlock[];
   onCitationClick?: (c: Citation) => void;
 }) {
   return (
     <div>
       <h3 className="font-serif-display text-xl font-medium text-foreground">{title}</h3>
+      {summary && <p className="mt-1 text-sm text-foreground-subtle">{summary}</p>}
       <div className="mt-4 space-y-4">
         {blocks.map((block) => {
           const meta = BLOCK_META[block.blockType];

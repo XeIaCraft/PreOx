@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText } from "lucide-react";
+import { ArrowLeft, FileText, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { FicheViewer } from "@/components/el-profesor/fiche-viewer";
+import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
@@ -33,6 +34,7 @@ export function ChapterView({
   const [highlight, setHighlight] = useState<PdfHighlight>(null);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     getChapterPdfUrl(chapterId).then((result) => setPdfUrl(result.url ?? null));
@@ -53,6 +55,25 @@ export function ChapterView({
     return entries;
   }, [withFiche]);
 
+  const swipeStartX = useRef<number | null>(null);
+
+  function handleContentPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.pointerType !== "touch") return;
+    swipeStartX.current = e.clientX;
+  }
+
+  function handleContentPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const startX = swipeStartX.current;
+    swipeStartX.current = null;
+    if (e.pointerType !== "touch" || startX === null) return;
+    const dx = e.clientX - startX;
+    if (Math.abs(dx) < 60) return;
+    const index = withFiche.findIndex((s) => s.id === selectedId);
+    if (index === -1) return;
+    if (dx < 0 && index < withFiche.length - 1) setSelectedId(withFiche[index + 1].id);
+    else if (dx > 0 && index > 0) setSelectedId(withFiche[index - 1].id);
+  }
+
   function handleCitationClick(citation: Citation) {
     setHighlight({ page: citation.page, quote: citation.quote });
     // Below lg there's no room for a persistent PDF panel — jump straight
@@ -64,18 +85,23 @@ export function ChapterView({
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col px-4 py-4 sm:px-6 md:h-[calc(100vh-4rem)]">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+      <div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-3 bg-background py-1">
+        <div className="flex min-w-0 items-center gap-3">
           <Link href="/apps/el-profesor">
             <Button variant="ghost" size="icon" aria-label="Retour">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <h1 className="font-serif-display text-lg font-medium text-foreground">{chapterTitle}</h1>
+          <h1 className="truncate font-serif-display text-lg font-medium text-foreground">{chapterTitle}</h1>
         </div>
-        <Button variant="secondary" size="sm" className="md:hidden" onClick={() => setPdfModalOpen(true)}>
-          <FileText className="h-3.5 w-3.5" /> PDF
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)} aria-label="Rechercher dans la bibliothèque">
+            <Search className="h-4 w-4" />
+          </Button>
+          <Button variant="secondary" size="sm" className="md:hidden" onClick={() => setPdfModalOpen(true)}>
+            <FileText className="h-3.5 w-3.5" /> PDF
+          </Button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 gap-4 lg:grid lg:grid-cols-[220px_1fr_1fr] lg:overflow-hidden">
@@ -100,9 +126,18 @@ export function ChapterView({
             tablets get a real reading view instead of inheriting the mobile
             stack or squeezing into the desktop's 3-column layout. */}
         <div className="min-h-0 gap-4 md:grid md:grid-cols-2 lg:contents">
-          <div className="min-h-0 rounded-[var(--radius-lg)] border border-border bg-surface p-5 md:overflow-y-auto lg:overflow-y-auto">
+          <div
+            className="min-h-0 rounded-[var(--radius-lg)] border border-border bg-surface p-5 md:overflow-y-auto lg:overflow-y-auto"
+            onPointerDown={handleContentPointerDown}
+            onPointerUp={handleContentPointerUp}
+          >
             {selected?.fiche ? (
-              <FicheViewer title={selected.fiche.title} blocks={selected.fiche.blocks} onCitationClick={handleCitationClick} />
+              <FicheViewer
+                title={selected.fiche.title}
+                summary={selected.summary}
+                blocks={selected.fiche.blocks}
+                onCitationClick={handleCitationClick}
+              />
             ) : (
               <p className="text-sm text-foreground-subtle">Sélectionnez une entrée.</p>
             )}
@@ -127,6 +162,12 @@ export function ChapterView({
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
             )}
           </div>
+        </Modal>
+      )}
+
+      {searchOpen && (
+        <Modal title="Rechercher" onClose={() => setSearchOpen(false)} size="md">
+          <LibrarySearch />
         </Modal>
       )}
 

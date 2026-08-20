@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, FileText, PartyPopper } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, PartyPopper, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Modal } from "@/components/ui/modal";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
+import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { BlockEditor } from "@/components/el-profesor/block-editor";
 import { FlashcardEditor } from "@/components/el-profesor/flashcard-editor";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
@@ -39,6 +40,7 @@ export function ExtractionReviewView({
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [onlyFlagged, setOnlyFlagged] = useState(false);
   const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     getChapterPdfUrl(chapterId).then((result) => setPdfUrl(result.url ?? null));
@@ -116,16 +118,19 @@ export function ExtractionReviewView({
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col px-4 py-4 sm:px-6 md:h-[calc(100vh-4rem)]">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+      <div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-3 bg-background py-1">
+        <div className="flex min-w-0 items-center gap-3">
           <Link href="/apps/el-profesor">
             <Button variant="ghost" size="icon" aria-label="Retour">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <h1 className="font-serif-display text-base font-medium text-foreground sm:text-lg">Relecture — {chapterTitle}</h1>
+          <h1 className="truncate font-serif-display text-base font-medium text-foreground sm:text-lg">Relecture — {chapterTitle}</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)} aria-label="Rechercher dans la bibliothèque">
+            <Search className="h-4 w-4" />
+          </Button>
           <Button variant="secondary" size="sm" className="md:hidden" onClick={() => setPdfModalOpen(true)}>
             <FileText className="h-3.5 w-3.5" />
           </Button>
@@ -152,6 +157,7 @@ export function ExtractionReviewView({
               sub.fiche!.status !== "published" ||
               sub.fiche!.blocks.some((b) => b.status !== "published") ||
               sub.fiche!.flashcards.some((c) => c.status !== "published");
+            const cardCount = sub.fiche!.flashcards.length;
             return (
               <button
                 key={sub.id}
@@ -164,7 +170,10 @@ export function ExtractionReviewView({
                 }`}
               >
                 <span>{sub.name}</span>
-                {hasDraft ? <Badge variant="accent">Brouillon</Badge> : <Badge variant="success">OK</Badge>}
+                <span className="flex shrink-0 gap-1.5">
+                  {cardCount === 0 && <Badge variant="danger">0 carte</Badge>}
+                  {hasDraft ? <Badge variant="accent">Brouillon</Badge> : <Badge variant="success">OK</Badge>}
+                </span>
               </button>
             );
           })}
@@ -174,8 +183,11 @@ export function ExtractionReviewView({
           <div className="min-h-0 rounded-[var(--radius-lg)] border border-border bg-surface p-4 md:overflow-y-auto lg:overflow-y-auto">
             {selected?.fiche ? (
               <div>
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="font-serif-display text-lg font-medium text-foreground">{selected.fiche.title}</h2>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h2 className="font-serif-display text-lg font-medium text-foreground">{selected.fiche.title}</h2>
+                    {selected.summary && <p className="mt-1 text-sm text-foreground-subtle">{selected.summary}</p>}
+                  </div>
                   {selectedHasDraftContent && (
                     <Button size="sm" onClick={() => handlePublishFiche(selected.fiche!.id)} disabled={isPending}>
                       {selected.fiche.status === "published" ? "Publier les compléments" : "Publier cette fiche"}
@@ -244,6 +256,12 @@ export function ExtractionReviewView({
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
             )}
           </div>
+        </Modal>
+      )}
+
+      {searchOpen && (
+        <Modal title="Rechercher" onClose={() => setSearchOpen(false)} size="md">
+          <LibrarySearch />
         </Modal>
       )}
 

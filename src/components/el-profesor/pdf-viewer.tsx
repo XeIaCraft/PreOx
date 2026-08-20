@@ -288,8 +288,11 @@ export function PdfViewer({
 
       <div ref={scrollRef} className="relative flex-1 overflow-auto bg-surface-muted p-3">
         {loading && (
-          <div className="flex h-full items-center justify-center text-foreground-subtle">
-            <Loader2 className="h-5 w-5 animate-spin" />
+          <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center gap-3">
+            <div className="aspect-[3/4] w-full animate-pulse rounded-[var(--radius-sm)] bg-surface" />
+            <span className="flex items-center gap-1.5 text-xs text-foreground-subtle">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Chargement du PDF…
+            </span>
           </div>
         )}
         {error && <p className="text-sm text-danger">{error}</p>}
