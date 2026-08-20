@@ -12,6 +12,7 @@ import {
   FileText,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { FlagButton } from "@/components/el-profesor/flag-button";
 import type { BlockType, Citation, FicheBlock, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
 
 const BLOCK_META: Record<BlockType, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
@@ -121,7 +122,10 @@ export function FicheViewer({
                 <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
                   <Icon className="h-3.5 w-3.5" /> {meta.label}
                 </span>
-                {block.needsReview && <Badge variant="accent">À vérifier</Badge>}
+                <div className="flex items-center gap-2">
+                  {block.needsReview && <Badge variant="accent">À vérifier</Badge>}
+                  <FlagButton targetType="block" targetId={block.id} />
+                </div>
               </div>
               <div className="mt-2">
                 <BlockBody block={block} />

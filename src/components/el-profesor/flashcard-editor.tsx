@@ -5,17 +5,20 @@ import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { updateFlashcard, deleteFlashcard } from "@/app/apps/el-profesor/actions/extraction";
+import { FlagsList } from "@/components/el-profesor/flags-list";
 import { useToast } from "@/components/ui/toast";
-import type { Citation, Flashcard } from "@/lib/el-profesor/types";
+import type { Citation, Flag, Flashcard } from "@/lib/el-profesor/types";
 
 export function FlashcardEditor({
   flashcard,
   onChanged,
   onCitationClick,
+  flags,
 }: {
   flashcard: Flashcard;
   onChanged: () => void;
   onCitationClick?: (c: Citation) => void;
+  flags?: Flag[];
 }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -64,6 +67,9 @@ export function FlashcardEditor({
           className="w-full rounded-[var(--radius-sm)] border border-border bg-surface p-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
         />
       </div>
+
+      <FlagsList flags={flags} onResolved={onChanged} />
+
       {flashcard.citations.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {flashcard.citations.map((c, i) => (

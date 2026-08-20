@@ -157,7 +157,9 @@ Le rôle **admin** donne accès à `/admin` (protégé) en plus de `/apps`.
    `supabase/migrations/20260101000003_el_profesor_block_status.sql`
    (statut brouillon/publié par bloc de contenu, RLS renforcée), puis celui
    de `supabase/migrations/20260101000004_el_profesor_remaining_passes.sql`
-   (estimation par l'IA du nombre de passes de complément restantes).
+   (estimation par l'IA du nombre de passes de complément restantes), puis
+   celui de `supabase/migrations/20260101000005_el_profesor_flags.sql`
+   (signalement d'erreur par les utilisateurs).
    *(Si vous utilisez la CLI Supabase : `supabase db push` applique tout
    dans l'ordre.)*
 3. **Charger les modules du hub** : exécutez `supabase/seed.sql` — il active

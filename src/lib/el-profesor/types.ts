@@ -90,6 +90,16 @@ export type Flashcard = {
   needsReview: boolean;
 };
 
+export type FlagTargetType = "block" | "flashcard";
+
+export type Flag = {
+  id: string;
+  targetType: FlagTargetType;
+  targetId: string;
+  reason: string;
+  status: "open" | "resolved";
+};
+
 export type ReviewState = {
   flashcardId: string;
   due: string;

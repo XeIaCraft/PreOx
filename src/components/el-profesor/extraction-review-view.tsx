@@ -15,16 +15,18 @@ import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { publishFiche, finalizeChapterPublication } from "@/app/apps/el-profesor/actions/extraction";
 import { useToast } from "@/components/ui/toast";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
-import type { Citation } from "@/lib/el-profesor/types";
+import type { Citation, Flag } from "@/lib/el-profesor/types";
 
 export function ExtractionReviewView({
   chapterId,
   chapterTitle,
   subEntities,
+  flagsByTarget,
 }: {
   chapterId: string;
   chapterTitle: string;
   subEntities: SubEntityWithFiche[];
+  flagsByTarget: Record<string, Flag[]>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -179,6 +181,7 @@ export function ExtractionReviewView({
                         onChanged={refresh}
                         onCitationClick={handleCitationClick}
                         reorder={onlyFlagged ? undefined : { isFirst: i === 0, isLast: i === visibleBlocks.length - 1 }}
+                        flags={flagsByTarget[block.id]}
                       />
                     ))}
                   </div>
@@ -186,7 +189,13 @@ export function ExtractionReviewView({
                   <h3 className="mt-5 text-sm font-medium text-foreground">Flashcards</h3>
                   <div className="mt-2 space-y-3">
                     {visibleFlashcards.map((card) => (
-                      <FlashcardEditor key={card.id} flashcard={card} onChanged={refresh} onCitationClick={handleCitationClick} />
+                      <FlashcardEditor
+                        key={card.id}
+                        flashcard={card}
+                        onChanged={refresh}
+                        onCitationClick={handleCitationClick}
+                        flags={flagsByTarget[card.id]}
+                      />
                     ))}
                     {visibleFlashcards.length === 0 && (
                       <p className="text-sm text-foreground-subtle">Aucune flashcard générée pour cette fiche.</p>

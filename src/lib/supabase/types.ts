@@ -245,6 +245,16 @@ export type ElProfesorExtractionJobRow = {
   created_at: string;
 };
 
+export type ElProfesorFlagRow = {
+  id: string;
+  target_type: "block" | "flashcard";
+  target_id: string;
+  flagged_by: string;
+  reason: string;
+  status: "open" | "resolved";
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -365,6 +375,12 @@ export type Database = {
         Row: ElProfesorExtractionJobRow;
         Insert: Partial<ElProfesorExtractionJobRow> & { chapter_id: string };
         Update: Partial<ElProfesorExtractionJobRow>;
+        Relationships: [];
+      };
+      el_profesor_flags: {
+        Row: ElProfesorFlagRow;
+        Insert: Partial<ElProfesorFlagRow> & { target_type: "block" | "flashcard"; target_id: string; flagged_by: string };
+        Update: Partial<ElProfesorFlagRow>;
         Relationships: [];
       };
     };

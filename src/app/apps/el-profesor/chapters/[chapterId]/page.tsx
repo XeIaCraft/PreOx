@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireElProfesorAccess, getChapterContent } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { ChapterView } from "@/components/el-profesor/chapter-view";
+import { ToastProvider } from "@/components/ui/toast";
 
 export default async function ChapterPage({
   params,
@@ -20,5 +21,9 @@ export default async function ChapterPage({
 
   const subEntities = await getChapterContent(chapterId, false);
 
-  return <ChapterView chapterId={chapterId} chapterTitle={chapter.title} subEntities={subEntities} initialEntityId={entity} />;
+  return (
+    <ToastProvider>
+      <ChapterView chapterId={chapterId} chapterTitle={chapter.title} subEntities={subEntities} initialEntityId={entity} />
+    </ToastProvider>
+  );
 }

@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { updateFicheBlock, deleteFicheBlock, moveFicheBlock } from "@/app/apps/el-profesor/actions/extraction";
+import { FlagsList } from "@/components/el-profesor/flags-list";
 import { useToast } from "@/components/ui/toast";
-import type { Citation, FicheBlock, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
+import type { Citation, FicheBlock, Flag, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
 
 const IS_TEXT_BLOCK = new Set([
   "definition_mecanisme",
@@ -144,11 +145,13 @@ export function BlockEditor({
   onChanged,
   onCitationClick,
   reorder,
+  flags,
 }: {
   block: FicheBlock;
   onChanged: () => void;
   onCitationClick?: (c: Citation) => void;
   reorder?: { isFirst: boolean; isLast: boolean };
+  flags?: Flag[];
 }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -229,6 +232,8 @@ export function BlockEditor({
           />
         )}
       </div>
+
+      <FlagsList flags={flags} onResolved={onChanged} />
 
       {block.citations.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">

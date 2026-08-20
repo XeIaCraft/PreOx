@@ -6,6 +6,7 @@ import { ArrowLeft, Check, X, PartyPopper, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { submitReview, undoReview } from "@/app/apps/el-profesor/actions/review";
+import { FlagButton } from "@/components/el-profesor/flag-button";
 import { useToast } from "@/components/ui/toast";
 import type { Flashcard, ReviewSource, ReviewState } from "@/lib/el-profesor/types";
 
@@ -20,10 +21,12 @@ export function FlashcardReviewer({
   chapterId,
   source,
   cards,
+  cappedFrom,
 }: {
   chapterId: string;
   source: ReviewSource;
   cards: Flashcard[];
+  cappedFrom?: number | null;
 }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -117,8 +120,22 @@ export function FlashcardReviewer({
         </div>
       </div>
 
+      {cappedFrom && (
+        <p className="mt-2 text-center text-xs text-foreground-subtle">
+          Session limitée à {cards.length} cartes sur {cappedFrom}.{" "}
+          <Link href={`/apps/el-profesor/chapters/${chapterId}/review?mode=free&all=1`} className="underline hover:text-foreground">
+            Tout réviser
+          </Link>
+        </p>
+      )}
+
       <div className="flex flex-1 items-center justify-center">
-        <div className="w-full rounded-[var(--radius-lg)] border border-border bg-surface p-8 text-center shadow-sm">
+        <div className="relative w-full rounded-[var(--radius-lg)] border border-border bg-surface p-8 text-center shadow-sm">
+          {revealed && (
+            <div className="absolute right-3 top-3">
+              <FlagButton targetType="flashcard" targetId={current.id} />
+            </div>
+          )}
           <p className="text-lg text-foreground">{current.front.text}</p>
           {revealed && (
             <>

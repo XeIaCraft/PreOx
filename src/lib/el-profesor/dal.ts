@@ -12,6 +12,7 @@ import type {
   Fiche,
   FicheBlock,
   Flashcard,
+  Flag,
   ReviewState,
   BlockContent,
   Citation,
@@ -25,6 +26,7 @@ import type {
   ElProfesorFicheBlockRow,
   ElProfesorFlashcardRow,
   ElProfesorReviewStateRow,
+  ElProfesorFlagRow,
 } from "@/lib/supabase/types";
 
 /** Same access-check every other module page uses — gated by the hub's own RBAC. */
@@ -95,6 +97,23 @@ function toFlashcard(row: ElProfesorFlashcardRow): Flashcard {
     status: row.status,
     needsReview: row.needs_review,
   };
+}
+
+function toFlag(row: ElProfesorFlagRow): Flag {
+  return { id: row.id, targetType: row.target_type, targetId: row.target_id, reason: row.reason, status: row.status };
+}
+
+/** Open (unresolved) user-submitted flags for a set of blocks/flashcards, keyed by target id — for the admin review screen. */
+export async function getOpenFlagsByTarget(targetIds: string[]): Promise<Record<string, Flag[]>> {
+  const byTarget: Record<string, Flag[]> = {};
+  if (targetIds.length === 0) return byTarget;
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_flags").select("*").eq("status", "open").in("target_id", targetIds);
+  for (const row of data ?? []) {
+    const flag = toFlag(row as ElProfesorFlagRow);
+    (byTarget[flag.targetId] ??= []).push(flag);
+  }
+  return byTarget;
 }
 
 function toReviewState(row: ElProfesorReviewStateRow): ReviewState {
