@@ -19,7 +19,7 @@ export function SetPasswordForm({ next }: { next?: string }) {
 
       <div className="space-y-1.5">
         <Label htmlFor="password">Nouveau mot de passe</Label>
-        <Input id="password" name="password" type="password" autoComplete="new-password" required minLength={8} />
+        <Input id="password" name="password" type="password" autoComplete="new-password" required minLength={10} />
       </div>
 
       <div className="space-y-1.5">
@@ -30,12 +30,13 @@ export function SetPasswordForm({ next }: { next?: string }) {
           type="password"
           autoComplete="new-password"
           required
-          minLength={8}
+          minLength={10}
         />
       </div>
 
       <p className="text-xs text-foreground-subtle">
-        8 caractères minimum, avec au moins une lettre et un chiffre.
+        10 caractères minimum, avec au moins une majuscule, une minuscule, un chiffre et un caractère spécial. Aucune expiration
+        obligatoire ensuite.
       </p>
 
       <Button type="submit" className="w-full" disabled={pending}>

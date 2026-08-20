@@ -30,6 +30,19 @@ export const getCurrentProfile = cache(async (): Promise<Profile | null> => {
 export async function requireUser() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+
+  // 2FA is opt-in per user (see src/app/actions/mfa.ts): signInWithPassword
+  // alone only ever grants aal1. A user who enrolled a verified TOTP factor
+  // must additionally clear the /mfa-challenge step before nextLevel (what
+  // their own factors require) and currentLevel (what this session has)
+  // agree — otherwise every page behind requireUser()/requireProfile()
+  // would be reachable with just a password, defeating the point of 2FA.
+  const supabase = await createClient();
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal && aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+    redirect("/mfa-challenge");
+  }
+
   return user;
 }
 

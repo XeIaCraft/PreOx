@@ -4,13 +4,18 @@ import { ArrowLeft } from "lucide-react";
 import { requireProfile } from "@/lib/auth/dal";
 import { ProfileForm } from "@/components/profile/profile-form";
 import { AccountDataSection } from "@/components/profile/account-data-section";
+import { SessionsSection } from "@/components/profile/sessions-section";
+import { MfaSection } from "@/components/profile/mfa-section";
 import { SetPasswordForm } from "@/components/auth/set-password-form";
 import { ToastProvider } from "@/components/ui/toast";
+import { listMySessions, listMyLoginHistory } from "@/app/actions/security";
+import { listMfaFactors } from "@/app/actions/mfa";
 
 export const metadata: Metadata = { title: "Profil" };
 
 export default async function ProfilePage() {
   const profile = await requireProfile();
+  const [sessions, history, mfaFactors] = await Promise.all([listMySessions(), listMyLoginHistory(), listMfaFactors()]);
 
   return (
     <ToastProvider>
@@ -33,6 +38,10 @@ export default async function ProfilePage() {
             <SetPasswordForm next="/profile" />
           </div>
         </div>
+
+        <MfaSection factors={mfaFactors} />
+
+        <SessionsSection sessions={sessions} history={history} />
 
         <AccountDataSection />
       </div>

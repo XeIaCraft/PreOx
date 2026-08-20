@@ -328,6 +328,14 @@ export type ElProfesorNoteRow = {
   updated_at: string;
 };
 
+export type UserLoginLogRow = {
+  id: string;
+  user_id: string;
+  user_agent: string | null;
+  ip: string | null;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -504,8 +512,23 @@ export type Database = {
         Update: Partial<ElProfesorNoteRow>;
         Relationships: [];
       };
+      user_login_log: {
+        Row: UserLoginLogRow;
+        Insert: Partial<UserLoginLogRow> & { user_id: string };
+        Update: Partial<UserLoginLogRow>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      list_my_sessions: {
+        Args: Record<string, never>;
+        Returns: { id: string; created_at: string; updated_at: string; user_agent: string | null; ip: string | null; is_current: boolean }[];
+      };
+      revoke_my_session: {
+        Args: { target_session_id: string };
+        Returns: undefined;
+      };
+    };
   };
 };
