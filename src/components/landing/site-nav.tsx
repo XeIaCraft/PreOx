@@ -10,18 +10,6 @@ export function SiteNav() {
           <Logo />
         </Link>
 
-        <nav className="hidden items-center gap-8 text-sm font-medium text-foreground-muted md:flex">
-          <a href="#concept" className="transition-colors hover:text-foreground">
-            Le concept
-          </a>
-          <a href="#modules" className="transition-colors hover:text-foreground">
-            Modules
-          </a>
-          <a href="#fonctionnement" className="transition-colors hover:text-foreground">
-            Fonctionnement
-          </a>
-        </nav>
-
         <Link href="/login">
           <Button size="sm">Se connecter</Button>
         </Link>

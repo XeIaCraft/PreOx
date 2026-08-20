@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-function LogoMark({ className }: { className?: string }) {
+export function LogoMark({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 32 32"
