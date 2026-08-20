@@ -10,6 +10,15 @@ const BLOCK_TYPES_DOC = `
 - "texte_libre" : tout contenu important qui ne rentre dans aucune des catégories ci-dessus — jamais un prétexte pour perdre de l'information, sert de filet de sécurité
 `.trim();
 
+const FLASHCARD_AXES_DOC = `
+- mécanisme d'action / physiopathologie
+- formule(s), posologie(s), valeur(s) numérique(s) ou seuil(s) à retenir par cœur
+- indication(s) précise(s)
+- contre-indication(s) et précaution(s) d'emploi
+- distinction / diagnostic différentiel avec une entité proche ou souvent confondue
+- particularité clinique ou piège fréquent propre à cette sous-entité
+`.trim();
+
 export function buildExtractionPrompt(chapterTitle: string): string {
   return `
 Tu es un assistant d'extraction pour du matériel pédagogique médical de haut niveau (anesthésie/médecine). Le document fourni est un chapitre de livre intitulé « ${chapterTitle} ». Certaines pages sont du texte natif propre, d'autres sont des scans/photos — lis-les comme des images si besoin.
@@ -30,7 +39,9 @@ Règles strictes pour chaque bloc :
 - Pour "protocole_paliers", remplis "content.steps" (liste ordonnée), pas "content.text".
 - Pour les autres types, remplis "content.text" avec le contenu synthétisé (mais fidèle et complet — ne résume pas au point de perdre une nuance importante).
 
-3. Pour chaque sous-entité, génère aussi des flashcards de révision à partir UNIQUEMENT des faits déjà extraits et cités dans ses blocs (jamais directement depuis le texte brut, jamais un fait qui n'apparaît dans aucun bloc). Chaque flashcard : une question précise au recto ("front"), la réponse exacte attendue au verso ("back"), et sa/ses citation(s) source.
+3. Pour chaque sous-entité, génère des flashcards de révision à partir UNIQUEMENT des faits déjà extraits et cités dans ses blocs (jamais directement depuis le texte brut, jamais un fait qui n'apparaît dans aucun bloc). Le lecteur est un(e) anesthésiste en formation : vise une couverture systématique de TOUS les axes suivants qui s'appliquent réellement à cette sous-entité, chacun en flashcard(s) séparée(s) plutôt qu'une seule question générique fourre-tout :
+${FLASHCARD_AXES_DOC}
+N'invente aucun axe que les blocs déjà extraits ne couvrent pas réellement — mais ne t'arrête pas après une flashcard si plusieurs axes distincts ont une base solide dans le texte. Chaque flashcard : une question précise et sans ambiguïté au recto ("front"), la réponse exacte attendue au verso ("back"), et sa/ses citation(s) source.
 
 Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
 `.trim();
@@ -49,6 +60,9 @@ Pour chaque trou trouvé :
 - Si c'est un thème ou une sous-entité entièrement absente de la liste ci-dessus, crée une nouvelle entrée sous "new_sub_entities" (même structure que lors d'une extraction initiale : nom, résumé, fiche avec blocs et flashcards).
 
 S'il n'y a réellement plus rien d'important à ajouter, retourne "additions_for_existing" et "new_sub_entities" comme des tableaux vides — ne force pas la génération de contenu superflu ou redondant juste pour remplir la réponse.
+
+Le lecteur est un(e) anesthésiste en formation : en particulier pour les flashcards, vérifie que le résumé ci-dessus couvre déjà, pour chaque sous-entité, tous les axes suivants — ajoute ce qui manque parmi eux, avec une flashcard par axe distinct plutôt qu'une seule question fourre-tout :
+${FLASHCARD_AXES_DOC}
 
 Mêmes règles strictes que pour l'extraction initiale : chaque bloc et chaque flashcard doit citer verbatim (page + texte exact) le passage du livre qui le fonde, les tableaux comparatifs vont dans un vrai tableau, les protocoles par paliers dans une liste d'étapes structurée.
 

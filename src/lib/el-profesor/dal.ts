@@ -246,3 +246,32 @@ export async function getDueCountsByChapter(userId: string, chapters: Chapter[])
   );
   return counts;
 }
+
+/** Draft blocks/flashcards still flagged needs_review, per chapter — surfaces on the admin dashboard without opening each chapter. */
+export async function getNeedsReviewCounts(chapterIds: string[]): Promise<ChapterDueCounts> {
+  const counts: ChapterDueCounts = {};
+  if (chapterIds.length === 0) return counts;
+  const supabase = await createClient();
+
+  const { data: subEntities } = await supabase.from("el_profesor_sub_entities").select("id, chapter_id").in("chapter_id", chapterIds);
+  const chapterBySubEntity = new Map((subEntities ?? []).map((s) => [s.id, s.chapter_id]));
+  const subEntityIds = (subEntities ?? []).map((s) => s.id);
+  if (subEntityIds.length === 0) return counts;
+
+  const { data: fiches } = await supabase.from("el_profesor_fiches").select("id, sub_entity_id").in("sub_entity_id", subEntityIds);
+  const chapterByFiche = new Map((fiches ?? []).map((f) => [f.id, chapterBySubEntity.get(f.sub_entity_id)]));
+  const ficheIds = (fiches ?? []).map((f) => f.id);
+  if (ficheIds.length === 0) return counts;
+
+  const [blocksRes, flashcardsRes] = await Promise.all([
+    supabase.from("el_profesor_fiche_blocks").select("fiche_id").eq("needs_review", true).eq("status", "draft").in("fiche_id", ficheIds),
+    supabase.from("el_profesor_flashcards").select("fiche_id").eq("needs_review", true).eq("status", "draft").in("fiche_id", ficheIds),
+  ]);
+
+  for (const row of [...(blocksRes.data ?? []), ...(flashcardsRes.data ?? [])]) {
+    const chapterId = chapterByFiche.get(row.fiche_id);
+    if (!chapterId) continue;
+    counts[chapterId] = (counts[chapterId] ?? 0) + 1;
+  }
+  return counts;
+}

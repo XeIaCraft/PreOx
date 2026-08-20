@@ -35,10 +35,12 @@ type ModalState = { type: "add_book" } | { type: "upload_chapter"; bookId: strin
 export function ElProfesorBoard({
   books,
   dueCounts,
+  needsReviewCounts,
   isAdmin,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
+  needsReviewCounts: ChapterDueCounts;
   isAdmin: boolean;
 }) {
   const router = useRouter();
@@ -153,12 +155,16 @@ export function ElProfesorBoard({
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {book.chapters.map((chapter) => {
                 const due = dueCounts[chapter.id] ?? 0;
+                const needsReview = needsReviewCounts[chapter.id] ?? 0;
                 const busy = isPending && pendingId === chapter.id;
                 return (
                   <div key={chapter.id} className="rounded-[var(--radius-lg)] border border-border bg-surface p-4">
                     <div className="flex items-start justify-between gap-2">
                       <p className="font-medium text-foreground">{chapter.title}</p>
-                      <Badge variant={STATUS_VARIANT[chapter.status]}>{STATUS_LABEL[chapter.status]}</Badge>
+                      <div className="flex shrink-0 gap-1.5">
+                        {isAdmin && needsReview > 0 && <Badge variant="accent">{needsReview} à vérifier</Badge>}
+                        <Badge variant={STATUS_VARIANT[chapter.status]}>{STATUS_LABEL[chapter.status]}</Badge>
+                      </div>
                     </div>
                     {chapter.status === "failed" && chapter.extractionError && (
                       <p className="mt-1.5 text-xs text-danger">{chapter.extractionError}</p>
