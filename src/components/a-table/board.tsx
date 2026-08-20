@@ -2,7 +2,10 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ShoppingBasket, BookOpen, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater } from "lucide-react";
+import { ShoppingBasket, BookOpen, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle } from "lucide-react";
+import { OnboardingTour } from "@/components/onboarding-tour";
+import { hasSeenOnboarding } from "@/lib/onboarding";
+import { A_TABLE_ONBOARDING_STEPS } from "@/components/a-table/onboarding-steps";
 import { Button } from "@/components/ui/button";
 import { DAY_LABELS, WEEKDAY_PLACEMENTS } from "@/lib/a-table/constants";
 import { useToast } from "@/components/ui/toast";
@@ -52,6 +55,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
   const [isPending, startTransition] = useTransition();
   const [isGenerating, startGenerating] = useTransition();
   const [pendingCardId, setPendingCardId] = useState<string | null>(null);
+  const [tourOpen, setTourOpen] = useState(() => !hasSeenOnboarding("a-table"));
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -163,6 +167,9 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           </Button>
           <Button variant="ghost" size="icon" onClick={refresh} title="Actualiser">
             <RefreshCw className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`} />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => setTourOpen(true)} title="Revoir le tutoriel" aria-label="Revoir le tutoriel">
+            <HelpCircle className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -322,6 +329,8 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           onCreated={(menuId) => setModal({ type: "guest", menuId })}
         />
       )}
+
+      <OnboardingTour moduleKey="a-table" steps={A_TABLE_ONBOARDING_STEPS} open={tourOpen} onOpenChange={setTourOpen} />
     </div>
   );
 }

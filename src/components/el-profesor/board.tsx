@@ -3,7 +3,10 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { GraduationCap, Plus, Trash2, Pencil, Sparkles, BookOpen, ClipboardCheck, SearchCheck, ArrowRight, Settings } from "lucide-react";
+import { GraduationCap, Plus, Trash2, Pencil, Sparkles, BookOpen, ClipboardCheck, SearchCheck, ArrowRight, Settings, HelpCircle } from "lucide-react";
+import { OnboardingTour } from "@/components/onboarding-tour";
+import { hasSeenOnboarding } from "@/lib/onboarding";
+import { EL_PROFESOR_ONBOARDING_STEPS } from "@/components/el-profesor/onboarding-steps";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
@@ -110,6 +113,7 @@ export function ElProfesorBoard({
   // Lazy initializer (client-only read), same pattern used elsewhere for
   // one-time localStorage reads — null on the server, resolved on mount.
   const [resumeChapterId] = useState(() => getLastChapter());
+  const [tourOpen, setTourOpen] = useState(() => !hasSeenOnboarding("el-profesor"));
 
   let resume: { book: BookWithChapters; chapter: BookWithChapters["chapters"][number] } | null = null;
   if (resumeChapterId) {
@@ -196,22 +200,27 @@ export function ElProfesorBoard({
             <p className="text-sm text-foreground-muted">Fiches et flashcards générées à partir de vos livres.</p>
           </div>
         </div>
-        {isAdmin && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setModal({ type: "gemini_settings" })}
-              aria-label="Paramètres du modèle IA"
-              title="Paramètres du modèle IA"
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-            <Button onClick={() => setModal({ type: "add_book" })}>
-              <Plus className="h-4 w-4" /> Ajouter un livre
-            </Button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={() => setTourOpen(true)} aria-label="Revoir le tutoriel" title="Revoir le tutoriel">
+            <HelpCircle className="h-4 w-4" />
+          </Button>
+          {isAdmin && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setModal({ type: "gemini_settings" })}
+                aria-label="Paramètres du modèle IA"
+                title="Paramètres du modèle IA"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+              <Button onClick={() => setModal({ type: "add_book" })}>
+                <Plus className="h-4 w-4" /> Ajouter un livre
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {resume && (
@@ -481,6 +490,8 @@ export function ElProfesorBoard({
           }}
         />
       )}
+
+      <OnboardingTour moduleKey="el-profesor" steps={EL_PROFESOR_ONBOARDING_STEPS} open={tourOpen} onOpenChange={setTourOpen} />
     </div>
   );
 }
