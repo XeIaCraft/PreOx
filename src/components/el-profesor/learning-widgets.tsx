@@ -218,7 +218,41 @@ export function LearningWidgets({
   }
 
   return (
-    <div className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
+    <>
+      {/* Mobile: condensed horizontally-scrollable row, so the widgets don't push
+          the book list far down the screen — the full layout below stays for sm+. */}
+      <div className="mt-6 flex gap-2.5 overflow-x-auto pb-1 sm:hidden">
+        <div className="flex shrink-0 items-center gap-2 rounded-[var(--radius-lg)] border border-border bg-surface px-3 py-2">
+          <Flame className="h-4 w-4 text-accent" />
+          <span className="text-xs font-medium text-foreground">
+            {activity.currentStreak > 0 ? `${activity.currentStreak} j. de suite` : "Pas de série"}
+          </span>
+        </div>
+        <div className="shrink-0 rounded-[var(--radius-lg)] border border-border bg-surface px-1 py-1">
+          <DailyGoalRing todayCount={todayCount} />
+        </div>
+        {globalDueCount > 0 && (
+          <Link
+            href="/apps/el-profesor/review?mode=due"
+            className="flex shrink-0 items-center gap-1.5 rounded-[var(--radius-lg)] border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground"
+          >
+            <Layers className="h-3.5 w-3.5" /> Révision ({globalDueCount})
+          </Link>
+        )}
+        {difficultCount > 0 && (
+          <Link
+            href="/apps/el-profesor/review?mode=difficult"
+            className="flex shrink-0 items-center gap-1.5 rounded-[var(--radius-lg)] border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground"
+          >
+            <ShieldAlert className="h-3.5 w-3.5" /> Erreurs ({difficultCount})
+          </Link>
+        )}
+        <div className="flex shrink-0 items-center gap-1.5 rounded-[var(--radius-lg)] border border-border bg-surface px-3 py-2 text-xs text-foreground-subtle">
+          <Award className="h-3.5 w-3.5" /> {earnedCount}/{badges.length} badges
+        </div>
+      </div>
+
+      <div className="mt-6 hidden rounded-[var(--radius-lg)] border border-border bg-surface p-4 sm:block">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-tint text-accent">
@@ -311,6 +345,7 @@ export function LearningWidgets({
           )}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

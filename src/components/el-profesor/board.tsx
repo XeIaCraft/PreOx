@@ -36,12 +36,10 @@ import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog"
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
-import { CertificateModal } from "@/components/el-profesor/certificate-modal";
 import { LearningWidgets, DailyCard, LibraryStats, BookmarksList } from "@/components/el-profesor/learning-widgets";
 import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/export";
-import { getCertificateStatsForBook } from "@/app/apps/el-profesor/actions/certificate";
 import { exportBookNotes } from "@/app/apps/el-profesor/actions/notes";
 import { getLastChapter } from "@/lib/el-profesor/local-prefs";
 import type {
@@ -183,7 +181,6 @@ export function ElProfesorBoard({
   mostDifficultGlobal,
   dailyCard,
   bookmarks,
-  userName,
   globalMastery,
   staleChapters,
   reviewTimeStats,
@@ -204,7 +201,6 @@ export function ElProfesorBoard({
   mostDifficultGlobal: DifficultFlashcardStat[];
   dailyCard: Flashcard | null;
   bookmarks: BookmarkedEntity[];
-  userName: string;
   globalMastery: Record<string, ChapterMasteryPercentile>;
   staleChapters: StaleChapterAlert[];
   reviewTimeStats: { totalMs: number; last7DaysMs: number };
@@ -215,7 +211,6 @@ export function ElProfesorBoard({
   const { toast } = useToast();
   const [modal, setModal] = useState<ModalState>(null);
   const [themeFilter, setThemeFilter] = useState<string | null>(null);
-  const [certificateBook, setCertificateBook] = useState<{ title: string; flashcardCount?: number; totalDurationMs?: number } | null>(null);
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingStartedAt, setPendingStartedAt] = useState<number | null>(null);
@@ -476,63 +471,66 @@ export function ElProfesorBoard({
         </div>
       )}
 
-      {isAdmin && mostDifficultGlobal.length > 0 && (
-        <div className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
-          <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
-            <ShieldAlert className="h-3.5 w-3.5" /> Flashcards les plus ratées (tous utilisateurs)
-          </p>
-          <ul className="mt-2 space-y-1.5">
-            {mostDifficultGlobal.slice(0, 5).map((stat) => (
-              <li key={stat.flashcardId} className="flex items-center justify-between gap-2 text-sm">
-                <span className="min-w-0 truncate text-foreground-muted" title={stat.front}>
-                  {stat.front}
-                  {stat.chapterTitle && <span className="text-foreground-subtle"> — {stat.chapterTitle}</span>}
-                </span>
-                <Badge variant="danger" className="shrink-0">
-                  {stat.againCount}×
-                </Badge>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {isAdmin && (mostDifficultGlobal.length > 0 || flagStatsByBlockType.length > 0 || staleChapters.length > 0) && (
+        <details className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
+          <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+            <ShieldAlert className="h-3.5 w-3.5" /> Diagnostics de contenu (admin)
+          </summary>
+          <div className="mt-3 space-y-4">
+            {mostDifficultGlobal.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-foreground-subtle">Flashcards les plus ratées (tous utilisateurs)</p>
+                <ul className="mt-2 space-y-1.5">
+                  {mostDifficultGlobal.slice(0, 5).map((stat) => (
+                    <li key={stat.flashcardId} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="min-w-0 truncate text-foreground-muted" title={stat.front}>
+                        {stat.front}
+                        {stat.chapterTitle && <span className="text-foreground-subtle"> — {stat.chapterTitle}</span>}
+                      </span>
+                      <Badge variant="danger" className="shrink-0">
+                        {stat.againCount}×
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-      {isAdmin && flagStatsByBlockType.length > 0 && (
-        <div className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
-          <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
-            <ShieldAlert className="h-3.5 w-3.5" /> Signalements par type de bloc
-          </p>
-          <ul className="mt-2 space-y-1.5">
-            {flagStatsByBlockType.map((stat) => (
-              <li key={stat.blockType} className="flex items-center justify-between gap-2 text-sm">
-                <span className="text-foreground-muted">{BLOCK_TYPE_LABELS[stat.blockType]}</span>
-                <Badge variant="danger" className="shrink-0">
-                  {stat.flagCount}×
-                </Badge>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+            {flagStatsByBlockType.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-foreground-subtle">Signalements par type de bloc</p>
+                <ul className="mt-2 space-y-1.5">
+                  {flagStatsByBlockType.map((stat) => (
+                    <li key={stat.blockType} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="text-foreground-muted">{BLOCK_TYPE_LABELS[stat.blockType]}</span>
+                      <Badge variant="danger" className="shrink-0">
+                        {stat.flagCount}×
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-      {isAdmin && staleChapters.length > 0 && (
-        <div className="mt-6 rounded-[var(--radius-lg)] border border-accent/30 bg-accent-tint/40 p-4">
-          <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-accent">
-            <ShieldAlert className="h-3.5 w-3.5" /> Chapitres jamais révisés récemment
-          </p>
-          <ul className="mt-2 space-y-1 text-sm text-foreground-muted">
-            {staleChapters.map((c) => (
-              <li key={c.chapterId}>
-                {c.chapterTitle} <span className="text-foreground-subtle">— {c.bookTitle}</span>
-                {c.lastReviewedAt ? (
-                  <span className="text-foreground-subtle"> (dernière révision : {new Date(c.lastReviewedAt).toLocaleDateString("fr-FR")})</span>
-                ) : (
-                  <span className="text-foreground-subtle"> (jamais révisé)</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
+            {staleChapters.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-accent">Chapitres jamais révisés récemment</p>
+                <ul className="mt-2 space-y-1 text-sm text-foreground-muted">
+                  {staleChapters.map((c) => (
+                    <li key={c.chapterId}>
+                      {c.chapterTitle} <span className="text-foreground-subtle">— {c.bookTitle}</span>
+                      {c.lastReviewedAt ? (
+                        <span className="text-foreground-subtle"> (dernière révision : {new Date(c.lastReviewedAt).toLocaleDateString("fr-FR")})</span>
+                      ) : (
+                        <span className="text-foreground-subtle"> (jamais révisé)</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </details>
       )}
 
       {books.length > 0 && (
@@ -602,18 +600,9 @@ export function ElProfesorBoard({
                 <div>
                   <h2 className="font-serif-display text-lg font-medium text-foreground">{book.title}</h2>
                   {bookMastered && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCertificateBook({ title: book.title });
-                        getCertificateStatsForBook(book.id).then((stats) =>
-                          setCertificateBook({ title: book.title, flashcardCount: stats.flashcardCount, totalDurationMs: stats.totalDurationMs })
-                        );
-                      }}
-                      className="mt-0.5 flex items-center gap-1 text-xs font-medium text-accent hover:underline"
-                    >
-                      <Trophy className="h-3 w-3" /> Livre maîtrisé — voir mon certificat
-                    </button>
+                    <span className="mt-0.5 flex items-center gap-1 text-xs font-medium text-accent">
+                      <Trophy className="h-3 w-3" /> Livre maîtrisé
+                    </span>
                   )}
                   {(book.author || book.edition) && (
                     <p className="text-sm text-foreground-subtle">
@@ -912,16 +901,6 @@ export function ElProfesorBoard({
           onClose={() => setModal(null)}
         />
       )}
-      {certificateBook && (
-        <CertificateModal
-          bookTitle={certificateBook.title}
-          userName={userName}
-          flashcardCount={certificateBook.flashcardCount}
-          totalDurationMs={certificateBook.totalDurationMs}
-          onClose={() => setCertificateBook(null)}
-        />
-      )}
-
       {modal?.type === "search_book" && (
         <Modal title="Rechercher" onClose={() => setModal(null)} size="md">
           <LibrarySearch autoFocus bookId={modal.bookId} bookTitle={modal.bookTitle} />

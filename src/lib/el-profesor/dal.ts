@@ -13,7 +13,6 @@ import type {
   Book,
   BlockType,
   Chapter,
-  ChapterStatus,
   SubEntity,
   Fiche,
   FicheBlock,
@@ -785,27 +784,6 @@ export async function getFlagStatsByBlockType(): Promise<BlockTypeFlagStat[]> {
   }
 
   return [...counts.entries()].map(([blockType, flagCount]) => ({ blockType, flagCount })).sort((a, b) => b.flagCount - a.flagCount);
-}
-
-export interface BookCertificateStats {
-  flashcardCount: number;
-  totalDurationMs: number;
-}
-
-/** Extra stats for the "livre maîtrisé" certificate: how many flashcards, and total time invested (sum of tracked review durations for this user across the book's cards). */
-export async function getBookCertificateStats(
-  userId: string,
-  chapters: { id: string; status: ChapterStatus }[]
-): Promise<BookCertificateStats> {
-  const supabase = await createClient();
-  const published = chapters.filter((c) => c.status === "published");
-  const perChapter = await Promise.all(published.map((c) => getChapterContent(c.id, false)));
-  const flashcardIds = perChapter.flat().flatMap((s) => s.fiche?.flashcards ?? []).map((f) => f.id);
-  if (flashcardIds.length === 0) return { flashcardCount: 0, totalDurationMs: 0 };
-
-  const { data } = await supabase.from("el_profesor_review_log").select("duration_ms").eq("user_id", userId).in("flashcard_id", flashcardIds);
-  const totalDurationMs = (data ?? []).reduce((sum, r) => sum + (r.duration_ms ?? 0), 0);
-  return { flashcardCount: flashcardIds.length, totalDurationMs };
 }
 
 export interface StaleChapterAlert {

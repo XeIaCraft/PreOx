@@ -360,7 +360,11 @@ export function PdfViewer({
         </div>
       )}
 
-      <div ref={scrollRef} className="relative flex-1 overflow-auto bg-surface-muted p-3">
+      <div
+        ref={scrollRef}
+        className="relative flex-1 overflow-auto bg-surface-muted p-3"
+        style={onSelection ? { touchAction: "pan-y" } : undefined}
+      >
         {loading && (
           <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center gap-3">
             <div className="aspect-[3/4] w-full animate-pulse rounded-[var(--radius-sm)] bg-surface" />
@@ -372,7 +376,16 @@ export function PdfViewer({
         {error && <p className="text-sm text-danger">{error}</p>}
         <div className="relative mx-auto w-fit">
           <canvas ref={canvasRef} className="rounded-[var(--radius-sm)] shadow-sm" />
-          <div ref={textLayerRef} className="absolute inset-0" style={{ lineHeight: 1 }}>
+          <div
+            ref={textLayerRef}
+            className="absolute inset-0"
+            style={{
+              lineHeight: 1,
+              WebkitUserSelect: onSelection ? "text" : "none",
+              userSelect: onSelection ? "text" : "none",
+              WebkitTouchCallout: onSelection ? "default" : "none",
+            }}
+          >
             {onSelection &&
               textSpans.map((s, i) => (
                 <span
@@ -385,6 +398,8 @@ export function PdfViewer({
                     color: "transparent",
                     whiteSpace: "pre",
                     cursor: "text",
+                    WebkitUserSelect: "text",
+                    userSelect: "text",
                   }}
                 >
                   {s.text}
