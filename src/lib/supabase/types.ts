@@ -148,6 +148,7 @@ export type ElProfesorBookRow = {
   title: string;
   author: string | null;
   edition: string | null;
+  order_index: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;

@@ -3,7 +3,22 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { GraduationCap, Plus, Trash2, Pencil, Sparkles, BookOpen, ClipboardCheck, SearchCheck, ArrowRight, Settings, HelpCircle } from "lucide-react";
+import {
+  GraduationCap,
+  Plus,
+  Trash2,
+  Pencil,
+  Sparkles,
+  BookOpen,
+  ClipboardCheck,
+  SearchCheck,
+  ArrowRight,
+  Settings,
+  HelpCircle,
+  Download,
+  ChevronUp,
+  ChevronDown,
+} from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
 import { EL_PROFESOR_ONBOARDING_STEPS } from "@/components/el-profesor/onboarding-steps";
@@ -16,8 +31,9 @@ import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-cha
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
 import { LearningWidgets, DailyCard, LibraryStats, BookmarksList } from "@/components/el-profesor/learning-widgets";
-import { deleteBook, deleteChapter } from "@/app/apps/el-profesor/actions/library";
+import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
+import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/export";
 import { getLastChapter } from "@/lib/el-profesor/local-prefs";
 import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts, ReviewActivitySummary, BookmarkedEntity } from "@/lib/el-profesor/dal";
 import type { ChapterStatus, Flashcard } from "@/lib/el-profesor/types";
@@ -112,6 +128,7 @@ export function ElProfesorBoard({
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingStartedAt, setPendingStartedAt] = useState<number | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
   // Lazy initializer (client-only read), same pattern used elsewhere for
   // one-time localStorage reads — null on the server, resolved on mount.
   const [resumeChapterId] = useState(() => getLastChapter());
@@ -165,6 +182,46 @@ export function ElProfesorBoard({
         toast(result.success ?? "Terminé.", { variant: "success" });
         refresh();
       }
+    });
+  }
+
+  function handleMoveBook(bookId: string, direction: "up" | "down") {
+    startTransition(async () => {
+      const result = await moveBook(bookId, direction);
+      if (result.error) toast(result.error, { variant: "error" });
+      else refresh();
+    });
+  }
+
+  function csvField(value: string) {
+    return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  }
+
+  function handleExportCsv(chapterId: string, chapterTitle: string) {
+    setExportingId(chapterId);
+    startTransition(async () => {
+      const result = await getChapterFlashcardsForExport(chapterId);
+      setExportingId(null);
+      if ("error" in result) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      if (result.length === 0) {
+        toast("Aucune flashcard publiée à exporter pour ce chapitre.", { variant: "error" });
+        return;
+      }
+      const rows = [
+        ["Recto", "Verso", "Page"],
+        ...result.map((c) => [c.front, c.back, c.page ? String(c.page) : ""]),
+      ];
+      const csv = rows.map((row) => row.map(csvField).join(",")).join("\n");
+      const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${chapterTitle.replace(/[^\w\s-]/g, "").trim() || "chapitre"}-flashcards.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
     });
   }
 
@@ -271,7 +328,7 @@ export function ElProfesorBoard({
       )}
 
       <div className="mt-8 space-y-8">
-        {books.map((book) => (
+        {books.map((book, bookIndex) => (
           <div key={book.id}>
             <div className="flex items-center justify-between">
               <div>
@@ -284,6 +341,26 @@ export function ElProfesorBoard({
               </div>
               {isAdmin && (
                 <div className="flex items-center gap-2">
+                  <div className="flex flex-col">
+                    <button
+                      type="button"
+                      onClick={() => handleMoveBook(book.id, "up")}
+                      disabled={bookIndex === 0 || isPending}
+                      aria-label="Monter ce livre"
+                      className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveBook(book.id, "down")}
+                      disabled={bookIndex === books.length - 1 || isPending}
+                      aria-label="Descendre ce livre"
+                      className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -381,6 +458,18 @@ export function ElProfesorBoard({
                             Éditer
                           </Button>
                         </Link>
+                      )}
+                      {isAdmin && chapter.status === "published" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleExportCsv(chapter.id, chapter.title)}
+                          disabled={exportingId === chapter.id}
+                          aria-label="Exporter les flashcards en CSV"
+                          title="Exporter les flashcards en CSV"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
                       )}
                       {isAdmin && (chapter.status === "draft_ready" || chapter.status === "published") && (
                         <Button

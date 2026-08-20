@@ -50,7 +50,7 @@ export async function requireElProfesorAdmin(): Promise<Profile> {
 }
 
 function toBook(row: ElProfesorBookRow): Book {
-  return { id: row.id, title: row.title, author: row.author, edition: row.edition, createdAt: row.created_at };
+  return { id: row.id, title: row.title, author: row.author, edition: row.edition, orderIndex: row.order_index, createdAt: row.created_at };
 }
 
 function toChapter(row: ElProfesorChapterRow): Chapter {
@@ -196,7 +196,7 @@ export type BookWithChapters = Book & { chapters: Chapter[] };
 export async function getLibrary(): Promise<BookWithChapters[]> {
   const supabase = await createClient();
   const [booksRes, chaptersRes] = await Promise.all([
-    supabase.from("el_profesor_books").select("*").order("created_at", { ascending: true }),
+    supabase.from("el_profesor_books").select("*").order("order_index", { ascending: true }),
     supabase.from("el_profesor_chapters").select("*").order("order_index", { ascending: true }),
   ]);
 
