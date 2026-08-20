@@ -100,6 +100,45 @@ function BlockBody({ block }: { block: FicheBlock }) {
   return <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground-muted">{content.text}</p>;
 }
 
+// Quick jump bar to the first block of each distinct type — only worth
+// showing once a fiche has enough blocks that scrolling to find one is a
+// real chore.
+function BlockNav({ blocks }: { blocks: FicheBlock[] }) {
+  if (blocks.length < 6) return null;
+  const seen = new Set<BlockType>();
+  const entries: { type: BlockType; blockId: string }[] = [];
+  for (const b of blocks) {
+    if (!seen.has(b.blockType)) {
+      seen.add(b.blockType);
+      entries.push({ type: b.blockType, blockId: b.id });
+    }
+  }
+  if (entries.length < 2) return null;
+
+  return (
+    <div className="sticky top-0 z-10 -mx-1 mb-3 flex gap-1 overflow-x-auto bg-surface px-1 py-1.5">
+      {entries.map(({ type, blockId }) => {
+        const meta = BLOCK_META[type];
+        const Icon = meta.icon;
+        return (
+          <button
+            key={type}
+            type="button"
+            onClick={() =>
+              document.getElementById(`fiche-block-${blockId}`)?.scrollIntoView({ behavior: "smooth", block: "start" })
+            }
+            title={meta.label}
+            aria-label={`Aller à : ${meta.label}`}
+            className="flex shrink-0 items-center justify-center rounded-full border border-border bg-surface p-1.5 text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function FicheViewer({
   title,
   summary,
@@ -115,12 +154,13 @@ export function FicheViewer({
     <div>
       <h3 className="font-serif-display text-xl font-medium text-foreground">{title}</h3>
       {summary && <p className="mt-1 text-sm text-foreground-subtle">{summary}</p>}
+      <BlockNav blocks={blocks} />
       <div className="mt-4 space-y-4">
         {blocks.map((block) => {
           const meta = BLOCK_META[block.blockType];
           const Icon = meta.icon;
           return (
-            <div key={block.id} className="rounded-[var(--radius-md)] border border-border p-4">
+            <div key={block.id} id={`fiche-block-${block.id}`} className="scroll-mt-14 rounded-[var(--radius-md)] border border-border p-4">
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
                   <Icon className="h-3.5 w-3.5" /> {meta.label}

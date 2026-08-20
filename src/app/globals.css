@@ -114,6 +114,16 @@ body {
   color: var(--primary-strong);
 }
 
+/* Safety-net focus ring: components that manage their own focus-visible
+   style (e.g. Button) opt out via focus-visible:outline-none, everything
+   else (raw buttons/links/inputs across the app) gets a visible outline
+   for keyboard navigation. */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 .text-balance {
   text-wrap: balance;
 }
