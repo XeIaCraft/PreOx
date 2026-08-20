@@ -153,8 +153,11 @@ Le rôle **admin** donne accès à `/admin` (protégé) en plus de `/apps`.
    « À table »), puis celui de
    `supabase/migrations/20260101000002_el_profesor.sql` (tables du module
    « El Profesor » + création du bucket de stockage privé des PDF de
-   chapitres). *(Si vous utilisez la CLI Supabase : `supabase db push`
-   applique les trois dans l'ordre.)*
+   chapitres), puis celui de
+   `supabase/migrations/20260101000003_el_profesor_block_status.sql`
+   (statut brouillon/publié par bloc de contenu, RLS renforcée). *(Si vous
+   utilisez la CLI Supabase : `supabase db push` applique tout dans
+   l'ordre.)*
 3. **Charger les modules du hub** : exécutez `supabase/seed.sql` — il active
    « À table » (`status='available'`, route `/apps/a-table`) et
    « El Profesor » (`status='available'`, route `/apps/el-profesor`), et
@@ -337,7 +340,17 @@ dépendance à Anki.
 3. Tout est stocké en brouillon (`draft`) — invisible des autres
    utilisateurs — jusqu'à relecture humaine dans l'écran de relecture (PDF
    affiché à côté du contenu généré, entièrement éditable, tableaux inclus)
-   et publication, fiche par fiche ou en un clic pour tout le chapitre.
+   et publication, fiche par fiche ou en un clic pour tout le chapitre. Le
+   statut brouillon/publié est porté par chaque bloc et chaque flashcard
+   individuellement (pas seulement par la fiche), et appliqué par RLS, pas
+   seulement par l'interface.
+4. **Génération complémentaire** (bouton "Compléter" sur un chapitre déjà
+   extrait ou publié) : relit le PDF en entier avec un résumé de ce qui est
+   déjà couvert, et ne génère que les notions manquantes — jamais une
+   redite de ce qui existe déjà. Les ajouts (nouveaux blocs sur une
+   sous-entité existante, ou nouvelle sous-entité si un thème entier
+   manquait) arrivent en brouillon sous la fiche concernée, même si elle
+   est déjà publiée, et repassent par la même relecture avant publication.
 
 **Consultation et révision, pour tout utilisateur ayant accès au module** :
 

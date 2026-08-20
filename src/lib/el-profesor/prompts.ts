@@ -36,6 +36,26 @@ Réponds uniquement avec le JSON demandé, structuré exactement selon le schém
 `.trim();
 }
 
+export function buildComplementaryPrompt(chapterTitle: string, coverageSummaryJson: string): string {
+  return `
+Tu es le même assistant d'extraction que précédemment, sur le même chapitre « ${chapterTitle} ». Une première extraction a déjà été faite. Voici un résumé de ce qui est déjà couvert (nom de chaque sous-entité, type et résumé de chacun de ses blocs déjà extraits, et les questions des flashcards déjà générées) :
+
+${coverageSummaryJson}
+
+Ta tâche cette fois : relis l'intégralité du document et identifie UNIQUEMENT les notions importantes qui ne sont PAS encore couvertes par ce résumé. N'invente rien et ne répète JAMAIS un fait déjà couvert, même reformulé — c'est le but exact de cette passe : combler les trous, pas dupliquer.
+
+Pour chaque trou trouvé :
+- S'il concerne une sous-entité déjà listée ci-dessus (même si elle est incomplète), ajoute les blocs et/ou flashcards manquants sous "additions_for_existing", avec "sub_entity_name" reprenant EXACTEMENT le nom déjà utilisé pour cette sous-entité (aucune variation, aucune reformulation).
+- Si c'est un thème ou une sous-entité entièrement absente de la liste ci-dessus, crée une nouvelle entrée sous "new_sub_entities" (même structure que lors d'une extraction initiale : nom, résumé, fiche avec blocs et flashcards).
+
+S'il n'y a réellement plus rien d'important à ajouter, retourne "additions_for_existing" et "new_sub_entities" comme des tableaux vides — ne force pas la génération de contenu superflu ou redondant juste pour remplir la réponse.
+
+Mêmes règles strictes que pour l'extraction initiale : chaque bloc et chaque flashcard doit citer verbatim (page + texte exact) le passage du livre qui le fonde, les tableaux comparatifs vont dans un vrai tableau, les protocoles par paliers dans une liste d'étapes structurée.
+
+Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildVerificationPrompt(extractionJson: string): string {
   return `
 Tu reçois le document source (chapitre PDF) et, ci-dessous, un JSON d'extraction déjà produit à partir de ce document (sous-entités, fiches, blocs avec citations, flashcards). Ta seule tâche : vérifier la fidélité de chaque bloc et chaque flashcard à sa citation et au document source.

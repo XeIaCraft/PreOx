@@ -35,7 +35,7 @@ function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?
           key={i}
           type="button"
           onClick={() => onClick?.(c)}
-          className="rounded-full border border-border-strong px-2 py-0.5 text-[11px] text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
+          className="rounded-full border border-border-strong px-2.5 py-1 text-xs text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
         >
           p. {c.page}
         </button>
@@ -96,7 +96,7 @@ function BlockBody({ block }: { block: FicheBlock }) {
   }
 
   const content = block.content as TextBlockContent;
-  return <p className="whitespace-pre-wrap text-sm text-foreground-muted">{content.text}</p>;
+  return <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground-muted">{content.text}</p>;
 }
 
 export function FicheViewer({

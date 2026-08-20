@@ -80,6 +80,7 @@ function toFicheBlock(row: ElProfesorFicheBlockRow): FicheBlock {
     content: row.content as unknown as BlockContent,
     citations: (row.citations as unknown as Citation[]) ?? [],
     needsReview: row.needs_review,
+    status: row.status,
   };
 }
 
@@ -157,7 +158,14 @@ export async function getChapterContent(chapterId: string, includeDrafts = false
   let flashcards: ElProfesorFlashcardRow[] = [];
   if (ficheIds.length > 0) {
     const [blocksRes, flashcardsRes] = await Promise.all([
-      supabase.from("el_profesor_fiche_blocks").select("*").in("fiche_id", ficheIds).order("order_index", { ascending: true }),
+      includeDrafts
+        ? supabase.from("el_profesor_fiche_blocks").select("*").in("fiche_id", ficheIds).order("order_index", { ascending: true })
+        : supabase
+            .from("el_profesor_fiche_blocks")
+            .select("*")
+            .in("fiche_id", ficheIds)
+            .eq("status", "published")
+            .order("order_index", { ascending: true }),
       includeDrafts
         ? supabase.from("el_profesor_flashcards").select("*").in("fiche_id", ficheIds)
         : supabase.from("el_profesor_flashcards").select("*").in("fiche_id", ficheIds).eq("status", "published"),

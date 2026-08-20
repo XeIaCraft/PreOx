@@ -171,9 +171,12 @@ export function BlockEditor({
 
   return (
     <div className="rounded-[var(--radius-md)] border border-border p-3">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-1.5">
         <span className="text-xs font-medium uppercase tracking-wide text-foreground-subtle">{block.blockType}</span>
-        {block.needsReview && <Badge variant="accent">À vérifier</Badge>}
+        <div className="flex gap-1.5">
+          {block.status === "draft" && <Badge variant="neutral">Brouillon</Badge>}
+          {block.needsReview && <Badge variant="accent">À vérifier</Badge>}
+        </div>
       </div>
 
       <div className="mt-2">

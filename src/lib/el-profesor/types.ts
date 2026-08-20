@@ -76,6 +76,7 @@ export type FicheBlock = {
   content: BlockContent;
   citations: Citation[];
   needsReview: boolean;
+  status: ContentStatus;
 };
 
 export type Flashcard = {
@@ -141,4 +142,17 @@ export type VerificationFlag = {
 
 export type VerificationResult = {
   flags: VerificationFlag[];
+};
+
+// -- Complementary ("gap-fill") extraction pass ------------------------------
+
+export type ComplementaryAddition = {
+  sub_entity_name: string;
+  blocks: ExtractedFicheBlock[];
+  flashcards: ExtractedFlashcard[];
+};
+
+export type ComplementaryResult = {
+  additions_for_existing: ComplementaryAddition[];
+  new_sub_entities: ExtractedSubEntity[];
 };

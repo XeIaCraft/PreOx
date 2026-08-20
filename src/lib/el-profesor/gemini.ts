@@ -1,8 +1,8 @@
 import "server-only";
 
 import { GeminiError, parseGeminiJson } from "@/lib/gemini-shared";
-import { buildExtractionPrompt, buildVerificationPrompt } from "@/lib/el-profesor/prompts";
-import type { ExtractionResult, VerificationResult, BlockType } from "@/lib/el-profesor/types";
+import { buildExtractionPrompt, buildVerificationPrompt, buildComplementaryPrompt } from "@/lib/el-profesor/prompts";
+import type { ComplementaryResult, ExtractionResult, VerificationResult, BlockType } from "@/lib/el-profesor/types";
 
 const FILES_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files";
 const FILES_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
@@ -58,53 +58,70 @@ const BLOCK_CONTENT_SCHEMA = {
   },
 };
 
+const FICHE_BLOCK_ITEM_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    block_type: { type: "STRING", enum: BLOCK_TYPES },
+    content: BLOCK_CONTENT_SCHEMA,
+    citations: { type: "ARRAY", items: CITATION_SCHEMA },
+  },
+  required: ["block_type", "content", "citations"],
+};
+
+const FLASHCARD_ITEM_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    front: { type: "STRING" },
+    back: { type: "STRING" },
+    citations: { type: "ARRAY", items: CITATION_SCHEMA },
+  },
+  required: ["front", "back", "citations"],
+};
+
+const SUB_ENTITY_ITEM_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    name: { type: "STRING" },
+    summary: { type: "STRING" },
+    fiche: {
+      type: "OBJECT",
+      properties: {
+        title: { type: "STRING" },
+        blocks: { type: "ARRAY", items: FICHE_BLOCK_ITEM_SCHEMA },
+        flashcards: { type: "ARRAY", items: FLASHCARD_ITEM_SCHEMA },
+      },
+      required: ["title", "blocks", "flashcards"],
+    },
+  },
+  required: ["name", "summary", "fiche"],
+};
+
 const EXTRACTION_RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
-    sub_entities: {
+    sub_entities: { type: "ARRAY", items: SUB_ENTITY_ITEM_SCHEMA },
+  },
+  required: ["sub_entities"],
+};
+
+const COMPLEMENTARY_RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    additions_for_existing: {
       type: "ARRAY",
       items: {
         type: "OBJECT",
         properties: {
-          name: { type: "STRING" },
-          summary: { type: "STRING" },
-          fiche: {
-            type: "OBJECT",
-            properties: {
-              title: { type: "STRING" },
-              blocks: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    block_type: { type: "STRING", enum: BLOCK_TYPES },
-                    content: BLOCK_CONTENT_SCHEMA,
-                    citations: { type: "ARRAY", items: CITATION_SCHEMA },
-                  },
-                  required: ["block_type", "content", "citations"],
-                },
-              },
-              flashcards: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    front: { type: "STRING" },
-                    back: { type: "STRING" },
-                    citations: { type: "ARRAY", items: CITATION_SCHEMA },
-                  },
-                  required: ["front", "back", "citations"],
-                },
-              },
-            },
-            required: ["title", "blocks", "flashcards"],
-          },
+          sub_entity_name: { type: "STRING" },
+          blocks: { type: "ARRAY", items: FICHE_BLOCK_ITEM_SCHEMA },
+          flashcards: { type: "ARRAY", items: FLASHCARD_ITEM_SCHEMA },
         },
-        required: ["name", "summary", "fiche"],
+        required: ["sub_entity_name", "blocks", "flashcards"],
       },
     },
+    new_sub_entities: { type: "ARRAY", items: SUB_ENTITY_ITEM_SCHEMA },
   },
-  required: ["sub_entities"],
+  required: ["additions_for_existing", "new_sub_entities"],
 };
 
 const VERIFICATION_RESPONSE_SCHEMA = {
@@ -279,6 +296,19 @@ export async function extractChapterContent(
 ): Promise<ExtractionResult> {
   const result = await callGeminiWithFile(apiKey, model, file, buildExtractionPrompt(chapterTitle), EXTRACTION_RESPONSE_SCHEMA);
   return result as ExtractionResult;
+}
+
+/** Gap-fill pass: given what's already extracted, generate only what's missing. */
+export async function extractComplementaryContent(
+  apiKey: string,
+  model: string,
+  file: UploadedGeminiFile,
+  chapterTitle: string,
+  coverageSummaryJson: string
+): Promise<ComplementaryResult> {
+  const prompt = buildComplementaryPrompt(chapterTitle, coverageSummaryJson);
+  const result = await callGeminiWithFile(apiKey, model, file, prompt, COMPLEMENTARY_RESPONSE_SCHEMA);
+  return result as ComplementaryResult;
 }
 
 export async function verifyExtraction(

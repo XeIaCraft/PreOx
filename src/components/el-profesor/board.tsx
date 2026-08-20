@@ -3,14 +3,14 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { GraduationCap, Plus, Trash2, Sparkles, BookOpen, ClipboardCheck } from "lucide-react";
+import { GraduationCap, Plus, Trash2, Sparkles, BookOpen, ClipboardCheck, SearchCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog";
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { deleteBook, deleteChapter } from "@/app/apps/el-profesor/actions/library";
-import { extractChapter } from "@/app/apps/el-profesor/actions/extraction";
+import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import type { BookWithChapters, ChapterDueCounts } from "@/lib/el-profesor/dal";
 import type { ChapterStatus } from "@/lib/el-profesor/types";
 
@@ -59,6 +59,19 @@ export function ElProfesorBoard({
       if (result.error) toast(result.error, { variant: "error" });
       else {
         toast(result.success ?? "Extraction terminée.", { variant: "success" });
+        refresh();
+      }
+    });
+  }
+
+  function handleComplement(chapterId: string) {
+    setPendingId(chapterId);
+    startTransition(async () => {
+      const result = await extractChapterComplementary(chapterId);
+      setPendingId(null);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Terminé.", { variant: "success" });
         refresh();
       }
     });
@@ -190,6 +203,11 @@ export function ElProfesorBoard({
                             Éditer
                           </Button>
                         </Link>
+                      )}
+                      {isAdmin && (chapter.status === "draft_ready" || chapter.status === "published") && (
+                        <Button variant="secondary" size="sm" onClick={() => handleComplement(chapter.id)} disabled={busy} title="Relit le PDF et ne génère que les notions pas encore couvertes">
+                          <SearchCheck className="h-3.5 w-3.5" /> {busy ? "Analyse…" : "Compléter"}
+                        </Button>
                       )}
                       {isAdmin && (
                         <Button variant="ghost" size="icon" onClick={() => handleDeleteChapter(chapter.id)} aria-label="Supprimer le chapitre">

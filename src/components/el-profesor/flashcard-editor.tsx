@@ -41,9 +41,12 @@ export function FlashcardEditor({
 
   return (
     <div className="rounded-[var(--radius-md)] border border-border p-3">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-1.5">
         <span className="text-xs font-medium uppercase tracking-wide text-foreground-subtle">Flashcard</span>
-        {flashcard.needsReview && <Badge variant="accent">À vérifier</Badge>}
+        <div className="flex gap-1.5">
+          {flashcard.status === "draft" && <Badge variant="neutral">Brouillon</Badge>}
+          {flashcard.needsReview && <Badge variant="accent">À vérifier</Badge>}
+        </div>
       </div>
       <div className="mt-2 space-y-2">
         <textarea
