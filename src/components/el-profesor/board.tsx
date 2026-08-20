@@ -15,7 +15,7 @@ import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog"
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
-import { LearningWidgets, DailyCard } from "@/components/el-profesor/learning-widgets";
+import { LearningWidgets, DailyCard, LibraryStats } from "@/components/el-profesor/learning-widgets";
 import { deleteBook, deleteChapter } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import { getLastChapter } from "@/lib/el-profesor/local-prefs";
@@ -129,6 +129,8 @@ export function ElProfesorBoard({
   const masteryValues = Object.values(masteryCounts);
   const totalAcquired = masteryValues.reduce((sum, m) => sum + m.acquired, 0);
   const chaptersMastered = masteryValues.filter((m) => m.total > 0 && m.acquired === m.total).length;
+  const totalChapters = books.reduce((sum, b) => sum + b.chapters.filter((c) => c.status === "published").length, 0);
+  const totalFlashcards = masteryValues.reduce((sum, m) => sum + m.total, 0);
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -222,6 +224,8 @@ export function ElProfesorBoard({
           )}
         </div>
       </div>
+
+      {books.length > 0 && <LibraryStats totalBooks={books.length} totalChapters={totalChapters} totalFlashcards={totalFlashcards} />}
 
       {resume && (
         <Link

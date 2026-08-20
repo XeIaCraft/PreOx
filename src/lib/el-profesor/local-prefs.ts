@@ -52,6 +52,18 @@ export function setFontScale(scale: FontScale) {
   setItem("font-scale", scale);
 }
 
+const DEFAULT_DAILY_GOAL = 15;
+
+export function getDailyGoal(): number {
+  const raw = getItem("daily-goal");
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_DAILY_GOAL;
+}
+
+export function setDailyGoal(goal: number) {
+  setItem("daily-goal", String(goal));
+}
+
 export function getPdfZoom(): number | null {
   const raw = getItem("pdf-zoom");
   const n = raw ? Number(raw) : NaN;

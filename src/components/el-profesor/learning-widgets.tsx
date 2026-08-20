@@ -2,10 +2,49 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles } from "lucide-react";
+import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getDailyGoal, setDailyGoal } from "@/lib/el-profesor/local-prefs";
 import type { ReviewActivitySummary } from "@/lib/el-profesor/dal";
 import type { Flashcard } from "@/lib/el-profesor/types";
+
+const GOAL_PRESETS = [10, 15, 20, 30];
+
+function DailyGoalRing({ todayCount }: { todayCount: number }) {
+  const [goal, setGoalState] = useState(() => getDailyGoal());
+  const pct = Math.min(100, Math.round((todayCount / goal) * 100));
+
+  function cycleGoal() {
+    const idx = GOAL_PRESETS.indexOf(goal);
+    const next = GOAL_PRESETS[(idx + 1) % GOAL_PRESETS.length] ?? GOAL_PRESETS[0];
+    setGoalState(next);
+    setDailyGoal(next);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={cycleGoal}
+      className="flex items-center gap-2 rounded-[var(--radius-sm)] px-1.5 py-1 hover:bg-surface-muted"
+      title="Objectif quotidien — cliquer pour changer"
+    >
+      <span
+        className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+        style={{ background: `conic-gradient(var(--primary) ${pct}%, var(--surface-muted) ${pct}%)` }}
+      >
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface text-[9px] font-medium text-foreground">
+          {todayCount}
+        </span>
+      </span>
+      <span className="text-left">
+        <p className="text-xs font-medium text-foreground">Objectif du jour</p>
+        <p className="text-[11px] text-foreground-subtle">
+          {todayCount} / {goal} cartes
+        </p>
+      </span>
+    </button>
+  );
+}
 
 /**
  * Passive daily refresher: one already-mastered card, click to check your
@@ -69,6 +108,33 @@ interface Badge {
   label: string;
 }
 
+/** Small header stat strip — how much material the library actually holds. */
+export function LibraryStats({
+  totalBooks,
+  totalChapters,
+  totalFlashcards,
+}: {
+  totalBooks: number;
+  totalChapters: number;
+  totalFlashcards: number;
+}) {
+  const stats = [
+    { icon: BookOpen, value: totalBooks, label: totalBooks > 1 ? "livres" : "livre" },
+    { icon: GraduationCap, value: totalChapters, label: totalChapters > 1 ? "chapitres publiés" : "chapitre publié" },
+    { icon: Layers, value: totalFlashcards, label: totalFlashcards > 1 ? "flashcards" : "flashcard" },
+  ];
+  return (
+    <div className="mt-6 flex flex-wrap gap-4 text-sm text-foreground-muted">
+      {stats.map((s, i) => (
+        <span key={i} className="flex items-center gap-1.5">
+          <s.icon className="h-3.5 w-3.5 text-foreground-subtle" />
+          <span className="font-medium text-foreground">{s.value}</span> {s.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function LearningWidgets({
   activity,
   globalDueCount,
@@ -91,6 +157,11 @@ export function LearningWidgets({
   ];
   const earnedCount = badges.filter((b) => b.earned).length;
 
+  const last7 = activity.last12Weeks.slice(-7);
+  const weekCount = last7.reduce((sum, d) => sum + d.count, 0);
+  const activeDays = last7.filter((d) => d.count > 0).length;
+  const todayCount = activity.last12Weeks[activity.last12Weeks.length - 1]?.count ?? 0;
+
   return (
     <div className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -105,8 +176,16 @@ export function LearningWidgets({
             <p className="text-xs text-foreground-subtle">Record : {activity.longestStreak} jour{activity.longestStreak > 1 ? "s" : ""}</p>
           </div>
         </div>
+        <DailyGoalRing todayCount={todayCount} />
         <ActivityHeatmap days={activity.last12Weeks} />
       </div>
+
+      {weekCount > 0 && (
+        <p className="mt-3 text-xs text-foreground-subtle">
+          Cette semaine : {weekCount} carte{weekCount > 1 ? "s" : ""} révisée{weekCount > 1 ? "s" : ""} sur {activeDays} jour
+          {activeDays > 1 ? "s" : ""}.
+        </p>
+      )}
 
       <div className="mt-4 flex flex-wrap gap-1.5">
         {badges.map((b, i) => (
