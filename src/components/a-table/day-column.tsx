@@ -18,6 +18,9 @@ interface DayColumnProps {
   onMove: (cardId: string, placement: Placement) => void;
   onServingsChange?: (cardId: string, servings: number) => void;
   onDuplicate?: (cardId: string) => void;
+  onToggleLock?: (cardId: string, locked: boolean) => void;
+  onStartTimer?: (minutes: number, label: string) => void;
+  allergyRecipeIds?: Set<string>;
 }
 
 export function DayColumn({
@@ -33,6 +36,9 @@ export function DayColumn({
   onMove,
   onServingsChange,
   onDuplicate,
+  onToggleLock,
+  onStartTimer,
+  allergyRecipeIds,
 }: DayColumnProps) {
   const [over, setOver] = useState(false);
 
@@ -78,6 +84,9 @@ export function DayColumn({
               onMove={(p) => onMove(card.id, p)}
               onServingsChange={onServingsChange ? (s) => onServingsChange(card.id, s) : undefined}
               onDuplicate={onDuplicate ? () => onDuplicate(card.id) : undefined}
+              onToggleLock={onToggleLock ? () => onToggleLock(card.id, !card.locked) : undefined}
+              onStartTimer={onStartTimer}
+              allergyWarning={allergyRecipeIds?.has(recipe.id)}
             />
           );
         })

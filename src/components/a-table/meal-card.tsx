@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Star, Trash2, CheckCircle2, GripVertical, Clock, Minus, Plus, Copy } from "lucide-react";
+import { Star, Trash2, CheckCircle2, GripVertical, Clock, Minus, Plus, Copy, Lock, LockOpen, Timer, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select } from "@/components/ui/input";
 import { DAY_LABELS, PLACEMENTS } from "@/lib/a-table/constants";
@@ -33,10 +33,26 @@ interface MealCardProps {
   onMove: (placement: Placement) => void;
   onServingsChange?: (servings: number) => void;
   onDuplicate?: () => void;
+  onToggleLock?: () => void;
+  onStartTimer?: (minutes: number, label: string) => void;
+  allergyWarning?: boolean;
   isPending?: boolean;
 }
 
-export function MealCard({ card, recipe, onOpenDetail, onCook, onRemove, onMove, onServingsChange, onDuplicate, isPending }: MealCardProps) {
+export function MealCard({
+  card,
+  recipe,
+  onOpenDetail,
+  onCook,
+  onRemove,
+  onMove,
+  onServingsChange,
+  onDuplicate,
+  onToggleLock,
+  onStartTimer,
+  allergyWarning,
+  isPending,
+}: MealCardProps) {
   const [dragging, setDragging] = useState(false);
   const swatch = SWATCHES[categoryFor(recipe.tags)];
 
@@ -66,6 +82,19 @@ export function MealCard({ card, recipe, onOpenDetail, onCook, onRemove, onMove,
         {recipe.is_favorite && (
           <span className="absolute right-1.5 top-1.5 rounded-full bg-surface/90 p-1">
             <Star className="h-3 w-3 fill-accent text-accent" />
+          </span>
+        )}
+        {allergyWarning && (
+          <span
+            className="absolute left-1.5 top-1.5 rounded-full bg-danger-tint p-1 text-danger"
+            title="Contient un ingrédient de votre liste d'allergies"
+          >
+            <ShieldAlert className="h-3 w-3" />
+          </span>
+        )}
+        {card.locked && (
+          <span className="absolute bottom-1.5 right-1.5 rounded-full bg-surface/90 p-1 text-foreground-subtle">
+            <Lock className="h-3 w-3" />
           </span>
         )}
       </button>
@@ -124,6 +153,28 @@ export function MealCard({ card, recipe, onOpenDetail, onCook, onRemove, onMove,
             </option>
           ))}
         </Select>
+        {onStartTimer && recipe.cooking_minutes != null && (
+          <button
+            type="button"
+            onClick={() => onStartTimer(recipe.cooking_minutes!, recipe.title)}
+            disabled={isPending}
+            title={`Lancer un chrono de ${recipe.cooking_minutes} min`}
+            className="rounded p-1 text-foreground-subtle hover:bg-surface-muted"
+          >
+            <Timer className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {onToggleLock && (
+          <button
+            type="button"
+            onClick={onToggleLock}
+            disabled={isPending}
+            title={card.locked ? "Déverrouiller (peut être vidée)" : "Verrouiller (protégée de « Vider la semaine »)"}
+            className="rounded p-1 text-foreground-subtle hover:bg-surface-muted"
+          >
+            {card.locked ? <Lock className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5" />}
+          </button>
+        )}
         {onDuplicate && (
           <button
             type="button"

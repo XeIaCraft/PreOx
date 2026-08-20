@@ -1,8 +1,28 @@
 "use client";
 
-import { CheckCircle2, Info } from "lucide-react";
+import { CheckCircle2, Info, AlarmClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { MealCard, Recipe } from "@/lib/a-table/types";
+
+const DINNER_HOUR = 19;
+const DINNER_MINUTE = 30;
+
+function formatTime(date: Date): string {
+  return date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** null when there's nothing useful to say (no cook time, or dinner has already passed). */
+function startCookingReminder(cookingMinutes: number | null): { label: string; urgent: boolean } | null {
+  if (cookingMinutes == null) return null;
+  const now = new Date();
+  const dinner = new Date(now);
+  dinner.setHours(DINNER_HOUR, DINNER_MINUTE, 0, 0);
+  if (now >= dinner) return null;
+
+  const start = new Date(dinner.getTime() - cookingMinutes * 60 * 1000);
+  if (now >= start) return { label: `Pour manger à ${formatTime(dinner)}, il est temps de s'y mettre !`, urgent: true };
+  return { label: `Pour manger à ${formatTime(dinner)}, commencez vers ${formatTime(start)}.`, urgent: false };
+}
 
 interface TodayHeroProps {
   card: MealCard | null;
@@ -38,6 +58,15 @@ export function TodayHero({ card, recipe, onOpenDetail, onCook, onScrollToGenera
               {recipe.cooking_minutes != null ? `${recipe.cooking_minutes} min · ` : ""}
               {card?.servings} pers.
             </p>
+            {(() => {
+              const reminder = startCookingReminder(recipe.cooking_minutes);
+              if (!reminder) return null;
+              return (
+                <p className={`mt-1.5 flex items-center gap-1.5 text-xs font-medium ${reminder.urgent ? "text-danger" : "text-foreground-subtle"}`}>
+                  <AlarmClock className="h-3.5 w-3.5" /> {reminder.label}
+                </p>
+              );
+            })()}
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={onOpenDetail}>

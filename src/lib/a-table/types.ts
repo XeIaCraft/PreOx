@@ -73,8 +73,18 @@ export interface MealCard {
   placement: Placement;
   position: number;
   servings: number;
+  locked: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface PantryItem {
+  id: string;
+  user_id: string;
+  name: string;
+  quantity: number | null;
+  unit: string;
+  created_at: string;
 }
 
 export interface HistoryEntry {
@@ -199,6 +209,8 @@ export type Preferences = {
   custom_context: string;
   macro_ratios: MacroRatios;
   recipe_sources: RecipeSourcesSettings;
+  /** Custom shopping-list category order (rayon keys); absent/empty falls back to the default. */
+  shopping_category_order?: string[];
 };
 
 export type GenerationRules = {
@@ -248,4 +260,5 @@ export interface ATableData {
   guestMenus: GuestMenu[];
   history: HistoryEntry[];
   collections: RecipeCollection[];
+  pantryItems: PantryItem[];
 }

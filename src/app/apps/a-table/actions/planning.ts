@@ -89,6 +89,22 @@ export async function duplicateMealCard(cardId: string, placement: Placement): P
   return { success: "Carte dupliquée." };
 }
 
+export async function toggleMealCardLock(cardId: string, locked: boolean): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("a_table_meal_cards")
+    .update({ locked })
+    .eq("id", cardId)
+    .eq("user_id", profile.id)
+    .eq("status", "active");
+
+  if (error) return { error: "Impossible de mettre à jour la carte." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "" };
+}
+
 export async function updateMealCardServings(cardId: string, servings: number): Promise<ActionState> {
   const profile = await requireATableAccess();
   if (!Number.isFinite(servings) || servings < 1) return { error: "Nombre de portions invalide." };
@@ -122,6 +138,7 @@ export async function clearWeek(): Promise<ActionState & { cleared?: ClearedCard
     .select("id, placement, position")
     .eq("user_id", profile.id)
     .eq("status", "active")
+    .eq("locked", false)
     .in("placement", WEEKDAY_PLACEMENTS);
 
   const { error } = await supabase
@@ -129,6 +146,7 @@ export async function clearWeek(): Promise<ActionState & { cleared?: ClearedCard
     .update({ placement: "backlog" })
     .eq("user_id", profile.id)
     .eq("status", "active")
+    .eq("locked", false)
     .in("placement", WEEKDAY_PLACEMENTS);
 
   if (error) return { error: "Impossible de vider la semaine." };

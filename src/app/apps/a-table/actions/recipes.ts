@@ -7,8 +7,9 @@ import { callGemini, GeminiError, validStepLabels } from "@/lib/a-table/gemini";
 import { searchPexelsImage, PexelsError } from "@/lib/a-table/pexels";
 import { getDecryptedGeminiConfig, getDecryptedPexelsKey } from "@/lib/a-table/ai-config";
 import { buildImportInstructions, buildRefineInstructions } from "@/lib/a-table/prompts";
+import { WINE_INSTRUCTION } from "@/lib/a-table/guest-prompts";
 import { uploadRecipePhoto as uploadRecipePhotoToStorage } from "@/lib/a-table/storage";
-import type { Ingredient, Nutrition } from "@/lib/a-table/types";
+import type { Ingredient, Nutrition, WinePairing } from "@/lib/a-table/types";
 import type { Json } from "@/lib/supabase/types";
 
 export interface ActionState {
@@ -205,6 +206,33 @@ export async function duplicateRecipe(recipeId: string): Promise<ActionState> {
   return { success: "Recette dupliquée dans « Mes recettes »." };
 }
 
+/** Ephemeral: not persisted, just returned for display in the current session. */
+export async function suggestWineForRecipe(recipeId: string): Promise<ActionState & { winePairings?: WinePairing[] }> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const { data: recipe } = await supabase.from("a_table_recipes").select("title, ingredients").eq("id", recipeId).eq("user_id", profile.id).single();
+  if (!recipe) return { error: "Recette introuvable." };
+
+  let config;
+  try {
+    config = await getDecryptedGeminiConfig(profile.id);
+  } catch {
+    return { error: "Configurez votre clé API Gemini dans les réglages pour utiliser l'IA." };
+  }
+
+  const ingredientNames = ((recipe.ingredients as unknown as Ingredient[]) ?? []).map((i) => i.name).join(", ");
+  const instructions = `Voici un plat : "${recipe.title}" (ingrédients principaux : ${ingredientNames}).\n\n${WINE_INSTRUCTION}\n\nRÉSULTAT ATTENDU (JSON strict) :\n{"wine_pairings": [{"style": "...", "description": "...", "producers": []}]}`;
+
+  try {
+    const result = (await callGemini({ ...config, instructions })) as { wine_pairings?: WinePairing[] };
+    if (!result.wine_pairings?.length) throw new GeminiError("Aucune suggestion obtenue.");
+    return { winePairings: result.wine_pairings };
+  } catch (err) {
+    return { error: err instanceof GeminiError ? err.message : "Suggestion impossible pour le moment." };
+  }
+}
+
 export async function uploadRecipePhoto(recipeId: string, imageBase64: string, mimeType: string): Promise<ActionState> {
   const profile = await requireATableAccess();
   const supabase = await createClient();
@@ -306,6 +334,85 @@ export async function refineRecipe(recipeId: string, message: string): Promise<A
 
   revalidatePath("/apps/a-table");
   return { success: "Recette mise à jour." };
+}
+
+/** Strips tags/scripts/styles down to readable text — good enough input for Gemini to parse, no HTML parser dependency needed. */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&[a-z]+;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 15000);
+}
+
+/** Generates one new recipe idea built primarily around current leftovers (temporary ingredients + pantry). */
+export async function generateRecipeFromLeftovers(): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const [tempRes, pantryRes] = await Promise.all([
+    supabase.from("a_table_temporary_ingredients").select("name, quantity, unit").eq("user_id", profile.id),
+    supabase.from("a_table_pantry_items").select("name, quantity, unit").eq("user_id", profile.id),
+  ]);
+  const leftovers = [...(tempRes.data ?? []), ...(pantryRes.data ?? [])];
+  if (leftovers.length === 0) return { error: "Aucun reste enregistré pour l'instant." };
+
+  const list = leftovers.map((i) => `${i.quantity ? `${i.quantity} ${i.unit} ` : ""}${i.name}`).join(", ");
+  const prompt = `Invente une recette qui utilise en priorité ces restes à écouler : ${list}. Complète avec des ingrédients de base courants (huile, sel, épices…) si nécessaire, sans en abuser.`;
+
+  return importRecipe({ text: prompt });
+}
+
+export async function importRecipeFromUrl(url: string): Promise<ActionState> {
+  await requireATableAccess();
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { error: "URL invalide." };
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    return { error: "L'URL doit commencer par http:// ou https://." };
+  }
+  // Defense-in-depth against SSRF toward internal services/cloud metadata —
+  // authenticated hub users are trusted, but this endpoint fetches arbitrary
+  // attacker-chosen URLs server-side, so it shouldn't be able to reach
+  // anything on the private network regardless.
+  const hostname = parsed.hostname.toLowerCase();
+  const isPrivateHost =
+    hostname === "localhost" ||
+    hostname === "169.254.169.254" ||
+    /^127\./.test(hostname) ||
+    /^10\./.test(hostname) ||
+    /^192\.168\./.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+    hostname === "::1";
+  if (isPrivateHost) {
+    return { error: "Cette adresse n'est pas autorisée." };
+  }
+
+  let html: string;
+  try {
+    const response = await fetch(parsed.toString(), {
+      signal: AbortSignal.timeout(10000),
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; PreOx-recipe-import/1.0)" },
+    });
+    if (!response.ok) return { error: `Impossible de charger cette page (${response.status}).` };
+    html = await response.text();
+  } catch {
+    return { error: "Impossible de joindre cette page. Vérifiez l'URL." };
+  }
+
+  const text = htmlToText(html);
+  if (text.length < 100) return { error: "Cette page ne semble pas contenir de recette exploitable." };
+
+  return importRecipe({ text });
 }
 
 interface ImportRecipeInput {

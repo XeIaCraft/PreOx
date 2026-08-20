@@ -2,15 +2,23 @@
 
 import { useRef, useState, useTransition } from "react";
 import Image from "next/image";
-import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy, Minus, Plus, Upload } from "lucide-react";
+import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy, Minus, Plus, Upload, Wine } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { Button } from "@/components/ui/button";
-import { toggleFavorite, fetchRecipeImage, refineRecipe, duplicateRecipe, uploadRecipePhoto } from "@/app/apps/a-table/actions/recipes";
+import {
+  toggleFavorite,
+  fetchRecipeImage,
+  refineRecipe,
+  duplicateRecipe,
+  uploadRecipePhoto,
+  suggestWineForRecipe,
+} from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
 import { scaleFactor } from "@/lib/a-table/shopping";
 import { fileToBase64 } from "@/lib/client-file";
-import type { Appetite, Recipe } from "@/lib/a-table/types";
+import { findSubstitutions } from "@/lib/a-table/substitutions";
+import type { Appetite, Recipe, WinePairing } from "@/lib/a-table/types";
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
@@ -28,6 +36,8 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
   const [isPending, startTransition] = useTransition();
   const [previewServings, setPreviewServings] = useState(servings);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [winePairings, setWinePairings] = useState<WinePairing[] | null>(null);
+  const [loadingWine, setLoadingWine] = useState(false);
   const [printFormat, setPrintFormat] = useState<"full" | "card">("full");
   const photoInputRef = useRef<HTMLInputElement>(null);
   const factor = scaleFactor(recipe.servings, previewServings, appetite);
@@ -75,6 +85,16 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
       })
       .catch(() => toast("Échec de l'envoi de la photo.", { variant: "error" }))
       .finally(() => setUploadingPhoto(false));
+  }
+
+  function handleSuggestWine() {
+    setLoadingWine(true);
+    suggestWineForRecipe(recipe.id)
+      .then((result) => {
+        if (result.error) toast(result.error, { variant: "error" });
+        else setWinePairings(result.winePairings ?? []);
+      })
+      .finally(() => setLoadingWine(false));
   }
 
   function handleDuplicate() {
@@ -131,6 +151,10 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
         <Button variant="secondary" size="sm" onClick={handlePrintCard} title="Imprimer au format fiche de cuisine (compact)">
           <Printer className="h-4 w-4" />
           Carte
+        </Button>
+        <Button variant="secondary" size="sm" onClick={handleSuggestWine} disabled={loadingWine}>
+          <Wine className="h-4 w-4" />
+          {loadingWine ? "Recherche…" : "Suggérer un vin"}
         </Button>
         {onCookMode && (
           <Button variant="outline" size="sm" onClick={onCookMode}>
@@ -189,6 +213,22 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
               </li>
             ))}
           </ul>
+          {(() => {
+            const substitutions = findSubstitutions(recipe.ingredients.map((ing) => ing.name));
+            if (substitutions.length === 0) return null;
+            return (
+              <details className="mt-3 print:hidden">
+                <summary className="cursor-pointer text-xs font-medium text-foreground-subtle">Remplacer un ingrédient manquant</summary>
+                <ul className="mt-1.5 space-y-1 text-xs text-foreground-subtle">
+                  {substitutions.map((s) => (
+                    <li key={s.ingredient}>
+                      <span className="font-medium text-foreground-muted">{s.ingredient}</span> → {s.alternatives.join(", ")}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            );
+          })()}
         </div>
 
         <div>
@@ -218,6 +258,23 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
 
       {recipe.notes && (
         <div className="mt-4 rounded-[var(--radius-sm)] bg-surface-muted p-3 text-sm text-foreground-muted">{recipe.notes}</div>
+      )}
+
+      {winePairings && winePairings.length > 0 && (
+        <div className="mt-4">
+          <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+            <Wine className="h-4 w-4" /> Accords mets-vins
+          </h3>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {winePairings.map((wine, i) => (
+              <div key={i} className="rounded-[var(--radius-sm)] border border-border p-3 text-sm">
+                <p className="font-medium text-foreground">{wine.style}</p>
+                <p className="text-foreground-muted">{wine.description}</p>
+                {wine.producers.length > 0 && <p className="mt-1 text-xs text-foreground-subtle">{wine.producers.join(", ")}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
       </div>
 

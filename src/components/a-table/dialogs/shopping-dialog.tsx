@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { RotateCcw, Printer, Copy, Plus, X } from "lucide-react";
+import { RotateCcw, Printer, Copy, Plus, X, ChevronUp, ChevronDown, ListOrdered } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import {
   clearShoppingChecked,
   addManualShoppingItem,
   removeManualShoppingItem,
+  updatePreferences,
 } from "@/app/apps/a-table/actions/settings";
 import { useToast } from "@/components/ui/toast";
 import type { Appetite, GuestMenu, MealCard, Recipe, ShoppingManualItem } from "@/lib/a-table/types";
@@ -24,11 +25,12 @@ interface ShoppingDialogProps {
   exportedRecipeIds: string[];
   checked: Record<string, boolean>;
   manualItems: ShoppingManualItem[];
+  categoryOrder?: string[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-const CATEGORY_ORDER = [...SHOPPING_CATEGORIES, SHOPPING_OTHER_CATEGORY];
+const DEFAULT_CATEGORIES = [...SHOPPING_CATEGORIES, SHOPPING_OTHER_CATEGORY];
 
 export function ShoppingDialog({
   mealCards,
@@ -38,12 +40,37 @@ export function ShoppingDialog({
   exportedRecipeIds,
   checked,
   manualItems,
+  categoryOrder,
   onClose,
   onSaved,
 }: ShoppingDialogProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [newItemName, setNewItemName] = useState("");
+  const [order, setOrder] = useState<string[]>(
+    () => categoryOrder?.length ? categoryOrder : DEFAULT_CATEGORIES.map((c) => c.key)
+  );
+
+  const CATEGORY_ORDER = useMemo(() => {
+    const byKey = new Map(DEFAULT_CATEGORIES.map((c) => [c.key, c]));
+    const ordered = order.map((key) => byKey.get(key)).filter((c): c is (typeof DEFAULT_CATEGORIES)[number] => Boolean(c));
+    for (const c of DEFAULT_CATEGORIES) if (!order.includes(c.key)) ordered.push(c);
+    return ordered;
+  }, [order]);
+
+  function moveCategory(key: string, direction: -1 | 1) {
+    const index = order.indexOf(key);
+    if (index === -1) return;
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= order.length) return;
+    const next = [...order];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    setOrder(next);
+    startTransition(async () => {
+      await updatePreferences({ shopping_category_order: next });
+      onSaved();
+    });
+  }
 
   const items = useMemo(
     () => buildShoppingList(mealCards, recipesById, guestMenus, appetite, exportedRecipeIds, checked, manualItems),
@@ -135,6 +162,39 @@ export function ShoppingDialog({
         </>
       }
     >
+      <details className="mb-4 print:hidden">
+        <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-foreground-subtle">
+          <ListOrdered className="h-3.5 w-3.5" /> Réorganiser les rayons (ordre du magasin)
+        </summary>
+        <ul className="mt-2 space-y-1">
+          {CATEGORY_ORDER.map((category, i) => (
+            <li key={category.key} className="flex items-center justify-between rounded px-2 py-1 text-sm hover:bg-surface-muted">
+              {category.label}
+              <span className="flex gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => moveCategory(category.key, -1)}
+                  disabled={i === 0}
+                  aria-label="Monter"
+                  className="rounded p-0.5 text-foreground-subtle hover:bg-surface disabled:opacity-30"
+                >
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveCategory(category.key, 1)}
+                  disabled={i === CATEGORY_ORDER.length - 1}
+                  aria-label="Descendre"
+                  className="rounded p-0.5 text-foreground-subtle hover:bg-surface disabled:opacity-30"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
+
       <div className="mb-4 flex gap-2 print:hidden">
         <Input
           value={newItemName}

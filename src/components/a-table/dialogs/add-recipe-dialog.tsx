@@ -5,7 +5,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { addRecipe, importRecipe } from "@/app/apps/a-table/actions/recipes";
+import { addRecipe, importRecipe, importRecipeFromUrl } from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
 import { fileToBase64 } from "@/lib/client-file";
 
@@ -25,7 +25,9 @@ export function AddRecipeDialog({ existingTags, onClose, onSaved }: AddRecipeDia
   // AI tab
   const [text, setText] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
+  const [url, setUrl] = useState("");
   const [aiLabel, setAiLabel] = useState("Importer");
+  const [isImportingUrl, setIsImportingUrl] = useState(false);
 
   // Manual tab
   const [title, setTitle] = useState("");
@@ -57,6 +59,21 @@ export function AddRecipeDialog({ existingTags, onClose, onSaved }: AddRecipeDia
         onClose();
       }
     });
+  }
+
+  function handleImportUrl() {
+    if (!url.trim()) return;
+    setIsImportingUrl(true);
+    importRecipeFromUrl(url.trim())
+      .then((result) => {
+        if (result.error) toast(result.error, { variant: "error" });
+        else {
+          toast(result.success ?? "", { variant: "success" });
+          onSaved();
+          onClose();
+        }
+      })
+      .finally(() => setIsImportingUrl(false));
   }
 
   function parseIngredients(): { name: string; quantity: number | null; unit: string }[] {
@@ -128,6 +145,22 @@ export function AddRecipeDialog({ existingTags, onClose, onSaved }: AddRecipeDia
               placeholder="Colle ici le texte d'une recette…"
               className="w-full resize-none rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-sm placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ar-url">Ou une URL de recette</Label>
+            <div className="flex gap-2">
+              <Input
+                id="ar-url"
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://…"
+                className="flex-1"
+              />
+              <Button variant="secondary" onClick={handleImportUrl} disabled={isImportingUrl || !url.trim()}>
+                {isImportingUrl ? "Import…" : "Importer"}
+              </Button>
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="ar-photo">Ou une photo</Label>

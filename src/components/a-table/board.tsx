@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus } from "lucide-react";
+import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus, Sparkles } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
 import { A_TABLE_ONBOARDING_STEPS } from "@/components/a-table/onboarding-steps";
@@ -11,6 +11,8 @@ import { DAY_LABELS, WEEKDAY_PLACEMENTS } from "@/lib/a-table/constants";
 import { useToast } from "@/components/ui/toast";
 import { TodayHero } from "@/components/a-table/today-hero";
 import { TempIngredientsRow } from "@/components/a-table/temp-ingredients-row";
+import { PantryRow } from "@/components/a-table/pantry-row";
+import { PantryItemDialog } from "@/components/a-table/dialogs/pantry-item-dialog";
 import { GeneratorBar } from "@/components/a-table/generator-bar";
 import { DayColumn } from "@/components/a-table/day-column";
 import { MealCard } from "@/components/a-table/meal-card";
@@ -26,6 +28,7 @@ import { ValidateDraftDialog } from "@/components/a-table/dialogs/validate-draft
 import { SettingsDialog } from "@/components/a-table/dialogs/settings-dialog";
 import { GuestMenuDialog } from "@/components/a-table/dialogs/guest-menu-dialog";
 import { CookModeDialog } from "@/components/a-table/dialogs/cook-mode-dialog";
+import { TimerBar, useTimers } from "@/components/a-table/ui/timer-bar";
 import {
   moveMealCard,
   cookMealCard,
@@ -33,11 +36,14 @@ import {
   addRecipeToBacklog,
   updateMealCardServings,
   duplicateMealCard,
+  toggleMealCardLock,
   clearWeek,
   restoreWeekPlacements,
 } from "@/app/apps/a-table/actions/planning";
 import { generateDraft } from "@/app/apps/a-table/actions/drafts";
+import { generateRecipeFromLeftovers } from "@/app/apps/a-table/actions/recipes";
 import { removeTemporaryIngredient } from "@/app/apps/a-table/actions/temp_ingredients";
+import { removePantryItem } from "@/app/apps/a-table/actions/pantry";
 import { scaleFactor } from "@/lib/a-table/shopping";
 import { buildWeekIcs } from "@/lib/a-table/ics";
 import type { ATableData, Placement, TemporaryIngredient } from "@/lib/a-table/types";
@@ -46,6 +52,7 @@ type ModalState =
   | { type: "detail"; recipeId: string }
   | { type: "add" }
   | { type: "add_temp" }
+  | { type: "add_pantry" }
   | { type: "edit_temp"; ingredient: TemporaryIngredient }
   | { type: "library" }
   | { type: "collections" }
@@ -69,6 +76,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
   const [isGenerating, startGenerating] = useTransition();
   const [pendingCardId, setPendingCardId] = useState<string | null>(null);
   const [tourOpen, setTourOpen] = useState(() => !hasSeenOnboarding("a-table"));
+  const { timers, startTimer, dismissTimer } = useTimers();
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -121,9 +129,20 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       macroPct,
     };
   }, [data.mealCards, data.settings.preferences.appetite, recipesById]);
+  const allergyRecipeIds = useMemo(() => {
+    const allergies = data.settings.preferences.allergies.map((a) => a.toLowerCase());
+    if (allergies.length === 0) return new Set<string>();
+    const ids = new Set<string>();
+    for (const r of data.recipes) {
+      const haystack = [...r.tags, ...r.ingredients.map((i) => i.name)].map((s) => s.toLowerCase());
+      if (allergies.some((a) => haystack.some((h) => h.includes(a)))) ids.add(r.id);
+    }
+    return ids;
+  }, [data.recipes, data.settings.preferences.allergies]);
+
   const cookableWithLeftovers = useMemo(() => {
-    if (data.temporaryIngredients.length === 0) return [];
-    const leftoverNames = data.temporaryIngredients.map((t) => t.name.toLowerCase());
+    const leftoverNames = [...data.temporaryIngredients, ...data.pantryItems].map((t) => t.name.toLowerCase());
+    if (leftoverNames.length === 0) return [];
     return data.recipes
       .filter((r) => !r.is_archived)
       .map((r) => ({
@@ -133,7 +152,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       .filter((entry) => entry.matches > 0)
       .sort((a, b) => b.matches - a.matches)
       .slice(0, 4);
-  }, [data.temporaryIngredients, data.recipes]);
+  }, [data.temporaryIngredients, data.pantryItems, data.recipes]);
   const activeCards = useMemo(() => data.mealCards.filter((c) => c.status === "active"), [data.mealCards]);
   const backlogCards = useMemo(
     () => activeCards.filter((c) => c.placement === "backlog").sort((a, b) => a.position - b.position),
@@ -208,6 +227,32 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
     URL.revokeObjectURL(link.href);
   }
 
+  function handleToggleLock(cardId: string, locked: boolean) {
+    startTransition(async () => {
+      const result = await toggleMealCardLock(cardId, locked);
+      if (result.error) toast(result.error, { variant: "error" });
+      else refresh();
+    });
+  }
+
+  function handleGenerateFromLeftovers() {
+    startGenerating(async () => {
+      const result = await generateRecipeFromLeftovers();
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "", { variant: "success" });
+        refresh();
+      }
+    });
+  }
+
+  function handleSurpriseMe() {
+    const candidates = data.recipes.filter((r) => !r.is_archived);
+    if (candidates.length === 0) return;
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    setModal({ type: "detail", recipeId: pick.id });
+  }
+
   function handleDuplicateCard(cardId: string) {
     startTransition(async () => {
       const result = await duplicateMealCard(cardId, "backlog");
@@ -266,6 +311,14 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
     });
   }
 
+  function handleRemovePantryItem(id: string) {
+    startTransition(async () => {
+      const result = await removePantryItem(id);
+      if (result.error) toast(result.error, { variant: "error" });
+      else refresh();
+    });
+  }
+
   const detailRecipe = modal?.type === "detail" ? recipesById.get(modal.recipeId) : undefined;
   const detailCard = detailRecipe ? activeCards.find((c) => c.recipe_id === detailRecipe.id) : undefined;
   const validateDraft = modal?.type === "validate" ? data.drafts.find((d) => d.id === modal.draftId) : undefined;
@@ -317,6 +370,8 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
         onRemove={handleRemoveTempIngredient}
       />
 
+      <PantryRow items={data.pantryItems} onAdd={() => setModal({ type: "add_pantry" })} onRemove={handleRemovePantryItem} />
+
       {cookableWithLeftovers.length > 0 && (
         <div className="rounded-[var(--radius-md)] border border-dashed border-primary/30 bg-primary-tint/30 px-3 py-2.5">
           <p className="text-xs font-medium text-primary-strong">Avec ce qu&rsquo;il vous reste, vous pouvez cuisiner :</p>
@@ -335,7 +390,20 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
         </div>
       )}
 
-      <GeneratorBar defaultCount={data.settings.preferences.default_recipe_count} onGenerate={handleGenerate} isPending={isGenerating} />
+      {(data.temporaryIngredients.length > 0 || data.pantryItems.length > 0) && (
+        <Button variant="ghost" size="sm" onClick={handleGenerateFromLeftovers} disabled={isGenerating}>
+          <Sparkles className="h-4 w-4" /> Inventer une recette avec mes restes
+        </Button>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <GeneratorBar defaultCount={data.settings.preferences.default_recipe_count} onGenerate={handleGenerate} isPending={isGenerating} />
+        {data.recipes.some((r) => !r.is_archived) && (
+          <Button variant="ghost" size="sm" onClick={handleSurpriseMe}>
+            <Sparkles className="h-4 w-4" /> Surprends-moi
+          </Button>
+        )}
+      </div>
 
       <div>
         <div className="mb-2 flex items-center justify-between">
@@ -465,6 +533,9 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
             onMove={handleMove}
             onServingsChange={handleServingsChange}
             onDuplicate={handleDuplicateCard}
+            onToggleLock={handleToggleLock}
+            onStartTimer={startTimer}
+            allergyRecipeIds={allergyRecipeIds}
           />
         ))}
       </div>
@@ -497,6 +568,8 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       {modal?.type === "add" && <AddRecipeDialog existingTags={allTags} onClose={() => setModal(null)} onSaved={refresh} />}
 
       {modal?.type === "add_temp" && <TempIngredientDialog ingredient={null} onClose={() => setModal(null)} onSaved={refresh} />}
+
+      {modal?.type === "add_pantry" && <PantryItemDialog onClose={() => setModal(null)} onSaved={refresh} />}
       {modal?.type === "edit_temp" && (
         <TempIngredientDialog ingredient={modal.ingredient} onClose={() => setModal(null)} onSaved={refresh} />
       )}
@@ -537,6 +610,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           exportedRecipeIds={data.settings.shopping_list_exported_recipe_ids}
           checked={data.settings.shopping_list_checked}
           manualItems={data.settings.shopping_list_manual_items}
+          categoryOrder={data.settings.preferences.shopping_category_order}
           onClose={() => setModal(null)}
           onSaved={refresh}
         />
@@ -565,6 +639,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       )}
 
       <OnboardingTour moduleKey="a-table" steps={A_TABLE_ONBOARDING_STEPS} open={tourOpen} onOpenChange={setTourOpen} />
+      <TimerBar timers={timers} onDismiss={dismissTimer} />
     </div>
   );
 }
