@@ -25,25 +25,47 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 
 function normalize(text: string): string {
-  return text.replace(/\s+/g, " ").trim().toLowerCase();
+  return text
+    .normalize("NFKC")
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
+
+// Citation quotes come from Gemini reading the PDF, not from copy-pasting
+// its text layer, so they can diverge slightly (hyphenation, dashes/quotes,
+// a paraphrased tail). Try an exact match on a long prefix first, then fall
+// back to shorter prefixes so a passage still highlights when only the
+// start of the quote lines up with the extracted text.
+const MATCH_PREFIX_LENGTHS = [120, 60, 30];
 
 /** Finds the text items overlapping a (possibly partial) verbatim quote within a page's text content. */
 function matchItems<T extends { str: string }>(items: T[], quote: string): T[] {
-  const fullText = items.map((it) => it.str).join(" ");
   const needle = normalize(quote);
-  const haystack = normalize(fullText);
   if (!needle) return [];
-  const matchIndex = haystack.indexOf(needle.slice(0, Math.min(needle.length, 120)));
+
+  const normalizedItems = items.map((item) => normalize(item.str));
+  const haystack = normalizedItems.join(" ");
+
+  let matchIndex = -1;
+  for (const len of MATCH_PREFIX_LENGTHS) {
+    const prefixLen = Math.min(needle.length, len);
+    if (prefixLen < 8) break;
+    matchIndex = haystack.indexOf(needle.slice(0, prefixLen));
+    if (matchIndex !== -1) break;
+  }
   if (matchIndex === -1) return [];
 
   let offset = 0;
   const matchEnd = matchIndex + needle.length;
   const matched: T[] = [];
-  for (const item of items) {
+  for (let i = 0; i < items.length; i++) {
     const start = offset;
-    const end = start + item.str.length;
-    if (end >= matchIndex && start <= matchEnd) matched.push(item);
+    const end = start + normalizedItems[i].length;
+    if (end >= matchIndex && start <= matchEnd) matched.push(items[i]);
     offset = end + 1;
   }
   return matched;
@@ -201,7 +223,13 @@ export function PdfViewer({
     return () => {
       cancelled = true;
     };
-  }, [pageNum, highlight, containerWidth, zoom, showCoverage, coverage]);
+    // `numPages` is included purely as a trigger: the doc-loading effect
+    // above sets pdfRef.current + numPages together, but pdfRef is a plain
+    // ref (not reactive) so without numPages in this list the very first
+    // page never rendered once the doc finished loading after this effect's
+    // first (early-return) pass — the canvas stayed blank until some other
+    // dependency happened to change (switching page, toggling coverage…).
+  }, [pageNum, highlight, containerWidth, zoom, showCoverage, coverage, numPages]);
 
   function goToPage(n: number) {
     const clamped = Math.max(1, Math.min(numPages || 1, n));
@@ -234,6 +262,11 @@ export function PdfViewer({
   function handleUseSelection() {
     if (!pendingSelection) return;
     onSelection?.({ page: pageNum, quote: pendingSelection });
+    document.getSelection()?.removeAllRanges();
+    setPendingSelection(null);
+  }
+
+  function handleClearSelection() {
     document.getSelection()?.removeAllRanges();
     setPendingSelection(null);
   }
@@ -353,9 +386,14 @@ export function PdfViewer({
       {onSelection && pendingSelection && (
         <div className="flex items-center justify-between gap-3 border-t border-border bg-surface px-3 py-2">
           <p className="line-clamp-1 text-xs text-foreground-muted">« {pendingSelection} »</p>
-          <Button size="sm" onClick={handleUseSelection}>
-            Utiliser cette sélection
-          </Button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button variant="ghost" size="sm" onClick={handleClearSelection}>
+              Annuler
+            </Button>
+            <Button size="sm" onClick={handleUseSelection}>
+              Utiliser cette sélection
+            </Button>
+          </div>
         </div>
       )}
     </div>

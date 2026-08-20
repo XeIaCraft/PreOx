@@ -48,30 +48,51 @@ function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?
 function BlockBody({ block }: { block: FicheBlock }) {
   if (block.blockType === "tableau_comparatif") {
     const content = block.content as TableBlockContent;
+    const headers = content.headers ?? [];
+    const rows = content.rows ?? [];
     return (
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr>
-              {content.headers?.map((h, i) => (
-                <th key={i} className="border-b border-border px-3 py-2 text-left font-medium text-foreground">
-                  {h}
-                </th>
+      <div>
+        {/* Below sm: one card per row with each cell stacked under its
+            header — a multi-column grid table is unreadable on a phone
+            even scrolled horizontally. */}
+        <div className="space-y-3 sm:hidden">
+          {rows.map((row, ri) => (
+            <div key={ri} className="rounded-[var(--radius-sm)] border border-border p-3">
+              {row.map((cell, ci) => (
+                <div key={ci} className="border-b border-border/60 py-1.5 last:border-b-0">
+                  {headers[ci] && (
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">{headers[ci]}</p>
+                  )}
+                  <p className="text-sm text-foreground-muted">{cell}</p>
+                </div>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {content.rows?.map((row, ri) => (
-              <tr key={ri} className="odd:bg-surface-muted/50">
-                {row.map((cell, ci) => (
-                  <td key={ci} className="border-b border-border px-3 py-2 text-foreground-muted">
-                    {cell}
-                  </td>
+            </div>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto sm:block">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                {headers.map((h, i) => (
+                  <th key={i} className="border-b border-border px-3 py-2 text-left font-medium text-foreground">
+                    {h}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} className="odd:bg-surface-muted/50">
+                  {row.map((cell, ci) => (
+                    <td key={ci} className="border-b border-border px-3 py-2 text-foreground-muted">
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }

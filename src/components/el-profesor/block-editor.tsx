@@ -49,7 +49,48 @@ function TableEditor({ content, onChange }: { content: TableBlockContent; onChan
 
   return (
     <div className="space-y-2">
-      <div className="overflow-x-auto">
+      {/* Below sm: columns edited as a plain list, each row as a stacked
+          card of labeled inputs — a dense multi-column grid of narrow
+          inputs doesn't fit (or work) on a phone. */}
+      <div className="space-y-3 sm:hidden">
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">Colonnes</p>
+          {headers.map((h, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <Input value={h} onChange={(e) => setHeader(i, e.target.value)} className="h-8 text-xs" />
+              <button type="button" onClick={() => removeColumn(i)} className="text-foreground-subtle hover:text-danger" aria-label="Supprimer la colonne">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+          <Button variant="secondary" size="sm" onClick={addColumn}>
+            <Plus className="h-3.5 w-3.5" /> Colonne
+          </Button>
+        </div>
+
+        <div className="space-y-2">
+          {rows.map((row, ri) => (
+            <div key={ri} className="rounded-[var(--radius-sm)] border border-border p-2.5">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">Ligne {ri + 1}</p>
+                <button type="button" onClick={() => removeRow(ri)} className="text-foreground-subtle hover:text-danger" aria-label="Supprimer la ligne">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="mt-1.5 space-y-1.5">
+                {row.map((cell, ci) => (
+                  <div key={ci}>
+                    {headers[ci] && <p className="text-[11px] text-foreground-subtle">{headers[ci]}</p>}
+                    <Input value={cell} onChange={(e) => setCell(ri, ci, e.target.value)} className="h-8 text-xs" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="hidden overflow-x-auto sm:block">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr>
