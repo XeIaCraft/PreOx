@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { updateFicheBlock, deleteFicheBlock, moveFicheBlock } from "@/app/apps/el-profesor/actions/extraction";
 import { FlagsList } from "@/components/el-profesor/flags-list";
+import { EditableCitations } from "@/components/el-profesor/editable-citations";
 import { useToast } from "@/components/ui/toast";
 import type { Citation, FicheBlock, Flag, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
 
@@ -197,10 +198,11 @@ export function BlockEditor({
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [content, setContent] = useState(block.content);
+  const [citations, setCitations] = useState(block.citations);
 
   function handleSave() {
     startTransition(async () => {
-      const result = await updateFicheBlock(block.id, { content, citations: block.citations });
+      const result = await updateFicheBlock(block.id, { content, citations });
       if (result.error) toast(result.error, { variant: "error" });
       else onChanged();
     });
@@ -276,20 +278,7 @@ export function BlockEditor({
 
       <FlagsList flags={flags} onResolved={onChanged} />
 
-      {block.citations.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {block.citations.map((c: Citation, i: number) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => onCitationClick?.(c)}
-              className="rounded-full border border-border-strong px-2 py-0.5 text-[11px] text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
-            >
-              p. {c.page}
-            </button>
-          ))}
-        </div>
-      )}
+      <EditableCitations citations={citations} onChange={setCitations} onCitationClick={onCitationClick} />
 
       <div className="mt-2 flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={handleDelete} disabled={isPending}>

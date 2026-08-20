@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { updateFlashcard, deleteFlashcard } from "@/app/apps/el-profesor/actions/extraction";
 import { FlagsList } from "@/components/el-profesor/flags-list";
+import { EditableCitations } from "@/components/el-profesor/editable-citations";
 import { useToast } from "@/components/ui/toast";
 import type { Citation, Flag, Flashcard } from "@/lib/el-profesor/types";
 
@@ -24,10 +25,11 @@ export function FlashcardEditor({
   const [isPending, startTransition] = useTransition();
   const [front, setFront] = useState(flashcard.front.text);
   const [back, setBack] = useState(flashcard.back.text);
+  const [citations, setCitations] = useState(flashcard.citations);
 
   function handleSave() {
     startTransition(async () => {
-      const result = await updateFlashcard(flashcard.id, { front: { text: front }, back: { text: back }, citations: flashcard.citations });
+      const result = await updateFlashcard(flashcard.id, { front: { text: front }, back: { text: back }, citations });
       if (result.error) toast(result.error, { variant: "error" });
       else onChanged();
     });
@@ -70,20 +72,7 @@ export function FlashcardEditor({
 
       <FlagsList flags={flags} onResolved={onChanged} />
 
-      {flashcard.citations.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {flashcard.citations.map((c, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => onCitationClick?.(c)}
-              className="rounded-full border border-border-strong px-2 py-0.5 text-[11px] text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
-            >
-              p. {c.page}
-            </button>
-          ))}
-        </div>
-      )}
+      <EditableCitations citations={citations} onChange={setCitations} onCitationClick={onCitationClick} />
       <div className="mt-2 flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={handleDelete} disabled={isPending}>
           <Trash2 className="h-3.5 w-3.5" /> Supprimer

@@ -44,7 +44,7 @@ Objectif absolu : NE JAMAIS PERDRE D'INFORMATION IMPORTANTE. Le lecteur utiliser
 ${BLOCK_TYPES_DOC}
 
 Règles strictes pour chaque bloc :
-- "citations" est OBLIGATOIRE et non vide : chaque bloc doit citer verbatim (mot pour mot, sans paraphrase) le ou les passages du livre qui le fondent, avec le numéro de page tel qu'imprimé sur la page (pas le numéro de page du fichier PDF si différent).
+- "citations" est OBLIGATOIRE et non vide : chaque bloc doit citer verbatim (mot pour mot, sans paraphrase) le ou les passages du livre qui le fondent, avec le numéro de PAGE DU FICHIER PDF (la position réelle de la page dans le fichier fourni, en comptant la couverture comme page 1 — PAS le numéro imprimé en bas/haut de page, qui peut être décalé à cause des pages de garde/sommaire non numérotées). C'est ce numéro qui sert ensuite à ouvrir automatiquement la bonne page dans le lecteur PDF de l'application.
 - Ne génère jamais un bloc sans base textuelle vérifiable dans le document.
 - Pour "tableau_comparatif", remplis "content.headers" et "content.rows" (un tableau réel), ne mets rien dans "content.text".
 - Pour "protocole_paliers", remplis "content.steps" (liste ordonnée), pas "content.text".
