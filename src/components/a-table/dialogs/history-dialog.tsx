@@ -79,6 +79,42 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
     return [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
   }, [visible, recipesById]);
 
+  const weeklyTrend = useMemo(() => {
+    const WEEKS = 8;
+    const weekStart = (t: number) => {
+      const d = new Date(t);
+      const day = (d.getDay() + 6) % 7; // Monday = 0
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - day);
+      return d.getTime();
+    };
+    const thisWeekStart = weekStart(now);
+    const buckets = new Map<number, { meals: number; kcalSum: number; kcalCount: number }>();
+    for (let i = WEEKS - 1; i >= 0; i--) {
+      buckets.set(thisWeekStart - i * 7 * 24 * 60 * 60 * 1000, { meals: 0, kcalSum: 0, kcalCount: 0 });
+    }
+    for (const entry of history) {
+      const ws = weekStart(new Date(entry.cooked_at).getTime());
+      const bucket = buckets.get(ws);
+      if (!bucket) continue;
+      bucket.meals += 1;
+      const recipe = entry.recipe_id ? recipesById.get(entry.recipe_id) : undefined;
+      if (recipe?.nutrition.kcal != null) {
+        bucket.kcalSum += recipe.nutrition.kcal;
+        bucket.kcalCount += 1;
+      }
+    }
+    const weeks = [...buckets.entries()].map(([start, b]) => ({
+      start,
+      meals: b.meals,
+      avgKcal: b.kcalCount > 0 ? Math.round(b.kcalSum / b.kcalCount) : null,
+    }));
+    const hasData = weeks.some((w) => w.meals > 0);
+    const maxMeals = Math.max(1, ...weeks.map((w) => w.meals));
+    const maxKcal = Math.max(1, ...weeks.map((w) => w.avgKcal ?? 0));
+    return { weeks, hasData, maxMeals, maxKcal };
+  }, [history, recipesById, now]);
+
   function handleRecook(recipeId: string) {
     startTransition(async () => {
       const result = await addRecipeToBacklog(recipeId);
@@ -131,6 +167,44 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
         <p className="mb-3 text-sm text-foreground-muted">
           Budget ce mois-ci : <span className="font-medium text-foreground">{monthlyBudget.total.toFixed(2)} €</span>
         </p>
+      )}
+
+      {weeklyTrend.hasData && (
+        <details className="mb-4">
+          <summary className="cursor-pointer text-xs font-medium text-foreground-subtle">Tendance sur les 8 dernières semaines</summary>
+          <div className="mt-3 space-y-4">
+            <div>
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground-subtle">Repas cuisinés / semaine</p>
+              <div className="flex h-20 items-end gap-1.5">
+                {weeklyTrend.weeks.map((w) => (
+                  <div key={w.start} className="flex flex-1 flex-col items-center gap-1" title={`${w.meals} repas`}>
+                    <div
+                      className="w-full rounded-t-[3px] bg-primary/70"
+                      style={{ height: `${Math.max(2, (w.meals / weeklyTrend.maxMeals) * 100)}%` }}
+                    />
+                    <span className="text-[10px] text-foreground-subtle">{new Date(w.start).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {weeklyTrend.weeks.some((w) => w.avgKcal != null) && (
+              <div>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground-subtle">Kcal moyen / repas</p>
+                <div className="flex h-20 items-end gap-1.5">
+                  {weeklyTrend.weeks.map((w) => (
+                    <div key={w.start} className="flex flex-1 flex-col items-center gap-1" title={w.avgKcal != null ? `${w.avgKcal} kcal` : "Pas de donnée"}>
+                      <div
+                        className="w-full rounded-t-[3px] bg-accent/70"
+                        style={{ height: w.avgKcal != null ? `${Math.max(2, (w.avgKcal / weeklyTrend.maxKcal) * 100)}%` : "2%" }}
+                      />
+                      <span className="text-[10px] text-foreground-subtle">{new Date(w.start).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </details>
       )}
 
       {(mostCooked.length > 0 || diversity.length > 0 || costByRecipe.length > 0) && (
