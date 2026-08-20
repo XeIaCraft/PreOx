@@ -126,6 +126,7 @@ export type ATableSettingsRow = {
   generation_rules: Json;
   shopping_list_checked: Json;
   shopping_list_exported_recipe_ids: string[];
+  shopping_list_manual_items: Json;
   gemini_api_key_encrypted: string | null;
   gemini_model: string;
   pexels_api_key_encrypted: string | null;

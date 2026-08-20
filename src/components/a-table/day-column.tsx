@@ -16,6 +16,7 @@ interface DayColumnProps {
   onCook: (cardId: string) => void;
   onRemove: (cardId: string) => void;
   onMove: (cardId: string, placement: Placement) => void;
+  onServingsChange?: (cardId: string, servings: number) => void;
 }
 
 export function DayColumn({
@@ -29,6 +30,7 @@ export function DayColumn({
   onCook,
   onRemove,
   onMove,
+  onServingsChange,
 }: DayColumnProps) {
   const [over, setOver] = useState(false);
 
@@ -72,6 +74,7 @@ export function DayColumn({
               onCook={() => onCook(card.id)}
               onRemove={() => onRemove(card.id)}
               onMove={(p) => onMove(card.id, p)}
+              onServingsChange={onServingsChange ? (s) => onServingsChange(card.id, s) : undefined}
             />
           );
         })

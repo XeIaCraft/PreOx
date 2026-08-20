@@ -111,6 +111,28 @@ export async function updateApiKeys(patch: ApiKeysPatch): Promise<ActionState> {
   return { success: "Clés API mises à jour." };
 }
 
+export async function testGeminiConnection(apiKey: string, model: string): Promise<ActionState> {
+  const profile = await requireATableAccess();
+
+  let config: { apiKey: string; model: string };
+  if (apiKey.trim()) {
+    config = { apiKey: apiKey.trim(), model: model.trim() || "gemini-flash-latest" };
+  } else {
+    try {
+      config = await getDecryptedGeminiConfig(profile.id);
+    } catch {
+      return { error: "Aucune clé à tester — collez une clé ou enregistrez-en une d'abord." };
+    }
+  }
+
+  try {
+    await callGemini({ ...config, instructions: 'Réponds uniquement avec {"ok": true} au format JSON.' });
+    return { success: "Connexion réussie." };
+  } catch (err) {
+    return { error: err instanceof GeminiError ? err.message : "La connexion a échoué." };
+  }
+}
+
 export async function toggleShoppingChecked(itemKey: string): Promise<ActionState> {
   const profile = await requireATableAccess();
   const supabase = await createClient();
@@ -130,6 +152,58 @@ export async function toggleShoppingChecked(itemKey: string): Promise<ActionStat
     .eq("user_id", profile.id);
 
   if (error) return { error: "Impossible de mettre à jour la liste de courses." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "" };
+}
+
+export async function addManualShoppingItem(input: { name: string; quantity: number | null; unit: string }): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const name = input.name.trim();
+  if (!name) return { error: "Le nom de l'article est requis." };
+
+  const { data } = await supabase
+    .from("a_table_settings")
+    .select("shopping_list_manual_items")
+    .eq("user_id", profile.id)
+    .single();
+
+  const items = [
+    ...((data?.shopping_list_manual_items as { key: string; name: string; quantity: number | null; unit: string }[]) ?? []),
+    { key: `manual-${Date.now()}`, name, quantity: input.quantity, unit: input.unit.trim() },
+  ];
+
+  const { error } = await supabase
+    .from("a_table_settings")
+    .update({ shopping_list_manual_items: items })
+    .eq("user_id", profile.id);
+
+  if (error) return { error: "Impossible d'ajouter cet article." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "Article ajouté." };
+}
+
+export async function removeManualShoppingItem(key: string): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const { data } = await supabase
+    .from("a_table_settings")
+    .select("shopping_list_manual_items")
+    .eq("user_id", profile.id)
+    .single();
+
+  const items = ((data?.shopping_list_manual_items as { key: string }[]) ?? []).filter((item) => item.key !== key);
+
+  const { error } = await supabase
+    .from("a_table_settings")
+    .update({ shopping_list_manual_items: items })
+    .eq("user_id", profile.id);
+
+  if (error) return { error: "Impossible de retirer cet article." };
 
   revalidatePath("/apps/a-table");
   return { success: "" };

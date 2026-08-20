@@ -289,6 +289,30 @@ export async function regenerateWinePairings(menuId: string): Promise<ActionStat
   return { success: "" };
 }
 
+export async function saveDishAsRecipe(dish: GuestCourseDish, servings: number): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("a_table_recipes").insert({
+    user_id: profile.id,
+    title: dish.title,
+    source_kind: "personal_manual",
+    servings: servings || 4,
+    tags: [],
+    ingredients: dish.ingredients as unknown as Json,
+    steps: dish.steps,
+    step_labels: dish.step_labels,
+    notes: dish.notes,
+    nutrition: dish.nutrition as unknown as Json,
+    image_url: dish.image_url ?? null,
+  });
+
+  if (error) return { error: "Impossible d'enregistrer ce plat comme recette." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "Plat enregistré dans « Mes recettes »." };
+}
+
 export async function dismissGuestMenu(menuId: string): Promise<ActionState> {
   const profile = await requireATableAccess();
   const supabase = await createClient();

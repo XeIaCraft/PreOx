@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Star, Trash2, CheckCircle2, GripVertical, Clock } from "lucide-react";
+import { Star, Trash2, CheckCircle2, GripVertical, Clock, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select } from "@/components/ui/input";
 import { DAY_LABELS, PLACEMENTS } from "@/lib/a-table/constants";
@@ -31,10 +31,11 @@ interface MealCardProps {
   onCook: () => void;
   onRemove: () => void;
   onMove: (placement: Placement) => void;
+  onServingsChange?: (servings: number) => void;
   isPending?: boolean;
 }
 
-export function MealCard({ card, recipe, onOpenDetail, onCook, onRemove, onMove, isPending }: MealCardProps) {
+export function MealCard({ card, recipe, onOpenDetail, onCook, onRemove, onMove, onServingsChange, isPending }: MealCardProps) {
   const [dragging, setDragging] = useState(false);
   const swatch = SWATCHES[categoryFor(recipe.tags)];
 
@@ -77,7 +78,31 @@ export function MealCard({ card, recipe, onOpenDetail, onCook, onRemove, onMove,
               {recipe.cooking_minutes} min ·{" "}
             </>
           )}
-          {card.servings} pers.
+          {onServingsChange ? (
+            <span className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onServingsChange(Math.max(1, card.servings - 1))}
+                disabled={isPending || card.servings <= 1}
+                aria-label="Moins de portions"
+                className="rounded p-0.5 hover:bg-surface-muted disabled:opacity-30"
+              >
+                <Minus className="h-2.5 w-2.5" />
+              </button>
+              {card.servings} pers.
+              <button
+                type="button"
+                onClick={() => onServingsChange(card.servings + 1)}
+                disabled={isPending}
+                aria-label="Plus de portions"
+                className="rounded p-0.5 hover:bg-surface-muted"
+              >
+                <Plus className="h-2.5 w-2.5" />
+              </button>
+            </span>
+          ) : (
+            `${card.servings} pers.`
+          )}
         </p>
       </div>
 

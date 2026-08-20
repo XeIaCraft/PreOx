@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Timer, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Timer, X, BellRing } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { generateCookPlan, type CookPlanStep } from "@/app/apps/a-table/actions/cook_mode";
 import type { Ingredient } from "@/lib/a-table/types";
@@ -70,10 +70,29 @@ export function CookModeDialog({ recipes, onClose }: CookModeDialogProps) {
     return () => clearInterval(interval);
   }, [timers.length]);
 
+  useEffect(() => {
+    if (phase !== "steps" || !plan) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setStepIndex((i) => Math.min((plan?.length ?? 1) - 1, i + 1));
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setStepIndex((i) => Math.max(0, i - 1));
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [phase, plan]);
+
   const currentStep = plan?.[stepIndex];
 
   function startTimer(label: string, minutes: number) {
     setTimers((prev) => [...prev, { id: Date.now(), label, endsAt: Date.now() + minutes * 60 * 1000 }]);
+  }
+
+  function dismissTimer(id: number) {
+    setTimers((prev) => prev.filter((t) => t.id !== id));
   }
 
   function formatRemaining(endsAt: number) {
@@ -96,11 +115,23 @@ export function CookModeDialog({ recipes, onClose }: CookModeDialogProps) {
 
       {timers.length > 0 && (
         <div className="flex flex-wrap gap-2 border-b border-border bg-surface-muted px-5 py-2">
-          {timers.map((t) => (
-            <span key={t.id} className="flex items-center gap-1.5 rounded-full bg-surface px-3 py-1 text-xs font-medium text-foreground-muted">
-              <Timer className="h-3 w-3" /> {t.label} — {formatRemaining(t.endsAt)}
-            </span>
-          ))}
+          {timers.map((t) => {
+            const done = t.endsAt - now <= 0;
+            return (
+              <span
+                key={t.id}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                  done ? "animate-pulse bg-danger-tint text-danger" : "bg-surface text-foreground-muted"
+                }`}
+              >
+                {done ? <BellRing className="h-3 w-3" /> : <Timer className="h-3 w-3" />}
+                {t.label} — {formatRemaining(t.endsAt)}
+                <button type="button" onClick={() => dismissTimer(t.id)} aria-label="Arrêter ce chrono" className="hover:opacity-70">
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            );
+          })}
         </div>
       )}
 

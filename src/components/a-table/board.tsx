@@ -25,7 +25,14 @@ import { ValidateDraftDialog } from "@/components/a-table/dialogs/validate-draft
 import { SettingsDialog } from "@/components/a-table/dialogs/settings-dialog";
 import { GuestMenuDialog } from "@/components/a-table/dialogs/guest-menu-dialog";
 import { CookModeDialog } from "@/components/a-table/dialogs/cook-mode-dialog";
-import { moveMealCard, cookMealCard, removeMealCard, addRecipeToBacklog } from "@/app/apps/a-table/actions/planning";
+import {
+  moveMealCard,
+  cookMealCard,
+  removeMealCard,
+  addRecipeToBacklog,
+  updateMealCardServings,
+  clearWeek,
+} from "@/app/apps/a-table/actions/planning";
 import { generateDraft } from "@/app/apps/a-table/actions/drafts";
 import { removeTemporaryIngredient } from "@/app/apps/a-table/actions/temp_ingredients";
 import type { ATableData, Placement, TemporaryIngredient } from "@/lib/a-table/types";
@@ -62,6 +69,11 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
   }
 
   const recipesById = useMemo(() => new Map(data.recipes.map((r) => [r.id, r])), [data.recipes]);
+  const allTags = useMemo(() => {
+    const tags = new Set<string>();
+    for (const r of data.recipes) for (const tag of r.tags) tags.add(tag);
+    return [...tags].sort((a, b) => a.localeCompare(b));
+  }, [data.recipes]);
   const activeCards = useMemo(() => data.mealCards.filter((c) => c.status === "active"), [data.mealCards]);
   const backlogCards = useMemo(
     () => activeCards.filter((c) => c.placement === "backlog").sort((a, b) => a.position - b.position),
@@ -118,6 +130,25 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
             });
           },
         });
+      }
+    });
+  }
+
+  function handleServingsChange(cardId: string, servings: number) {
+    startTransition(async () => {
+      const result = await updateMealCardServings(cardId, servings);
+      if (result.error) toast(result.error, { variant: "error" });
+      else refresh();
+    });
+  }
+
+  function handleClearWeek() {
+    startTransition(async () => {
+      const result = await clearWeek();
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "", { variant: "success" });
+        refresh();
       }
     });
   }
@@ -219,6 +250,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
                     onCook={() => handleCook(card.id)}
                     onRemove={() => handleRemove(card.id)}
                     onMove={(p) => handleMove(card.id, p)}
+                    onServingsChange={(s) => handleServingsChange(card.id, s)}
                     isPending={pendingCardId === card.id}
                   />
                 </div>
@@ -228,6 +260,14 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
         </div>
       </div>
 
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-foreground-muted">Semaine</p>
+        {activeCards.some((c) => WEEKDAY_PLACEMENTS.includes(c.placement)) && (
+          <button type="button" onClick={handleClearWeek} disabled={isPending} className="text-xs text-foreground-subtle underline hover:text-foreground">
+            Vider la semaine
+          </button>
+        )}
+      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
         {WEEKDAY_PLACEMENTS.map((placement) => (
           <DayColumn
@@ -242,6 +282,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
             onCook={handleCook}
             onRemove={handleRemove}
             onMove={handleMove}
+            onServingsChange={handleServingsChange}
           />
         ))}
       </div>
@@ -271,7 +312,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
         />
       )}
 
-      {modal?.type === "add" && <AddRecipeDialog onClose={() => setModal(null)} onSaved={refresh} />}
+      {modal?.type === "add" && <AddRecipeDialog existingTags={allTags} onClose={() => setModal(null)} onSaved={refresh} />}
 
       {modal?.type === "add_temp" && <TempIngredientDialog ingredient={null} onClose={() => setModal(null)} onSaved={refresh} />}
       {modal?.type === "edit_temp" && (
@@ -288,7 +329,13 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       )}
 
       {modal?.type === "rate" && (
-        <RateDialog recipeId={modal.recipeId} recipeTitle={modal.recipeTitle} onClose={() => setModal(null)} onSaved={refresh} />
+        <RateDialog
+          recipeId={modal.recipeId}
+          recipeTitle={modal.recipeTitle}
+          pastRatings={recipesById.get(modal.recipeId)?.ratings}
+          onClose={() => setModal(null)}
+          onSaved={refresh}
+        />
       )}
 
       {modal?.type === "history" && (
@@ -303,6 +350,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           appetite={data.settings.preferences.appetite}
           exportedRecipeIds={data.settings.shopping_list_exported_recipe_ids}
           checked={data.settings.shopping_list_checked}
+          manualItems={data.settings.shopping_list_manual_items}
           onClose={() => setModal(null)}
           onSaved={refresh}
         />

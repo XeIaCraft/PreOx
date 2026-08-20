@@ -15,6 +15,7 @@ import type {
   Preferences,
   GenerationRules,
   Recipe,
+  ShoppingManualItem,
   TemporaryIngredient,
 } from "./types";
 
@@ -34,6 +35,7 @@ interface SettingsRow {
   generation_rules: GenerationRules;
   shopping_list_checked: Record<string, boolean>;
   shopping_list_exported_recipe_ids: string[];
+  shopping_list_manual_items: ShoppingManualItem[];
   gemini_api_key_encrypted: string | null;
   gemini_model: string;
   pexels_api_key_encrypted: string | null;
@@ -47,6 +49,7 @@ function toPublicSettings(row: SettingsRow): ATableSettings {
     generation_rules: row.generation_rules,
     shopping_list_checked: row.shopping_list_checked,
     shopping_list_exported_recipe_ids: row.shopping_list_exported_recipe_ids,
+    shopping_list_manual_items: row.shopping_list_manual_items ?? [],
     has_gemini_key: Boolean(row.gemini_api_key_encrypted),
     gemini_model: row.gemini_model,
     has_pexels_key: Boolean(row.pexels_api_key_encrypted),

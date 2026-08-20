@@ -8,7 +8,10 @@ import { cn } from "@/lib/utils";
 import { addRecipe, importRecipe } from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
 
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+
 interface AddRecipeDialogProps {
+  existingTags?: string[];
   onClose: () => void;
   onSaved: () => void;
 }
@@ -25,7 +28,7 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-export function AddRecipeDialog({ onClose, onSaved }: AddRecipeDialogProps) {
+export function AddRecipeDialog({ existingTags, onClose, onSaved }: AddRecipeDialogProps) {
   const { toast } = useToast();
   const [tab, setTab] = useState<"ai" | "manual">("ai");
   const [isPending, startTransition] = useTransition();
@@ -139,7 +142,27 @@ export function AddRecipeDialog({ onClose, onSaved }: AddRecipeDialogProps) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="ar-photo">Ou une photo</Label>
-            <Input id="ar-photo" type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
+            <Input
+              id="ar-photo"
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                if (file && !file.type.startsWith("image/")) {
+                  toast("Seules les images sont acceptées.", { variant: "error" });
+                  e.target.value = "";
+                  setPhoto(null);
+                  return;
+                }
+                if (file && file.size > MAX_PHOTO_BYTES) {
+                  toast("Photo trop lourde (8 Mo maximum).", { variant: "error" });
+                  e.target.value = "";
+                  setPhoto(null);
+                  return;
+                }
+                setPhoto(file);
+              }}
+            />
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={onClose}>
@@ -190,7 +213,14 @@ export function AddRecipeDialog({ onClose, onSaved }: AddRecipeDialogProps) {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="mr-tags">Tags (séparés par des virgules)</Label>
-              <Input id="mr-tags" value={tagsText} onChange={(e) => setTagsText(e.target.value)} />
+              <Input id="mr-tags" value={tagsText} onChange={(e) => setTagsText(e.target.value)} list="mr-tags-list" />
+              {existingTags && existingTags.length > 0 && (
+                <datalist id="mr-tags-list">
+                  {existingTags.map((tag) => (
+                    <option key={tag} value={tag} />
+                  ))}
+                </datalist>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="mr-price">Prix / portion (€)</Label>

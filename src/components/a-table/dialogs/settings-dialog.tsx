@@ -16,7 +16,14 @@ import {
   TIME_PROFILE_LABELS,
   COMPLEXITY_LABELS,
 } from "@/lib/a-table/constants";
-import { updatePreferences, updateGenerationRules, updateApiKeys, analyzeTastes, clearCardsAndHistory } from "@/app/apps/a-table/actions/settings";
+import {
+  updatePreferences,
+  updateGenerationRules,
+  updateApiKeys,
+  analyzeTastes,
+  clearCardsAndHistory,
+  testGeminiConnection,
+} from "@/app/apps/a-table/actions/settings";
 import { useToast } from "@/components/ui/toast";
 import type { ATableSettings, Preferences, GenerationRules } from "@/lib/a-table/types";
 
@@ -55,6 +62,7 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
   const [pexelsKey, setPexelsKey] = useState("");
   const [suggestions, setSuggestions] = useState<{ liked: string[]; disliked: string[] }>({ liked: [], disliked: [] });
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
 
   function setPref<K extends keyof Preferences>(key: K, value: Preferences[K]) {
     setPrefs((p) => ({ ...p, [key]: value }));
@@ -99,6 +107,16 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
         setSuggestions({ liked: result.data.liked_suggestions, disliked: result.data.disliked_suggestions });
       }
     });
+  }
+
+  function handleTestConnection() {
+    setTestingConnection(true);
+    testGeminiConnection(geminiKey, geminiModel)
+      .then((result) => {
+        if (result.error) toast(result.error, { variant: "error" });
+        else toast(result.success ?? "Connexion réussie.", { variant: "success" });
+      })
+      .finally(() => setTestingConnection(false));
   }
 
   function handleClearAll() {
@@ -426,6 +444,14 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
             <Label>Modèle Gemini</Label>
             <Input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} />
           </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleTestConnection}
+            disabled={testingConnection || (!geminiKey && !settings.has_gemini_key)}
+          >
+            {testingConnection ? "Test en cours…" : "Tester la connexion"}
+          </Button>
           <div className="space-y-1.5">
             <Label>Clé API Pexels (illustrations) {settings.has_pexels_key && <span className="text-xs text-success">(configurée)</span>}</Label>
             <Input
@@ -480,9 +506,31 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
           </div>
 
           <div>
-            <p className="mb-1 text-sm font-medium text-foreground-muted">
-              Répartition macros — {prefs.macro_ratios.protein_pct + prefs.macro_ratios.carb_pct + prefs.macro_ratios.fat_pct}%
-            </p>
+            {(() => {
+              const total = prefs.macro_ratios.protein_pct + prefs.macro_ratios.carb_pct + prefs.macro_ratios.fat_pct;
+              return (
+                <div className="mb-1 flex items-center justify-between">
+                  <p className={cn("text-sm font-medium", total === 100 ? "text-foreground-muted" : "text-danger")}>
+                    Répartition macros — {total}%
+                  </p>
+                  {total !== 100 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const scale = 100 / (total || 1);
+                        const protein = Math.round(prefs.macro_ratios.protein_pct * scale);
+                        const carb = Math.round(prefs.macro_ratios.carb_pct * scale);
+                        const fat = 100 - protein - carb;
+                        setPref("macro_ratios", { protein_pct: protein, carb_pct: carb, fat_pct: fat });
+                      }}
+                      className="text-xs text-primary-strong underline"
+                    >
+                      Normaliser à 100%
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
             {(["protein_pct", "carb_pct", "fat_pct"] as const).map((key) => (
               <div key={key} className="mb-2 flex items-center gap-3">
                 <span className="w-24 text-xs text-foreground-subtle">

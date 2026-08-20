@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Search, Star, Archive, ArchiveRestore, Plus } from "lucide-react";
+import { Search, Star, Archive, ArchiveRestore, Plus, Download } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
-import { Input } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { setRecipeArchived } from "@/app/apps/a-table/actions/recipes";
 import { addRecipeToBacklog } from "@/app/apps/a-table/actions/planning";
@@ -17,6 +17,17 @@ interface LibraryDialogProps {
   onOpenDetail: (recipeId: string) => void;
 }
 
+type SortKey = "recent" | "most_cooked" | "alphabetical";
+const SORT_LABELS: Record<SortKey, string> = {
+  recent: "Récemment ajoutées",
+  most_cooked: "Les plus cuisinées",
+  alphabetical: "Alphabétique",
+};
+
+function csvEscape(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
 export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: LibraryDialogProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -24,6 +35,7 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [sort, setSort] = useState<SortKey>("recent");
 
   const allTags = useMemo(() => {
     const tags = new Set<string>();
@@ -32,14 +44,38 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
   }, [recipes]);
 
   const filtered = useMemo(() => {
-    return recipes.filter((r) => {
+    const result = recipes.filter((r) => {
       if (r.is_archived !== showArchived) return false;
       if (favoritesOnly && !r.is_favorite) return false;
       if (activeTag && !r.tags.includes(activeTag)) return false;
       if (search && !r.title.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-  }, [recipes, search, favoritesOnly, showArchived, activeTag]);
+    return result.sort((a, b) => {
+      if (sort === "alphabetical") return a.title.localeCompare(b.title, "fr");
+      if (sort === "most_cooked") return b.times_cooked - a.times_cooked;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [recipes, search, favoritesOnly, showArchived, activeTag, sort]);
+
+  function handleExportCsv() {
+    const header = ["Titre", "Portions", "Temps (min)", "Tags", "Favori", "Fois cuisinée"];
+    const rows = filtered.map((r) => [
+      r.title,
+      String(r.servings),
+      r.cooking_minutes != null ? String(r.cooking_minutes) : "",
+      r.tags.join(", "),
+      r.is_favorite ? "oui" : "non",
+      String(r.times_cooked),
+    ]);
+    const csv = [header, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
+    const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "mes-recettes.csv";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
 
   function handleArchiveToggle(recipe: Recipe) {
     startTransition(async () => {
@@ -80,6 +116,22 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
           className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm ${showArchived ? "border-primary/40 bg-primary-tint text-primary-strong" : "border-border text-foreground-muted"}`}
         >
           <Archive className="h-3.5 w-3.5" /> Archivées
+        </button>
+        <Select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="w-auto text-sm">
+          {Object.entries(SORT_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </Select>
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          disabled={filtered.length === 0}
+          title="Exporter en CSV"
+          className="flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-sm text-foreground-muted hover:text-foreground disabled:opacity-40"
+        >
+          <Download className="h-3.5 w-3.5" /> Exporter
         </button>
       </div>
 
@@ -161,6 +213,13 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
             </li>
           ))}
         </ul>
+      )}
+
+      {recipes.length > 0 && (
+        <p className="mt-4 border-t border-border pt-3 text-xs text-foreground-subtle">
+          {recipes.filter((r) => !r.is_archived).length} recette{recipes.filter((r) => !r.is_archived).length > 1 ? "s" : ""} ·{" "}
+          {recipes.filter((r) => r.is_favorite).length} favorite{recipes.filter((r) => r.is_favorite).length > 1 ? "s" : ""}
+        </p>
       )}
     </Modal>
   );

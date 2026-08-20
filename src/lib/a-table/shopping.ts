@@ -6,6 +6,7 @@ import type {
   Ingredient,
   MealCard,
   Recipe,
+  ShoppingManualItem,
 } from "./types";
 
 export interface ShoppingItem {
@@ -90,7 +91,8 @@ export function buildShoppingList(
   guestMenus: GuestMenu[],
   appetite: Appetite,
   exportedRecipeIds: string[],
-  checked: Record<string, boolean>
+  checked: Record<string, boolean>,
+  manualItems: ShoppingManualItem[] = []
 ): ShoppingItem[] {
   const exported = new Set(exportedRecipeIds);
   const map = new Map<string, ShoppingItem>();
@@ -108,6 +110,11 @@ export function buildShoppingList(
       mergeInto(map, courseIngredients(menu.courses[key]));
     }
   }
+
+  mergeInto(
+    map,
+    manualItems.map((item) => ({ name: item.name, quantity: item.quantity, unit: item.unit }))
+  );
 
   return Array.from(map.values())
     .map((item) => ({ ...item, checked: Boolean(checked[item.key]) }))

@@ -1,11 +1,16 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Trash2, RotateCcw } from "lucide-react";
+import { Trash2, RotateCcw, Download } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
 import { removeHistoryEntry, restoreHistoryEntry, addRecipeToBacklog } from "@/app/apps/a-table/actions/planning";
 import { useToast } from "@/components/ui/toast";
 import type { HistoryEntry, Recipe } from "@/lib/a-table/types";
+
+function csvEscape(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
 
 interface HistoryDialogProps {
   history: HistoryEntry[];
@@ -34,6 +39,21 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
         onSaved();
       }
     });
+  }
+
+  function handleExportCsv() {
+    const header = ["Date", "Recette", "Portions"];
+    const rows = visible.map((entry) => {
+      const recipe = entry.recipe_id ? recipesById.get(entry.recipe_id) : undefined;
+      return [new Date(entry.cooked_at).toLocaleDateString("fr-FR"), recipe?.title ?? "Recette supprimée", String(entry.servings)];
+    });
+    const csv = [header, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
+    const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "historique-repas.csv";
+    link.click();
+    URL.revokeObjectURL(link.href);
   }
 
   function handleRemove(entry: HistoryEntry) {
@@ -68,6 +88,9 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
           className="flex-1"
         />
         <span className="w-24 text-sm text-foreground-muted">{days} derniers jours</span>
+        <Button variant="ghost" size="icon" onClick={handleExportCsv} disabled={visible.length === 0} title="Exporter en CSV">
+          <Download className="h-4 w-4" />
+        </Button>
       </div>
 
       {visible.length === 0 ? (

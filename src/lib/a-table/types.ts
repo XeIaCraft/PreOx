@@ -210,12 +210,20 @@ export type GenerationRules = {
   max_repeat_vegetable: number;
 };
 
+export interface ShoppingManualItem {
+  key: string;
+  name: string;
+  quantity: number | null;
+  unit: string;
+}
+
 export interface ATableSettings {
   user_id: string;
   preferences: Preferences;
   generation_rules: GenerationRules;
   shopping_list_checked: Record<string, boolean>;
   shopping_list_exported_recipe_ids: string[];
+  shopping_list_manual_items: ShoppingManualItem[];
   has_gemini_key: boolean;
   gemini_model: string;
   has_pexels_key: boolean;

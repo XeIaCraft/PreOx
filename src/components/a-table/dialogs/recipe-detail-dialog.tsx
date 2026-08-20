@@ -1,8 +1,8 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import Image from "next/image";
-import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy } from "lucide-react";
+import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy, Minus, Plus } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,8 @@ interface RecipeDetailDialogProps {
 export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSaved, onCookMode }: RecipeDetailDialogProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
-  const factor = scaleFactor(recipe.servings, servings, appetite);
+  const [previewServings, setPreviewServings] = useState(servings);
+  const factor = scaleFactor(recipe.servings, previewServings, appetite);
 
   function handleFavorite() {
     startTransition(async () => {
@@ -93,8 +94,29 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
             <Clock className="h-4 w-4" /> {recipe.cooking_minutes} min
           </span>
         )}
-        <span className="flex items-center gap-1">
-          <Users className="h-4 w-4" /> {servings} pers.
+        <span className="flex items-center gap-1 print:hidden">
+          <Users className="h-4 w-4" />
+          <button
+            type="button"
+            onClick={() => setPreviewServings((s) => Math.max(1, s - 1))}
+            disabled={previewServings <= 1}
+            aria-label="Moins de portions"
+            className="rounded p-0.5 hover:bg-surface-muted disabled:opacity-30"
+          >
+            <Minus className="h-3 w-3" />
+          </button>
+          {previewServings} pers.
+          <button
+            type="button"
+            onClick={() => setPreviewServings((s) => s + 1)}
+            aria-label="Plus de portions"
+            className="rounded p-0.5 hover:bg-surface-muted"
+          >
+            <Plus className="h-3 w-3" />
+          </button>
+        </span>
+        <span className="hidden items-center gap-1 print:flex">
+          <Users className="h-4 w-4" /> {previewServings} pers.
         </span>
         {recipe.price_per_serving != null && (
           <span className="flex items-center gap-1">

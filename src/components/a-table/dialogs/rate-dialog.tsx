@@ -7,15 +7,17 @@ import { Button } from "@/components/ui/button";
 import { rateRecipe } from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
+import type { Rating } from "@/lib/a-table/types";
 
 interface RateDialogProps {
   recipeId: string;
   recipeTitle: string;
+  pastRatings?: Rating[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-export function RateDialog({ recipeId, recipeTitle, onClose, onSaved }: RateDialogProps) {
+export function RateDialog({ recipeId, recipeTitle, pastRatings, onClose, onSaved }: RateDialogProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [liked, setLiked] = useState<boolean | null>(null);
@@ -75,6 +77,29 @@ export function RateDialog({ recipeId, recipeTitle, onClose, onSaved }: RateDial
           Enregistrer
         </Button>
       </div>
+
+      {pastRatings && pastRatings.length > 0 && (
+        <div className="mt-5 border-t border-border pt-4">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-foreground-subtle">Historique des retours</p>
+          <ul className="max-h-32 space-y-1.5 overflow-y-auto text-sm">
+            {[...pastRatings]
+              .reverse()
+              .map((r, i) => (
+                <li key={i} className="flex items-start gap-2 text-foreground-muted">
+                  {r.liked ? (
+                    <ThumbsUp className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
+                  ) : (
+                    <ThumbsDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+                  )}
+                  <span>
+                    <span className="text-xs text-foreground-subtle">{new Date(r.date).toLocaleDateString("fr-FR")}</span>
+                    {r.comment && <> — {r.comment}</>}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
     </Modal>
   );
 }

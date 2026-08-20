@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireATableAccess } from "@/lib/a-table/dal";
 import { createClient } from "@/lib/supabase/server";
-import { PLACEMENTS } from "@/lib/a-table/constants";
+import { PLACEMENTS, WEEKDAY_PLACEMENTS } from "@/lib/a-table/constants";
 import type { HistoryEntry, Placement } from "@/lib/a-table/types";
 
 export interface ActionState {
@@ -48,6 +48,41 @@ export async function moveMealCard(cardId: string, placement: Placement): Promis
 
   revalidatePath("/apps/a-table");
   return { success: "" };
+}
+
+export async function updateMealCardServings(cardId: string, servings: number): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  if (!Number.isFinite(servings) || servings < 1) return { error: "Nombre de portions invalide." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("a_table_meal_cards")
+    .update({ servings: Math.round(servings) })
+    .eq("id", cardId)
+    .eq("user_id", profile.id)
+    .eq("status", "active");
+
+  if (error) return { error: "Impossible de mettre à jour les portions." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "" };
+}
+
+export async function clearWeek(): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("a_table_meal_cards")
+    .update({ placement: "backlog" })
+    .eq("user_id", profile.id)
+    .eq("status", "active")
+    .in("placement", WEEKDAY_PLACEMENTS);
+
+  if (error) return { error: "Impossible de vider la semaine." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "Semaine vidée — les cartes sont repassées dans « À cuisiner »." };
 }
 
 /** Sequential steps rather than a single DB transaction — see plan's noted simplification. */

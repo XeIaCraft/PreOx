@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { RefreshCw, Wine, Trash2 } from "lucide-react";
+import { RefreshCw, Wine, Trash2, Printer, BookmarkPlus } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   refineGuestCourse,
   regenerateWinePairings,
   dismissGuestMenu,
+  saveDishAsRecipe,
 } from "@/app/apps/a-table/actions/guest_menu";
 import { useToast } from "@/components/ui/toast";
 import type { GuestCourse, GuestCourseDish, GuestCourseKey, GuestMenu } from "@/lib/a-table/types";
@@ -30,24 +31,50 @@ function isComposed(course: GuestCourse): course is { items: GuestCourseDish[] }
 
 function DishCard({
   dish,
+  guests,
   onRegenerate,
   onRefine,
   onApplied,
   isPending,
 }: {
   dish: GuestCourseDish;
+  guests: number;
   onRegenerate: () => void;
   onRefine: (m: string) => Promise<{ error?: string; success?: string }>;
   onApplied: () => void;
   isPending: boolean;
 }) {
+  const { toast } = useToast();
+  const [savingRecipe, setSavingRecipe] = useState(false);
+
+  function handleSaveAsRecipe() {
+    setSavingRecipe(true);
+    saveDishAsRecipe(dish, guests)
+      .then((result) => {
+        if (result.error) toast(result.error, { variant: "error" });
+        else toast(result.success ?? "", { variant: "success" });
+      })
+      .finally(() => setSavingRecipe(false));
+  }
+
   return (
     <div className="rounded-[var(--radius-md)] border border-border p-3">
       <div className="flex items-start justify-between gap-2">
         <p className="font-medium text-foreground">{dish.title}</p>
-        <button type="button" onClick={onRegenerate} disabled={isPending} className="rounded p-1 text-foreground-subtle hover:bg-surface-muted">
-          <RefreshCw className={`h-3.5 w-3.5 ${isPending ? "animate-spin" : ""}`} />
-        </button>
+        <div className="flex shrink-0 gap-1 print:hidden">
+          <button
+            type="button"
+            onClick={handleSaveAsRecipe}
+            disabled={savingRecipe}
+            title="Enregistrer comme recette"
+            className="rounded p-1 text-foreground-subtle hover:bg-surface-muted"
+          >
+            <BookmarkPlus className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={onRegenerate} disabled={isPending} className="rounded p-1 text-foreground-subtle hover:bg-surface-muted">
+            <RefreshCw className={`h-3.5 w-3.5 ${isPending ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       </div>
       {dish.notes && <p className="mt-1 text-sm text-foreground-muted">{dish.notes}</p>}
       <ul className="mt-2 space-y-0.5 text-xs text-foreground-subtle">
@@ -57,7 +84,7 @@ function DishCard({
           </li>
         ))}
       </ul>
-      <div className="mt-2">
+      <div className="mt-2 print:hidden">
         <RefineBox onSubmit={onRefine} onApplied={onApplied} placeholder="Ajuster ce plat…" />
       </div>
     </div>
@@ -214,12 +241,20 @@ export function GuestMenuDialog({ menu, onClose, onSaved, onCreated }: GuestMenu
       onClose={onClose}
       size="xl"
       footer={
-        <Button variant="danger" size="sm" onClick={handleDismiss} disabled={isPending}>
-          <Trash2 className="h-4 w-4" /> Supprimer ce menu
-        </Button>
+        <>
+          <Button variant="secondary" size="sm" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" /> Imprimer
+          </Button>
+          <Button variant="danger" size="sm" onClick={handleDismiss} disabled={isPending}>
+            <Trash2 className="h-4 w-4" /> Supprimer ce menu
+          </Button>
+        </>
       }
     >
-      <div className="space-y-4">
+      <div className="print-area space-y-4">
+        <h1 className="hidden font-serif-display text-xl font-medium text-foreground print:mb-2 print:block">
+          Menu pour {menu.guests} invités
+        </h1>
         {menu.course_keys.map((key) => {
           const course = menu.courses[key];
           if (!course) return null;
@@ -232,6 +267,7 @@ export function GuestMenuDialog({ menu, onClose, onSaved, onCreated }: GuestMenu
                     <DishCard
                       key={i}
                       dish={item}
+                      guests={menu.guests}
                       isPending={regeneratingKey === `${key}:${i}`}
                       onRegenerate={() => handleRegenerateCourse(key, i)}
                       onRefine={(m) => refineGuestCourse(menu.id, key, m, i)}
@@ -242,6 +278,7 @@ export function GuestMenuDialog({ menu, onClose, onSaved, onCreated }: GuestMenu
               ) : (
                 <DishCard
                   dish={course}
+                  guests={menu.guests}
                   isPending={regeneratingKey === key}
                   onRegenerate={() => handleRegenerateCourse(key)}
                   onRefine={(m) => refineGuestCourse(menu.id, key, m)}
@@ -257,7 +294,12 @@ export function GuestMenuDialog({ menu, onClose, onSaved, onCreated }: GuestMenu
             <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-foreground-subtle">
               <Wine className="h-3.5 w-3.5" /> Accords mets-vins
             </p>
-            <button type="button" onClick={handleRegenerateWine} disabled={isPending} className="rounded p-1 text-foreground-subtle hover:bg-surface-muted">
+            <button
+              type="button"
+              onClick={handleRegenerateWine}
+              disabled={isPending}
+              className="rounded p-1 text-foreground-subtle hover:bg-surface-muted print:hidden"
+            >
               <RefreshCw className="h-3.5 w-3.5" />
             </button>
           </div>
