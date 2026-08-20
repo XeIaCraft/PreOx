@@ -14,6 +14,10 @@ try {
   if (a === "slate") document.documentElement.setAttribute("data-accent", a);
   var d = localStorage.getItem("preox-density");
   if (d === "compact") document.documentElement.setAttribute("data-density", d);
+  var c = localStorage.getItem("preox-contrast");
+  if (c === "high") document.documentElement.setAttribute("data-contrast", c);
+  var f = localStorage.getItem("preox-font-scale");
+  if (f === "large" || f === "larger") document.documentElement.setAttribute("data-font-scale", f);
 } catch (e) {}
 `;
 

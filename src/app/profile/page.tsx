@@ -41,7 +41,13 @@ export default async function ProfilePage() {
           </div>
         </div>
 
-        <PersonalizationSection accentTheme={profile.accent_theme} density={profile.density} hiddenWidgets={profile.hidden_widgets} />
+        <PersonalizationSection
+          accentTheme={profile.accent_theme}
+          density={profile.density}
+          hiddenWidgets={profile.hidden_widgets}
+          highContrast={profile.high_contrast}
+          fontScale={profile.font_scale}
+        />
 
         <NotificationPrefsSection notifyEmailDigest={profile.notify_email_digest} notifyPush={profile.notify_push} />
 

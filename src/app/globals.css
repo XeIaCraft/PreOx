@@ -64,6 +64,33 @@
   --row-py: 0.5rem;
 }
 
+/* High contrast (Profil → Personnalisation): strengthens borders and
+   muted/subtle text so structure and secondary copy read clearly, in
+   either theme — it darkens/lightens against whichever ground is active
+   rather than hardcoding one direction. */
+:root[data-contrast="high"] {
+  --border: var(--border-strong);
+  --foreground-muted: var(--foreground);
+  --foreground-subtle: var(--foreground-muted);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])[data-contrast="high"] {
+    --border-strong: #55645a;
+  }
+}
+:root[data-theme="dark"][data-contrast="high"] {
+  --border-strong: #55645a;
+}
+
+/* Global font scale (Profil → Personnalisation). rem-based, so every
+   Tailwind text-* utility in the app scales with it automatically. */
+html[data-font-scale="large"] {
+  font-size: 112.5%;
+}
+html[data-font-scale="larger"] {
+  font-size: 125%;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);

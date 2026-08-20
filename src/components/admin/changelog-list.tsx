@@ -28,7 +28,7 @@ export function ChangelogList({ entries }: { entries: ChangelogEntryRow[] }) {
             <p className="text-sm font-medium text-foreground">{entry.title}</p>
             <p className="text-xs text-foreground-subtle">{new Date(entry.published_at).toLocaleDateString("fr-FR")}</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => handleDelete(entry.id)} disabled={isPending} title="Supprimer">
+          <Button variant="ghost" size="icon" onClick={() => handleDelete(entry.id)} disabled={isPending} title="Supprimer" aria-label="Supprimer">
             <Trash2 className="h-4 w-4" />
           </Button>
         </li>

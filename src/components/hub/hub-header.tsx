@@ -61,7 +61,7 @@ export function HubHeader({ profile, section }: { profile: Profile; section?: st
           <ThemeToggle />
 
           <form action={logout}>
-            <Button type="submit" variant="ghost" size="icon" title="Se déconnecter">
+            <Button type="submit" variant="ghost" size="icon" title="Se déconnecter" aria-label="Se déconnecter">
               <LogOut className="h-4 w-4" />
             </Button>
           </form>

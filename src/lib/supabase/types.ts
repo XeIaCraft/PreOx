@@ -23,6 +23,8 @@ export type Profile = {
   app_order: string[];
   density: "comfortable" | "compact";
   hidden_widgets: string[];
+  high_contrast: boolean;
+  font_scale: "normal" | "large" | "larger";
   created_at: string;
   updated_at: string;
 };
@@ -402,6 +404,13 @@ export type FeedbackReportRow = {
   created_at: string;
 };
 
+export type PagePerformanceLogRow = {
+  id: string;
+  path: string;
+  duration_ms: number;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -630,6 +639,12 @@ export type Database = {
         Row: FeedbackReportRow;
         Insert: Partial<FeedbackReportRow> & { user_id: string; message: string };
         Update: Partial<FeedbackReportRow>;
+        Relationships: [];
+      };
+      page_performance_log: {
+        Row: PagePerformanceLogRow;
+        Insert: Partial<PagePerformanceLogRow> & { path: string; duration_ms: number };
+        Update: Partial<PagePerformanceLogRow>;
         Relationships: [];
       };
     };

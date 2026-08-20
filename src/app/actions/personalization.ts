@@ -25,6 +25,22 @@ export async function updateDensity(density: "comfortable" | "compact"): Promise
   return { success: "" };
 }
 
+export async function updateHighContrast(highContrast: boolean): Promise<ActionState> {
+  const profile = await requireProfile();
+  const supabase = await createClient();
+  const { error } = await supabase.from("profiles").update({ high_contrast: highContrast }).eq("id", profile.id);
+  if (error) return { error: "Impossible de mettre à jour le contraste." };
+  return { success: "" };
+}
+
+export async function updateFontScale(fontScale: "normal" | "large" | "larger"): Promise<ActionState> {
+  const profile = await requireProfile();
+  const supabase = await createClient();
+  const { error } = await supabase.from("profiles").update({ font_scale: fontScale }).eq("id", profile.id);
+  if (error) return { error: "Impossible de mettre à jour la taille du texte." };
+  return { success: "" };
+}
+
 export async function updateAppOrder(order: string[]): Promise<ActionState> {
   const profile = await requireProfile();
   const supabase = await createClient();

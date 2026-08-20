@@ -2,11 +2,17 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { updateAccentTheme, updateDensity, setWidgetHidden } from "@/app/actions/personalization";
+import { updateAccentTheme, updateDensity, updateHighContrast, updateFontScale, setWidgetHidden } from "@/app/actions/personalization";
 
 const ACCENTS = [
   { value: "forest" as const, label: "Forêt", swatch: "#2f5d54" },
   { value: "slate" as const, label: "Ardoise", swatch: "#3b5a72" },
+];
+
+const FONT_SCALES = [
+  { value: "normal" as const, label: "Normale" },
+  { value: "large" as const, label: "Grande" },
+  { value: "larger" as const, label: "Très grande" },
 ];
 
 const WIDGET_LABELS: Record<string, string> = {
@@ -19,16 +25,52 @@ export function PersonalizationSection({
   accentTheme,
   density,
   hiddenWidgets,
+  highContrast,
+  fontScale,
 }: {
   accentTheme: "forest" | "slate";
   density: "comfortable" | "compact";
   hiddenWidgets: string[];
+  highContrast: boolean;
+  fontScale: "normal" | "large" | "larger";
 }) {
   const router = useRouter();
   const [accent, setAccent] = useState(accentTheme);
   const [dens, setDens] = useState(density);
+  const [contrast, setContrast] = useState(highContrast);
+  const [scale, setScale] = useState(fontScale);
   const [hidden, setHidden] = useState(new Set(hiddenWidgets));
   const [, startTransition] = useTransition();
+
+  function handleContrastChange(value: boolean) {
+    setContrast(value);
+    if (value) document.documentElement.setAttribute("data-contrast", "high");
+    else document.documentElement.removeAttribute("data-contrast");
+    try {
+      if (value) window.localStorage.setItem("preox-contrast", "high");
+      else window.localStorage.removeItem("preox-contrast");
+    } catch {
+      // ignore
+    }
+    startTransition(() => {
+      void updateHighContrast(value);
+    });
+  }
+
+  function handleFontScaleChange(value: "normal" | "large" | "larger") {
+    setScale(value);
+    if (value === "normal") document.documentElement.removeAttribute("data-font-scale");
+    else document.documentElement.setAttribute("data-font-scale", value);
+    try {
+      if (value === "normal") window.localStorage.removeItem("preox-font-scale");
+      else window.localStorage.setItem("preox-font-scale", value);
+    } catch {
+      // ignore
+    }
+    startTransition(() => {
+      void updateFontScale(value);
+    });
+  }
 
   function handleShowWidget(key: string) {
     setHidden((prev) => {
@@ -110,6 +152,46 @@ export function PersonalizationSection({
                 }`}
               >
                 {value === "comfortable" ? "Confortable" : "Compacte"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <p className="text-sm font-medium text-foreground">Contraste élevé</p>
+          <p className="text-sm text-foreground-muted">Renforce les bordures et le texte secondaire.</p>
+          <div className="mt-2 flex gap-2">
+            {[
+              { value: false, label: "Standard" },
+              { value: true, label: "Élevé" },
+            ].map((opt) => (
+              <button
+                key={String(opt.value)}
+                type="button"
+                onClick={() => handleContrastChange(opt.value)}
+                className={`rounded-full border px-3 py-1.5 text-sm ${
+                  contrast === opt.value ? "border-primary bg-primary-tint text-primary-strong" : "border-border text-foreground-muted"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <p className="text-sm font-medium text-foreground">Taille du texte</p>
+          <div className="mt-2 flex gap-2">
+            {FONT_SCALES.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => handleFontScaleChange(opt.value)}
+                className={`rounded-full border px-3 py-1.5 text-sm ${
+                  scale === opt.value ? "border-primary bg-primary-tint text-primary-strong" : "border-border text-foreground-muted"
+                }`}
+              >
+                {opt.label}
               </button>
             ))}
           </div>

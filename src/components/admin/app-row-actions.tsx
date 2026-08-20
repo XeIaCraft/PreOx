@@ -33,7 +33,7 @@ export function AppRowActions({ appId, isActive }: { appId: string; isActive: bo
     <div className="flex items-center gap-2">
       <Switch checked={active} onCheckedChange={handleToggle} disabled={isPending} aria-label="Module actif" />
       <Link href={`/admin/apps/${appId}`}>
-        <Button variant="ghost" size="icon" title="Modifier">
+        <Button variant="ghost" size="icon" title="Modifier" aria-label="Modifier">
           <Pencil className="h-4 w-4" />
         </Button>
       </Link>
@@ -47,7 +47,7 @@ export function AppRowActions({ appId, isActive }: { appId: string; isActive: bo
           </Button>
         </div>
       ) : (
-        <Button variant="ghost" size="icon" title="Supprimer" onClick={() => setConfirming(true)}>
+        <Button variant="ghost" size="icon" title="Supprimer" aria-label="Supprimer" onClick={() => setConfirming(true)}>
           <Trash2 className="h-4 w-4 text-danger" />
         </Button>
       )}

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Gauge } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Card, CardContent } from "@/components/ui/card";
@@ -74,6 +74,26 @@ export default async function AdminUsagePage() {
     }))
   );
 
+  const since = new Date();
+  since.setDate(since.getDate() - 14);
+  const { data: perfSamples } = await supabase
+    .from("page_performance_log")
+    .select("path, duration_ms")
+    .gte("created_at", since.toISOString())
+    .limit(2000);
+
+  const perfByPath = new Map<string, { total: number; count: number }>();
+  for (const sample of perfSamples ?? []) {
+    const entry = perfByPath.get(sample.path) ?? { total: 0, count: 0 };
+    entry.total += sample.duration_ms;
+    entry.count += 1;
+    perfByPath.set(sample.path, entry);
+  }
+  const perfRows = [...perfByPath.entries()]
+    .map(([path, { total, count }]) => ({ path, avgMs: Math.round(total / count), count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
   return (
     <div className="space-y-6">
       <div>
@@ -121,6 +141,36 @@ export default async function AdminUsagePage() {
           );
         })}
       </div>
+
+      {perfRows.length > 0 && (
+        <div>
+          <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground-muted">
+            <Gauge className="h-3.5 w-3.5" /> Performance perçue (14 derniers jours, temps de chargement réel des pages)
+          </p>
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-border bg-surface-muted text-xs uppercase tracking-wide text-foreground-subtle">
+                  <tr>
+                    <th className="px-5 py-2.5 font-medium">Page</th>
+                    <th className="px-5 py-2.5 font-medium">Temps de chargement moyen</th>
+                    <th className="px-5 py-2.5 font-medium">Échantillons</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {perfRows.map((row) => (
+                    <tr key={row.path}>
+                      <td className="px-5 py-2.5 font-mono text-xs text-foreground">{row.path}</td>
+                      <td className="px-5 py-2.5 text-foreground-muted">{(row.avgMs / 1000).toFixed(2)} s</td>
+                      <td className="px-5 py-2.5 text-foreground-subtle">{row.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

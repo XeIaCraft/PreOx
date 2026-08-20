@@ -94,7 +94,7 @@ export function GroupDetailPanel({ group, users, apps, memberUserIds, grantedApp
         <CardContent>
           <div className="flex gap-2">
             <Input value={name} onChange={(e) => setName(e.target.value)} disabled={isPending} />
-            <Button variant="secondary" size="icon" onClick={handleRename} disabled={isPending || name === group.name} title="Enregistrer">
+            <Button variant="secondary" size="icon" onClick={handleRename} disabled={isPending || name === group.name} title="Enregistrer" aria-label="Enregistrer">
               <Save className="h-4 w-4" />
             </Button>
           </div>

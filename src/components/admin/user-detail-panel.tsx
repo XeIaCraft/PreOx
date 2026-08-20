@@ -134,6 +134,7 @@ export function UserDetailPanel({ user, apps, grantedAppIds, groupGrantedAppName
                 onClick={handleNameSave}
                 disabled={isPending || fullName === (user.full_name ?? "")}
                 title="Enregistrer le nom"
+                aria-label="Enregistrer le nom"
               >
                 <Save className="h-4 w-4" />
               </Button>
