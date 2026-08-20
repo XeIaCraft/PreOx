@@ -213,6 +213,15 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
             />
             Inclure ma bibliothèque personnelle dans le contexte IA
           </label>
+          <label className="flex items-center gap-2 text-sm text-foreground-muted">
+            <input
+              type="checkbox"
+              checked={prefs.auto_illustrate !== false}
+              onChange={(e) => setPref("auto_illustrate", e.target.checked)}
+              className="h-4 w-4 rounded border-border-strong text-primary focus-visible:ring-primary/30"
+            />
+            Illustrer automatiquement les propositions générées (photos Pexels)
+          </label>
           <div className="space-y-1.5">
             <Label>Consigne libre pour l&rsquo;IA</Label>
             <textarea
@@ -472,28 +481,31 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
       )}
 
       {tab === "Avancé" && (
-        <div className="space-y-4">
-          <p className="text-sm text-foreground-muted">Quotas de diversité des générations IA.</p>
-          <div className="grid grid-cols-2 gap-3">
-            {(
-              [
-                ["max_favorites", "Max favoris repris"],
-                ["max_recurrence", "Max répétitions vs historique"],
-                ["min_new_recipes_pct", "% minimum de nouvelles recettes"],
-                ["max_repeat_protein", "Max même protéine"],
-                ["max_repeat_starch", "Max même féculent"],
-                ["max_repeat_vegetable", "Max même légume"],
-              ] as [keyof GenerationRules, string][]
-            ).map(([key, label]) => (
-              <div key={key} className="space-y-1.5">
-                <Label>{label}</Label>
-                <Input
-                  type="number"
-                  value={rules[key]}
-                  onChange={(e) => setRules((r) => ({ ...r, [key]: Number(e.target.value) }))}
-                />
-              </div>
-            ))}
+        <div className="space-y-5">
+          <div>
+            <p className="mb-2 text-sm font-medium text-foreground-muted">Quotas de diversité des générations IA</p>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {(
+                [
+                  ["max_favorites", "Max favoris repris"],
+                  ["max_recurrence", "Max répétitions vs historique"],
+                  ["min_new_recipes_pct", "% minimum de nouvelles recettes"],
+                  ["max_repeat_protein", "Max même protéine"],
+                  ["max_repeat_starch", "Max même féculent"],
+                  ["max_repeat_vegetable", "Max même légume"],
+                ] as [keyof GenerationRules, string][]
+              ).map(([key, label]) => (
+                <div key={key} className="rounded-[var(--radius-sm)] border border-border bg-surface-muted/40 p-2.5">
+                  <Label className="text-xs text-foreground-subtle">{label}</Label>
+                  <Input
+                    type="number"
+                    value={rules[key]}
+                    onChange={(e) => setRules((r) => ({ ...r, [key]: Number(e.target.value) }))}
+                    className="mt-1"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="space-y-1.5">
@@ -502,17 +514,40 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
               type="number"
               value={prefs.target_kcal_per_serving ?? ""}
               onChange={(e) => setPref("target_kcal_per_serving", e.target.value ? Number(e.target.value) : null)}
+              className="max-w-xs"
             />
           </div>
 
-          <div>
+          <div className="rounded-[var(--radius-sm)] border border-border bg-surface-muted/40 p-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium text-foreground-muted">Répartition macros</p>
+              <div className="flex flex-wrap gap-1.5">
+                {(
+                  [
+                    ["Normal", { protein_pct: 30, carb_pct: 45, fat_pct: 25 }],
+                    ["Prise de masse", { protein_pct: 25, carb_pct: 50, fat_pct: 25 }],
+                    ["Sèche", { protein_pct: 40, carb_pct: 30, fat_pct: 30 }],
+                  ] as [string, typeof prefs.macro_ratios][]
+                ).map(([label, ratios]) => (
+                  <Chip
+                    key={label}
+                    active={
+                      prefs.macro_ratios.protein_pct === ratios.protein_pct &&
+                      prefs.macro_ratios.carb_pct === ratios.carb_pct &&
+                      prefs.macro_ratios.fat_pct === ratios.fat_pct
+                    }
+                    onClick={() => setPref("macro_ratios", ratios)}
+                  >
+                    {label}
+                  </Chip>
+                ))}
+              </div>
+            </div>
             {(() => {
               const total = prefs.macro_ratios.protein_pct + prefs.macro_ratios.carb_pct + prefs.macro_ratios.fat_pct;
               return (
-                <div className="mb-1 flex items-center justify-between">
-                  <p className={cn("text-sm font-medium", total === 100 ? "text-foreground-muted" : "text-danger")}>
-                    Répartition macros — {total}%
-                  </p>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className={cn("text-xs", total === 100 ? "text-foreground-subtle" : "text-danger")}>Total : {total}%</p>
                   {total !== 100 && (
                     <button
                       type="button"
@@ -532,8 +567,8 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
               );
             })()}
             {(["protein_pct", "carb_pct", "fat_pct"] as const).map((key) => (
-              <div key={key} className="mb-2 flex items-center gap-3">
-                <span className="w-24 text-xs text-foreground-subtle">
+              <div key={key} className="mb-2 flex items-center gap-3 last:mb-0">
+                <span className="w-20 shrink-0 text-xs text-foreground-subtle">
                   {key === "protein_pct" ? "Protéines" : key === "carb_pct" ? "Glucides" : "Lipides"}
                 </span>
                 <input
@@ -546,7 +581,7 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
                   }
                   className="flex-1"
                 />
-                <span className="w-10 text-right text-xs text-foreground-muted">{prefs.macro_ratios[key]}%</span>
+                <span className="w-10 shrink-0 text-right text-xs font-medium text-foreground-muted">{prefs.macro_ratios[key]}%</span>
               </div>
             ))}
           </div>

@@ -89,7 +89,7 @@ export async function generateDraft(count: number): Promise<ActionState> {
     return { error: "Génération impossible pour le moment. Réessaie dans un instant." };
   }
 
-  const pexelsKey = await getDecryptedPexelsKey(profile.id);
+  const pexelsKey = preferences.auto_illustrate === false ? null : await getDecryptedPexelsKey(profile.id);
   if (pexelsKey) {
     await Promise.all(
       proposals.map(async (proposal) => {

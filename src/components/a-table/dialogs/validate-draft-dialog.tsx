@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Image from "next/image";
 import { RefreshCw } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
@@ -81,7 +82,13 @@ export function ValidateDraftDialog({ draftId, proposals, onClose, onSaved }: Va
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {proposals.map((proposal, index) => (
-          <div key={index} className="rounded-[var(--radius-md)] border border-border p-4">
+          <div key={index} className="overflow-hidden rounded-[var(--radius-md)] border border-border">
+            {proposal.image_url && (
+              <div className="relative h-32 w-full">
+                <Image src={proposal.image_url} alt={proposal.title} fill sizes="400px" className="object-cover" />
+              </div>
+            )}
+            <div className="p-4">
             <div className="flex items-start justify-between gap-2">
               <label className="flex flex-1 items-start gap-2">
                 <input
@@ -107,7 +114,27 @@ export function ValidateDraftDialog({ draftId, proposals, onClose, onSaved }: Va
               {proposal.cooking_minutes != null ? `${proposal.cooking_minutes} min · ` : ""}
               {proposal.servings} pers.
               {proposal.price_per_serving != null ? ` · ${proposal.price_per_serving.toFixed(2)} €/part` : ""}
+              {proposal.nutrition.kcal != null && ` · ${proposal.nutrition.kcal} kcal`}
             </p>
+
+            {(proposal.nutrition.protein_g != null || proposal.nutrition.carb_g != null || proposal.nutrition.fat_g != null) && (
+              <p className="mt-0.5 text-xs text-foreground-subtle">
+                P {proposal.nutrition.protein_g ?? "–"}g · G {proposal.nutrition.carb_g ?? "–"}g · L {proposal.nutrition.fat_g ?? "–"}g
+              </p>
+            )}
+
+            {proposal.ingredients.length > 0 && (
+              <ul className="mt-2 space-y-0.5 text-sm text-foreground-muted">
+                {proposal.ingredients.slice(0, 5).map((ing, i) => (
+                  <li key={i} className="truncate">
+                    {typeof ing.quantity === "number" ? ing.quantity : ing.quantity ?? ""} {ing.unit} {ing.name}
+                  </li>
+                ))}
+                {proposal.ingredients.length > 5 && (
+                  <li className="text-xs text-foreground-subtle">+ {proposal.ingredients.length - 5} de plus</li>
+                )}
+              </ul>
+            )}
 
             {proposal.notes && <p className="mt-2 text-sm text-foreground-muted">{proposal.notes}</p>}
 
@@ -124,6 +151,7 @@ export function ValidateDraftDialog({ draftId, proposals, onClose, onSaved }: Va
                 <RefineBox onSubmit={(message) => refineProposal(draftId, index, message)} onApplied={onSaved} />
               </div>
             )}
+            </div>
           </div>
         ))}
       </div>

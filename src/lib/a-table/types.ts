@@ -204,6 +204,8 @@ export type Preferences = {
   recipe_sources: RecipeSourcesSettings;
   /** Custom shopping-list category order (rayon keys); absent/empty falls back to the default. */
   shopping_category_order?: string[];
+  /** Auto-fetch a Pexels illustration on every AI generation (drafts, menu invité). Absent = enabled (legacy default). */
+  auto_illustrate?: boolean;
 };
 
 export type GenerationRules = {

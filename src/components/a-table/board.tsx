@@ -323,7 +323,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-serif-display text-2xl font-medium text-foreground">À table</h1>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setModal({ type: "shopping" })}>
+          <Button data-tour="a-table-shopping" variant="secondary" size="sm" onClick={() => setModal({ type: "shopping" })}>
             <ShoppingBasket className="h-4 w-4" /> Courses
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setModal({ type: "library" })}>
@@ -338,10 +338,10 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           <Button variant="secondary" size="sm" onClick={() => setModal({ type: "history" })}>
             <HistoryIcon className="h-4 w-4" /> Historique
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => setModal({ type: "guest", menuId: data.guestMenus[0]?.id ?? null })}>
+          <Button data-tour="a-table-guest" variant="secondary" size="sm" onClick={() => setModal({ type: "guest", menuId: data.guestMenus[0]?.id ?? null })}>
             <GlassWater className="h-4 w-4" /> Repas spécial
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => setModal({ type: "settings" })}>
+          <Button data-tour="a-table-settings" variant="secondary" size="sm" onClick={() => setModal({ type: "settings" })}>
             <Settings className="h-4 w-4" /> Réglages
           </Button>
           <Button variant="ghost" size="icon" onClick={refresh} title="Actualiser">
@@ -392,7 +392,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
         </Button>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div data-tour="a-table-generator" className="flex flex-wrap items-center gap-3">
         <GeneratorBar defaultCount={data.settings.preferences.default_recipe_count} onGenerate={handleGenerate} isPending={isGenerating} />
         {data.recipes.some((r) => !r.is_archived) && (
           <Button variant="ghost" size="sm" onClick={handleSurpriseMe}>
@@ -687,6 +687,9 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           onClose={() => setModal(null)}
           onSaved={refresh}
           onCreated={(menuId) => setModal({ type: "guest", menuId })}
+          timers={timers}
+          onStartTimer={startTimer}
+          onDismissTimer={dismissTimer}
         />
       )}
 

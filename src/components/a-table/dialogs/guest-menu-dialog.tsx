@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { RefreshCw, Wine, Trash2, Printer, BookmarkPlus } from "lucide-react";
+import Image from "next/image";
+import { RefreshCw, Wine, Trash2, Printer, BookmarkPlus, CookingPot } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,8 @@ import {
   saveDishAsRecipe,
 } from "@/app/apps/a-table/actions/guest_menu";
 import { useToast } from "@/components/ui/toast";
+import { CookModeDialog, type CookModeRecipe } from "@/components/a-table/dialogs/cook-mode-dialog";
+import type { RunningTimer } from "@/components/a-table/ui/timer-bar";
 import type { GuestCourse, GuestCourseDish, GuestCourseKey, GuestMenu } from "@/lib/a-table/types";
 
 interface GuestMenuDialogProps {
@@ -23,10 +26,58 @@ interface GuestMenuDialogProps {
   onClose: () => void;
   onSaved: () => void;
   onCreated: (menuId: string) => void;
+  timers: RunningTimer[];
+  onStartTimer: (minutes: number, label: string) => void;
+  onDismissTimer: (id: number) => void;
 }
 
 function isComposed(course: GuestCourse): course is { items: GuestCourseDish[] } {
   return "items" in course;
+}
+
+function GuestDishDetailDialog({ dish, onClose, onCookMode }: { dish: GuestCourseDish; onClose: () => void; onCookMode: () => void }) {
+  return (
+    <Modal title={dish.title} onClose={onClose} size="lg">
+      {dish.image_url && (
+        <div className="relative mb-4 h-48 w-full overflow-hidden rounded-[var(--radius-md)]">
+          <Image src={dish.image_url} alt={dish.title} fill sizes="600px" className="object-cover" />
+        </div>
+      )}
+      <Button className="mb-4 w-full" variant="outline" size="sm" onClick={onCookMode}>
+        <CookingPot className="h-4 w-4" /> Mode recette
+      </Button>
+      {dish.notes && <p className="mb-4 text-sm text-foreground-muted">{dish.notes}</p>}
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-foreground">Ingrédients</h3>
+          <ul className="space-y-1 text-sm text-foreground-muted">
+            {dish.ingredients.map((ing, i) => (
+              <li key={i}>
+                {ing.quantity ?? ""} {ing.unit} {ing.name}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-foreground">Nutrition (par portion)</h3>
+          <div className="grid grid-cols-2 gap-2 text-sm text-foreground-muted">
+            <span>Kcal : {dish.nutrition.kcal ?? "–"}</span>
+            <span>Protéines : {dish.nutrition.protein_g ?? "–"} g</span>
+            <span>Glucides : {dish.nutrition.carb_g ?? "–"} g</span>
+            <span>Lipides : {dish.nutrition.fat_g ?? "–"} g</span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-6">
+        <h3 className="mb-2 text-sm font-semibold text-foreground">Étapes</h3>
+        <ol className="list-decimal space-y-2 pl-5 text-sm text-foreground-muted">
+          {dish.steps.map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
+        </ol>
+      </div>
+    </Modal>
+  );
 }
 
 function DishCard({
@@ -35,14 +86,22 @@ function DishCard({
   onRegenerate,
   onRefine,
   onApplied,
+  onOpenDetail,
   isPending,
+  selectable,
+  selected,
+  onToggleSelect,
 }: {
   dish: GuestCourseDish;
   guests: number;
   onRegenerate: () => void;
   onRefine: (m: string) => Promise<{ error?: string; success?: string }>;
   onApplied: () => void;
+  onOpenDetail: () => void;
   isPending: boolean;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const { toast } = useToast();
   const [savingRecipe, setSavingRecipe] = useState(false);
@@ -58,9 +117,29 @@ function DishCard({
   }
 
   return (
-    <div className="rounded-[var(--radius-md)] border border-border p-3">
+    <div className="overflow-hidden rounded-[var(--radius-md)] border border-border">
+      {dish.image_url && (
+        <button type="button" onClick={selectable ? onToggleSelect : onOpenDetail} className="relative block h-28 w-full print:hidden">
+          <Image src={dish.image_url} alt={dish.title} fill sizes="400px" className="object-cover" />
+        </button>
+      )}
+      <div className="p-3">
       <div className="flex items-start justify-between gap-2">
-        <p className="font-medium text-foreground">{dish.title}</p>
+        {selectable ? (
+          <label className="flex flex-1 items-start gap-2">
+            <input
+              type="checkbox"
+              checked={Boolean(selected)}
+              onChange={onToggleSelect}
+              className="mt-1 h-4 w-4 rounded border-border-strong text-primary focus-visible:ring-primary/30"
+            />
+            <span className="font-medium text-foreground">{dish.title}</span>
+          </label>
+        ) : (
+          <button type="button" onClick={onOpenDetail} className="flex-1 text-left font-medium text-foreground hover:underline">
+            {dish.title}
+          </button>
+        )}
         <div className="flex shrink-0 gap-1 print:hidden">
           <button
             type="button"
@@ -76,6 +155,7 @@ function DishCard({
           </button>
         </div>
       </div>
+      {dish.nutrition.kcal != null && <p className="mt-1 text-xs text-foreground-subtle">{dish.nutrition.kcal} kcal</p>}
       {dish.notes && <p className="mt-1 text-sm text-foreground-muted">{dish.notes}</p>}
       <ul className="mt-2 space-y-0.5 text-xs text-foreground-subtle">
         {dish.ingredients.slice(0, 6).map((ing, i) => (
@@ -83,15 +163,17 @@ function DishCard({
             {ing.quantity ?? ""} {ing.unit} {ing.name}
           </li>
         ))}
+        {dish.ingredients.length > 6 && <li>+ {dish.ingredients.length - 6} de plus</li>}
       </ul>
       <div className="mt-2 print:hidden">
         <RefineBox onSubmit={onRefine} onApplied={onApplied} placeholder="Ajuster ce plat…" />
+      </div>
       </div>
     </div>
   );
 }
 
-export function GuestMenuDialog({ menu, onClose, onSaved, onCreated }: GuestMenuDialogProps) {
+export function GuestMenuDialog({ menu, onClose, onSaved, onCreated, timers, onStartTimer, onDismissTimer }: GuestMenuDialogProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [regeneratingKey, setRegeneratingKey] = useState<string | null>(null);
@@ -100,6 +182,29 @@ export function GuestMenuDialog({ menu, onClose, onSaved, onCreated }: GuestMenu
   const [courseKeys, setCourseKeys] = useState<Set<GuestCourseKey>>(new Set(GUEST_COURSE_KEYS));
   const [composedKeys, setComposedKeys] = useState<Set<GuestCourseKey>>(new Set());
   const [composedCounts, setComposedCounts] = useState<Record<string, number>>({});
+  const [detailDish, setDetailDish] = useState<GuestCourseDish | null>(null);
+  const [selectingForCombinedCook, setSelectingForCombinedCook] = useState(false);
+  const [selectedDishKeys, setSelectedDishKeys] = useState<Set<string>>(new Set());
+  const [cookRecipes, setCookRecipes] = useState<CookModeRecipe[] | null>(null);
+
+  function dishKey(courseKey: GuestCourseKey, itemIndex?: number) {
+    return itemIndex != null ? `${courseKey}:${itemIndex}` : courseKey;
+  }
+
+  function collectDishes(): { key: string; dish: GuestCourseDish }[] {
+    if (!menu) return [];
+    const result: { key: string; dish: GuestCourseDish }[] = [];
+    for (const key of menu.course_keys) {
+      const course = menu.courses[key];
+      if (!course) continue;
+      if (isComposed(course)) {
+        course.items.forEach((item, i) => result.push({ key: dishKey(key, i), dish: item }));
+      } else {
+        result.push({ key: dishKey(key), dish: course });
+      }
+    }
+    return result;
+  }
 
   function handleGenerate() {
     startTransition(async () => {
@@ -255,6 +360,42 @@ export function GuestMenuDialog({ menu, onClose, onSaved, onCreated }: GuestMenu
         <h1 className="hidden font-serif-display text-xl font-medium text-foreground print:mb-2 print:block">
           Menu pour {menu.guests} invités
         </h1>
+
+        <div className="flex items-center justify-between print:hidden">
+          <p className="text-xs font-semibold uppercase tracking-wide text-foreground-subtle">Plats</p>
+          {selectingForCombinedCook ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-foreground-subtle">{selectedDishKeys.size} sélectionné(s)</span>
+              <Button
+                size="sm"
+                disabled={selectedDishKeys.size < 2}
+                onClick={() => {
+                  const dishes = collectDishes().filter((d) => selectedDishKeys.has(d.key));
+                  setCookRecipes(dishes.map(({ key, dish }) => ({ id: `guest:${key}`, title: dish.title, ingredients: dish.ingredients, steps: dish.steps })));
+                  setSelectingForCombinedCook(false);
+                  setSelectedDishKeys(new Set());
+                }}
+              >
+                Cuisiner ensemble
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelectingForCombinedCook(false);
+                  setSelectedDishKeys(new Set());
+                }}
+              >
+                Annuler
+              </Button>
+            </div>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => setSelectingForCombinedCook(true)}>
+              Cuisiner plusieurs plats ensemble
+            </Button>
+          )}
+        </div>
+
         {menu.course_keys.map((key) => {
           const course = menu.courses[key];
           if (!course) return null;
@@ -272,6 +413,18 @@ export function GuestMenuDialog({ menu, onClose, onSaved, onCreated }: GuestMenu
                       onRegenerate={() => handleRegenerateCourse(key, i)}
                       onRefine={(m) => refineGuestCourse(menu.id, key, m, i)}
                       onApplied={onSaved}
+                      onOpenDetail={() => setDetailDish(item)}
+                      selectable={selectingForCombinedCook}
+                      selected={selectedDishKeys.has(dishKey(key, i))}
+                      onToggleSelect={() =>
+                        setSelectedDishKeys((prev) => {
+                          const next = new Set(prev);
+                          const k = dishKey(key, i);
+                          if (next.has(k)) next.delete(k);
+                          else next.add(k);
+                          return next;
+                        })
+                      }
                     />
                   ))}
                 </div>
@@ -283,6 +436,18 @@ export function GuestMenuDialog({ menu, onClose, onSaved, onCreated }: GuestMenu
                   onRegenerate={() => handleRegenerateCourse(key)}
                   onRefine={(m) => refineGuestCourse(menu.id, key, m)}
                   onApplied={onSaved}
+                  onOpenDetail={() => setDetailDish(course)}
+                  selectable={selectingForCombinedCook}
+                  selected={selectedDishKeys.has(dishKey(key))}
+                  onToggleSelect={() =>
+                    setSelectedDishKeys((prev) => {
+                      const next = new Set(prev);
+                      const k = dishKey(key);
+                      if (next.has(k)) next.delete(k);
+                      else next.add(k);
+                      return next;
+                    })
+                  }
                 />
               )}
             </div>
@@ -314,6 +479,27 @@ export function GuestMenuDialog({ menu, onClose, onSaved, onCreated }: GuestMenu
           </div>
         </div>
       </div>
+
+      {detailDish && (
+        <GuestDishDetailDialog
+          dish={detailDish}
+          onClose={() => setDetailDish(null)}
+          onCookMode={() => {
+            setCookRecipes([{ id: "guest:detail", title: detailDish.title, ingredients: detailDish.ingredients, steps: detailDish.steps }]);
+            setDetailDish(null);
+          }}
+        />
+      )}
+
+      {cookRecipes && (
+        <CookModeDialog
+          recipes={cookRecipes}
+          onClose={() => setCookRecipes(null)}
+          timers={timers}
+          onStartTimer={onStartTimer}
+          onDismissTimer={onDismissTimer}
+        />
+      )}
     </Modal>
   );
 }

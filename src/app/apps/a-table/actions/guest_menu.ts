@@ -110,7 +110,7 @@ export async function generateGuestMenu(input: GenerateGuestMenuInput): Promise<
     return { error: err instanceof GeminiError ? err.message : "L'IA n'a pas pu générer ce menu. Réessaie." };
   }
 
-  const pexelsKey = await getDecryptedPexelsKey(profile.id);
+  const pexelsKey = preferences.auto_illustrate === false ? null : await getDecryptedPexelsKey(profile.id);
   await illustrateCourses(courses, selected, pexelsKey);
 
   const { data: menu, error } = await supabase
@@ -183,7 +183,7 @@ export async function regenerateGuestCourse(menuId: string, courseKey: GuestCour
       image_query: typeof result.image_query === "string" ? result.image_query : undefined,
     };
 
-    const pexelsKey = await getDecryptedPexelsKey(profile.id);
+    const pexelsKey = preferences.auto_illustrate === false ? null : await getDecryptedPexelsKey(profile.id);
     if (pexelsKey) {
       try {
         dish.image_url = await searchPexelsImage(dish.image_query || dish.title, pexelsKey);
