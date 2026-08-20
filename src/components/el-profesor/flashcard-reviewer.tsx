@@ -238,7 +238,7 @@ export function FlashcardReviewer({
         </div>
       </div>
 
-      <div className="pb-4">
+      <div className="pb-[calc(1rem+env(safe-area-inset-bottom))]">
         {!revealed ? (
           <Button className="w-full" size="lg" onClick={() => setRevealed(true)}>
             Afficher la réponse

@@ -414,7 +414,7 @@ export function PdfViewer({
       </div>
 
       {onSelection && pendingSelection && (
-        <div className="flex items-center justify-between gap-3 border-t border-border bg-surface px-3 py-2">
+        <div className="flex items-center justify-between gap-3 border-t border-border bg-surface px-3 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2">
           <p className="line-clamp-1 text-xs text-foreground-muted">« {pendingSelection} »</p>
           <div className="flex shrink-0 items-center gap-1.5">
             <Button variant="ghost" size="sm" onClick={handleClearSelection}>

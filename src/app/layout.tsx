@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Fraunces } from "next/font/google";
 import "./globals.css";
 
@@ -22,6 +22,26 @@ export const metadata: Metadata = {
   },
   description:
     "PreOx est un hub applicatif centralisé qui réunit vos outils métiers dans un seul espace, avec des accès gérés module par module.",
+  appleWebApp: {
+    title: "PreOx",
+    statusBarStyle: "default",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // Lets fixed/sticky UI near the screen edges account for the iPhone
+  // notch/home-indicator via env(safe-area-inset-*) instead of sitting
+  // under them.
+  viewportFit: "cover",
+  // Matches the mobile browser's own chrome (status bar / URL bar) to
+  // --background in both themes instead of a single fixed color that
+  // would clash with dark mode.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#faf9f6" },
+    { media: "(prefers-color-scheme: dark)", color: "#101512" },
+  ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

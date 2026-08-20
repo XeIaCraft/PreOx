@@ -128,6 +128,21 @@ body {
   text-wrap: balance;
 }
 
+/* Respects the OS-level "reduce motion" setting: shrinks every animation/
+   transition to effectively instant instead of disabling them outright,
+   which keeps state changes (e.g. a flashcard flip) visually correct
+   without the motion some users find uncomfortable or disorienting. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 .font-serif-display {
   font-family: var(--font-serif), ui-serif, Georgia, serif;
 }
