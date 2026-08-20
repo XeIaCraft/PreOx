@@ -336,6 +336,23 @@ export type UserLoginLogRow = {
   created_at: string;
 };
 
+export type UserGroupRow = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+export type UserGroupMemberRow = {
+  group_id: string;
+  user_id: string;
+  added_at: string;
+};
+
+export type UserGroupAppAccessRow = {
+  group_id: string;
+  app_id: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -516,6 +533,24 @@ export type Database = {
         Row: UserLoginLogRow;
         Insert: Partial<UserLoginLogRow> & { user_id: string };
         Update: Partial<UserLoginLogRow>;
+        Relationships: [];
+      };
+      user_groups: {
+        Row: UserGroupRow;
+        Insert: Partial<UserGroupRow> & { name: string };
+        Update: Partial<UserGroupRow>;
+        Relationships: [];
+      };
+      user_group_members: {
+        Row: UserGroupMemberRow;
+        Insert: Partial<UserGroupMemberRow> & { group_id: string; user_id: string };
+        Update: Partial<UserGroupMemberRow>;
+        Relationships: [];
+      };
+      user_group_app_access: {
+        Row: UserGroupAppAccessRow;
+        Insert: UserGroupAppAccessRow;
+        Update: Partial<UserGroupAppAccessRow>;
         Relationships: [];
       };
     };

@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2, Save } from "lucide-react";
+import Link from "next/link";
+import { Trash2, Save, Eye } from "lucide-react";
 import { updateUserRole, updateUserName, setAppAccess, deleteUser } from "@/app/actions/admin";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
@@ -17,10 +18,11 @@ interface UserDetailPanelProps {
   user: Profile;
   apps: AppModule[];
   grantedAppIds: string[];
+  groupGrantedAppNames: Record<string, string[]>;
   isSelf: boolean;
 }
 
-export function UserDetailPanel({ user, apps, grantedAppIds, isSelf }: UserDetailPanelProps) {
+export function UserDetailPanel({ user, apps, grantedAppIds, groupGrantedAppNames, isSelf }: UserDetailPanelProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [role, setRole] = useState<UserRole>(user.role);
@@ -65,6 +67,20 @@ export function UserDetailPanel({ user, apps, grantedAppIds, isSelf }: UserDetai
     });
   }
 
+  function handlePreset(preset: "all" | "none") {
+    const targets = apps.filter((app) => (preset === "all" ? !granted.has(app.id) : granted.has(app.id)));
+    if (targets.length === 0) return;
+    setGranted(new Set(preset === "all" ? apps.map((a) => a.id) : []));
+    startTransition(async () => {
+      let lastResult: { error?: string; success?: string } = {};
+      for (const app of targets) {
+        lastResult = await setAppAccess(user.id, app.id, preset === "all");
+      }
+      notify(lastResult);
+      router.refresh();
+    });
+  }
+
   function handleDelete() {
     startTransition(async () => {
       const result = await deleteUser(user.id);
@@ -83,6 +99,13 @@ export function UserDetailPanel({ user, apps, grantedAppIds, isSelf }: UserDetai
       {message && (
         <Alert variant={message.type}>{message.text}</Alert>
       )}
+
+      <Link href={`/admin/users/${user.id}/preview`}>
+        <Button variant="secondary" size="sm">
+          <Eye className="h-4 w-4" />
+          Aperçu (lecture seule)
+        </Button>
+      </Link>
 
       <Card>
         <CardHeader>
@@ -139,12 +162,26 @@ export function UserDetailPanel({ user, apps, grantedAppIds, isSelf }: UserDetai
 
       <Card>
         <CardHeader>
-          <CardTitle>Accès aux modules</CardTitle>
-          <CardDescription>
-            {role === "admin"
-              ? "Les administrateurs ont accès à tous les modules par défaut."
-              : "Choisissez les modules accessibles à cet utilisateur."}
-          </CardDescription>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>Accès aux modules</CardTitle>
+              <CardDescription>
+                {role === "admin"
+                  ? "Les administrateurs ont accès à tous les modules par défaut."
+                  : "Choisissez les modules accessibles à cet utilisateur."}
+              </CardDescription>
+            </div>
+            {role !== "admin" && (
+              <div className="flex shrink-0 gap-2">
+                <Button variant="secondary" size="sm" onClick={() => handlePreset("all")} disabled={isPending}>
+                  Tout accorder
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => handlePreset("none")} disabled={isPending}>
+                  Tout retirer
+                </Button>
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {apps.length === 0 ? (
@@ -152,6 +189,7 @@ export function UserDetailPanel({ user, apps, grantedAppIds, isSelf }: UserDetai
           ) : (
             <ul className="divide-y divide-border">
               {apps.map((app) => {
+                const groupNames = groupGrantedAppNames[app.id];
                 return (
                   <li key={app.id} className="flex items-center justify-between py-3">
                     <div className="flex items-center gap-3">
@@ -160,7 +198,7 @@ export function UserDetailPanel({ user, apps, grantedAppIds, isSelf }: UserDetai
                       </span>
                       <div>
                         <p className="text-sm font-medium text-foreground">{app.name}</p>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           {!app.is_active && (
                             <Badge variant="outline" className="text-[10px]">
                               Inactif
@@ -171,15 +209,22 @@ export function UserDetailPanel({ user, apps, grantedAppIds, isSelf }: UserDetai
                               Bientôt
                             </Badge>
                           )}
+                          {groupNames && groupNames.length > 0 && (
+                            <Badge variant="primary" className="text-[10px]">
+                              Via {groupNames.join(", ")}
+                            </Badge>
+                          )}
                         </div>
                       </div>
                     </div>
-                    <Switch
-                      checked={role === "admin" || granted.has(app.id)}
-                      onCheckedChange={(checked) => handleToggleApp(app.id, checked)}
-                      disabled={isPending || role === "admin"}
-                      aria-label={`Accès à ${app.name}`}
-                    />
+                    <span title={groupNames?.length ? "Retirez l'utilisateur du groupe pour révoquer cet accès." : undefined}>
+                      <Switch
+                        checked={role === "admin" || granted.has(app.id) || Boolean(groupNames?.length)}
+                        onCheckedChange={(checked) => handleToggleApp(app.id, checked)}
+                        disabled={isPending || role === "admin" || Boolean(groupNames?.length)}
+                        aria-label={`Accès à ${app.name}`}
+                      />
+                    </span>
                   </li>
                 );
               })}

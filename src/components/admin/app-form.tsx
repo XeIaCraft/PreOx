@@ -6,7 +6,8 @@ import { createApp, updateApp, type ActionState } from "@/app/actions/admin";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
-import { ICON_OPTIONS } from "@/lib/icon-map";
+import { ICON_OPTIONS, type IconName } from "@/lib/icon-map";
+import { IconPicker } from "@/components/admin/icon-picker";
 import type { AppModule } from "@/lib/supabase/types";
 
 const initialState: ActionState = {};
@@ -58,15 +59,9 @@ export function AppForm({ app }: { app?: AppModule }) {
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="icon">Icône</Label>
-          <Select id="icon" name="icon" defaultValue={app?.icon ?? ICON_OPTIONS[0]}>
-            {ICON_OPTIONS.map((icon) => (
-              <option key={icon} value={icon}>
-                {icon}
-              </option>
-            ))}
-          </Select>
+        <div className="col-span-2 space-y-1.5">
+          <Label>Icône</Label>
+          <IconPicker name="icon" defaultValue={(app?.icon as IconName) ?? ICON_OPTIONS[0]} />
         </div>
 
         <div className="space-y-1.5">

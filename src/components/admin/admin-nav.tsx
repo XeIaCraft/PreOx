@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, Boxes, ScrollText } from "lucide-react";
+import { LayoutDashboard, Users, UsersRound, Boxes, ScrollText, Gauge } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Vue d'ensemble", icon: LayoutDashboard, exact: true },
   { href: "/admin/users", label: "Utilisateurs", icon: Users },
+  { href: "/admin/groups", label: "Groupes", icon: UsersRound },
   { href: "/admin/apps", label: "Modules", icon: Boxes },
+  { href: "/admin/usage", label: "Usage & santé", icon: Gauge },
   { href: "/admin/activity", label: "Journal d'activité", icon: ScrollText },
 ];
 

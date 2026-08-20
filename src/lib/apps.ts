@@ -26,12 +26,18 @@ export async function getAppsForProfile(profile: Profile): Promise<AppWithAccess
     return apps.map((app) => ({ ...app, hasAccess: true }));
   }
 
-  const { data: access } = await supabase
-    .from("user_app_access")
-    .select("app_id")
-    .eq("user_id", profile.id);
+  const [{ data: access }, { data: groupMemberships }] = await Promise.all([
+    supabase.from("user_app_access").select("app_id").eq("user_id", profile.id),
+    supabase.from("user_group_members").select("group_id").eq("user_id", profile.id),
+  ]);
 
   const grantedIds = new Set((access ?? []).map((row) => row.app_id));
+
+  const groupIds = (groupMemberships ?? []).map((row) => row.group_id);
+  if (groupIds.length > 0) {
+    const { data: groupAccess } = await supabase.from("user_group_app_access").select("app_id").in("group_id", groupIds);
+    for (const row of groupAccess ?? []) grantedIds.add(row.app_id);
+  }
 
   return apps.map((app) => ({ ...app, hasAccess: grantedIds.has(app.id) }));
 }
