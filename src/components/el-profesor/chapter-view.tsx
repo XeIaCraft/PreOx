@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { FicheViewer } from "@/components/el-profesor/fiche-viewer";
-import { PdfViewer, type PdfHighlight } from "@/components/el-profesor/pdf-viewer";
+import { PdfViewer, type PdfHighlight, type CoverageEntry } from "@/components/el-profesor/pdf-viewer";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
 import type { Citation } from "@/lib/el-profesor/types";
@@ -36,9 +36,22 @@ export function ChapterView({
 
   const selected = withFiche.find((s) => s.id === selectedId) ?? null;
 
+  const coverage = useMemo<CoverageEntry[]>(() => {
+    const entries: CoverageEntry[] = [];
+    for (const sub of withFiche) {
+      for (const block of sub.fiche!.blocks) {
+        for (const c of block.citations) entries.push({ page: c.page, quote: c.quote, kind: "block" });
+      }
+      for (const card of sub.fiche!.flashcards) {
+        for (const c of card.citations) entries.push({ page: c.page, quote: c.quote, kind: "flashcard" });
+      }
+    }
+    return entries;
+  }, [withFiche]);
+
   function handleCitationClick(citation: Citation) {
     setHighlight({ page: citation.page, quote: citation.quote });
-    // On phones there's no room for a persistent PDF panel — jump straight
+    // Below lg there's no room for a persistent PDF panel — jump straight
     // into the source instead of leaving the user to find a "voir le PDF" button.
     if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
       setPdfModalOpen(true);
@@ -46,7 +59,7 @@ export function ChapterView({
   }
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col px-4 py-4 sm:px-6 lg:h-[calc(100vh-4rem)]">
+    <div className="mx-auto flex max-w-7xl flex-col px-4 py-4 sm:px-6 md:h-[calc(100vh-4rem)]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Link href="/apps/el-profesor">
@@ -56,7 +69,7 @@ export function ChapterView({
           </Link>
           <h1 className="font-serif-display text-lg font-medium text-foreground">{chapterTitle}</h1>
         </div>
-        <Button variant="secondary" size="sm" className="lg:hidden" onClick={() => setPdfModalOpen(true)}>
+        <Button variant="secondary" size="sm" className="md:hidden" onClick={() => setPdfModalOpen(true)}>
           <FileText className="h-3.5 w-3.5" /> PDF
         </Button>
       </div>
@@ -79,23 +92,36 @@ export function ChapterView({
           ))}
         </div>
 
-        <div className="lg:overflow-y-auto lg:rounded-[var(--radius-lg)] lg:border lg:border-border lg:bg-surface lg:p-5">
-          {selected?.fiche ? (
-            <FicheViewer title={selected.fiche.title} blocks={selected.fiche.blocks} onCitationClick={handleCitationClick} />
-          ) : (
-            <p className="text-sm text-foreground-subtle">Sélectionnez une entrée.</p>
-          )}
-        </div>
+        {/* Content + PDF: side by side from the md (tablet) breakpoint up, so
+            tablets get a real reading view instead of inheriting the mobile
+            stack or squeezing into the desktop's 3-column layout. */}
+        <div className="min-h-0 gap-4 md:grid md:grid-cols-2 lg:contents">
+          <div className="min-h-0 rounded-[var(--radius-lg)] border border-border bg-surface p-5 md:overflow-y-auto lg:overflow-y-auto">
+            {selected?.fiche ? (
+              <FicheViewer title={selected.fiche.title} blocks={selected.fiche.blocks} onCitationClick={handleCitationClick} />
+            ) : (
+              <p className="text-sm text-foreground-subtle">Sélectionnez une entrée.</p>
+            )}
+          </div>
 
-        <div className="hidden overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface lg:block">
-          {pdfUrl ? <PdfViewer url={pdfUrl} highlight={highlight} /> : <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>}
+          <div className="hidden min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface md:block">
+            {pdfUrl ? (
+              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} />
+            ) : (
+              <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
+            )}
+          </div>
         </div>
       </div>
 
       {pdfModalOpen && (
         <Modal title="Document source" onClose={() => setPdfModalOpen(false)} size="xl">
           <div className="-m-4 h-[75vh]">
-            {pdfUrl ? <PdfViewer url={pdfUrl} highlight={highlight} /> : <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>}
+            {pdfUrl ? (
+              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} />
+            ) : (
+              <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
+            )}
           </div>
         </Modal>
       )}

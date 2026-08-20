@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, FileText, PartyPopper } from "lucide-react";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Modal } from "@/components/ui/modal";
-import { PdfViewer, type PdfHighlight } from "@/components/el-profesor/pdf-viewer";
+import { PdfViewer, type PdfHighlight, type CoverageEntry } from "@/components/el-profesor/pdf-viewer";
 import { BlockEditor } from "@/components/el-profesor/block-editor";
 import { FlashcardEditor } from "@/components/el-profesor/flashcard-editor";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
@@ -50,6 +50,19 @@ export function ExtractionReviewView({
     (sum, s) => sum + (s.fiche!.blocks.filter((b) => b.needsReview).length + s.fiche!.flashcards.filter((c) => c.needsReview).length),
     0
   );
+
+  const coverage = useMemo<CoverageEntry[]>(() => {
+    const entries: CoverageEntry[] = [];
+    for (const sub of withFiche) {
+      for (const block of sub.fiche!.blocks) {
+        for (const c of block.citations) entries.push({ page: c.page, quote: c.quote, kind: "block" });
+      }
+      for (const card of sub.fiche!.flashcards) {
+        for (const c of card.citations) entries.push({ page: c.page, quote: c.quote, kind: "flashcard" });
+      }
+    }
+    return entries;
+  }, [withFiche]);
 
   // Falls back to the list's first item when the current selection drops out
   // of view (e.g. toggling the filter on while a now-hidden entry is selected).
@@ -100,7 +113,7 @@ export function ExtractionReviewView({
   }
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col px-4 py-4 sm:px-6 lg:h-[calc(100vh-4rem)]">
+    <div className="mx-auto flex max-w-7xl flex-col px-4 py-4 sm:px-6 md:h-[calc(100vh-4rem)]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Link href="/apps/el-profesor">
@@ -111,7 +124,7 @@ export function ExtractionReviewView({
           <h1 className="font-serif-display text-base font-medium text-foreground sm:text-lg">Relecture — {chapterTitle}</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" className="lg:hidden" onClick={() => setPdfModalOpen(true)}>
+          <Button variant="secondary" size="sm" className="md:hidden" onClick={() => setPdfModalOpen(true)}>
             <FileText className="h-3.5 w-3.5" />
           </Button>
           <Button size="sm" onClick={handleFinalize} disabled={isPending}>
@@ -155,69 +168,79 @@ export function ExtractionReviewView({
           })}
         </div>
 
-        <div className="lg:overflow-y-auto lg:rounded-[var(--radius-lg)] lg:border lg:border-border lg:bg-surface lg:p-4">
-          {selected?.fiche ? (
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="font-serif-display text-lg font-medium text-foreground">{selected.fiche.title}</h2>
-                {selectedHasDraftContent && (
-                  <Button size="sm" onClick={() => handlePublishFiche(selected.fiche!.id)} disabled={isPending}>
-                    {selected.fiche.status === "published" ? "Publier les compléments" : "Publier cette fiche"}
-                  </Button>
+        <div className="min-h-0 gap-4 md:grid md:grid-cols-2 lg:contents">
+          <div className="min-h-0 rounded-[var(--radius-lg)] border border-border bg-surface p-4 md:overflow-y-auto lg:overflow-y-auto">
+            {selected?.fiche ? (
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-serif-display text-lg font-medium text-foreground">{selected.fiche.title}</h2>
+                  {selectedHasDraftContent && (
+                    <Button size="sm" onClick={() => handlePublishFiche(selected.fiche!.id)} disabled={isPending}>
+                      {selected.fiche.status === "published" ? "Publier les compléments" : "Publier cette fiche"}
+                    </Button>
+                  )}
+                </div>
+
+                {onlyFlagged && visibleBlocks.length === 0 && visibleFlashcards.length === 0 ? (
+                  <p className="mt-4 flex items-center gap-2 text-sm text-foreground-subtle">
+                    <PartyPopper className="h-4 w-4" /> Rien à vérifier sur cette fiche.
+                  </p>
+                ) : (
+                  <>
+                    <div className="mt-3 space-y-3">
+                      {visibleBlocks.map((block, i) => (
+                        <BlockEditor
+                          key={block.id}
+                          block={block}
+                          onChanged={refresh}
+                          onCitationClick={handleCitationClick}
+                          reorder={onlyFlagged ? undefined : { isFirst: i === 0, isLast: i === visibleBlocks.length - 1 }}
+                          flags={flagsByTarget[block.id]}
+                        />
+                      ))}
+                    </div>
+
+                    <h3 className="mt-5 text-sm font-medium text-foreground">Flashcards</h3>
+                    <div className="mt-2 space-y-3">
+                      {visibleFlashcards.map((card) => (
+                        <FlashcardEditor
+                          key={card.id}
+                          flashcard={card}
+                          onChanged={refresh}
+                          onCitationClick={handleCitationClick}
+                          flags={flagsByTarget[card.id]}
+                        />
+                      ))}
+                      {visibleFlashcards.length === 0 && (
+                        <p className="text-sm text-foreground-subtle">Aucune flashcard générée pour cette fiche.</p>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
+            ) : (
+              <p className="text-sm text-foreground-subtle">Sélectionnez une entrée.</p>
+            )}
+          </div>
 
-              {onlyFlagged && visibleBlocks.length === 0 && visibleFlashcards.length === 0 ? (
-                <p className="mt-4 flex items-center gap-2 text-sm text-foreground-subtle">
-                  <PartyPopper className="h-4 w-4" /> Rien à vérifier sur cette fiche.
-                </p>
-              ) : (
-                <>
-                  <div className="mt-3 space-y-3">
-                    {visibleBlocks.map((block, i) => (
-                      <BlockEditor
-                        key={block.id}
-                        block={block}
-                        onChanged={refresh}
-                        onCitationClick={handleCitationClick}
-                        reorder={onlyFlagged ? undefined : { isFirst: i === 0, isLast: i === visibleBlocks.length - 1 }}
-                        flags={flagsByTarget[block.id]}
-                      />
-                    ))}
-                  </div>
-
-                  <h3 className="mt-5 text-sm font-medium text-foreground">Flashcards</h3>
-                  <div className="mt-2 space-y-3">
-                    {visibleFlashcards.map((card) => (
-                      <FlashcardEditor
-                        key={card.id}
-                        flashcard={card}
-                        onChanged={refresh}
-                        onCitationClick={handleCitationClick}
-                        flags={flagsByTarget[card.id]}
-                      />
-                    ))}
-                    {visibleFlashcards.length === 0 && (
-                      <p className="text-sm text-foreground-subtle">Aucune flashcard générée pour cette fiche.</p>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-foreground-subtle">Sélectionnez une entrée.</p>
-          )}
-        </div>
-
-        <div className="hidden overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface lg:block">
-          {pdfUrl ? <PdfViewer url={pdfUrl} highlight={highlight} /> : <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>}
+          <div className="hidden min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface md:block">
+            {pdfUrl ? (
+              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} />
+            ) : (
+              <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
+            )}
+          </div>
         </div>
       </div>
 
       {pdfModalOpen && (
         <Modal title="Document source" onClose={() => setPdfModalOpen(false)} size="xl">
           <div className="-m-4 h-[75vh]">
-            {pdfUrl ? <PdfViewer url={pdfUrl} highlight={highlight} /> : <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>}
+            {pdfUrl ? (
+              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} />
+            ) : (
+              <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
+            )}
           </div>
         </Modal>
       )}
