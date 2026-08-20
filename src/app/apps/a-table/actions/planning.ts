@@ -50,6 +50,45 @@ export async function moveMealCard(cardId: string, placement: Placement): Promis
   return { success: "" };
 }
 
+export async function duplicateMealCard(cardId: string, placement: Placement): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  if (!PLACEMENTS.includes(placement)) return { error: "Emplacement invalide." };
+
+  const supabase = await createClient();
+  const { data: card } = await supabase
+    .from("a_table_meal_cards")
+    .select("recipe_id, servings")
+    .eq("id", cardId)
+    .eq("user_id", profile.id)
+    .eq("status", "active")
+    .single();
+
+  if (!card) return { error: "Carte introuvable." };
+
+  const { data: existing } = await supabase
+    .from("a_table_meal_cards")
+    .select("position")
+    .eq("user_id", profile.id)
+    .eq("placement", placement)
+    .eq("status", "active")
+    .order("position", { ascending: false })
+    .limit(1);
+  const position = (existing?.[0]?.position ?? -1) + 1;
+
+  const { error } = await supabase.from("a_table_meal_cards").insert({
+    user_id: profile.id,
+    recipe_id: card.recipe_id,
+    placement,
+    position,
+    servings: card.servings,
+  });
+
+  if (error) return { error: "Impossible de dupliquer la carte." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "Carte dupliquée." };
+}
+
 export async function updateMealCardServings(cardId: string, servings: number): Promise<ActionState> {
   const profile = await requireATableAccess();
   if (!Number.isFinite(servings) || servings < 1) return { error: "Nombre de portions invalide." };
@@ -68,9 +107,22 @@ export async function updateMealCardServings(cardId: string, servings: number): 
   return { success: "" };
 }
 
-export async function clearWeek(): Promise<ActionState> {
+export interface ClearedCardPlacement {
+  id: string;
+  placement: Placement;
+  position: number;
+}
+
+export async function clearWeek(): Promise<ActionState & { cleared?: ClearedCardPlacement[] }> {
   const profile = await requireATableAccess();
   const supabase = await createClient();
+
+  const { data: toClear } = await supabase
+    .from("a_table_meal_cards")
+    .select("id, placement, position")
+    .eq("user_id", profile.id)
+    .eq("status", "active")
+    .in("placement", WEEKDAY_PLACEMENTS);
 
   const { error } = await supabase
     .from("a_table_meal_cards")
@@ -82,7 +134,27 @@ export async function clearWeek(): Promise<ActionState> {
   if (error) return { error: "Impossible de vider la semaine." };
 
   revalidatePath("/apps/a-table");
-  return { success: "Semaine vidée — les cartes sont repassées dans « À cuisiner »." };
+  return {
+    success: "Semaine vidée — les cartes sont repassées dans « À cuisiner ».",
+    cleared: (toClear ?? []) as ClearedCardPlacement[],
+  };
+}
+
+export async function restoreWeekPlacements(cleared: ClearedCardPlacement[]): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  for (const entry of cleared) {
+    await supabase
+      .from("a_table_meal_cards")
+      .update({ placement: entry.placement, position: entry.position })
+      .eq("id", entry.id)
+      .eq("user_id", profile.id)
+      .eq("status", "active");
+  }
+
+  revalidatePath("/apps/a-table");
+  return { success: "Semaine restaurée." };
 }
 
 /** Sequential steps rather than a single DB transaction — see plan's noted simplification. */

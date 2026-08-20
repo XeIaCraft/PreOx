@@ -48,7 +48,12 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
       if (r.is_archived !== showArchived) return false;
       if (favoritesOnly && !r.is_favorite) return false;
       if (activeTag && !r.tags.includes(activeTag)) return false;
-      if (search && !r.title.toLowerCase().includes(search.toLowerCase())) return false;
+      if (search) {
+        const term = search.toLowerCase();
+        const matchesTitle = r.title.toLowerCase().includes(term);
+        const matchesIngredient = r.ingredients.some((i) => i.name.toLowerCase().includes(term));
+        if (!matchesTitle && !matchesIngredient) return false;
+      }
       return true;
     });
     return result.sort((a, b) => {
@@ -101,7 +106,7 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-subtle" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher…" className="pl-9" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Titre ou ingrédient…" className="pl-9" />
         </div>
         <button
           type="button"

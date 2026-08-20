@@ -7,6 +7,7 @@ import { callGemini, GeminiError, validStepLabels } from "@/lib/a-table/gemini";
 import { searchPexelsImage, PexelsError } from "@/lib/a-table/pexels";
 import { getDecryptedGeminiConfig, getDecryptedPexelsKey } from "@/lib/a-table/ai-config";
 import { buildImportInstructions, buildRefineInstructions } from "@/lib/a-table/prompts";
+import { uploadRecipePhoto as uploadRecipePhotoToStorage } from "@/lib/a-table/storage";
 import type { Ingredient, Nutrition } from "@/lib/a-table/types";
 import type { Json } from "@/lib/supabase/types";
 
@@ -180,6 +181,31 @@ export async function duplicateRecipe(recipeId: string): Promise<ActionState> {
 
   revalidatePath("/apps/a-table");
   return { success: "Recette dupliquée dans « Mes recettes »." };
+}
+
+export async function uploadRecipePhoto(recipeId: string, imageBase64: string, mimeType: string): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const { data: recipe } = await supabase.from("a_table_recipes").select("id").eq("id", recipeId).eq("user_id", profile.id).single();
+  if (!recipe) return { error: "Recette introuvable." };
+
+  let imageUrl: string;
+  try {
+    imageUrl = await uploadRecipePhotoToStorage(profile.id, recipeId, Buffer.from(imageBase64, "base64"), mimeType);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Échec de l'envoi de la photo." };
+  }
+
+  const { error } = await supabase
+    .from("a_table_recipes")
+    .update({ image_url: imageUrl, image_status: "found" })
+    .eq("id", recipeId)
+    .eq("user_id", profile.id);
+  if (error) return { error: "Photo envoyée, mais impossible de l'enregistrer." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "Photo ajoutée." };
 }
 
 export async function fetchRecipeImage(recipeId: string): Promise<ActionState> {

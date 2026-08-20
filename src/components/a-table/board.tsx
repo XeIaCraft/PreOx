@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ShoppingBasket, BookOpen, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle } from "lucide-react";
+import { ShoppingBasket, BookOpen, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
 import { A_TABLE_ONBOARDING_STEPS } from "@/components/a-table/onboarding-steps";
@@ -31,10 +31,14 @@ import {
   removeMealCard,
   addRecipeToBacklog,
   updateMealCardServings,
+  duplicateMealCard,
   clearWeek,
+  restoreWeekPlacements,
 } from "@/app/apps/a-table/actions/planning";
 import { generateDraft } from "@/app/apps/a-table/actions/drafts";
 import { removeTemporaryIngredient } from "@/app/apps/a-table/actions/temp_ingredients";
+import { scaleFactor } from "@/lib/a-table/shopping";
+import { buildWeekIcs } from "@/lib/a-table/ics";
 import type { ATableData, Placement, TemporaryIngredient } from "@/lib/a-table/types";
 
 type ModalState =
@@ -74,6 +78,27 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
     for (const r of data.recipes) for (const tag of r.tags) tags.add(tag);
     return [...tags].sort((a, b) => a.localeCompare(b));
   }, [data.recipes]);
+  const weekTotals = useMemo(() => {
+    let kcal = 0;
+    let cost = 0;
+    let hasKcal = false;
+    let hasCost = false;
+    for (const card of data.mealCards) {
+      if (card.status !== "active" || !WEEKDAY_PLACEMENTS.includes(card.placement)) continue;
+      const recipe = recipesById.get(card.recipe_id);
+      if (!recipe) continue;
+      const factor = scaleFactor(recipe.servings, card.servings || recipe.servings, data.settings.preferences.appetite);
+      if (recipe.nutrition.kcal != null) {
+        kcal += recipe.nutrition.kcal * factor;
+        hasKcal = true;
+      }
+      if (recipe.price_per_serving != null) {
+        cost += recipe.price_per_serving * (card.servings || recipe.servings);
+        hasCost = true;
+      }
+    }
+    return { kcal: Math.round(kcal), cost, hasKcal, hasCost };
+  }, [data.mealCards, data.settings.preferences.appetite, recipesById]);
   const activeCards = useMemo(() => data.mealCards.filter((c) => c.status === "active"), [data.mealCards]);
   const backlogCards = useMemo(
     () => activeCards.filter((c) => c.placement === "backlog").sort((a, b) => a.position - b.position),
@@ -134,6 +159,31 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
     });
   }
 
+  function handlePrintWeek() {
+    window.print();
+  }
+
+  function handleExportIcs() {
+    const ics = buildWeekIcs(activeCards, recipesById);
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "menu-semaine.ics";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  function handleDuplicateCard(cardId: string) {
+    startTransition(async () => {
+      const result = await duplicateMealCard(cardId, "backlog");
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "", { variant: "success" });
+        refresh();
+      }
+    });
+  }
+
   function handleServingsChange(cardId: string, servings: number) {
     startTransition(async () => {
       const result = await updateMealCardServings(cardId, servings);
@@ -145,11 +195,20 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
   function handleClearWeek() {
     startTransition(async () => {
       const result = await clearWeek();
-      if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "", { variant: "success" });
-        refresh();
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
       }
+      refresh();
+      toast(result.success ?? "", {
+        actionLabel: "Annuler",
+        onAction: () => {
+          startTransition(async () => {
+            await restoreWeekPlacements(result.cleared ?? []);
+            refresh();
+          });
+        },
+      });
     });
   }
 
@@ -260,15 +319,61 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-foreground-muted">Semaine</p>
-        {activeCards.some((c) => WEEKDAY_PLACEMENTS.includes(c.placement)) && (
-          <button type="button" onClick={handleClearWeek} disabled={isPending} className="text-xs text-foreground-subtle underline hover:text-foreground">
-            Vider la semaine
-          </button>
-        )}
+      <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
+        <div className="flex items-center gap-3">
+          <p className="text-sm font-medium text-foreground-muted">Semaine</p>
+          {(weekTotals.hasKcal || weekTotals.hasCost) && (
+            <p className="text-xs text-foreground-subtle">
+              {weekTotals.hasKcal && `${weekTotals.kcal} kcal`}
+              {weekTotals.hasKcal && weekTotals.hasCost && " · "}
+              {weekTotals.hasCost && `${weekTotals.cost.toFixed(2)} €`}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          {activeCards.some((c) => WEEKDAY_PLACEMENTS.includes(c.placement)) && (
+            <>
+              <button type="button" onClick={handleExportIcs} className="flex items-center gap-1 text-xs text-foreground-subtle hover:text-foreground">
+                <CalendarPlus className="h-3.5 w-3.5" /> Calendrier
+              </button>
+              <button type="button" onClick={handlePrintWeek} className="flex items-center gap-1 text-xs text-foreground-subtle hover:text-foreground">
+                <Printer className="h-3.5 w-3.5" /> Imprimer
+              </button>
+              <button type="button" onClick={handleClearWeek} disabled={isPending} className="text-xs text-foreground-subtle underline hover:text-foreground">
+                Vider la semaine
+              </button>
+            </>
+          )}
+        </div>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
+
+      <div className="print-area hidden print:block">
+        <h1 className="mb-4 font-serif-display text-xl font-medium text-foreground">Menu de la semaine</h1>
+        {WEEKDAY_PLACEMENTS.map((placement) => {
+          const dayCards = activeCards.filter((c) => c.placement === placement);
+          return (
+            <div key={placement} className="mb-3">
+              <p className="font-semibold text-foreground">{DAY_LABELS[placement]}</p>
+              {dayCards.length === 0 ? (
+                <p className="text-sm text-foreground-subtle">—</p>
+              ) : (
+                <ul className="ml-4 list-disc">
+                  {dayCards.map((card) => {
+                    const recipe = recipesById.get(card.recipe_id);
+                    return (
+                      <li key={card.id} className="text-sm text-foreground-muted">
+                        {recipe?.title ?? "Recette supprimée"} ({card.servings} pers.)
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7 print:hidden">
         {WEEKDAY_PLACEMENTS.map((placement) => (
           <DayColumn
             key={placement}
@@ -283,6 +388,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
             onRemove={handleRemove}
             onMove={handleMove}
             onServingsChange={handleServingsChange}
+            onDuplicate={handleDuplicateCard}
           />
         ))}
       </div>

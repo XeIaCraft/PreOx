@@ -17,6 +17,7 @@ interface DayColumnProps {
   onRemove: (cardId: string) => void;
   onMove: (cardId: string, placement: Placement) => void;
   onServingsChange?: (cardId: string, servings: number) => void;
+  onDuplicate?: (cardId: string) => void;
 }
 
 export function DayColumn({
@@ -31,6 +32,7 @@ export function DayColumn({
   onRemove,
   onMove,
   onServingsChange,
+  onDuplicate,
 }: DayColumnProps) {
   const [over, setOver] = useState(false);
 
@@ -75,6 +77,7 @@ export function DayColumn({
               onRemove={() => onRemove(card.id)}
               onMove={(p) => onMove(card.id, p)}
               onServingsChange={onServingsChange ? (s) => onServingsChange(card.id, s) : undefined}
+              onDuplicate={onDuplicate ? () => onDuplicate(card.id) : undefined}
             />
           );
         })

@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import Image from "next/image";
-import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy, Minus, Plus } from "lucide-react";
+import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy, Minus, Plus, Upload } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { Button } from "@/components/ui/button";
-import { toggleFavorite, fetchRecipeImage, refineRecipe, duplicateRecipe } from "@/app/apps/a-table/actions/recipes";
+import { toggleFavorite, fetchRecipeImage, refineRecipe, duplicateRecipe, uploadRecipePhoto } from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
 import { scaleFactor } from "@/lib/a-table/shopping";
+import { fileToBase64 } from "@/lib/a-table/client-file";
 import type { Appetite, Recipe } from "@/lib/a-table/types";
+
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
 interface RecipeDetailDialogProps {
   recipe: Recipe;
@@ -24,6 +27,8 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [previewServings, setPreviewServings] = useState(servings);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const factor = scaleFactor(recipe.servings, previewServings, appetite);
 
   function handleFavorite() {
@@ -40,6 +45,27 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
       if (result.error) toast(result.error, { variant: "error" });
       else onSaved();
     });
+  }
+
+  function handlePhotoSelected(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast("Seules les images sont acceptées.", { variant: "error" });
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      toast("Photo trop lourde (8 Mo maximum).", { variant: "error" });
+      return;
+    }
+    setUploadingPhoto(true);
+    fileToBase64(file)
+      .then((base64) => uploadRecipePhoto(recipe.id, base64, file.type))
+      .then((result) => {
+        if (result.error) toast(result.error, { variant: "error" });
+        else onSaved();
+      })
+      .catch(() => toast("Échec de l'envoi de la photo.", { variant: "error" }))
+      .finally(() => setUploadingPhoto(false));
   }
 
   function handleDuplicate() {
@@ -70,6 +96,20 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
         <Button variant="secondary" size="sm" onClick={handleFetchImage} disabled={isPending}>
           <ImageIcon className="h-4 w-4" />
           Illustrer
+        </Button>
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            handlePhotoSelected(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+        <Button variant="secondary" size="sm" onClick={() => photoInputRef.current?.click()} disabled={uploadingPhoto}>
+          <Upload className="h-4 w-4" />
+          {uploadingPhoto ? "Envoi…" : "Ma photo"}
         </Button>
         <Button variant="secondary" size="sm" onClick={handleDuplicate} disabled={isPending}>
           <Copy className="h-4 w-4" />

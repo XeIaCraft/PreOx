@@ -7,6 +7,7 @@ import { Input, Label } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { addRecipe, importRecipe } from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
+import { fileToBase64 } from "@/lib/a-table/client-file";
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
@@ -14,18 +15,6 @@ interface AddRecipeDialogProps {
   existingTags?: string[];
   onClose: () => void;
   onSaved: () => void;
-}
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result.split(",")[1] ?? "");
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }
 
 export function AddRecipeDialog({ existingTags, onClose, onSaved }: AddRecipeDialogProps) {

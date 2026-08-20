@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Star, Trash2, CheckCircle2, GripVertical, Clock, Minus, Plus } from "lucide-react";
+import { Star, Trash2, CheckCircle2, GripVertical, Clock, Minus, Plus, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select } from "@/components/ui/input";
 import { DAY_LABELS, PLACEMENTS } from "@/lib/a-table/constants";
@@ -32,10 +32,11 @@ interface MealCardProps {
   onRemove: () => void;
   onMove: (placement: Placement) => void;
   onServingsChange?: (servings: number) => void;
+  onDuplicate?: () => void;
   isPending?: boolean;
 }
 
-export function MealCard({ card, recipe, onOpenDetail, onCook, onRemove, onMove, onServingsChange, isPending }: MealCardProps) {
+export function MealCard({ card, recipe, onOpenDetail, onCook, onRemove, onMove, onServingsChange, onDuplicate, isPending }: MealCardProps) {
   const [dragging, setDragging] = useState(false);
   const swatch = SWATCHES[categoryFor(recipe.tags)];
 
@@ -123,6 +124,17 @@ export function MealCard({ card, recipe, onOpenDetail, onCook, onRemove, onMove,
             </option>
           ))}
         </Select>
+        {onDuplicate && (
+          <button
+            type="button"
+            onClick={onDuplicate}
+            disabled={isPending}
+            title="Dupliquer vers « À cuisiner »"
+            className="rounded p-1 text-foreground-subtle hover:bg-surface-muted"
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onCook}
