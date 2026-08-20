@@ -6,6 +6,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireProfile } from "@/lib/auth/dal";
 import { getAppBySlugForProfile } from "@/lib/apps";
 import { EL_PROFESOR_GEMINI_MODEL_DEFAULT } from "./gemini";
+import { decryptSecret } from "@/lib/crypto";
+import { GeminiError } from "@/lib/gemini-shared";
 import type { Profile } from "@/lib/supabase/types";
 import type {
   Book,
@@ -912,4 +914,38 @@ export async function getElProfesorGeminiModel(): Promise<string> {
   const supabase = await createClient();
   const { data } = await supabase.from("el_profesor_settings").select("gemini_model").eq("id", true).single();
   return data?.gemini_model || EL_PROFESOR_GEMINI_MODEL_DEFAULT;
+}
+
+/** Whether an admin has configured the Gemini key from the settings UI — safe to expose to any user, unlike the key itself. */
+export async function hasElProfesorGeminiKey(): Promise<boolean> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_secrets").select("gemini_api_key_encrypted").eq("id", true).maybeSingle();
+  return Boolean(data?.gemini_api_key_encrypted);
+}
+
+/**
+ * Decrypted Gemini key + model in one call — every extraction/proposal
+ * action needs both together. Uses the service-role client: the key table
+ * is admin-write/admin-read RLS (see 20260101000019), but reading the
+ * *decrypted* key server-side to call Gemini on behalf of a non-admin user
+ * (e.g. "select passage -> generate") is exactly the trusted-server-action
+ * pattern already used elsewhere (`toggleFicheShare`, `proposeFromSelection`'s
+ * insert) — the caller's own access was already checked by
+ * `requireElProfesorAccess()` before this is reached.
+ */
+export async function getElProfesorGeminiConfig(): Promise<{ apiKey: string; model: string }> {
+  const admin = createAdminClient();
+  const [{ data: settings }, { data: secrets }] = await Promise.all([
+    admin.from("el_profesor_settings").select("gemini_model").eq("id", true).maybeSingle(),
+    admin.from("el_profesor_secrets").select("gemini_api_key_encrypted").eq("id", true).maybeSingle(),
+  ]);
+
+  if (!secrets?.gemini_api_key_encrypted) {
+    throw new GeminiError("Clé API Gemini non configurée. Un administrateur doit la renseigner dans les réglages d'El Profesor.");
+  }
+
+  return {
+    apiKey: decryptSecret(secrets.gemini_api_key_encrypted),
+    model: settings?.gemini_model || EL_PROFESOR_GEMINI_MODEL_DEFAULT,
+  };
 }

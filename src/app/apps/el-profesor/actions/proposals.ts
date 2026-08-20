@@ -1,10 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireElProfesorAccess, getElProfesorGeminiModel } from "@/lib/el-profesor/dal";
+import { requireElProfesorAccess, getElProfesorGeminiConfig } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getElProfesorGeminiApiKey } from "@/lib/supabase/env";
 import { generateFromSelection } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
 import type { BlockContent, Citation, FlashcardSide } from "@/lib/el-profesor/types";
@@ -47,8 +46,7 @@ export async function proposeFromSelection(
   if (trimmedQuote.length < 10) return { error: "Sélectionne un passage un peu plus long." };
 
   try {
-    const apiKey = getElProfesorGeminiApiKey();
-    const model = await getElProfesorGeminiModel();
+    const { apiKey, model } = await getElProfesorGeminiConfig();
     const result = await generateFromSelection(apiKey, model, subEntity.name, chapterTitle, page, trimmedQuote);
 
     const admin = createAdminClient();

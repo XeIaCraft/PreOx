@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
-import { decryptSecret } from "./crypto";
+import { decryptSecret } from "@/lib/crypto";
 
 export interface GeminiConfig {
   apiKey: string;

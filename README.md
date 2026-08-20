@@ -205,19 +205,21 @@ NEXT_PUBLIC_SUPABASE_URL=https://votre-projet.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=votre-cle-anon-ou-publishable
 SUPABASE_SERVICE_ROLE_KEY=votre-cle-service-role
 A_TABLE_ENCRYPTION_KEY=$(openssl rand -base64 32)
-EL_PROFESOR_GEMINI_API_KEY=votre-cle-gemini
 # Optionnel en local, recommandé en production :
 # NEXT_PUBLIC_SITE_URL=https://votre-domaine.vercel.app
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY`, `A_TABLE_ENCRYPTION_KEY` et
-`EL_PROFESOR_GEMINI_API_KEY` sont **secrètes** : jamais préfixées par
-`NEXT_PUBLIC_`, utilisées uniquement côté serveur (la première pour les
-Server Actions d'administration — invitation, suppression d'utilisateurs ;
-la deuxième pour chiffrer/déchiffrer les clés API Gemini et Pexels de
-chaque utilisateur du module « À table » ; la troisième pour le pipeline
-d'extraction admin du module « El Profesor », voir plus bas). Ne les
-commitez jamais.
+`SUPABASE_SERVICE_ROLE_KEY` et `A_TABLE_ENCRYPTION_KEY` sont **secrètes** :
+jamais préfixées par `NEXT_PUBLIC_`, utilisées uniquement côté serveur (la
+première pour les Server Actions d'administration — invitation, suppression
+d'utilisateurs ; la deuxième pour chiffrer/déchiffrer les clés API Gemini/
+Pexels de chaque utilisateur du module « À table », et la clé Gemini
+partagée du module « El Profesor », voir plus bas). Ne les commitez jamais.
+
+La clé API Gemini d'« El Profesor » ne se configure **pas** via une
+variable d'environnement : un admin la renseigne depuis l'application
+elle-même (bouton « Réglages IA » sur le tableau de bord du module), et
+elle est stockée chiffrée en base avec `A_TABLE_ENCRYPTION_KEY`.
 
 ## Lancement en local
 
@@ -248,7 +250,6 @@ npm run typecheck       # Vérification TypeScript
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `A_TABLE_ENCRYPTION_KEY`
-   - `EL_PROFESOR_GEMINI_API_KEY`
    - `NEXT_PUBLIC_SITE_URL` (l'URL finale de votre déploiement)
 4. Déployez. Aucune configuration `next.config.ts` supplémentaire n'est
    nécessaire.
@@ -379,9 +380,17 @@ puis génère une URL signée à courte durée de vie.
 
 **Clé Gemini** : contrairement à « À table », l'extraction est une action
 admin sur une bibliothèque partagée, pas une génération personnalisée par
-utilisateur — une seule clé serveur (`EL_PROFESOR_GEMINI_API_KEY`, gratuite
-sur [Google AI Studio](https://aistudio.google.com/apikey)) suffit, pas de
-clé par utilisateur ni de chiffrement à gérer.
+utilisateur — une seule clé serveur suffit, pas de clé par utilisateur.
+Elle se configure depuis l'application (bouton « Réglages IA » sur le
+tableau de bord du module, réservé aux admins) et non via une variable
+d'environnement — clé gratuite sur
+[Google AI Studio](https://aistudio.google.com/apikey). Elle est chiffrée
+at-rest (AES-256-GCM, même mécanisme que les clés d'« À table » ci-dessus)
+avec `A_TABLE_ENCRYPTION_KEY`, dans une table dédiée (`el_profesor_secrets`)
+dont la RLS n'autorise que les admins à la lire ou l'écrire — le modèle
+(`el_profesor_settings.gemini_model`), lui, reste lisible par tout
+utilisateur du module puisqu'il en a besoin pour l'action « proposer depuis
+une sélection ».
 
 ## Sécurité
 

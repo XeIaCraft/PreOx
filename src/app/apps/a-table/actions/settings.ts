@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireATableAccess } from "@/lib/a-table/dal";
 import { createClient } from "@/lib/supabase/server";
-import { encryptSecret } from "@/lib/a-table/crypto";
+import { encryptSecret } from "@/lib/crypto";
 import { callGemini, GeminiError } from "@/lib/a-table/gemini";
 import { getDecryptedGeminiConfig } from "@/lib/a-table/ai-config";
 import type { GenerationRules, Preferences } from "@/lib/a-table/types";

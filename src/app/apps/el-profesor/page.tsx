@@ -17,6 +17,7 @@ import {
   getStaleChaptersForAdmin,
   getReviewTimeStats,
   getFlagStatsByBlockType,
+  hasElProfesorGeminiKey,
 } from "@/lib/el-profesor/dal";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { ToastProvider } from "@/components/ui/toast";
@@ -46,6 +47,7 @@ export default async function ElProfesorPage() {
     staleChapters,
     reviewTimeStats,
     flagStatsByBlockType,
+    hasGeminiKey,
   ] = await Promise.all([
     getDueCountsByChapter(profile.id, allChapters),
     isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
@@ -63,6 +65,7 @@ export default async function ElProfesorPage() {
     isAdmin ? getStaleChaptersForAdmin(allChapters, rawBooks) : Promise.resolve([]),
     getReviewTimeStats(profile.id),
     isAdmin ? getFlagStatsByBlockType() : Promise.resolve([]),
+    isAdmin ? hasElProfesorGeminiKey() : Promise.resolve(false),
   ]);
 
   return (
@@ -87,6 +90,7 @@ export default async function ElProfesorPage() {
         staleChapters={staleChapters}
         reviewTimeStats={reviewTimeStats}
         flagStatsByBlockType={flagStatsByBlockType}
+        hasGeminiKey={hasGeminiKey}
       />
     </ToastProvider>
   );

@@ -188,6 +188,7 @@ export function ElProfesorBoard({
   staleChapters,
   reviewTimeStats,
   flagStatsByBlockType,
+  hasGeminiKey,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -208,6 +209,7 @@ export function ElProfesorBoard({
   staleChapters: StaleChapterAlert[];
   reviewTimeStats: { totalMs: number; last7DaysMs: number };
   flagStatsByBlockType: BlockTypeFlagStat[];
+  hasGeminiKey: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -413,10 +415,12 @@ export function ElProfesorBoard({
                 variant="ghost"
                 size="icon"
                 onClick={() => setModal({ type: "gemini_settings" })}
-                aria-label="Paramètres du modèle IA"
-                title="Paramètres du modèle IA"
+                aria-label={hasGeminiKey ? "Réglages IA (Gemini)" : "Réglages IA (Gemini) — clé API manquante"}
+                title={hasGeminiKey ? "Réglages IA (Gemini)" : "Clé API Gemini manquante — l'extraction échouera"}
+                className="relative"
               >
                 <Settings className="h-4 w-4" />
+                {!hasGeminiKey && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-danger" />}
               </Button>
               <Button onClick={() => setModal({ type: "add_book" })}>
                 <Plus className="h-4 w-4" /> Ajouter un livre
@@ -928,6 +932,7 @@ export function ElProfesorBoard({
       {modal?.type === "gemini_settings" && (
         <GeminiSettingsDialog
           currentModel={geminiModel ?? "gemini-flash-latest"}
+          hasApiKey={hasGeminiKey}
           onClose={() => {
             setModal(null);
             refresh();

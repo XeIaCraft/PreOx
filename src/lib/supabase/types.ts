@@ -307,6 +307,12 @@ export type ElProfesorSettingsRow = {
   updated_at: string;
 };
 
+export type ElProfesorSecretsRow = {
+  id: boolean;
+  gemini_api_key_encrypted: string | null;
+  updated_at: string;
+};
+
 export type ElProfesorBookmarkRow = {
   id: string;
   user_id: string;
@@ -478,6 +484,12 @@ export type Database = {
         Row: ElProfesorSettingsRow;
         Insert: Partial<ElProfesorSettingsRow>;
         Update: Partial<ElProfesorSettingsRow>;
+        Relationships: [];
+      };
+      el_profesor_secrets: {
+        Row: ElProfesorSecretsRow;
+        Insert: Partial<ElProfesorSecretsRow>;
+        Update: Partial<ElProfesorSecretsRow>;
         Relationships: [];
       };
       el_profesor_bookmarks: {

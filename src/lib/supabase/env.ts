@@ -21,7 +21,3 @@ export function getSupabasePublishableKey() {
 export function getSupabaseServiceRoleKey() {
   return required("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
-
-export function getElProfesorGeminiApiKey() {
-  return required("EL_PROFESOR_GEMINI_API_KEY", process.env.EL_PROFESOR_GEMINI_API_KEY);
-}

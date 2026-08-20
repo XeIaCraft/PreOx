@@ -3,10 +3,12 @@ import "server-only";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 /**
- * At-rest encryption for user-supplied third-party API keys (Gemini,
- * Pexels). AES-256-GCM with a server-only key — ciphertext is what ever
- * touches the database; plaintext only exists for the duration of a
- * Server Action, right before calling the external API.
+ * At-rest encryption for secrets stored in the database (per-user Gemini/
+ * Pexels keys in À table, the shared Gemini key in El Profesor). AES-256-GCM
+ * with a server-only key — ciphertext is what ever touches the database;
+ * plaintext only exists for the duration of a Server Action, right before
+ * calling the external API. Shared hub-wide despite the env var's name,
+ * which predates the second consumer.
  */
 
 function getKey(): Buffer {

@@ -1,10 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireElProfesorAdmin, getElProfesorGeminiModel } from "@/lib/el-profesor/dal";
+import { requireElProfesorAdmin, getElProfesorGeminiConfig } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
-import { getElProfesorGeminiApiKey } from "@/lib/supabase/env";
 import {
   uploadPdfToGemini,
   deleteGeminiFile,
@@ -58,10 +57,13 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
   await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
 
   let geminiFileName: string | null = null;
-  const apiKey = getElProfesorGeminiApiKey();
-  const model = await getElProfesorGeminiModel();
+  let apiKey = "";
 
   try {
+    const config = await getElProfesorGeminiConfig();
+    apiKey = config.apiKey;
+    const model = config.model;
+
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
     const file = await uploadPdfToGemini(apiKey, bytes, chapter.title);
     geminiFileName = file.name;
@@ -271,11 +273,14 @@ export async function extractChapterComplementary(chapterId: string): Promise<Ac
   const originalStatus = chapter.status;
   await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
 
-  const apiKey = getElProfesorGeminiApiKey();
-  const model = await getElProfesorGeminiModel();
   let geminiFileName: string | null = null;
+  let apiKey = "";
 
   try {
+    const config = await getElProfesorGeminiConfig();
+    apiKey = config.apiKey;
+    const model = config.model;
+
     const existingContent = await getChapterContent(chapterId, true);
     const coverageSummary = buildCoverageSummary(existingContent);
 
@@ -416,8 +421,7 @@ export async function suggestMnemonicForBlock(blockId: string): Promise<ActionSt
   if (!sourceText.trim()) return { error: "Ce bloc n'a pas assez de contenu pour en tirer un moyen mnémotechnique." };
 
   try {
-    const apiKey = getElProfesorGeminiApiKey();
-    const model = await getElProfesorGeminiModel();
+    const { apiKey, model } = await getElProfesorGeminiConfig();
     const result = await generateMnemonic(apiKey, model, subEntity?.name ?? "", sourceText);
 
     const { count } = await supabase.from("el_profesor_fiche_blocks").select("id", { count: "exact", head: true }).eq("fiche_id", block.fiche_id);
