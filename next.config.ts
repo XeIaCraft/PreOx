@@ -10,6 +10,15 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "images.pexels.com",
       },
+      // User-uploaded recipe photos and avatars, served from Supabase's
+      // public storage buckets — wildcarded since the project ref varies
+      // per deployment and next.config.ts can't reliably read .env at
+      // config-eval time.
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
     ],
   },
   async headers() {

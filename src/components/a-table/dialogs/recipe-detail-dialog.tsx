@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { toggleFavorite, fetchRecipeImage, refineRecipe, duplicateRecipe, uploadRecipePhoto } from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
 import { scaleFactor } from "@/lib/a-table/shopping";
-import { fileToBase64 } from "@/lib/a-table/client-file";
+import { fileToBase64 } from "@/lib/client-file";
 import type { Appetite, Recipe } from "@/lib/a-table/types";
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;

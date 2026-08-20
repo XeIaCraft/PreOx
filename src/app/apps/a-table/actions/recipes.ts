@@ -80,6 +80,28 @@ export async function addRecipe(input: AddRecipeInput): Promise<ActionState> {
   return { success: "Recette ajoutée à « À cuisiner »." };
 }
 
+export interface RecipeSearchResult {
+  id: string;
+  title: string;
+}
+
+/** Quick title-only match for the hub-wide search box on /apps — the full ingredient/tag search lives in the library dialog. */
+export async function searchMyRecipeTitles(query: string): Promise<RecipeSearchResult[]> {
+  const profile = await requireATableAccess();
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("a_table_recipes")
+    .select("id, title")
+    .eq("user_id", profile.id)
+    .ilike("title", `%${trimmed}%`)
+    .limit(8);
+
+  return data ?? [];
+}
+
 export async function toggleFavorite(recipeId: string): Promise<ActionState> {
   const profile = await requireATableAccess();
   const supabase = await createClient();

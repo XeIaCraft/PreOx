@@ -7,7 +7,7 @@ import { Input, Label } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { addRecipe, importRecipe } from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
-import { fileToBase64 } from "@/lib/a-table/client-file";
+import { fileToBase64 } from "@/lib/client-file";
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
