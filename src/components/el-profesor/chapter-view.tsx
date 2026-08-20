@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { FicheViewer } from "@/components/el-profesor/fiche-viewer";
@@ -11,7 +11,7 @@ import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
-import { getLastSubEntity, setLastSubEntity, setLastChapter } from "@/lib/el-profesor/local-prefs";
+import { getLastSubEntity, setLastSubEntity, setLastChapter, getFontScale, setFontScale, type FontScale } from "@/lib/el-profesor/local-prefs";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
 import type { Citation } from "@/lib/el-profesor/types";
 
@@ -42,6 +42,7 @@ export function ChapterView({
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [fontScale, setFontScaleState] = useState<FontScale>(() => getFontScale() ?? "md");
 
   useEffect(() => {
     getChapterPdfUrl(chapterId).then((result) => setPdfUrl(result.url ?? null));
@@ -100,6 +101,14 @@ export function ChapterView({
     else if (dx > 0 && index > 0) setSelectedId(withFiche[index - 1].id);
   }
 
+  const FONT_SCALE_ORDER: FontScale[] = ["sm", "md", "lg"];
+  function adjustFontScale(direction: 1 | -1) {
+    const nextIndex = Math.min(FONT_SCALE_ORDER.length - 1, Math.max(0, FONT_SCALE_ORDER.indexOf(fontScale) + direction));
+    const next = FONT_SCALE_ORDER[nextIndex];
+    setFontScaleState(next);
+    setFontScale(next);
+  }
+
   function handleCitationClick(citation: Citation) {
     setHighlight({ page: citation.page, quote: citation.quote });
     // Below lg there's no room for a persistent PDF panel — jump straight
@@ -121,6 +130,31 @@ export function ChapterView({
           <h1 className="truncate font-serif-display text-lg font-medium text-foreground">{chapterTitle}</h1>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <div className="hidden items-center gap-0.5 rounded-full border border-border sm:flex">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => adjustFontScale(-1)}
+              disabled={fontScale === "sm"}
+              aria-label="Réduire le texte des fiches"
+              title="Réduire le texte"
+            >
+              <Minus className="h-3 w-3" />
+            </Button>
+            <span className="text-[10px] font-medium text-foreground-subtle">Aa</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => adjustFontScale(1)}
+              disabled={fontScale === "lg"}
+              aria-label="Agrandir le texte des fiches"
+              title="Agrandir le texte"
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          </div>
           <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)} aria-label="Rechercher dans la bibliothèque">
             <Search className="h-4 w-4" />
           </Button>
@@ -163,6 +197,7 @@ export function ChapterView({
                 summary={selected.summary}
                 blocks={selected.fiche.blocks}
                 onCitationClick={handleCitationClick}
+                fontScale={fontScale}
               />
             ) : (
               <p className="text-sm text-foreground-subtle">Sélectionnez une entrée.</p>

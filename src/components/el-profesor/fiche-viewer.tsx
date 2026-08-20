@@ -27,6 +27,20 @@ const BLOCK_META: Record<BlockType, { label: string; icon: React.ComponentType<{
   texte_libre: { label: "Note", icon: FileText },
 };
 
+export type FontScale = "sm" | "md" | "lg";
+
+const BODY_TEXT_SIZE: Record<FontScale, string> = {
+  sm: "text-[13px]",
+  md: "text-[15px]",
+  lg: "text-[17px]",
+};
+
+const SUMMARY_TEXT_SIZE: Record<FontScale, string> = {
+  sm: "text-xs",
+  md: "text-sm",
+  lg: "text-base",
+};
+
 function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?: (c: Citation) => void }) {
   if (citations.length === 0) return null;
   return (
@@ -45,7 +59,7 @@ function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?
   );
 }
 
-function BlockBody({ block }: { block: FicheBlock }) {
+function BlockBody({ block, fontScale }: { block: FicheBlock; fontScale: FontScale }) {
   if (block.blockType === "tableau_comparatif") {
     const content = block.content as TableBlockContent;
     const headers = content.headers ?? [];
@@ -118,7 +132,7 @@ function BlockBody({ block }: { block: FicheBlock }) {
   }
 
   const content = block.content as TextBlockContent;
-  return <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground-muted">{content.text}</p>;
+  return <p className={`whitespace-pre-wrap leading-relaxed text-foreground-muted ${BODY_TEXT_SIZE[fontScale]}`}>{content.text}</p>;
 }
 
 // Quick jump bar to the first block of each distinct type — only worth
@@ -165,16 +179,18 @@ export function FicheViewer({
   summary,
   blocks,
   onCitationClick,
+  fontScale = "md",
 }: {
   title: string;
   summary?: string;
   blocks: FicheBlock[];
   onCitationClick?: (c: Citation) => void;
+  fontScale?: FontScale;
 }) {
   return (
     <div>
       <h3 className="font-serif-display text-xl font-medium text-foreground">{title}</h3>
-      {summary && <p className="mt-1 text-sm text-foreground-subtle">{summary}</p>}
+      {summary && <p className={`mt-1 text-foreground-subtle ${SUMMARY_TEXT_SIZE[fontScale]}`}>{summary}</p>}
       <BlockNav blocks={blocks} />
       <div className="mt-4 space-y-4">
         {blocks.map((block) => {
@@ -192,7 +208,7 @@ export function FicheViewer({
                 </div>
               </div>
               <div className="mt-2">
-                <BlockBody block={block} />
+                <BlockBody block={block} fontScale={fontScale} />
               </div>
               <CitationChips citations={block.citations} onClick={onCitationClick} />
             </div>

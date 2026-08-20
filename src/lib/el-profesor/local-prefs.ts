@@ -41,6 +41,17 @@ export function setLastChapter(chapterId: string) {
   setItem("last-chapter", chapterId);
 }
 
+export type FontScale = "sm" | "md" | "lg";
+
+export function getFontScale(): FontScale | null {
+  const raw = getItem("font-scale");
+  return raw === "sm" || raw === "md" || raw === "lg" ? raw : null;
+}
+
+export function setFontScale(scale: FontScale) {
+  setItem("font-scale", scale);
+}
+
 export function getPdfZoom(): number | null {
   const raw = getItem("pdf-zoom");
   const n = raw ? Number(raw) : NaN;

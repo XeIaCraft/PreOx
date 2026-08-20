@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, X, PartyPopper, Undo2 } from "lucide-react";
+import { ArrowLeft, Check, X, PartyPopper, Undo2, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { submitReview, undoReview } from "@/app/apps/el-profesor/actions/review";
@@ -16,6 +16,14 @@ interface LastAction {
   logId: string;
   previousState: ReviewState | null | undefined;
 }
+
+const COMPLETION_MESSAGES = [
+  "Session terminée",
+  "Bravo, encore une session de faite",
+  "Belle constance",
+  "Une révision de plus dans la mémoire à long terme",
+  "C'est dans la boîte",
+];
 
 export function FlashcardReviewer({
   chapterId,
@@ -41,6 +49,8 @@ export function FlashcardReviewer({
   const [revealed, setRevealed] = useState(false);
   const [done, setDone] = useState(0);
   const [lastAction, setLastAction] = useState<LastAction | null>(null);
+  // Picked once per session mount so it stays stable across re-renders but varies session to session.
+  const [completionMessage] = useState(() => COMPLETION_MESSAGES[Math.floor(Math.random() * COMPLETION_MESSAGES.length)]);
   const swipeStartX = useRef<number | null>(null);
 
   const current = cards[index];
@@ -145,7 +155,7 @@ export function FlashcardReviewer({
     return (
       <div className="mx-auto max-w-md px-4 py-16 text-center">
         <PartyPopper className="mx-auto h-8 w-8 animate-bounce text-primary-strong" />
-        <p className="mt-3 text-lg font-medium text-foreground">Session terminée</p>
+        <p className="mt-3 text-lg font-medium text-foreground">{completionMessage}</p>
         <p className="mt-1 text-sm text-foreground-muted">{done} carte(s) révisée(s).</p>
         <div className="mt-5 flex items-center justify-center gap-2">
           <Link href="/apps/el-profesor">
@@ -170,6 +180,16 @@ export function FlashcardReviewer({
           <Badge variant={source === "scheduled" ? "primary" : "neutral"}>
             {badgeLabel ?? (source === "scheduled" ? "Planifiée" : "Libre")}
           </Badge>
+          {source === "scheduled" && (
+            <button
+              type="button"
+              className="text-foreground-subtle hover:text-foreground"
+              title="Répétition espacée : chaque carte revient juste avant que vous ne risquiez de l'oublier. Répondre « Incorrect » la fait revenir plus vite, « Correct » espace l'intervalle suivant — plus fiable pour la mémoire à long terme qu'une simple relecture."
+              aria-label="Comment fonctionne la planification des révisions"
+            >
+              <Info className="h-3.5 w-3.5" />
+            </button>
+          )}
           <span className="text-xs text-foreground-subtle">
             {index + 1} / {cards.length}
           </span>
@@ -192,24 +212,29 @@ export function FlashcardReviewer({
         </p>
       )}
 
-      <div className="flex flex-1 items-center justify-center">
+      <div className="flex flex-1 items-center justify-center [perspective:1200px]">
         <div
-          className="relative w-full touch-pan-y rounded-[var(--radius-lg)] border border-border bg-surface p-8 text-center shadow-sm"
+          className="relative min-h-[220px] w-full touch-pan-y"
           onPointerDown={handleCardPointerDown}
           onPointerUp={handleCardPointerUp}
         >
-          {revealed && (
-            <div className="absolute right-3 top-3">
-              <FlagButton targetType="flashcard" targetId={current.id} />
+          <div
+            className={`relative h-full min-h-[220px] w-full transition-transform duration-500 [transform-style:preserve-3d] ${
+              revealed ? "[transform:rotateY(180deg)]" : ""
+            }`}
+          >
+            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-border bg-surface p-8 text-center shadow-sm [backface-visibility:hidden]">
+              <p className="text-lg text-foreground">{current.front.text}</p>
             </div>
-          )}
-          <p className="text-lg text-foreground">{current.front.text}</p>
-          {revealed && (
-            <>
-              <div className="my-5 h-px bg-border" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-primary/30 bg-surface p-8 text-center shadow-sm [backface-visibility:hidden] [transform:rotateY(180deg)]">
+              {revealed && (
+                <div className="absolute right-3 top-3">
+                  <FlagButton targetType="flashcard" targetId={current.id} />
+                </div>
+              )}
               <p className="text-lg font-medium text-primary-strong">{current.back.text}</p>
-            </>
-          )}
+            </div>
+          </div>
         </div>
       </div>
 
