@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { GraduationCap, Plus, Trash2, Pencil, Sparkles, BookOpen, ClipboardCheck, SearchCheck } from "lucide-react";
@@ -29,6 +29,24 @@ function MasteryBar({ counts }: { counts: { total: number; new: number; learning
       </p>
     </div>
   );
+}
+
+function formatElapsed(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m${seconds.toString().padStart(2, "0")}s` : `${seconds}s`;
+}
+
+function ElapsedTime({ startedAt }: { startedAt: number }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return <span className="tabular-nums">{formatElapsed(now - startedAt)}</span>;
 }
 
 const STATUS_LABEL: Record<ChapterStatus, string> = {
@@ -71,6 +89,7 @@ export function ElProfesorBoard({
   const [modal, setModal] = useState<ModalState>(null);
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingStartedAt, setPendingStartedAt] = useState<number | null>(null);
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -78,9 +97,11 @@ export function ElProfesorBoard({
 
   function handleExtract(chapterId: string) {
     setPendingId(chapterId);
+    setPendingStartedAt(() => Date.now());
     startTransition(async () => {
       const result = await extractChapter(chapterId);
       setPendingId(null);
+      setPendingStartedAt(null);
       if (result.error) toast(result.error, { variant: "error" });
       else {
         toast(result.success ?? "Extraction terminée.", { variant: "success" });
@@ -91,9 +112,11 @@ export function ElProfesorBoard({
 
   function handleComplement(chapterId: string) {
     setPendingId(chapterId);
+    setPendingStartedAt(() => Date.now());
     startTransition(async () => {
       const result = await extractChapterComplementary(chapterId);
       setPendingId(null);
+      setPendingStartedAt(null);
       if (result.error) toast(result.error, { variant: "error" });
       else {
         toast(result.success ?? "Terminé.", { variant: "success" });
@@ -236,7 +259,14 @@ export function ElProfesorBoard({
 
                       {isAdmin && (chapter.status === "pending" || chapter.status === "failed") && (
                         <Button size="sm" onClick={() => handleExtract(chapter.id)} disabled={busy}>
-                          <Sparkles className="h-3.5 w-3.5" /> {busy ? "Extraction…" : "Extraire"}
+                          <Sparkles className="h-3.5 w-3.5" />
+                          {busy ? (
+                            <>
+                              Extraction… {pendingStartedAt && <ElapsedTime startedAt={pendingStartedAt} />}
+                            </>
+                          ) : (
+                            "Extraire"
+                          )}
                         </Button>
                       )}
                       {isAdmin && chapter.status === "draft_ready" && (
@@ -262,11 +292,15 @@ export function ElProfesorBoard({
                           title="Relit le PDF et ne génère que les notions pas encore couvertes"
                         >
                           <SearchCheck className="h-3.5 w-3.5" />
-                          {busy
-                            ? "Analyse…"
-                            : chapter.estimatedRemainingPasses
-                              ? `Compléter (≈${chapter.estimatedRemainingPasses})`
-                              : "Compléter"}
+                          {busy ? (
+                            <>
+                              Analyse… {pendingStartedAt && <ElapsedTime startedAt={pendingStartedAt} />}
+                            </>
+                          ) : chapter.estimatedRemainingPasses ? (
+                            `Compléter (≈${chapter.estimatedRemainingPasses})`
+                          ) : (
+                            "Compléter"
+                          )}
                         </Button>
                       )}
                       {isAdmin && (
