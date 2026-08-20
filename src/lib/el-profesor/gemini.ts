@@ -1,8 +1,8 @@
 import "server-only";
 
 import { GeminiError, parseGeminiJson } from "@/lib/gemini-shared";
-import { buildExtractionPrompt, buildVerificationPrompt, buildComplementaryPrompt } from "@/lib/el-profesor/prompts";
-import type { ComplementaryResult, ExtractionResult, VerificationResult, BlockType } from "@/lib/el-profesor/types";
+import { buildExtractionPrompt, buildVerificationPrompt, buildComplementaryPrompt, buildSelectionPrompt } from "@/lib/el-profesor/prompts";
+import type { ComplementaryResult, ExtractionResult, VerificationResult, SelectionResult, BlockType } from "@/lib/el-profesor/types";
 
 const FILES_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files";
 const FILES_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
@@ -132,6 +132,15 @@ const COMPLEMENTARY_RESPONSE_SCHEMA = {
   required: ["additions_for_existing", "new_sub_entities", "estimated_remaining_passes"],
 };
 
+const SELECTION_RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    block: FICHE_BLOCK_ITEM_SCHEMA,
+    flashcard: FLASHCARD_ITEM_SCHEMA,
+  },
+  required: ["block"],
+};
+
 const VERIFICATION_RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
@@ -253,11 +262,10 @@ export async function deleteGeminiFile(apiKey: string, name: string): Promise<vo
 const RETRYABLE_STATUS = new Set([429, 503]);
 const RETRY_DELAYS_MS = [2000, 5000];
 
-async function callGeminiWithFile(
+async function callGeminiJson(
   apiKey: string,
   model: string,
-  file: UploadedGeminiFile,
-  instructions: string,
+  parts: Array<Record<string, unknown>>,
   responseSchema: Record<string, unknown>,
   attempt = 0
 ): Promise<unknown> {
@@ -265,12 +273,7 @@ async function callGeminiWithFile(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [
-        {
-          role: "user",
-          parts: [{ fileData: { mimeType: file.mimeType, fileUri: file.uri } }, { text: instructions }],
-        },
-      ],
+      contents: [{ role: "user", parts }],
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema,
@@ -281,7 +284,7 @@ async function callGeminiWithFile(
   if (!response.ok) {
     if (RETRYABLE_STATUS.has(response.status) && attempt < RETRY_DELAYS_MS.length) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
-      return callGeminiWithFile(apiKey, model, file, instructions, responseSchema, attempt + 1);
+      return callGeminiJson(apiKey, model, parts, responseSchema, attempt + 1);
     }
     const body = await response.text().catch(() => "");
     throw new GeminiError(`Appel Gemini échoué (${response.status}) : ${body.slice(0, 300) || "erreur inconnue"}.`);
@@ -294,6 +297,16 @@ async function callGeminiWithFile(
   }
 
   return parseGeminiJson(text);
+}
+
+function callGeminiWithFile(
+  apiKey: string,
+  model: string,
+  file: UploadedGeminiFile,
+  instructions: string,
+  responseSchema: Record<string, unknown>
+): Promise<unknown> {
+  return callGeminiJson(apiKey, model, [{ fileData: { mimeType: file.mimeType, fileUri: file.uri } }, { text: instructions }], responseSchema);
 }
 
 export async function extractChapterContent(
@@ -317,6 +330,25 @@ export async function extractComplementaryContent(
   const prompt = buildComplementaryPrompt(chapterTitle, coverageSummaryJson);
   const result = await callGeminiWithFile(apiKey, model, file, prompt, COMPLEMENTARY_RESPONSE_SCHEMA);
   return result as ComplementaryResult;
+}
+
+/**
+ * Turns one user-selected passage (picked by hand in the PDF viewer, not
+ * chosen by the model) into a single fiche block + optional flashcard. No
+ * file upload needed — the exact text is already known, so this is a plain
+ * text-only call, much cheaper than a full extraction pass.
+ */
+export async function generateFromSelection(
+  apiKey: string,
+  model: string,
+  subEntityName: string,
+  chapterTitle: string,
+  page: number,
+  quote: string
+): Promise<SelectionResult> {
+  const instructions = buildSelectionPrompt(subEntityName, chapterTitle, page, quote);
+  const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SELECTION_RESPONSE_SCHEMA);
+  return result as SelectionResult;
 }
 
 export async function verifyExtraction(

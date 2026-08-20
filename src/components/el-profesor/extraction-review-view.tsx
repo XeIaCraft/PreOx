@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Modal } from "@/components/ui/modal";
-import { PdfViewer, type PdfHighlight, type CoverageEntry } from "@/components/el-profesor/pdf-viewer";
+import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
+import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { BlockEditor } from "@/components/el-profesor/block-editor";
 import { FlashcardEditor } from "@/components/el-profesor/flashcard-editor";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
@@ -37,6 +38,7 @@ export function ExtractionReviewView({
   const [highlight, setHighlight] = useState<PdfHighlight>(null);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [onlyFlagged, setOnlyFlagged] = useState(false);
+  const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(null);
 
   useEffect(() => {
     getChapterPdfUrl(chapterId).then((result) => setPdfUrl(result.url ?? null));
@@ -225,7 +227,7 @@ export function ExtractionReviewView({
 
           <div className="hidden min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface md:block">
             {pdfUrl ? (
-              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} />
+              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
             )}
@@ -237,12 +239,26 @@ export function ExtractionReviewView({
         <Modal title="Document source" onClose={() => setPdfModalOpen(false)} size="xl">
           <div className="-m-4 h-[75vh]">
             {pdfUrl ? (
-              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} />
+              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
             )}
           </div>
         </Modal>
+      )}
+
+      {pendingSelection && (
+        <ProposeFromSelectionDialog
+          chapterId={chapterId}
+          chapterTitle={chapterTitle}
+          subEntities={withFiche.map((s) => ({ id: s.id, name: s.name }))}
+          selection={pendingSelection}
+          onClose={() => setPendingSelection(null)}
+          onSubmitted={() => {
+            setPendingSelection(null);
+            refresh();
+          }}
+        />
       )}
     </div>
   );

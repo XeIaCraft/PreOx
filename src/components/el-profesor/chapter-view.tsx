@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { FicheViewer } from "@/components/el-profesor/fiche-viewer";
-import { PdfViewer, type PdfHighlight, type CoverageEntry } from "@/components/el-profesor/pdf-viewer";
+import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
+import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
 import type { Citation } from "@/lib/el-profesor/types";
@@ -22,6 +24,7 @@ export function ChapterView({
   subEntities: SubEntityWithFiche[];
   initialEntityId?: string;
 }) {
+  const router = useRouter();
   const withFiche = subEntities.filter((s) => s.fiche);
   const [selectedId, setSelectedId] = useState(
     (initialEntityId && withFiche.some((s) => s.id === initialEntityId) ? initialEntityId : withFiche[0]?.id) ?? null
@@ -29,6 +32,7 @@ export function ChapterView({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<PdfHighlight>(null);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(null);
 
   useEffect(() => {
     getChapterPdfUrl(chapterId).then((result) => setPdfUrl(result.url ?? null));
@@ -106,7 +110,7 @@ export function ChapterView({
 
           <div className="hidden min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface md:block">
             {pdfUrl ? (
-              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} />
+              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
             )}
@@ -118,12 +122,26 @@ export function ChapterView({
         <Modal title="Document source" onClose={() => setPdfModalOpen(false)} size="xl">
           <div className="-m-4 h-[75vh]">
             {pdfUrl ? (
-              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} />
+              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
             )}
           </div>
         </Modal>
+      )}
+
+      {pendingSelection && (
+        <ProposeFromSelectionDialog
+          chapterId={chapterId}
+          chapterTitle={chapterTitle}
+          subEntities={withFiche.map((s) => ({ id: s.id, name: s.name }))}
+          selection={pendingSelection}
+          onClose={() => setPendingSelection(null)}
+          onSubmitted={() => {
+            setPendingSelection(null);
+            router.refresh();
+          }}
+        />
       )}
     </div>
   );

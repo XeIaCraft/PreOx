@@ -92,6 +92,24 @@ Réponds uniquement avec le JSON demandé, structuré exactement selon le schém
 `.trim();
 }
 
+export function buildSelectionPrompt(subEntityName: string, chapterTitle: string, page: number, quote: string): string {
+  return `
+${EXPERT_READER_CONTEXT}
+
+Un utilisateur a lui-même sélectionné, à la main, le passage suivant dans le chapitre « ${chapterTitle} », page ${page}, à propos de la sous-entité « ${subEntityName} » :
+
+« ${quote} »
+
+Ta tâche : produire UN SEUL bloc de contenu typé (même vocabulaire que d'habitude : ${BLOCK_TYPES_DOC}) qui capture fidèlement ce passage précis, sous "block", avec "citations" reprenant exactement cette page et ce passage (tu peux raccourcir légèrement la citation si elle est très longue, mais reste verbatim). Choisis le type le plus adapté au contenu réel du passage — un "tableau_comparatif" seulement si le passage contient effectivement une comparaison tabulaire, etc.
+
+Si le passage contient un fait clinique testable, produis en plus UNE flashcard sous "flashcard" (front/back/citations) — sinon omets "flashcard" plutôt que d'en inventer une artificielle.
+
+N'ajoute strictement aucune information absente de ce passage précis — ce n'est pas une extraction du chapitre entier, seulement de ce texte fourni.
+
+Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildVerificationPrompt(extractionJson: string): string {
   return `
 Tu reçois le document source (chapitre PDF) et, ci-dessous, un JSON d'extraction déjà produit à partir de ce document (sous-entités, fiches, blocs avec citations, flashcards). Ta seule tâche : vérifier la fidélité de chaque bloc et chaque flashcard à sa citation et au document source.

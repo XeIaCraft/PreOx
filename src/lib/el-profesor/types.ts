@@ -169,3 +169,10 @@ export type ComplementaryResult = {
   new_sub_entities: ExtractedSubEntity[];
   estimated_remaining_passes: number;
 };
+
+// -- User-selected passage → single block/flashcard proposal ----------------
+
+export type SelectionResult = {
+  block: ExtractedFicheBlock;
+  flashcard?: ExtractedFlashcard;
+};
