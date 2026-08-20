@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getDailyGoal, setDailyGoal } from "@/lib/el-profesor/local-prefs";
-import type { ReviewActivitySummary, BookmarkedEntity } from "@/lib/el-profesor/dal";
+import type { ReviewActivitySummary, UpcomingForecastDay, BookmarkedEntity } from "@/lib/el-profesor/dal";
 import type { Flashcard } from "@/lib/el-profesor/types";
 
 /** Quick-access list of the user's bookmarked fiches, when there are any. */
@@ -163,12 +163,14 @@ export function LibraryStats({
 
 export function LearningWidgets({
   activity,
+  forecast,
   globalDueCount,
   difficultCount,
   totalAcquired,
   chaptersMastered,
 }: {
   activity: ReviewActivitySummary;
+  forecast?: UpcomingForecastDay[];
   globalDueCount: number;
   difficultCount: number;
   totalAcquired: number;
@@ -232,6 +234,29 @@ export function LearningWidgets({
           Cette semaine : {weekCount} carte{weekCount > 1 ? "s" : ""} révisée{weekCount > 1 ? "s" : ""} sur {activeDays} jour
           {activeDays > 1 ? "s" : ""}.
         </p>
+      )}
+
+      {forecast && forecast.some((d) => d.count > 0) && (
+        <div className="mt-4 border-t border-border pt-3.5">
+          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">Prévision — 7 prochains jours</p>
+          <div className="flex items-end gap-1.5">
+            {(() => {
+              const max = Math.max(1, ...forecast.map((d) => d.count));
+              return forecast.map((d, i) => (
+                <div key={d.date} className="flex flex-1 flex-col items-center gap-1">
+                  <div
+                    className={`w-full rounded-t-sm ${d.count > 0 ? "bg-primary/70" : "bg-surface-muted"}`}
+                    style={{ height: `${Math.max(4, (d.count / max) * 32)}px` }}
+                    title={`${d.count} carte${d.count > 1 ? "s" : ""}`}
+                  />
+                  <span className="text-[10px] text-foreground-subtle">
+                    {i === 0 ? "Auj." : new Date(d.date).toLocaleDateString("fr-FR", { weekday: "short" })}
+                  </span>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
       )}
 
       <div className="mt-4 flex flex-wrap gap-1.5">

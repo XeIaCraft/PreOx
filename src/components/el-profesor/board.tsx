@@ -36,7 +36,15 @@ import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/acti
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/export";
 import { getLastChapter } from "@/lib/el-profesor/local-prefs";
-import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts, ReviewActivitySummary, BookmarkedEntity } from "@/lib/el-profesor/dal";
+import type {
+  BookWithChapters,
+  ChapterDueCounts,
+  ChapterMasteryCounts,
+  ReviewActivitySummary,
+  UpcomingForecastDay,
+  DifficultFlashcardStat,
+  BookmarkedEntity,
+} from "@/lib/el-profesor/dal";
 import type { ChapterStatus, Flashcard } from "@/lib/el-profesor/types";
 
 function MasteryBar({ counts }: { counts: { total: number; new: number; learning: number; acquired: number } }) {
@@ -109,6 +117,8 @@ export function ElProfesorBoard({
   difficultCount,
   difficultCounts,
   activity,
+  forecast,
+  mostDifficultGlobal,
   dailyCard,
   bookmarks,
 }: {
@@ -122,6 +132,8 @@ export function ElProfesorBoard({
   difficultCount: number;
   difficultCounts: ChapterDueCounts;
   activity: ReviewActivitySummary;
+  forecast: UpcomingForecastDay[];
+  mostDifficultGlobal: DifficultFlashcardStat[];
   dailyCard: Flashcard | null;
   bookmarks: BookmarkedEntity[];
 }) {
@@ -311,11 +323,33 @@ export function ElProfesorBoard({
       {books.length > 0 && (
         <LearningWidgets
           activity={activity}
+          forecast={forecast}
           globalDueCount={globalDueCount}
           difficultCount={difficultCount}
           totalAcquired={totalAcquired}
           chaptersMastered={chaptersMastered}
         />
+      )}
+
+      {isAdmin && mostDifficultGlobal.length > 0 && (
+        <div className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
+          <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+            <ShieldAlert className="h-3.5 w-3.5" /> Flashcards les plus ratées (tous utilisateurs)
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {mostDifficultGlobal.slice(0, 5).map((stat) => (
+              <li key={stat.flashcardId} className="flex items-center justify-between gap-2 text-sm">
+                <span className="min-w-0 truncate text-foreground-muted" title={stat.front}>
+                  {stat.front}
+                  {stat.chapterTitle && <span className="text-foreground-subtle"> — {stat.chapterTitle}</span>}
+                </span>
+                <Badge variant="danger" className="shrink-0">
+                  {stat.againCount}×
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {books.length > 0 && (

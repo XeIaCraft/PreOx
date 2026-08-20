@@ -39,3 +39,15 @@ export async function resolveFlag(flagId: string): Promise<ActionState> {
   revalidatePath("/apps/el-profesor");
   return { success: "Signalement résolu." };
 }
+
+export async function resolveFlags(flagIds: string[]): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  if (flagIds.length === 0) return { success: "" };
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("el_profesor_flags").update({ status: "resolved" }).in("id", flagIds);
+  if (error) return { error: "Impossible de marquer ces signalements comme résolus." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: `${flagIds.length} signalement${flagIds.length > 1 ? "s" : ""} résolu${flagIds.length > 1 ? "s" : ""}.` };
+}

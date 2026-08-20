@@ -52,6 +52,15 @@ export function setFontScale(scale: FontScale) {
   setItem("font-scale", scale);
 }
 
+/** Reading-comfort mode (sepia background) for the fiche content pane — independent of the site's light/dark theme. */
+export function getReadingComfort(): boolean {
+  return getItem("reading-comfort") === "1";
+}
+
+export function setReadingComfort(enabled: boolean) {
+  setItem("reading-comfort", enabled ? "1" : "0");
+}
+
 const DEFAULT_DAILY_GOAL = 15;
 
 export function getDailyGoal(): number {

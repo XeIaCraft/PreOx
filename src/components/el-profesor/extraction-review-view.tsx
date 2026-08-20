@@ -15,6 +15,7 @@ import { BlockEditor } from "@/components/el-profesor/block-editor";
 import { FlashcardEditor } from "@/components/el-profesor/flashcard-editor";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { publishFiche, finalizeChapterPublication, moveSubEntity } from "@/app/apps/el-profesor/actions/extraction";
+import { resolveFlags } from "@/app/apps/el-profesor/actions/flags";
 import { useToast } from "@/components/ui/toast";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
 import type { Citation, Flag } from "@/lib/el-profesor/types";
@@ -92,6 +93,9 @@ export function ExtractionReviewView({
     (selected.fiche.status !== "published" ||
       selected.fiche.blocks.some((b) => b.status !== "published") ||
       selected.fiche.flashcards.some((c) => c.status !== "published"));
+  const selectedFlagIds = selected?.fiche
+    ? [...selected.fiche.blocks, ...selected.fiche.flashcards].flatMap((item) => (flagsByTarget[item.id] ?? []).map((f) => f.id))
+    : [];
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -102,6 +106,17 @@ export function ExtractionReviewView({
       const result = await moveSubEntity(subEntityId, direction);
       if (result.error) toast(result.error, { variant: "error" });
       else refresh();
+    });
+  }
+
+  function handleResolveAllFlags(flagIds: string[]) {
+    startTransition(async () => {
+      const result = await resolveFlags(flagIds);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "", { variant: "success" });
+        refresh();
+      }
     });
   }
 
@@ -230,11 +245,18 @@ export function ExtractionReviewView({
                     <h2 className="font-serif-display text-lg font-medium text-foreground">{selected.fiche.title}</h2>
                     {selected.summary && <p className="mt-1 text-sm text-foreground-subtle">{selected.summary}</p>}
                   </div>
-                  {selectedHasDraftContent && (
-                    <Button size="sm" onClick={() => handlePublishFiche(selected.fiche!.id)} disabled={isPending}>
-                      {selected.fiche.status === "published" ? "Publier les compléments" : "Publier cette fiche"}
-                    </Button>
-                  )}
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    {selectedHasDraftContent && (
+                      <Button size="sm" onClick={() => handlePublishFiche(selected.fiche!.id)} disabled={isPending}>
+                        {selected.fiche.status === "published" ? "Publier les compléments" : "Publier cette fiche"}
+                      </Button>
+                    )}
+                    {selectedFlagIds.length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={() => handleResolveAllFlags(selectedFlagIds)} disabled={isPending}>
+                        Résoudre les {selectedFlagIds.length} signalement{selectedFlagIds.length > 1 ? "s" : ""}
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 {onlyFlagged && visibleBlocks.length === 0 && visibleFlashcards.length === 0 ? (

@@ -2,6 +2,7 @@ import "server-only";
 
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireProfile } from "@/lib/auth/dal";
 import { getAppBySlugForProfile } from "@/lib/apps";
 import { EL_PROFESOR_GEMINI_MODEL_DEFAULT } from "./gemini";
@@ -501,6 +502,56 @@ export async function getReviewState(userId: string, flashcardId: string): Promi
 
 export type ChapterDueCounts = Record<string, number>;
 
+export interface UpcomingForecastDay {
+  date: string;
+  count: number;
+}
+
+/**
+ * Cards coming due over the next 7 days, one bucket per day. Never-reviewed
+ * cards and anything already overdue both fold into today's bucket — same
+ * "due now" rule getDueQueue uses — so this reads as "what's waiting today,
+ * then what's coming."
+ */
+export async function getUpcomingReviewForecast(userId: string, chapters: Chapter[]): Promise<UpcomingForecastDay[]> {
+  const supabase = await createClient();
+  const published = chapters.filter((c) => c.status === "published");
+  const perChapterContent = await Promise.all(published.map((c) => getChapterContent(c.id, false)));
+  const flashcardIds = perChapterContent.flatMap((content) => content.flatMap((s) => s.fiche?.flashcards ?? []).map((f) => f.id));
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const buckets: UpcomingForecastDay[] = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() + i);
+    return { date: d.toISOString().slice(0, 10), count: 0 };
+  });
+  if (flashcardIds.length === 0) return buckets;
+
+  const { data: states } = await supabase
+    .from("el_profesor_review_state")
+    .select("flashcard_id, due")
+    .eq("user_id", userId)
+    .in("flashcard_id", flashcardIds);
+
+  const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s.due]));
+  const bucketIndex = new Map(buckets.map((b, i) => [b.date, i]));
+
+  for (const flashcardId of flashcardIds) {
+    const dueAt = stateByCard.get(flashcardId);
+    let dueDay = buckets[0].date;
+    if (dueAt) {
+      const d = new Date(dueAt);
+      d.setUTCHours(0, 0, 0, 0);
+      if (d >= today) dueDay = d.toISOString().slice(0, 10);
+    }
+    const idx = bucketIndex.get(dueDay);
+    if (idx !== undefined) buckets[idx].count++;
+  }
+
+  return buckets;
+}
+
 /** Due-today count per chapter, for the dashboard's chapter cards. */
 export async function getDueCountsByChapter(userId: string, chapters: Chapter[]): Promise<ChapterDueCounts> {
   const counts: ChapterDueCounts = {};
@@ -590,6 +641,77 @@ export async function getNeedsReviewCounts(chapterIds: string[]): Promise<Chapte
     counts[chapterId] = (counts[chapterId] ?? 0) + 1;
   }
   return counts;
+}
+
+export interface DifficultFlashcardStat {
+  flashcardId: string;
+  front: string;
+  bookTitle: string;
+  chapterTitle: string;
+  againCount: number;
+}
+
+/**
+ * Anonymous, admin-only content-quality signal: flashcards most often
+ * marked "again" across every user. el_profesor_review_log's RLS is
+ * strictly per-user with no admin override (see migration comment) —
+ * individual review history stays private — so this uses the service-role
+ * client to aggregate, but only ever returns tallies per flashcard, never
+ * which user answered what.
+ */
+export async function getMostDifficultFlashcardsGlobal(limit = 10): Promise<DifficultFlashcardStat[]> {
+  const supabase = createAdminClient();
+
+  const { data: logs } = await supabase.from("el_profesor_review_log").select("flashcard_id").eq("rating", "again");
+  if (!logs || logs.length === 0) return [];
+
+  const countByCard = new Map<string, number>();
+  for (const row of logs) countByCard.set(row.flashcard_id, (countByCard.get(row.flashcard_id) ?? 0) + 1);
+
+  const topIds = [...countByCard.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([id]) => id);
+  if (topIds.length === 0) return [];
+
+  const { data: flashcards } = await supabase
+    .from("el_profesor_flashcards")
+    .select("id, front, fiche_id")
+    .in("id", topIds)
+    .eq("status", "published");
+  if (!flashcards || flashcards.length === 0) return [];
+
+  const ficheIds = [...new Set(flashcards.map((f) => f.fiche_id))];
+  const { data: fiches } = await supabase.from("el_profesor_fiches").select("id, sub_entity_id").in("id", ficheIds);
+  const subEntityByFiche = new Map((fiches ?? []).map((f) => [f.id, f.sub_entity_id]));
+  const subEntityIds = [...new Set((fiches ?? []).map((f) => f.sub_entity_id))];
+
+  const { data: subEntities } = await supabase.from("el_profesor_sub_entities").select("id, chapter_id").in("id", subEntityIds);
+  const chapterBySubEntity = new Map((subEntities ?? []).map((s) => [s.id, s.chapter_id]));
+  const chapterIds = [...new Set((subEntities ?? []).map((s) => s.chapter_id))];
+
+  const { data: chapters } = await supabase.from("el_profesor_chapters").select("id, title, book_id").in("id", chapterIds);
+  const bookIdByChapter = new Map((chapters ?? []).map((c) => [c.id, c.book_id]));
+  const chapterTitleById = new Map((chapters ?? []).map((c) => [c.id, c.title]));
+  const bookIds = [...new Set((chapters ?? []).map((c) => c.book_id))];
+
+  const { data: books } = await supabase.from("el_profesor_books").select("id, title").in("id", bookIds);
+  const bookTitleById = new Map((books ?? []).map((b) => [b.id, b.title]));
+
+  const stats: DifficultFlashcardStat[] = flashcards.map((f) => {
+    const subEntityId = subEntityByFiche.get(f.fiche_id);
+    const chapterId = subEntityId ? chapterBySubEntity.get(subEntityId) : undefined;
+    const bookId = chapterId ? bookIdByChapter.get(chapterId) : undefined;
+    return {
+      flashcardId: f.id,
+      front: (f.front as unknown as { text: string }).text,
+      bookTitle: (bookId && bookTitleById.get(bookId)) || "",
+      chapterTitle: (chapterId && chapterTitleById.get(chapterId)) || "",
+      againCount: countByCard.get(f.id) ?? 0,
+    };
+  });
+
+  return stats.sort((a, b) => b.againCount - a.againCount);
 }
 
 /** Currently configured Gemini model — falls back to the built-in default if the settings row is somehow missing. */

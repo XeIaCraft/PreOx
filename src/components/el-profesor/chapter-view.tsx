@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Link2, Star, Keyboard, Download, Maximize2, Minimize2 } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -14,7 +14,16 @@ import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-fro
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { toggleBookmark } from "@/app/apps/el-profesor/actions/bookmarks";
-import { getLastSubEntity, setLastSubEntity, setLastChapter, getFontScale, setFontScale, type FontScale } from "@/lib/el-profesor/local-prefs";
+import {
+  getLastSubEntity,
+  setLastSubEntity,
+  setLastChapter,
+  getFontScale,
+  setFontScale,
+  getReadingComfort,
+  setReadingComfort,
+  type FontScale,
+} from "@/lib/el-profesor/local-prefs";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
 import type { Citation } from "@/lib/el-profesor/types";
 
@@ -49,12 +58,24 @@ export function ChapterView({
   const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [fontScale, setFontScaleState] = useState<FontScale>(() => getFontScale() ?? "md");
+  const [readingComfort, setReadingComfortState] = useState(() => getReadingComfort());
   const [scrollProgress, setScrollProgress] = useState(0);
   const [bookmarks, setBookmarks] = useState(() => new Set(bookmarkedIds ?? []));
   const [bookmarkPending, setBookmarkPending] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [printTarget, setPrintTarget] = useState<"single" | "chapter">("single");
   const contentRef = useRef<HTMLDivElement>(null);
+
+  function handlePrintChapter() {
+    setPrintTarget("chapter");
+    // Give React a tick to swap which element carries .print-area before
+    // the browser snapshots the page for printing.
+    requestAnimationFrame(() => {
+      window.print();
+      setPrintTarget("single");
+    });
+  }
 
   useEffect(() => {
     getChapterPdfUrl(chapterId).then((result) => setPdfUrl(result.url ?? null));
@@ -141,6 +162,14 @@ export function ChapterView({
     const next = FONT_SCALE_ORDER[nextIndex];
     setFontScaleState(next);
     setFontScale(next);
+  }
+
+  function toggleReadingComfort() {
+    setReadingComfortState((prev) => {
+      const next = !prev;
+      setReadingComfort(next);
+      return next;
+    });
   }
 
   function handleContentScroll() {
@@ -232,6 +261,16 @@ export function ChapterView({
           <Button
             variant="ghost"
             size="icon"
+            className={`hidden sm:inline-flex ${readingComfort ? "text-accent" : ""}`}
+            onClick={toggleReadingComfort}
+            aria-label={readingComfort ? "Désactiver le mode lecture confort" : "Activer le mode lecture confort (sépia)"}
+            title="Mode lecture confort (sépia)"
+          >
+            <Sun className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={handleToggleBookmark}
             disabled={!selectedId}
             aria-label={selectedId && bookmarks.has(selectedId) ? "Retirer des favoris" : "Ajouter aux favoris"}
@@ -254,6 +293,16 @@ export function ChapterView({
             title="Imprimer cette fiche"
           >
             <Printer className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden sm:inline-flex"
+            onClick={handlePrintChapter}
+            aria-label="Imprimer tout le chapitre"
+            title="Imprimer tout le chapitre"
+          >
+            <Files className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
@@ -326,7 +375,20 @@ export function ChapterView({
             <div
               ref={contentRef}
               onScroll={handleContentScroll}
-              className="print-area h-full min-h-0 rounded-[var(--radius-lg)] border border-border bg-surface p-5 print:overflow-visible print:rounded-none print:border-0 print:p-0 md:overflow-y-auto lg:overflow-y-auto"
+              className={`h-full min-h-0 rounded-[var(--radius-lg)] border border-border bg-surface p-5 text-foreground print:overflow-visible print:rounded-none print:border-0 print:p-0 md:overflow-y-auto lg:overflow-y-auto ${printTarget === "single" ? "print-area" : ""}`}
+              style={
+                readingComfort
+                  ? ({
+                      "--background": "#f4ecd8",
+                      "--surface": "#f4ecd8",
+                      "--surface-muted": "#ece0c6",
+                      "--foreground": "#3b3226",
+                      "--foreground-muted": "#5a4d3a",
+                      "--foreground-subtle": "#7a6c54",
+                      "--border": "#ddceac",
+                    } as CSSProperties)
+                  : undefined
+              }
               onPointerDown={handleContentPointerDown}
               onPointerUp={handleContentPointerUp}
             >
@@ -355,6 +417,17 @@ export function ChapterView({
           </div>
         </div>
       </div>
+
+      {printTarget === "chapter" && (
+        <div className="print-area hidden print:block">
+          <h1 className="mb-6 font-serif-display text-2xl font-medium text-foreground">{chapterTitle}</h1>
+          {withFiche.map((sub) => (
+            <div key={sub.id} className="mb-8 break-inside-avoid">
+              <FicheViewer title={sub.fiche!.title} summary={sub.summary} blocks={sub.fiche!.blocks} fontScale={fontScale} />
+            </div>
+          ))}
+        </div>
+      )}
 
       {pdfModalOpen && (
         <Modal

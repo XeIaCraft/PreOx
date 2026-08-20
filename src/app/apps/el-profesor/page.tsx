@@ -9,6 +9,8 @@ import {
   getDifficultQueue,
   getDifficultCountsByChapter,
   getReviewActivitySummary,
+  getUpcomingReviewForecast,
+  getMostDifficultFlashcardsGlobal,
   getDailyCard,
   getBookmarkedEntities,
 } from "@/lib/el-profesor/dal";
@@ -23,19 +25,33 @@ export default async function ElProfesorPage() {
   // admins need visibility into the pipeline's in-progress state.
   const books = isAdmin ? rawBooks : rawBooks.map((b) => ({ ...b, chapters: b.chapters.filter((c) => c.status === "published") }));
   const allChapters = books.flatMap((b) => b.chapters);
-  const [dueCounts, needsReviewCounts, masteryCounts, geminiModel, globalDue, difficult, difficultCounts, activity, dailyCard, bookmarks] =
-    await Promise.all([
-      getDueCountsByChapter(profile.id, allChapters),
-      isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
-      getMasteryCountsByChapter(profile.id, allChapters),
-      isAdmin ? getElProfesorGeminiModel() : Promise.resolve(null),
-      getGlobalDueQueue(profile.id, allChapters),
-      getDifficultQueue(profile.id, allChapters),
-      getDifficultCountsByChapter(profile.id, allChapters),
-      getReviewActivitySummary(profile.id),
-      getDailyCard(profile.id, allChapters),
-      getBookmarkedEntities(profile.id),
-    ]);
+  const [
+    dueCounts,
+    needsReviewCounts,
+    masteryCounts,
+    geminiModel,
+    globalDue,
+    difficult,
+    difficultCounts,
+    activity,
+    forecast,
+    mostDifficultGlobal,
+    dailyCard,
+    bookmarks,
+  ] = await Promise.all([
+    getDueCountsByChapter(profile.id, allChapters),
+    isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
+    getMasteryCountsByChapter(profile.id, allChapters),
+    isAdmin ? getElProfesorGeminiModel() : Promise.resolve(null),
+    getGlobalDueQueue(profile.id, allChapters),
+    getDifficultQueue(profile.id, allChapters),
+    getDifficultCountsByChapter(profile.id, allChapters),
+    getReviewActivitySummary(profile.id),
+    getUpcomingReviewForecast(profile.id, allChapters),
+    isAdmin ? getMostDifficultFlashcardsGlobal() : Promise.resolve([]),
+    getDailyCard(profile.id, allChapters),
+    getBookmarkedEntities(profile.id),
+  ]);
 
   return (
     <ToastProvider>
@@ -50,6 +66,8 @@ export default async function ElProfesorPage() {
         difficultCount={difficult.length}
         difficultCounts={difficultCounts}
         activity={activity}
+        forecast={forecast}
+        mostDifficultGlobal={mostDifficultGlobal}
         dailyCard={dailyCard}
         bookmarks={bookmarks}
       />
