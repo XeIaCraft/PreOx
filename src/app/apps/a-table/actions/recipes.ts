@@ -377,17 +377,13 @@ function htmlToText(html: string): string {
     .slice(0, 15000);
 }
 
-/** Generates one new recipe idea built primarily around current leftovers (temporary ingredients + pantry). */
+/** Generates one new recipe idea built primarily around current leftovers (temporary ingredients). */
 export async function generateRecipeFromLeftovers(): Promise<ActionState> {
   const profile = await requireATableAccess();
   const supabase = await createClient();
 
-  const [tempRes, pantryRes] = await Promise.all([
-    supabase.from("a_table_temporary_ingredients").select("name, quantity, unit").eq("user_id", profile.id),
-    supabase.from("a_table_pantry_items").select("name, quantity, unit").eq("user_id", profile.id),
-  ]);
-  const leftovers = [...(tempRes.data ?? []), ...(pantryRes.data ?? [])];
-  if (leftovers.length === 0) return { error: "Aucun reste enregistré pour l'instant." };
+  const { data: leftovers } = await supabase.from("a_table_temporary_ingredients").select("name, quantity, unit").eq("user_id", profile.id);
+  if (!leftovers || leftovers.length === 0) return { error: "Aucun reste enregistré pour l'instant." };
 
   const list = leftovers.map((i) => `${i.quantity ? `${i.quantity} ${i.unit} ` : ""}${i.name}`).join(", ");
   const prompt = `Invente une recette qui utilise en priorité ces restes à écouler : ${list}. Complète avec des ingrédients de base courants (huile, sel, épices…) si nécessaire, sans en abuser.`;

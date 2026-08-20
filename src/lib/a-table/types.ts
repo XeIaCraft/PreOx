@@ -79,14 +79,6 @@ export interface MealCard {
   updated_at: string;
 }
 
-export interface PantryItem {
-  id: string;
-  user_id: string;
-  name: string;
-  quantity: number | null;
-  unit: string;
-  created_at: string;
-}
 
 export interface HistoryEntry {
   id: string;
@@ -261,5 +253,4 @@ export interface ATableData {
   guestMenus: GuestMenu[];
   history: HistoryEntry[];
   collections: RecipeCollection[];
-  pantryItems: PantryItem[];
 }

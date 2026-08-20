@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { CheckCircle2, Info, AlarmClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { MealCard, Recipe } from "@/lib/a-table/types";
@@ -54,7 +55,17 @@ export function TodayHero({ card, recipe, onOpenDetail, onCook, onScrollToGenera
 
       {recipe ? (
         <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-          <div>
+          <div className="flex items-end gap-4">
+            {recipe.image_url && (
+              <button
+                type="button"
+                onClick={onOpenDetail}
+                className="relative hidden h-20 w-20 shrink-0 overflow-hidden rounded-[var(--radius-md)] sm:block"
+              >
+                <Image src={recipe.image_url} alt="" fill sizes="80px" className="object-cover" />
+              </button>
+            )}
+            <div>
             <h2 className="font-serif-display text-2xl font-medium text-foreground">{recipe.title}</h2>
             <p className="mt-1 text-sm text-foreground-muted">
               {recipe.cooking_minutes != null ? `${recipe.cooking_minutes} min · ` : ""}
@@ -69,6 +80,7 @@ export function TodayHero({ card, recipe, onOpenDetail, onCook, onScrollToGenera
                 </p>
               );
             })()}
+            </div>
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={onOpenDetail}>

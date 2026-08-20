@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Timer, X, BellRing } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { generateCookPlan, type CookPlanStep } from "@/app/apps/a-table/actions/cook_mode";
+import type { RunningTimer } from "@/components/a-table/ui/timer-bar";
 import type { Ingredient } from "@/lib/a-table/types";
 
 export interface CookModeRecipe {
@@ -16,12 +17,11 @@ export interface CookModeRecipe {
 interface CookModeDialogProps {
   recipes: CookModeRecipe[];
   onClose: () => void;
-}
-
-interface RunningTimer {
-  id: number;
-  label: string;
-  endsAt: number;
+  /** Board-level shared timer state (see ui/timer-bar.tsx) — kept here rather
+      than duplicated locally so a timer survives closing this dialog. */
+  timers: RunningTimer[];
+  onStartTimer: (minutes: number, label: string) => void;
+  onDismissTimer: (id: number) => void;
 }
 
 function detectMinutes(step: string): number | null {
@@ -33,11 +33,10 @@ function detectMinutes(step: string): number | null {
   return minutes > 0 ? minutes : null;
 }
 
-export function CookModeDialog({ recipes, onClose }: CookModeDialogProps) {
+export function CookModeDialog({ recipes, onClose, timers, onStartTimer, onDismissTimer }: CookModeDialogProps) {
   const [phase, setPhase] = useState<"prep" | "steps">("prep");
   const [plan, setPlan] = useState<CookPlanStep[] | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
-  const [timers, setTimers] = useState<RunningTimer[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const wakeLockRef = useState<{ current: WakeLockSentinel | null }>(() => ({ current: null }))[0];
 
@@ -87,14 +86,6 @@ export function CookModeDialog({ recipes, onClose }: CookModeDialogProps) {
 
   const currentStep = plan?.[stepIndex];
 
-  function startTimer(label: string, minutes: number) {
-    setTimers((prev) => [...prev, { id: Date.now(), label, endsAt: Date.now() + minutes * 60 * 1000 }]);
-  }
-
-  function dismissTimer(id: number) {
-    setTimers((prev) => prev.filter((t) => t.id !== id));
-  }
-
   function formatRemaining(endsAt: number) {
     const remaining = Math.max(0, Math.round((endsAt - now) / 1000));
     const m = Math.floor(remaining / 60);
@@ -126,7 +117,7 @@ export function CookModeDialog({ recipes, onClose }: CookModeDialogProps) {
               >
                 {done ? <BellRing className="h-3 w-3" /> : <Timer className="h-3 w-3" />}
                 {t.label} — {formatRemaining(t.endsAt)}
-                <button type="button" onClick={() => dismissTimer(t.id)} aria-label="Arrêter ce chrono" className="hover:opacity-70">
+                <button type="button" onClick={() => onDismissTimer(t.id)} aria-label="Arrêter ce chrono" className="hover:opacity-70">
                   <X className="h-3 w-3" />
                 </button>
               </span>
@@ -169,7 +160,7 @@ export function CookModeDialog({ recipes, onClose }: CookModeDialogProps) {
                 variant="secondary"
                 size="sm"
                 className="mt-4"
-                onClick={() => startTimer(currentStep?.step_text.slice(0, 30) ?? "Chrono", detectedMinutes)}
+                onClick={() => onStartTimer(detectedMinutes, currentStep?.step_text.slice(0, 30) ?? "Chrono")}
               >
                 <Timer className="h-4 w-4" /> Lancer un chrono ({detectedMinutes} min)
               </Button>

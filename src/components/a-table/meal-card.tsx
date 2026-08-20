@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Star, Trash2, CheckCircle2, GripVertical, Clock, Minus, Plus, Copy, Lock, LockOpen, Timer, ShieldAlert } from "lucide-react";
+import { Star, Trash2, CheckCircle2, GripVertical, Clock, Copy, Lock, LockOpen, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select } from "@/components/ui/input";
 import { DAY_LABELS, PLACEMENTS } from "@/lib/a-table/constants";
@@ -31,10 +31,8 @@ interface MealCardProps {
   onCook: () => void;
   onRemove: () => void;
   onMove: (placement: Placement) => void;
-  onServingsChange?: (servings: number) => void;
   onDuplicate?: () => void;
   onToggleLock?: () => void;
-  onStartTimer?: (minutes: number, label: string) => void;
   allergyWarning?: boolean;
   isPending?: boolean;
 }
@@ -46,10 +44,8 @@ export function MealCard({
   onCook,
   onRemove,
   onMove,
-  onServingsChange,
   onDuplicate,
   onToggleLock,
-  onStartTimer,
   allergyWarning,
   isPending,
 }: MealCardProps) {
@@ -108,31 +104,7 @@ export function MealCard({
               {recipe.cooking_minutes} min ·{" "}
             </>
           )}
-          {onServingsChange ? (
-            <span className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => onServingsChange(Math.max(1, card.servings - 1))}
-                disabled={isPending || card.servings <= 1}
-                aria-label="Moins de portions"
-                className="rounded p-0.5 hover:bg-surface-muted disabled:opacity-30"
-              >
-                <Minus className="h-2.5 w-2.5" />
-              </button>
-              {card.servings} pers.
-              <button
-                type="button"
-                onClick={() => onServingsChange(card.servings + 1)}
-                disabled={isPending}
-                aria-label="Plus de portions"
-                className="rounded p-0.5 hover:bg-surface-muted"
-              >
-                <Plus className="h-2.5 w-2.5" />
-              </button>
-            </span>
-          ) : (
-            `${card.servings} pers.`
-          )}
+          {card.servings} pers.
         </p>
       </div>
 
@@ -153,17 +125,6 @@ export function MealCard({
             </option>
           ))}
         </Select>
-        {onStartTimer && recipe.cooking_minutes != null && (
-          <button
-            type="button"
-            onClick={() => onStartTimer(recipe.cooking_minutes!, recipe.title)}
-            disabled={isPending}
-            title={`Lancer un chrono de ${recipe.cooking_minutes} min`}
-            className="rounded p-1 text-foreground-subtle hover:bg-surface-muted"
-          >
-            <Timer className="h-3.5 w-3.5" />
-          </button>
-        )}
         {onToggleLock && (
           <button
             type="button"

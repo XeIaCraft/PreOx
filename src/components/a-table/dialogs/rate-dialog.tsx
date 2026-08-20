@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ThumbsUp, ThumbsDown } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Star } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { rateRecipe } from "@/app/apps/a-table/actions/recipes";
+import { rateRecipe, toggleFavorite } from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import type { Rating } from "@/lib/a-table/types";
@@ -12,24 +12,29 @@ import type { Rating } from "@/lib/a-table/types";
 interface RateDialogProps {
   recipeId: string;
   recipeTitle: string;
+  isFavorite?: boolean;
   pastRatings?: Rating[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-export function RateDialog({ recipeId, recipeTitle, pastRatings, onClose, onSaved }: RateDialogProps) {
+export function RateDialog({ recipeId, recipeTitle, isFavorite, pastRatings, onClose, onSaved }: RateDialogProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [liked, setLiked] = useState<boolean | null>(null);
   const [comment, setComment] = useState("");
+  const [favorite, setFavorite] = useState(isFavorite ?? false);
 
   function handleSave() {
     if (liked === null) return;
     startTransition(async () => {
-      const result = await rateRecipe(recipeId, liked, comment);
-      if (result.error) toast(result.error, { variant: "error" });
+      const [rateResult] = await Promise.all([
+        rateRecipe(recipeId, liked, comment),
+        favorite !== isFavorite ? toggleFavorite(recipeId) : Promise.resolve({}),
+      ]);
+      if (rateResult.error) toast(rateResult.error, { variant: "error" });
       else {
-        toast(result.success ?? "", { variant: "success" });
+        toast(rateResult.success ?? "", { variant: "success" });
         onSaved();
         onClose();
       }
@@ -60,6 +65,18 @@ export function RateDialog({ recipeId, recipeTitle, pastRatings, onClose, onSave
           <ThumbsDown className="h-6 w-6" />
         </button>
       </div>
+
+      <button
+        type="button"
+        onClick={() => setFavorite((v) => !v)}
+        className={cn(
+          "mx-auto mt-3 flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm",
+          favorite ? "border-accent bg-accent-tint text-accent" : "border-border text-foreground-muted"
+        )}
+      >
+        <Star className={cn("h-3.5 w-3.5", favorite && "fill-accent")} />
+        {favorite ? "Dans mes favoris" : "Ajouter aux favoris"}
+      </button>
 
       <textarea
         value={comment}

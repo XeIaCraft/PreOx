@@ -16,11 +16,12 @@ interface DayColumnProps {
   onCook: (cardId: string) => void;
   onRemove: (cardId: string) => void;
   onMove: (cardId: string, placement: Placement) => void;
-  onServingsChange?: (cardId: string, servings: number) => void;
   onDuplicate?: (cardId: string) => void;
   onToggleLock?: (cardId: string, locked: boolean) => void;
-  onStartTimer?: (minutes: number, label: string) => void;
   allergyRecipeIds?: Set<string>;
+  selectable?: boolean;
+  selectedCardIds?: Set<string>;
+  onToggleSelect?: (cardId: string) => void;
 }
 
 export function DayColumn({
@@ -34,11 +35,12 @@ export function DayColumn({
   onCook,
   onRemove,
   onMove,
-  onServingsChange,
   onDuplicate,
   onToggleLock,
-  onStartTimer,
   allergyRecipeIds,
+  selectable,
+  selectedCardIds,
+  onToggleSelect,
 }: DayColumnProps) {
   const [over, setOver] = useState(false);
 
@@ -73,7 +75,7 @@ export function DayColumn({
         cards.map((card) => {
           const recipe = recipesById.get(card.recipe_id);
           if (!recipe) return null;
-          return (
+          const cardEl = (
             <MealCard
               key={card.id}
               card={card}
@@ -82,12 +84,22 @@ export function DayColumn({
               onCook={() => onCook(card.id)}
               onRemove={() => onRemove(card.id)}
               onMove={(p) => onMove(card.id, p)}
-              onServingsChange={onServingsChange ? (s) => onServingsChange(card.id, s) : undefined}
               onDuplicate={onDuplicate ? () => onDuplicate(card.id) : undefined}
               onToggleLock={onToggleLock ? () => onToggleLock(card.id, !card.locked) : undefined}
-              onStartTimer={onStartTimer}
               allergyWarning={allergyRecipeIds?.has(recipe.id)}
             />
+          );
+          if (!selectable) return cardEl;
+          return (
+            <label key={card.id} className="relative block cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectedCardIds?.has(card.id) ?? false}
+                onChange={() => onToggleSelect?.(card.id)}
+                className="absolute left-2 top-2 z-10 h-4 w-4 rounded border-border-strong text-primary focus-visible:ring-primary/30"
+              />
+              {cardEl}
+            </label>
           );
         })
       )}

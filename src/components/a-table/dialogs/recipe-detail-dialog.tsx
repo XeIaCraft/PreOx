@@ -30,9 +30,11 @@ interface RecipeDetailDialogProps {
   onClose: () => void;
   onSaved: () => void;
   onCookMode?: () => void;
+  /** Present only when this dialog was opened from a specific meal card — persists the portion count to that card instead of just scaling the ingredient list on screen. */
+  onServingsChange?: (servings: number) => void;
 }
 
-export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSaved, onCookMode }: RecipeDetailDialogProps) {
+export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSaved, onCookMode, onServingsChange }: RecipeDetailDialogProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [previewServings, setPreviewServings] = useState(servings);
@@ -198,7 +200,11 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
           <Users className="h-4 w-4" />
           <button
             type="button"
-            onClick={() => setPreviewServings((s) => Math.max(1, s - 1))}
+            onClick={() => {
+              const next = Math.max(1, previewServings - 1);
+              setPreviewServings(next);
+              onServingsChange?.(next);
+            }}
             disabled={previewServings <= 1}
             aria-label="Moins de portions"
             className="rounded p-0.5 hover:bg-surface-muted disabled:opacity-30"
@@ -208,12 +214,17 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
           {previewServings} pers.
           <button
             type="button"
-            onClick={() => setPreviewServings((s) => s + 1)}
+            onClick={() => {
+              const next = previewServings + 1;
+              setPreviewServings(next);
+              onServingsChange?.(next);
+            }}
             aria-label="Plus de portions"
             className="rounded p-0.5 hover:bg-surface-muted"
           >
             <Plus className="h-3 w-3" />
           </button>
+          {onServingsChange && <span className="text-xs text-foreground-subtle">(enregistré pour cette carte)</span>}
         </span>
         <span className="hidden items-center gap-1 print:flex">
           <Users className="h-4 w-4" /> {previewServings} pers.

@@ -100,15 +100,6 @@ export type ATableMealCardRow = {
   updated_at: string;
 };
 
-export type ATablePantryItemRow = {
-  id: string;
-  user_id: string;
-  name: string;
-  quantity: number | null;
-  unit: string;
-  created_at: string;
-};
-
 export type ATableHistoryRow = {
   id: string;
   user_id: string;
@@ -466,12 +457,6 @@ export type Database = {
         Row: ATableTemporaryIngredientRow;
         Insert: Partial<ATableTemporaryIngredientRow> & { user_id: string; name: string };
         Update: Partial<ATableTemporaryIngredientRow>;
-        Relationships: [];
-      };
-      a_table_pantry_items: {
-        Row: ATablePantryItemRow;
-        Insert: Partial<ATablePantryItemRow> & { user_id: string; name: string };
-        Update: Partial<ATablePantryItemRow>;
         Relationships: [];
       };
       a_table_guest_menus: {
