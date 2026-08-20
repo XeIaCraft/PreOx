@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
 import { FicheViewer } from "@/components/el-profesor/fiche-viewer";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
@@ -27,7 +28,8 @@ export function ChapterView({
   initialEntityId?: string;
 }) {
   const router = useRouter();
-  const withFiche = subEntities.filter((s) => s.fiche);
+  const { toast } = useToast();
+  const withFiche = useMemo(() => subEntities.filter((s) => s.fiche), [subEntities]);
   // Resumes the last sub-entity viewed in this chapter (localStorage) unless
   // there's an explicit deep link. Lazy initializer, same pattern as the
   // other one-time impure reads in this module — runs once at mount.
@@ -43,6 +45,8 @@ export function ChapterView({
   const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [fontScale, setFontScaleState] = useState<FontScale>(() => getFontScale() ?? "md");
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getChapterPdfUrl(chapterId).then((result) => setPdfUrl(result.url ?? null));
@@ -53,11 +57,23 @@ export function ChapterView({
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setSearchOpen(true);
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) return;
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedId((current) => {
+          const index = withFiche.findIndex((s) => s.id === current);
+          if (index === -1) return current;
+          const nextIndex = e.key === "ArrowDown" ? Math.min(withFiche.length - 1, index + 1) : Math.max(0, index - 1);
+          return withFiche[nextIndex]?.id ?? current;
+        });
       }
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [withFiche]);
 
   useEffect(() => {
     if (selectedId) setLastSubEntity(chapterId, selectedId);
@@ -109,6 +125,21 @@ export function ChapterView({
     setFontScale(next);
   }
 
+  function handleContentScroll() {
+    const el = contentRef.current;
+    if (!el) return;
+    const max = el.scrollHeight - el.clientHeight;
+    setScrollProgress(max > 0 ? Math.min(100, (el.scrollTop / max) * 100) : 0);
+  }
+
+  function handleCopyLink() {
+    const url = `${window.location.origin}/apps/el-profesor/chapters/${chapterId}${selectedId ? `?entity=${selectedId}` : ""}`;
+    navigator.clipboard
+      .writeText(url)
+      .then(() => toast("Lien copié.", { variant: "success" }))
+      .catch(() => toast("Impossible de copier le lien.", { variant: "error" }));
+  }
+
   function handleCitationClick(citation: Citation) {
     setHighlight({ page: citation.page, quote: citation.quote });
     // Below lg there's no room for a persistent PDF panel — jump straight
@@ -120,7 +151,7 @@ export function ChapterView({
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col px-4 py-4 sm:px-6 md:h-[calc(100vh-4rem)]">
-      <div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-3 bg-background py-1">
+      <div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-3 bg-background py-1 print:hidden">
         <div className="flex min-w-0 items-center gap-3">
           <Link href="/apps/el-profesor">
             <Button variant="ghost" size="icon" aria-label="Retour">
@@ -158,6 +189,19 @@ export function ChapterView({
           <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)} aria-label="Rechercher dans la bibliothèque">
             <Search className="h-4 w-4" />
           </Button>
+          <Button variant="ghost" size="icon" onClick={handleCopyLink} aria-label="Copier le lien de cette fiche" title="Copier le lien">
+            <Link2 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden sm:inline-flex"
+            onClick={() => window.print()}
+            aria-label="Imprimer cette fiche"
+            title="Imprimer cette fiche"
+          >
+            <Printer className="h-4 w-4" />
+          </Button>
           <Button variant="secondary" size="sm" className="md:hidden" onClick={() => setPdfModalOpen(true)}>
             <FileText className="h-3.5 w-3.5" /> PDF
           </Button>
@@ -165,7 +209,7 @@ export function ChapterView({
       </div>
 
       <div className="min-h-0 flex-1 gap-4 lg:grid lg:grid-cols-[220px_1fr_1fr] lg:overflow-hidden">
-        <div className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:mx-0 lg:mb-0 lg:flex-col lg:overflow-y-auto lg:overflow-x-visible lg:rounded-[var(--radius-lg)] lg:border lg:border-border lg:bg-surface lg:p-2 lg:px-2 lg:pb-2">
+        <div className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 print:hidden lg:mx-0 lg:mb-0 lg:flex-col lg:overflow-y-auto lg:overflow-x-visible lg:rounded-[var(--radius-lg)] lg:border lg:border-border lg:bg-surface lg:p-2 lg:px-2 lg:pb-2">
           {withFiche.map((sub) => (
             <button
               key={sub.id}
@@ -186,25 +230,33 @@ export function ChapterView({
             tablets get a real reading view instead of inheriting the mobile
             stack or squeezing into the desktop's 3-column layout. */}
         <div className="min-h-0 gap-4 md:grid md:grid-cols-2 lg:contents">
-          <div
-            className="min-h-0 rounded-[var(--radius-lg)] border border-border bg-surface p-5 md:overflow-y-auto lg:overflow-y-auto"
-            onPointerDown={handleContentPointerDown}
-            onPointerUp={handleContentPointerUp}
-          >
-            {selected?.fiche ? (
-              <FicheViewer
-                title={selected.fiche.title}
-                summary={selected.summary}
-                blocks={selected.fiche.blocks}
-                onCitationClick={handleCitationClick}
-                fontScale={fontScale}
-              />
-            ) : (
-              <p className="text-sm text-foreground-subtle">Sélectionnez une entrée.</p>
-            )}
+          <div className="relative min-h-0">
+            <div className="absolute inset-x-0 top-0 z-10 h-0.5 overflow-hidden rounded-t-[var(--radius-lg)] print:hidden">
+              <div className="h-full bg-primary transition-[width]" style={{ width: `${scrollProgress}%` }} />
+            </div>
+            <div
+              id="fiche-print-area"
+              ref={contentRef}
+              onScroll={handleContentScroll}
+              className="h-full min-h-0 rounded-[var(--radius-lg)] border border-border bg-surface p-5 print:overflow-visible print:rounded-none print:border-0 print:p-0 md:overflow-y-auto lg:overflow-y-auto"
+              onPointerDown={handleContentPointerDown}
+              onPointerUp={handleContentPointerUp}
+            >
+              {selected?.fiche ? (
+                <FicheViewer
+                  title={selected.fiche.title}
+                  summary={selected.summary}
+                  blocks={selected.fiche.blocks}
+                  onCitationClick={handleCitationClick}
+                  fontScale={fontScale}
+                />
+              ) : (
+                <p className="text-sm text-foreground-subtle">Sélectionnez une entrée.</p>
+              )}
+            </div>
           </div>
 
-          <div className="hidden min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface md:block">
+          <div className="hidden min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface print:hidden md:block">
             {pdfUrl ? (
               <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />
             ) : (

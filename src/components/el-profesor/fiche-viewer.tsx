@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   BookMarked,
   Gauge,
@@ -10,6 +11,8 @@ import {
   ShieldAlert,
   Sigma,
   FileText,
+  Copy,
+  Check,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { FlagButton } from "@/components/el-profesor/flag-button";
@@ -40,6 +43,48 @@ const SUMMARY_TEXT_SIZE: Record<FontScale, string> = {
   md: "text-sm",
   lg: "text-base",
 };
+
+function getBlockPlainText(block: FicheBlock): string {
+  if (block.blockType === "tableau_comparatif") {
+    const content = block.content as TableBlockContent;
+    const headers = (content.headers ?? []).join(" | ");
+    const rows = (content.rows ?? []).map((r) => r.join(" | ")).join("\n");
+    return [headers, rows].filter(Boolean).join("\n");
+  }
+  if (block.blockType === "protocole_paliers") {
+    const content = block.content as ProtocolBlockContent;
+    return (content.steps ?? [])
+      .map((s, i) => `${i + 1}. ${s.label} — ${s.detail}${s.condition ? ` (si : ${s.condition})` : ""}`)
+      .join("\n");
+  }
+  return (block.content as TextBlockContent).text ?? "";
+}
+
+function CopyBlockButton({ block }: { block: FicheBlock }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard
+      .writeText(getBlockPlainText(block))
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {});
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="text-foreground-subtle hover:text-primary-strong"
+      aria-label="Copier le texte de ce bloc"
+      title="Copier le texte"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
 
 function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?: (c: Citation) => void }) {
   if (citations.length === 0) return null;
@@ -204,6 +249,7 @@ export function FicheViewer({
                 </span>
                 <div className="flex items-center gap-2">
                   {block.needsReview && <Badge variant="accent">À vérifier</Badge>}
+                  <CopyBlockButton block={block} />
                   <FlagButton targetType="block" targetId={block.id} />
                 </div>
               </div>

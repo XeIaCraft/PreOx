@@ -37,6 +37,20 @@ export function LibrarySearch({ autoFocus }: { autoFocus?: boolean } = {}) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  function highlightMatch(text: string, term: string): React.ReactNode {
+    const trimmed = term.trim();
+    if (!trimmed) return text;
+    const index = text.toLowerCase().indexOf(trimmed.toLowerCase());
+    if (index === -1) return text;
+    return (
+      <>
+        {text.slice(0, index)}
+        <mark className="rounded-sm bg-accent-tint text-accent-foreground">{text.slice(index, index + trimmed.length)}</mark>
+        {text.slice(index + trimmed.length)}
+      </>
+    );
+  }
+
   function handleChange(value: string) {
     setQuery(value);
     setOpen(true);
@@ -93,7 +107,7 @@ export function LibrarySearch({ autoFocus }: { autoFocus?: boolean } = {}) {
                 onClick={() => setOpen(false)}
                 className="block border-b border-border px-4 py-2.5 last:border-0 hover:bg-surface-muted"
               >
-                <p className="text-sm font-medium text-foreground">{r.subEntityName}</p>
+                <p className="text-sm font-medium text-foreground">{highlightMatch(r.subEntityName, query)}</p>
                 <p className="text-xs text-foreground-subtle">
                   {r.bookTitle} — {r.chapterTitle}
                 </p>

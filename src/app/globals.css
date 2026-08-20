@@ -161,6 +161,25 @@ body {
   text-wrap: balance;
 }
 
+/* Print a single fiche cleanly ("Imprimer" in the chapter view): hide
+   everything except #fiche-print-area, then let that element take over
+   the page instead of being confined to its normal in-flow box. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #fiche-print-area,
+  #fiche-print-area * {
+    visibility: visible;
+  }
+  #fiche-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}
+
 /* Respects the OS-level "reduce motion" setting: shrinks every animation/
    transition to effectively instant instead of disabling them outright,
    which keeps state changes (e.g. a flashcard flip) visually correct
