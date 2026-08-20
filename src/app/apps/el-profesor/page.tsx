@@ -21,10 +21,12 @@ import {
 } from "@/lib/el-profesor/dal";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { ToastProvider } from "@/components/ui/toast";
+import { recordAppVisit } from "@/app/actions/discovery";
 
 export default async function ElProfesorPage() {
   const profile = (await getCurrentProfile())!;
   const isAdmin = profile.role === "admin";
+  await recordAppVisit("el-profesor");
   const rawBooks = await getLibrary();
   // Non-admins never see a chapter still being imported/reviewed — only
   // admins need visibility into the pipeline's in-progress state.

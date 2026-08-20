@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { Search, X, GraduationCap, ChefHat } from "lucide-react";
+import { Search, X, GraduationCap, ChefHat, NotebookText } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { searchLibrary, type SearchResult } from "@/app/apps/el-profesor/actions/search";
+import { searchMyNotes, type NoteSearchResult } from "@/app/apps/el-profesor/actions/notes";
 import { searchMyRecipeTitles, type RecipeSearchResult } from "@/app/apps/a-table/actions/recipes";
 
 interface UnifiedSearchProps {
@@ -15,6 +16,7 @@ interface UnifiedSearchProps {
 export function UnifiedSearch({ hasElProfesor, hasATable }: UnifiedSearchProps) {
   const [query, setQuery] = useState("");
   const [ficheResults, setFicheResults] = useState<SearchResult[]>([]);
+  const [noteResults, setNoteResults] = useState<NoteSearchResult[]>([]);
   const [recipeResults, setRecipeResults] = useState<RecipeSearchResult[]>([]);
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -37,22 +39,25 @@ export function UnifiedSearch({ hasElProfesor, hasATable }: UnifiedSearchProps) 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (value.trim().length < 2) {
       setFicheResults([]);
+      setNoteResults([]);
       setRecipeResults([]);
       return;
     }
     debounceRef.current = setTimeout(() => {
       startTransition(async () => {
-        const [fiches, recipes] = await Promise.all([
+        const [fiches, notes, recipes] = await Promise.all([
           hasElProfesor ? searchLibrary(value) : Promise.resolve([]),
+          hasElProfesor ? searchMyNotes(value) : Promise.resolve([]),
           hasATable ? searchMyRecipeTitles(value) : Promise.resolve([]),
         ]);
         setFicheResults(fiches);
+        setNoteResults(notes);
         setRecipeResults(recipes);
       });
     }, 250);
   }
 
-  const hasResults = ficheResults.length > 0 || recipeResults.length > 0;
+  const hasResults = ficheResults.length > 0 || noteResults.length > 0 || recipeResults.length > 0;
 
   return (
     <div ref={containerRef} className="relative w-full max-w-md">
@@ -71,6 +76,7 @@ export function UnifiedSearch({ hasElProfesor, hasATable }: UnifiedSearchProps) 
             onClick={() => {
               setQuery("");
               setFicheResults([]);
+              setNoteResults([]);
               setRecipeResults([]);
             }}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-foreground-subtle hover:text-foreground"
@@ -97,6 +103,21 @@ export function UnifiedSearch({ hasElProfesor, hasATable }: UnifiedSearchProps) 
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-foreground">{r.title}</p>
                   <p className="text-xs text-foreground-subtle">À table — Mes recettes</p>
+                </div>
+              </Link>
+            ))}
+          {!isPending &&
+            noteResults.map((r) => (
+              <Link
+                key={`note-${r.subEntityId}`}
+                href={`/apps/el-profesor/chapters/${r.chapterId}?entity=${r.subEntityId}`}
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-2 border-b border-border px-4 py-2.5 last:border-0 hover:bg-surface-muted"
+              >
+                <NotebookText className="h-3.5 w-3.5 shrink-0 text-foreground-subtle" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{r.subEntityName}</p>
+                  <p className="truncate text-xs text-foreground-subtle">Ma note — {r.snippet}</p>
                 </div>
               </Link>
             ))}

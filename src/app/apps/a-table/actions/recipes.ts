@@ -94,11 +94,19 @@ export async function searchMyRecipeTitles(query: string): Promise<RecipeSearchR
   if (trimmed.length < 2) return [];
 
   const supabase = await createClient();
+  // Matches the title OR the personal notes field — notes is where cooking
+  // history/commentary tends to live ("parfait pour Noël", "trop salé la
+  // fois où..."), so searching it too covers "search my cooking history"
+  // without needing a separate index over a_table_history. Strips ",()"
+  // since those are structural characters in PostgREST's or() mini-syntax —
+  // eq(user_id) stays a separate hard filter regardless, so this is about
+  // not mangling the query, not about access control.
+  const safeTerm = trimmed.replace(/[,()]/g, " ");
   const { data } = await supabase
     .from("a_table_recipes")
     .select("id, title")
     .eq("user_id", profile.id)
-    .ilike("title", `%${trimmed}%`)
+    .or(`title.ilike.%${safeTerm}%,notes.ilike.%${safeTerm}%`)
     .limit(8);
 
   return data ?? [];

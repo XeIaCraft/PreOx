@@ -16,6 +16,7 @@ export type Profile = {
   full_name: string | null;
   avatar_url: string | null;
   role: UserRole;
+  pinned_app_ids: string[];
   created_at: string;
   updated_at: string;
 };
@@ -353,6 +354,21 @@ export type UserGroupAppAccessRow = {
   app_id: string;
 };
 
+export type UserRecentAppRow = {
+  user_id: string;
+  app_id: string;
+  visited_at: string;
+};
+
+export type ChangelogEntryRow = {
+  id: string;
+  title: string;
+  body: string;
+  app_id: string | null;
+  published_at: string;
+  created_by: string | null;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -551,6 +567,18 @@ export type Database = {
         Row: UserGroupAppAccessRow;
         Insert: UserGroupAppAccessRow;
         Update: Partial<UserGroupAppAccessRow>;
+        Relationships: [];
+      };
+      user_recent_apps: {
+        Row: UserRecentAppRow;
+        Insert: Partial<UserRecentAppRow> & { user_id: string; app_id: string };
+        Update: Partial<UserRecentAppRow>;
+        Relationships: [];
+      };
+      changelog_entries: {
+        Row: ChangelogEntryRow;
+        Insert: Partial<ChangelogEntryRow> & { title: string; body: string };
+        Update: Partial<ChangelogEntryRow>;
         Relationships: [];
       };
     };

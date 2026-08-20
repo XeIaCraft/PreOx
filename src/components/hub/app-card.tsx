@@ -1,14 +1,30 @@
+"use client";
+
 import Link from "next/link";
-import { Lock, Clock, ArrowUpRight } from "lucide-react";
+import { useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Lock, Clock, ArrowUpRight, Star } from "lucide-react";
 import { renderIcon } from "@/lib/icon-map";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { togglePinnedApp } from "@/app/actions/discovery";
 import type { AppWithAccess } from "@/lib/apps";
 
-export function AppCard({ app }: { app: AppWithAccess }) {
+export function AppCard({ app, pinned }: { app: AppWithAccess; pinned: boolean }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const isComingSoon = app.status === "coming_soon";
   const isLocked = !app.hasAccess;
   const href = app.hasAccess ? `/apps/${app.slug}` : undefined;
+
+  function handleTogglePin(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    startTransition(async () => {
+      await togglePinnedApp(app.id, !pinned);
+      router.refresh();
+    });
+  }
 
   const content = (
     <>
@@ -22,11 +38,24 @@ export function AppCard({ app }: { app: AppWithAccess }) {
           {renderIcon(app.icon, "h-5 w-5")}
         </span>
 
-        {isLocked ? (
-          <Lock className="h-4 w-4 text-foreground-subtle" />
-        ) : (
-          href && <ArrowUpRight className="h-4 w-4 text-foreground-subtle transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-        )}
+        <div className="flex items-center gap-1.5">
+          {app.hasAccess && (
+            <button
+              type="button"
+              onClick={handleTogglePin}
+              disabled={isPending}
+              aria-label={pinned ? "Retirer des favoris" : "Ajouter aux favoris"}
+              className="rounded-full p-1 text-foreground-subtle hover:bg-surface-muted hover:text-accent"
+            >
+              <Star className={cn("h-4 w-4", pinned && "fill-accent text-accent")} />
+            </button>
+          )}
+          {isLocked ? (
+            <Lock className="h-4 w-4 text-foreground-subtle" />
+          ) : (
+            href && <ArrowUpRight className="h-4 w-4 text-foreground-subtle transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+          )}
+        </div>
       </div>
 
       <div className="mt-4">
