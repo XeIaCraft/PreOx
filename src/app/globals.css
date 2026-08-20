@@ -67,8 +67,15 @@
   --font-serif: var(--font-fraunces);
 }
 
+/* Three theme states: an explicit choice stamps data-theme="dark" or
+   data-theme="light" on <html> (see ThemeToggle); the default "system"
+   setting stamps nothing, so only prefers-color-scheme decides. The dark
+   media query is guarded so an explicit light override always wins over a
+   dark system preference, and the [data-theme="dark"] block repeats the
+   same tokens unconditionally so an explicit dark choice wins even on a
+   light system. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --background: #101512;
     --surface: #161d19;
     --surface-muted: #1c2420;
@@ -93,6 +100,32 @@
     --success: #7fc19d;
     --success-tint: #17271e;
   }
+}
+
+:root[data-theme="dark"] {
+  --background: #101512;
+  --surface: #161d19;
+  --surface-muted: #1c2420;
+  --foreground: #f2f3ef;
+  --foreground-muted: #b7bfba;
+  --foreground-subtle: #7f8a85;
+
+  --border: #2a332d;
+  --border-strong: #3a453d;
+
+  --primary: #7fb3a3;
+  --primary-strong: #a6d0c2;
+  --primary-foreground: #0e1512;
+  --primary-tint: #1c2b26;
+
+  --accent: #d3ac72;
+  --accent-foreground: #241b0d;
+  --accent-tint: #2c2412;
+
+  --danger: #e08469;
+  --danger-tint: #2e1c15;
+  --success: #7fc19d;
+  --success-tint: #17271e;
 }
 
 * {

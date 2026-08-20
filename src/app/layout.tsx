@@ -1,6 +1,17 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Fraunces } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
+
+// Applies a stored explicit theme choice (see ThemeToggle) before first
+// paint, so a returning user with data-theme="dark" saved never sees a
+// flash of the light theme while the page hydrates.
+const THEME_INIT_SCRIPT = `
+try {
+  var t = localStorage.getItem("preox-theme");
+  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+} catch (e) {}
+`;
 
 const inter = Inter({
   variable: "--font-inter",
@@ -50,8 +61,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="fr"
       className={`${inter.variable} ${fraunces.variable} h-full antialiased`}
       data-scroll-behavior="smooth"
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        <Script id="theme-init" strategy="beforeInteractive">
+          {THEME_INIT_SCRIPT}
+        </Script>
         {children}
       </body>
     </html>

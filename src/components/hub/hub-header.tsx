@@ -3,6 +3,7 @@ import { ShieldCheck, LogOut } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/hub/theme-toggle";
 import { logout } from "@/app/actions/auth";
 import type { Profile } from "@/lib/supabase/types";
 
@@ -44,6 +45,8 @@ export function HubHeader({ profile, section }: { profile: Profile; section?: st
               </Badge>
             </div>
           </div>
+
+          <ThemeToggle />
 
           <form action={logout}>
             <Button type="submit" variant="ghost" size="icon" title="Se déconnecter">
