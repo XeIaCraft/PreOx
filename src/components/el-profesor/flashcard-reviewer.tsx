@@ -118,6 +118,8 @@ export function FlashcardReviewer({
   // Picked once per session mount so it stays stable across re-renders but varies session to session.
   const [completionMessage] = useState(() => COMPLETION_MESSAGES[Math.floor(Math.random() * COMPLETION_MESSAGES.length)]);
   const swipeStartX = useRef<number | null>(null);
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
 
   const current = cards[index];
 
@@ -235,17 +237,40 @@ export function FlashcardReviewer({
   }, [current, revealed, isPending, lastAction]);
 
   function handleCardPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (e.pointerType !== "touch") return;
+    if (e.pointerType !== "touch" || !revealed || isPending) return;
     swipeStartX.current = e.clientX;
+    setDragging(true);
+  }
+
+  function handleCardPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (swipeStartX.current === null) return;
+    setDragX(e.clientX - swipeStartX.current);
   }
 
   function handleCardPointerUp(e: React.PointerEvent<HTMLDivElement>) {
     const startX = swipeStartX.current;
     swipeStartX.current = null;
+    setDragging(false);
+    setDragX(0);
     if (e.pointerType !== "touch" || startX === null || !revealed || isPending) return;
     const dx = e.clientX - startX;
     if (Math.abs(dx) < 70) return;
     handleRate(dx > 0 ? "good" : "again");
+  }
+
+  function handleCardPointerCancel() {
+    swipeStartX.current = null;
+    setDragging(false);
+    setDragX(0);
+  }
+
+  // Tapping the card itself flips it — mirrors the "Afficher la réponse"
+  // button so the card (the dominant element on mobile) is directly
+  // actionable, rather than requiring a precise tap on the button below it.
+  function handleCardClick() {
+    if (isPending || revealed) return;
+    setRevealed(true);
+    revealedAtRef.current = Date.now();
   }
 
   const undoButton = lastAction && (
@@ -414,9 +439,16 @@ export function FlashcardReviewer({
 
       <div className="flex flex-1 items-center justify-center [perspective:1200px]">
         <div
-          className="relative min-h-[min(220px,45vh)] w-full touch-pan-y"
+          className={`relative min-h-[min(220px,45vh)] w-full touch-pan-y ${!revealed ? "cursor-pointer" : ""}`}
           onPointerDown={handleCardPointerDown}
+          onPointerMove={handleCardPointerMove}
           onPointerUp={handleCardPointerUp}
+          onPointerCancel={handleCardPointerCancel}
+          onClick={handleCardClick}
+          style={{
+            transform: dragX ? `translateX(${dragX}px) rotate(${dragX / 24}deg)` : undefined,
+            transition: dragging ? "none" : "transform 0.25s ease",
+          }}
         >
           <div
             className={`relative h-full min-h-[min(220px,45vh)] w-full transition-transform duration-500 [transform-style:preserve-3d] ${
@@ -435,6 +467,22 @@ export function FlashcardReviewer({
               <p className="text-lg font-medium text-primary-strong">{current.back.text}</p>
             </div>
           </div>
+          {revealed && dragX !== 0 && (
+            <>
+              <div
+                className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-1 rounded-full border-2 border-danger bg-surface px-2 py-1 text-xs font-bold uppercase text-danger"
+                style={{ opacity: Math.min(1, Math.max(0, -dragX / 70)) }}
+              >
+                <X className="h-3.5 w-3.5" /> Incorrect
+              </div>
+              <div
+                className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-1 rounded-full border-2 border-success bg-surface px-2 py-1 text-xs font-bold uppercase text-success"
+                style={{ opacity: Math.min(1, Math.max(0, dragX / 70)) }}
+              >
+                Correct <Check className="h-3.5 w-3.5" />
+              </div>
+            </>
+          )}
         </div>
       </div>
 
