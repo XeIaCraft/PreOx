@@ -1184,6 +1184,36 @@ async function resolveFicheContexts(ficheIds: string[]): Promise<Map<string, Not
   return result;
 }
 
+/** Every notion with only its *published* linked fiches (cross-book context included) — the user-facing transversal glossary. Notions left with no published fiche after filtering are omitted. */
+export async function getGlossary(): Promise<NotionSummary[]> {
+  const supabase = await createClient();
+  const [{ data: notions }, { data: links }] = await Promise.all([
+    supabase.from("el_profesor_notions").select("*").order("name", { ascending: true }),
+    supabase.from("el_profesor_notion_links").select("notion_id, fiche_id"),
+  ]);
+  if (!notions || notions.length === 0 || !links || links.length === 0) return [];
+
+  const ficheIds = [...new Set(links.map((l) => l.fiche_id))];
+  const { data: publishedFiches } = await supabase
+    .from("el_profesor_fiches")
+    .select("id")
+    .in("id", ficheIds)
+    .eq("status", "published");
+  const publishedIds = new Set((publishedFiches ?? []).map((f) => f.id));
+
+  const ficheContexts = await resolveFicheContexts([...publishedIds]);
+
+  return (notions as { id: string; name: string; created_at: string }[])
+    .map((n) => ({
+      notion: { id: n.id, name: n.name, createdAt: n.created_at } as Notion,
+      fiches: links
+        .filter((l) => l.notion_id === n.id && publishedIds.has(l.fiche_id))
+        .map((l) => ficheContexts.get(l.fiche_id))
+        .filter((f): f is NotionLinkedFiche => Boolean(f)),
+    }))
+    .filter((s) => s.fiches.length > 0);
+}
+
 /** Every notion with the fiches linked to it (cross-book context included), for the admin notions/contradictions screen. */
 export async function getNotionSummaries(): Promise<NotionSummary[]> {
   const supabase = await createClient();

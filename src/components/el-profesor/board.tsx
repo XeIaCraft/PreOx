@@ -414,6 +414,11 @@ export function ElProfesorBoard({
           <Button variant="ghost" size="icon" onClick={() => setTourOpen(true)} aria-label="Revoir le tutoriel" title="Revoir le tutoriel">
             <HelpCircle className="h-4 w-4" />
           </Button>
+          <Link href="/apps/el-profesor/glossary">
+            <Button variant="ghost" size="icon" aria-label="Glossaire des notions" title="Glossaire des notions">
+              <BookOpen className="h-4 w-4" />
+            </Button>
+          </Link>
           {isAdmin && (
             <>
               <Link href="/apps/el-profesor/notions">
