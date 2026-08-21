@@ -13,6 +13,7 @@ import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { RelatedFiches } from "@/components/el-profesor/related-fiches";
+import { StudyToolsButtons } from "@/components/el-profesor/study-tools-buttons";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { toggleBookmark } from "@/app/apps/el-profesor/actions/bookmarks";
@@ -346,6 +347,9 @@ export function ChapterView({
             >
               <Share2 className="h-4 w-4" />
             </Button>
+          )}
+          {selected?.fiche && (
+            <StudyToolsButtons ficheTitle={selected.fiche.title} subEntityName={selected.name} blocks={selected.fiche.blocks} />
           )}
           <Button
             variant="ghost"

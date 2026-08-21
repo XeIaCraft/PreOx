@@ -11,6 +11,8 @@ import {
   buildNotionCategorizationPrompt,
   buildContradictionCheckPrompt,
   buildWeaknessSynthesisPrompt,
+  buildFicheTranslationPrompt,
+  buildClinicalCasePrompt,
 } from "@/lib/el-profesor/prompts";
 import type {
   ComplementaryResult,
@@ -566,6 +568,38 @@ export async function generateWeaknessSynthesis(
   items: { front: string; back: string }[]
 ): Promise<{ text: string }> {
   const instructions = buildWeaknessSynthesisPrompt(items);
+  let lastError: unknown;
+  for (const { apiKey, model } of rotationCombos(config)) {
+    try {
+      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SYNTHESIS_RESPONSE_SCHEMA);
+      return result as { text: string };
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaOrCapacityError(err)) throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+}
+
+/** On-demand fiche translation — ephemeral, never persisted. Rotates on quota/capacity errors. Item 12 of the backlog. */
+export async function translateFicheText(config: GeminiRotationConfig, ficheTitle: string, ficheText: string, targetLanguage: string): Promise<{ text: string }> {
+  const instructions = buildFicheTranslationPrompt(ficheTitle, ficheText, targetLanguage);
+  let lastError: unknown;
+  for (const { apiKey, model } of rotationCombos(config)) {
+    try {
+      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SYNTHESIS_RESPONSE_SCHEMA);
+      return result as { text: string };
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaOrCapacityError(err)) throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+}
+
+/** On-demand clinical-vignette generation from a fiche's content — ephemeral, never persisted. Rotates on quota/capacity errors. Item 13 of the backlog. */
+export async function generateClinicalCase(config: GeminiRotationConfig, subEntityName: string, ficheText: string): Promise<{ text: string }> {
+  const instructions = buildClinicalCasePrompt(subEntityName, ficheText);
   let lastError: unknown;
   for (const { apiKey, model } of rotationCombos(config)) {
     try {

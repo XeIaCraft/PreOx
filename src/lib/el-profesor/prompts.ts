@@ -193,6 +193,44 @@ Réponds uniquement avec le JSON demandé (un champ "text"), structuré exacteme
 `.trim();
 }
 
+/** On-demand translation of a fiche's full content — never persisted, only shown to the user who asked. Item 12 of the backlog. */
+export function buildFicheTranslationPrompt(ficheTitle: string, ficheText: string, targetLanguage: string): string {
+  return `
+Traduis fidèlement le contenu suivant, extrait d'une fiche de révision médicale intitulée « ${ficheTitle} », vers la langue suivante : ${targetLanguage}.
+
+Contenu à traduire :
+« ${ficheText} »
+
+Consignes :
+- Traduction fidèle et complète, aucune information ajoutée ni omise.
+- Conserve la terminologie médicale standard de la langue cible (pas une traduction mot à mot qui sonnerait faux à un professionnel).
+- Conserve la structure du texte (sauts de ligne, énumérations) autant que possible.
+
+Format de sortie : TEXTE BRUT uniquement, pas de Markdown.
+
+Réponds uniquement avec le JSON demandé (un champ "text"), structuré exactement selon le schéma fourni.
+`.trim();
+}
+
+/** On-demand clinical-vignette generation from a fiche's content, to practice reasoning about a chapter's clinical implications. Item 13 of the backlog. */
+export function buildClinicalCasePrompt(subEntityName: string, ficheText: string): string {
+  return `
+${EXPERT_READER_CONTEXT}
+
+Voici le contenu déjà rédigé pour la sous-entité « ${subEntityName} » :
+« ${ficheText} »
+
+Ta tâche : rédige UN cas clinique d'entraînement réaliste et pertinent qui met en application ce contenu précis, pour faire pratiquer le raisonnement clinique plutôt que le simple rappel. Structure attendue :
+1. Un court vignette clinique (contexte patient, présentation, éléments cliniques pertinents — invente des détails plausibles et cohérents, jamais absurdes).
+2. 2 à 4 questions progressives qui testent la compréhension et la décision clinique à partir de ce cas (diagnostic, conduite à tenir, priorisation, piège à éviter...).
+3. Les réponses attendues à ces questions, avec une brève justification qui s'appuie sur le contenu de la fiche.
+
+Format de sortie : TEXTE BRUT uniquement, pas de Markdown — utilise des sauts de ligne et une numérotation simple pour structurer.
+
+Réponds uniquement avec le JSON demandé (un champ "text"), structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildNotionCategorizationPrompt(ficheTitle: string, ficheText: string, existingNotionNames: string[]): string {
   return `
 Tu catégorises le contenu médical d'une fiche de révision par "notions" transversales — des concepts qui peuvent apparaître dans plusieurs chapitres ou plusieurs livres différents (ex: "Hyperkaliémie", "Choc anaphylactique", "Anticoagulants et chirurgie", "Ventilation protectrice"). Le but : pouvoir un jour comparer entre eux tous les passages de la bibliothèque qui parlent de la même notion, même extraits de livres différents.
