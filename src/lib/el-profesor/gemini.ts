@@ -10,6 +10,7 @@ import {
   buildMnemonicPrompt,
   buildNotionCategorizationPrompt,
   buildContradictionCheckPrompt,
+  buildWeaknessSynthesisPrompt,
 } from "@/lib/el-profesor/prompts";
 import type {
   ComplementaryResult,
@@ -162,6 +163,14 @@ const SELECTION_RESPONSE_SCHEMA = {
 };
 
 const MNEMONIC_RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    text: { type: "STRING" },
+  },
+  required: ["text"],
+};
+
+const SYNTHESIS_RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
     text: { type: "STRING" },
@@ -542,6 +551,25 @@ export async function generateMnemonic(config: GeminiRotationConfig, subEntityNa
   for (const { apiKey, model } of rotationCombos(config)) {
     try {
       const result = await callGeminiJson(apiKey, model, [{ text: instructions }], MNEMONIC_RESPONSE_SCHEMA);
+      return result as { text: string };
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaOrCapacityError(err)) throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+}
+
+/** Generates a plain-text synthesis of a batch of struggled-with flashcards, grouped by theme with actionable retention tips. Rotates on quota/capacity errors. Item 19 of the backlog. */
+export async function generateWeaknessSynthesis(
+  config: GeminiRotationConfig,
+  items: { front: string; back: string }[]
+): Promise<{ text: string }> {
+  const instructions = buildWeaknessSynthesisPrompt(items);
+  let lastError: unknown;
+  for (const { apiKey, model } of rotationCombos(config)) {
+    try {
+      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SYNTHESIS_RESPONSE_SCHEMA);
       return result as { text: string };
     } catch (err) {
       lastError = err;

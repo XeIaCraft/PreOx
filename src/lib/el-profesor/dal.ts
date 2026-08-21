@@ -71,6 +71,7 @@ function toBook(row: ElProfesorBookRow): Book {
     theme: row.theme,
     orderIndex: row.order_index,
     createdAt: row.created_at,
+    archivedAt: row.archived_at,
   };
 }
 
@@ -314,6 +315,13 @@ export async function getLibrary(): Promise<BookWithChapters[]> {
     ...toBook(book),
     chapters: chapters.filter((c) => c.book_id === book.id).map(toChapter),
   }));
+}
+
+/** Archived books (item 49 of the backlog) — hidden from the active library, listed here for the admin "Livres archivés" screen. */
+export async function getArchivedBooks(): Promise<Book[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_books").select("*").not("archived_at", "is", null).order("archived_at", { ascending: false });
+  return ((data ?? []) as ElProfesorBookRow[]).map(toBook);
 }
 
 export type SubEntityWithFiche = SubEntity & { fiche: (Fiche & { blocks: FicheBlock[]; flashcards: Flashcard[] }) | null };

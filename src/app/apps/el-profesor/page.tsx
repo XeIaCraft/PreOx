@@ -35,10 +35,10 @@ export default async function ElProfesorPage() {
   const profile = (await getCurrentProfile())!;
   const isAdmin = profile.role === "admin";
   await recordAppVisit("el-profesor");
-  const rawBooks = await getLibrary();
+  const libraryBooks = (await getLibrary()).filter((b) => !b.archivedAt);
   // Non-admins never see a chapter still being imported/reviewed — only
   // admins need visibility into the pipeline's in-progress state.
-  const books = isAdmin ? rawBooks : rawBooks.map((b) => ({ ...b, chapters: b.chapters.filter((c) => c.status === "published") }));
+  const books = isAdmin ? libraryBooks : libraryBooks.map((b) => ({ ...b, chapters: b.chapters.filter((c) => c.status === "published") }));
   const allChapters = books.flatMap((b) => b.chapters);
   const [
     dueCounts,
@@ -80,7 +80,7 @@ export default async function ElProfesorPage() {
     getDailyCard(profile.id, allChapters),
     getBookmarkedEntities(profile.id),
     getGlobalChapterMasteryPercentages(allChapters),
-    isAdmin ? getStaleChaptersForAdmin(allChapters, rawBooks) : Promise.resolve([]),
+    isAdmin ? getStaleChaptersForAdmin(allChapters, libraryBooks) : Promise.resolve([]),
     getReviewTimeStats(profile.id),
     isAdmin ? getFlagStatsByBlockType() : Promise.resolve([]),
     isAdmin ? hasElProfesorGeminiKey() : Promise.resolve(false),

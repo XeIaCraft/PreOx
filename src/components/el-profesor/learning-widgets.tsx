@@ -4,8 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star, Download, History, Tag, Check, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { getDailyGoal, setDailyGoal, getWeeklyGoal, setWeeklyGoal } from "@/lib/el-profesor/local-prefs";
 import { setBookmarkTags } from "@/app/apps/el-profesor/actions/bookmarks";
+import { getWeaknessSynthesis } from "@/app/apps/el-profesor/actions/synthesis";
 import type { ReviewActivitySummary, UpcomingForecastDay, BookmarkedEntity, OnThisDayNote } from "@/lib/el-profesor/dal";
 import type { Flashcard } from "@/lib/el-profesor/types";
 
@@ -237,6 +239,41 @@ function WeeklyRegularityGoal({ activeDays }: { activeDays: number }) {
         Régularité : {activeDays}/{goal} jour{goal > 1 ? "s" : ""} actifs cette semaine (objectif)
       </span>
     </button>
+  );
+}
+
+/** On-demand AI synthesis of the user's current weak points — item 19 of the backlog. */
+function WeaknessSynthesisButton() {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleOpen() {
+    setOpen(true);
+    if (text || loading) return;
+    setLoading(true);
+    setError(null);
+    getWeaknessSynthesis().then((result) => {
+      setLoading(false);
+      if ("error" in result) setError(result.error);
+      else setText(result.text);
+    });
+  }
+
+  return (
+    <>
+      <Button variant="secondary" size="sm" onClick={handleOpen}>
+        <Sparkles className="h-3.5 w-3.5" /> Synthèse IA
+      </Button>
+      {open && (
+        <Modal title="Synthèse de mes points faibles" description="Générée à partir de vos cartes actuellement difficiles, toutes chapitres confondus." onClose={() => setOpen(false)} size="md">
+          {loading && <p className="text-sm text-foreground-subtle">Analyse en cours…</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
+          {text && <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{text}</div>}
+        </Modal>
+      )}
+    </>
   );
 }
 
@@ -485,6 +522,7 @@ export function LearningWidgets({
               </Button>
             </Link>
           )}
+          {difficultCount > 0 && <WeaknessSynthesisButton />}
         </div>
       )}
       </div>

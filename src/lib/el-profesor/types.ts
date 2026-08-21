@@ -43,6 +43,7 @@ export type Book = {
   theme: string | null;
   orderIndex: number;
   createdAt: string;
+  archivedAt: string | null;
 };
 
 export type Chapter = {

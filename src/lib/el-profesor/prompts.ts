@@ -173,6 +173,26 @@ Réponds uniquement avec le JSON demandé (un champ "text"), structuré exacteme
 `.trim();
 }
 
+export function buildWeaknessSynthesisPrompt(items: { front: string; back: string }[]): string {
+  const list = items.map((it, i) => `${i + 1}. Q: ${it.front}\n   R: ${it.back}`).join("\n");
+  return `
+${EXPERT_READER_CONTEXT}
+
+Voici une liste de flashcards que l'utilisateur a régulièrement du mal à retenir (cartes actuellement en réapprentissage ou ayant accumulé plusieurs échecs) :
+
+${list}
+
+Ta tâche : rédige une courte fiche de synthèse en français, pensée pour une relecture rapide avant de continuer à réviser :
+1. Regroupe ces points faibles par thème ou mécanisme commun quand c'est vraiment pertinent — ne force pas un regroupement artificiel si les cartes sont disparates, un point isolé reste un point isolé.
+2. Pour chaque regroupement (ou chaque carte isolée), rappelle le point clé à retenir, avec un moyen mnémotechnique ou une astuce de distinction si tu en as une vraiment utile.
+3. Termine par 2 ou 3 conseils concrets et actionnables pour mieux retenir ces notions à l'avenir (angle d'approche, association, technique de révision) — pas des généralités du type "révisez plus souvent".
+
+Format de sortie : TEXTE BRUT uniquement, pas de Markdown (pas de #, pas de *, pas de -) — utilise des sauts de ligne et une numérotation simple ("1.", "2."...) pour structurer, comme si tu écrivais une note à la main.
+
+Réponds uniquement avec le JSON demandé (un champ "text"), structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildNotionCategorizationPrompt(ficheTitle: string, ficheText: string, existingNotionNames: string[]): string {
   return `
 Tu catégorises le contenu médical d'une fiche de révision par "notions" transversales — des concepts qui peuvent apparaître dans plusieurs chapitres ou plusieurs livres différents (ex: "Hyperkaliémie", "Choc anaphylactique", "Anticoagulants et chirurgie", "Ventilation protectrice"). Le but : pouvoir un jour comparer entre eux tous les passages de la bibliothèque qui parlent de la même notion, même extraits de livres différents.

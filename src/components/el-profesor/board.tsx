@@ -26,6 +26,7 @@ import {
   Tag,
   Gauge,
   BellOff,
+  Archive,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -44,6 +45,7 @@ import { LearningWidgets, DailyCard, LibraryStats, BookmarksList, OnThisDayNoteC
 import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
+import { exportBookArchive, archiveBook } from "@/app/apps/el-profesor/actions/archive";
 import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/export";
 import { exportBookNotes } from "@/app/apps/el-profesor/actions/notes";
 import { getLastChapter } from "@/lib/el-profesor/local-prefs";
@@ -173,6 +175,7 @@ type ModalState =
   | { type: "search_book"; bookId: string; bookTitle: string }
   | { type: "search_notes" }
   | { type: "import_content"; chapterId: string; chapterTitle: string }
+  | { type: "archive_book"; bookId: string; title: string }
   | null;
 
 export function ElProfesorBoard({
@@ -390,6 +393,31 @@ export function ElProfesorBoard({
     });
   }
 
+  function handleArchiveBook(bookId: string, bookTitle: string) {
+    startTransition(async () => {
+      const exported = await exportBookArchive(bookId);
+      if ("error" in exported) {
+        toast(exported.error, { variant: "error" });
+        return;
+      }
+      const blob = new Blob([exported.content], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${bookTitle.replace(/[^\w\s-]/g, "").trim() || "livre"}-archive.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      const result = await archiveBook(bookId);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Livre archivé.", { variant: "success" });
+        setModal(null);
+        refresh();
+      }
+    });
+  }
+
   function confirmDeleteChapter(chapterId: string) {
     setPendingId(chapterId);
     startTransition(async () => {
@@ -450,6 +478,11 @@ export function ElProfesorBoard({
               <Link href="/apps/el-profesor/quality">
                 <Button variant="ghost" size="icon" aria-label="Tableau de bord qualité" title="Tableau de bord qualité">
                   <Gauge className="h-4 w-4" />
+                </Button>
+              </Link>
+              <Link href="/apps/el-profesor/archived">
+                <Button variant="ghost" size="icon" aria-label="Livres archivés" title="Livres archivés">
+                  <Archive className="h-4 w-4" />
                 </Button>
               </Link>
               <Button
@@ -727,6 +760,15 @@ export function ElProfesorBoard({
                   <Button
                     variant="ghost"
                     size="icon"
+                    onClick={() => setModal({ type: "archive_book", bookId: book.id, title: book.title })}
+                    aria-label="Archiver le livre"
+                    title="Exporter puis archiver ce livre (réversible)"
+                  >
+                    <Archive className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => setModal({ type: "delete_book", bookId: book.id, title: book.title, chapterCount: book.chapters.length })}
                     aria-label="Supprimer le livre"
                   >
@@ -988,6 +1030,22 @@ export function ElProfesorBoard({
             refresh();
           }}
         />
+      )}
+      {modal?.type === "archive_book" && (
+        <Modal title="Archiver ce livre ?" onClose={() => setModal(null)} size="sm">
+          <p className="text-sm text-foreground-muted">
+            « {modal.title} » sera retiré de la bibliothèque active. Rien n&apos;est supprimé — un export complet du contenu et des
+            statistiques anonymisées se télécharge automatiquement, et le livre reste réactivable depuis « Livres archivés ».
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setModal(null)} disabled={isPending}>
+              Annuler
+            </Button>
+            <Button onClick={() => handleArchiveBook(modal.bookId, modal.title)} disabled={isPending}>
+              {isPending ? "…" : "Exporter et archiver"}
+            </Button>
+          </div>
+        </Modal>
       )}
       {modal?.type === "gemini_settings" && (
         <GeminiSettingsDialog
