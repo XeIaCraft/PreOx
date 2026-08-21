@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus, Sparkles, CookingPot } from "lucide-react";
+import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus, Sparkles, CookingPot, ImageDown } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
 import { A_TABLE_ONBOARDING_STEPS } from "@/components/a-table/onboarding-steps";
@@ -44,6 +44,7 @@ import { generateRecipeFromLeftovers } from "@/app/apps/a-table/actions/recipes"
 import { removeTemporaryIngredient } from "@/app/apps/a-table/actions/temp_ingredients";
 import { scaleFactor } from "@/lib/a-table/shopping";
 import { buildWeekIcs } from "@/lib/a-table/ics";
+import { buildWeekImage } from "@/lib/a-table/week-image";
 import { findOutOfSeasonIngredients } from "@/lib/a-table/seasonality";
 import type { ATableData, Placement, TemporaryIngredient } from "@/lib/a-table/types";
 
@@ -236,6 +237,25 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
     link.download = "menu-semaine.ics";
     link.click();
     URL.revokeObjectURL(link.href);
+  }
+
+  async function handleShareWeekImage() {
+    try {
+      const blob = await buildWeekImage(activeCards, recipesById);
+      const file = new File([blob], "menu-semaine.png", { type: "image/png" });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Menu de la semaine" });
+        return;
+      }
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "menu-semaine.png";
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return; // user cancelled the share sheet
+      toast("Impossible de générer l'image de la semaine.", { variant: "error" });
+    }
   }
 
   function handleToggleLock(cardId: string, locked: boolean) {
@@ -468,6 +488,9 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
               </button>
               <button type="button" onClick={handlePrintWeek} className="flex items-center gap-1 text-xs text-foreground-subtle hover:text-foreground">
                 <Printer className="h-3.5 w-3.5" /> Imprimer
+              </button>
+              <button type="button" onClick={handleShareWeekImage} className="flex items-center gap-1 text-xs text-foreground-subtle hover:text-foreground">
+                <ImageDown className="h-3.5 w-3.5" /> Image à partager
               </button>
               <button type="button" onClick={handleClearWeek} disabled={isPending} className="text-xs text-foreground-subtle underline hover:text-foreground">
                 Vider la semaine

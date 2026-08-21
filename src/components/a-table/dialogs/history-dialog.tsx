@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Trash2, RotateCcw, Download } from "lucide-react";
+import { Trash2, RotateCcw, Download, Flame, Award, BookOpen } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { removeHistoryEntry, restoreHistoryEntry, addRecipeToBacklog } from "@/app/apps/a-table/actions/planning";
@@ -115,6 +115,35 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
     return { weeks, hasData, maxMeals, maxKcal };
   }, [history, recipesById, now]);
 
+  const badges = useMemo(() => {
+    const weekStart = (t: number) => {
+      const d = new Date(t);
+      const day = (d.getDay() + 6) % 7;
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - day);
+      return d.getTime();
+    };
+    const cookedWeeks = new Set(history.map((h) => weekStart(new Date(h.cooked_at).getTime())));
+    let streak = 0;
+    let cursor = weekStart(now);
+    while (cookedWeeks.has(cursor)) {
+      streak++;
+      cursor -= 7 * 24 * 60 * 60 * 1000;
+    }
+    const distinctRecipes = new Set(history.map((h) => h.recipe_id).filter(Boolean)).size;
+    const totalMeals = history.length;
+
+    return [
+      { earned: streak >= 2, icon: Flame, label: "2 semaines de suite" },
+      { earned: streak >= 4, icon: Flame, label: "4 semaines de suite" },
+      { earned: totalMeals >= 10, icon: Award, label: "10 repas cuisinés" },
+      { earned: totalMeals >= 50, icon: Award, label: "50 repas cuisinés" },
+      { earned: totalMeals >= 100, icon: Award, label: "100 repas cuisinés" },
+      { earned: distinctRecipes >= 10, icon: BookOpen, label: "10 recettes différentes" },
+      { earned: distinctRecipes >= 25, icon: BookOpen, label: "25 recettes différentes" },
+    ].filter((b) => b.earned);
+  }, [history, now]);
+
   function handleRecook(recipeId: string) {
     startTransition(async () => {
       const result = await addRecipeToBacklog(recipeId);
@@ -167,6 +196,20 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
         <p className="mb-3 text-sm text-foreground-muted">
           Budget ce mois-ci : <span className="font-medium text-foreground">{monthlyBudget.total.toFixed(2)} €</span>
         </p>
+      )}
+
+      {badges.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          {badges.map((b, i) => (
+            <span
+              key={i}
+              title={b.label}
+              className="flex items-center gap-1 rounded-full border border-accent/40 bg-accent-tint px-2.5 py-1 text-[11px] text-accent"
+            >
+              <b.icon className="h-3 w-3" /> {b.label}
+            </span>
+          ))}
+        </div>
       )}
 
       {weeklyTrend.hasData && (
