@@ -62,6 +62,55 @@ Réponds uniquement avec le JSON demandé, structuré exactement selon le schém
 `.trim();
 }
 
+// Gemini gets this same body via a separate structured-output schema
+// channel (see EXTRACTION_RESPONSE_SCHEMA in gemini.ts) — a manual
+// copy/paste into an external chat has no such channel, so the shape has to
+// be spelled out literally in the prompt text itself instead.
+const EXTERNAL_IMPORT_JSON_SCHEMA_DOC = `
+Réponds UNIQUEMENT avec un objet JSON valide, rien avant ni après (tu peux l'entourer d'un bloc de code \`\`\`json si tu préfères, mais aucune explication en dehors), respectant EXACTEMENT cette forme :
+
+{
+  "sub_entities": [
+    {
+      "name": "string",
+      "summary": "string",
+      "fiche": {
+        "title": "string",
+        "blocks": [
+          {
+            "block_type": "definition_mecanisme" | "valeurs_seuils" | "tableau_comparatif" | "protocole_paliers" | "mnemotechnique" | "perle_clinique" | "piege_erreur" | "formule" | "texte_libre",
+            "content": { "text": "string" }
+                       // uniquement pour "tableau_comparatif" : { "headers": ["string", ...], "rows": [["string", ...], ...] }
+                       // uniquement pour "protocole_paliers" : { "steps": [{ "label": "string", "detail": "string", "condition": "string (optionnel)" }, ...] },
+            "citations": [ { "page": <number>, "quote": "string" }, ... ]
+          }
+        ],
+        "flashcards": [
+          { "front": "string", "back": "string", "citations": [ { "page": <number>, "quote": "string" }, ... ] }
+        ]
+      }
+    }
+  ],
+  "estimated_remaining_passes": <number>
+}
+`.trim();
+
+/**
+ * Same instructions as buildExtractionPrompt, for a human to copy/paste into
+ * an external chat (e.g. Claude.ai, with the chapter PDF attached by hand)
+ * instead of calling Gemini automatically — a manual escape hatch for when
+ * Gemini's own quota is exhausted. The output gets pasted back in and
+ * imported through the same validation + citation-correction pipeline as a
+ * normal extraction.
+ */
+export function buildExternalImportPrompt(chapterTitle: string): string {
+  const base = buildExtractionPrompt(chapterTitle).replace(
+    /\n*Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni\.$/,
+    ""
+  );
+  return `${base}\n\n${EXTERNAL_IMPORT_JSON_SCHEMA_DOC}`;
+}
+
 export function buildComplementaryPrompt(chapterTitle: string, coverageSummaryJson: string): string {
   return `
 Tu es le même assistant d'extraction que précédemment, sur le même chapitre « ${chapterTitle} ». Une première extraction a déjà été faite.

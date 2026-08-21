@@ -33,7 +33,7 @@ const MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models
 // only seeds that row's default and covers the case where it's missing.
 export const EL_PROFESOR_GEMINI_MODEL_DEFAULT = "gemini-flash-latest";
 
-const BLOCK_TYPES: BlockType[] = [
+export const BLOCK_TYPES: BlockType[] = [
   "definition_mecanisme",
   "valeurs_seuils",
   "tableau_comparatif",

@@ -10,6 +10,7 @@ import {
   extractComplementaryContentWithRotation,
   verifyExtraction,
   generateMnemonic,
+  BLOCK_TYPES,
 } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
 import { getChapterContent } from "@/lib/el-profesor/dal";
@@ -20,6 +21,8 @@ import type {
   ExtractionResult,
   ComplementaryResult,
   ExtractedSubEntity,
+  ExtractedFicheBlock,
+  ExtractedFlashcard,
   VerificationFlag,
   Citation,
   BlockContent,
@@ -107,6 +110,146 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
     return { error: message };
   } finally {
     if (geminiFileName) await deleteGeminiFile(apiKey, geminiFileName);
+  }
+}
+
+function stripCodeFence(raw: string): string {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? fenced[1].trim() : trimmed;
+}
+
+function isCitationArray(v: unknown): v is Citation[] {
+  return Array.isArray(v) && v.every((c) => c && typeof c === "object" && typeof (c as Citation).page === "number" && typeof (c as Citation).quote === "string");
+}
+
+/**
+ * Validates hand-pasted JSON (e.g. from an external Claude.ai chat, via the
+ * "Importer" dialog's copy-prompt flow) against the same shape Gemini's
+ * structured output already guarantees — a human paste has no such
+ * guarantee, so every field is checked defensively with a specific error
+ * pointing at what's wrong, rather than crashing on a malformed shape.
+ */
+function parseImportedExtraction(raw: string): ExtractionResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripCodeFence(raw));
+  } catch {
+    throw new GeminiError("JSON invalide — vérifiez que vous avez bien copié toute la réponse, sans texte avant ou après.");
+  }
+  const subEntitiesRaw = (parsed as { sub_entities?: unknown } | null)?.sub_entities;
+  if (!Array.isArray(subEntitiesRaw) || subEntitiesRaw.length === 0) {
+    throw new GeminiError("Le JSON doit contenir un tableau « sub_entities » non vide.");
+  }
+
+  const sub_entities: ExtractedSubEntity[] = subEntitiesRaw.map((subRaw, i) => {
+    const sub = (subRaw ?? {}) as Record<string, unknown>;
+    const label = typeof sub.name === "string" && sub.name.trim() ? sub.name : `#${i + 1}`;
+    if (typeof sub.name !== "string" || !sub.name.trim()) throw new GeminiError(`Sous-entité ${label} : « name » manquant.`);
+    if (typeof sub.summary !== "string") throw new GeminiError(`Sous-entité « ${label} » : « summary » manquant.`);
+
+    const fiche = sub.fiche as Record<string, unknown> | undefined;
+    if (!fiche || typeof fiche.title !== "string") throw new GeminiError(`Sous-entité « ${label} » : « fiche.title » manquant.`);
+
+    const blocksRaw = fiche.blocks;
+    if (!Array.isArray(blocksRaw)) throw new GeminiError(`Sous-entité « ${label} » : « fiche.blocks » doit être un tableau.`);
+    const blocks: ExtractedFicheBlock[] = blocksRaw.map((blockRaw, bi) => {
+      const block = (blockRaw ?? {}) as Record<string, unknown>;
+      if (!BLOCK_TYPES.includes(block.block_type as (typeof BLOCK_TYPES)[number])) {
+        throw new GeminiError(`Sous-entité « ${label} », bloc #${bi + 1} : « block_type » invalide (« ${String(block.block_type)} »).`);
+      }
+      if (!block.content || typeof block.content !== "object") {
+        throw new GeminiError(`Sous-entité « ${label} », bloc #${bi + 1} : « content » manquant.`);
+      }
+      if (!isCitationArray(block.citations)) {
+        throw new GeminiError(`Sous-entité « ${label} », bloc #${bi + 1} : « citations » manquant ou invalide (chaque citation a besoin de « page » et « quote »).`);
+      }
+      return { block_type: block.block_type as ExtractedFicheBlock["block_type"], content: block.content as BlockContent, citations: block.citations };
+    });
+
+    const flashcardsRaw = fiche.flashcards;
+    if (!Array.isArray(flashcardsRaw)) throw new GeminiError(`Sous-entité « ${label} » : « fiche.flashcards » doit être un tableau.`);
+    const flashcards: ExtractedFlashcard[] = flashcardsRaw.map((cardRaw, ci) => {
+      const card = (cardRaw ?? {}) as Record<string, unknown>;
+      if (typeof card.front !== "string" || typeof card.back !== "string") {
+        throw new GeminiError(`Sous-entité « ${label} », flashcard #${ci + 1} : « front »/« back » manquant.`);
+      }
+      if (!isCitationArray(card.citations)) {
+        throw new GeminiError(`Sous-entité « ${label} », flashcard #${ci + 1} : « citations » manquant ou invalide.`);
+      }
+      return { front: card.front, back: card.back, citations: card.citations };
+    });
+
+    return { name: sub.name, summary: sub.summary, fiche: { title: fiche.title, blocks, flashcards } };
+  });
+
+  const estimatedRaw = (parsed as { estimated_remaining_passes?: unknown } | null)?.estimated_remaining_passes;
+  const estimated_remaining_passes = typeof estimatedRaw === "number" && Number.isFinite(estimatedRaw) ? estimatedRaw : 0;
+
+  return { sub_entities, estimated_remaining_passes };
+}
+
+function allImportedNeedReviewFlags(extraction: ExtractionResult): VerificationFlag[] {
+  const flags: VerificationFlag[] = [];
+  extraction.sub_entities.forEach((sub, subIndex) => {
+    sub.fiche.blocks.forEach((_, blockIndex) =>
+      flags.push({ sub_entity_index: subIndex, block_index: blockIndex, flashcard_index: null, needs_review: true, reason: "Contenu importé — non vérifié automatiquement." })
+    );
+    sub.fiche.flashcards.forEach((_, flashcardIndex) =>
+      flags.push({ sub_entity_index: subIndex, block_index: null, flashcard_index: flashcardIndex, needs_review: true, reason: "Contenu importé — non vérifié automatiquement." })
+    );
+  });
+  return flags;
+}
+
+/**
+ * Imports hand-pasted extraction JSON (produced elsewhere, e.g. by pasting
+ * buildExternalImportPrompt's prompt into an external Claude.ai chat with
+ * the chapter PDF attached) instead of calling Gemini automatically — an
+ * escape hatch for when Gemini's own quota is exhausted. Goes through the
+ * exact same citation ground-truth correction as a normal extraction, and
+ * every imported block/flashcard is marked needs_review since it never went
+ * through our own verification pass.
+ */
+export async function importChapterContent(chapterId: string, rawJson: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: chapter } = await supabase.from("el_profesor_chapters").select("*").eq("id", chapterId).single();
+  if (!chapter) return { error: "Chapitre introuvable." };
+  if (chapter.status === "extracting") return { error: "Une extraction est déjà en cours pour ce chapitre." };
+
+  let extraction: ExtractionResult;
+  try {
+    extraction = parseImportedExtraction(rawJson);
+  } catch (err) {
+    return { error: err instanceof GeminiError ? err.message : "JSON invalide." };
+  }
+
+  await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
+
+  try {
+    const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
+    const pageTexts = await extractPdfPageTexts(bytes).catch(() => null);
+    if (pageTexts) correctExtractionCitations(extraction, pageTexts);
+
+    await persistExtraction(chapterId, extraction, allImportedNeedReviewFlags(extraction));
+
+    await supabase
+      .from("el_profesor_extraction_jobs")
+      .insert({ chapter_id: chapterId, status: "succeeded", raw_output: extraction as unknown as never });
+    await supabase
+      .from("el_profesor_chapters")
+      .update({ status: "draft_ready", estimated_remaining_passes: extraction.estimated_remaining_passes })
+      .eq("id", chapterId);
+
+    revalidatePath("/apps/el-profesor");
+    return { success: "Contenu importé. Chaque élément est marqué « à vérifier » — relisez-le avant publication." };
+  } catch (err) {
+    const message = err instanceof GeminiError ? err.message : "Échec de l'import.";
+    await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
+    await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "failed", error: message });
+    return { error: message };
   }
 }
 

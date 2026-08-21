@@ -43,6 +43,7 @@ import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-se
 import { LearningWidgets, DailyCard, LibraryStats, BookmarksList } from "@/components/el-profesor/learning-widgets";
 import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
+import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
 import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/export";
 import { exportBookNotes } from "@/app/apps/el-profesor/actions/notes";
 import { getLastChapter } from "@/lib/el-profesor/local-prefs";
@@ -169,6 +170,7 @@ type ModalState =
   | { type: "gemini_settings" }
   | { type: "search_book"; bookId: string; bookTitle: string }
   | { type: "search_notes" }
+  | { type: "import_content"; chapterId: string; chapterTitle: string }
   | null;
 
 export function ElProfesorBoard({
@@ -857,6 +859,16 @@ export function ElProfesorBoard({
                           )}
                         </>
                       )}
+                      {isAdmin && chapter.status !== "extracting" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setModal({ type: "import_content", chapterId: chapter.id, chapterTitle: chapter.title })}
+                          title="Importer des fiches/flashcards générées ailleurs (ex. Claude.ai) au lieu d'appeler Gemini"
+                        >
+                          Importer
+                        </Button>
+                      )}
                       {isAdmin && (
                         <Button
                           variant="ghost"
@@ -952,6 +964,17 @@ export function ElProfesorBoard({
       )}
 
       {modal?.type === "search_notes" && <NotesSearchDialog onClose={() => setModal(null)} />}
+      {modal?.type === "import_content" && (
+        <ImportContentDialog
+          chapterId={modal.chapterId}
+          chapterTitle={modal.chapterTitle}
+          onClose={() => setModal(null)}
+          onImported={() => {
+            setModal(null);
+            refresh();
+          }}
+        />
+      )}
       {modal?.type === "gemini_settings" && (
         <GeminiSettingsDialog
           currentModel={geminiModel ?? "gemini-flash-latest"}
