@@ -99,6 +99,65 @@ export async function clearGeminiExtraKeys(): Promise<ActionState> {
   return { success: "Clés supplémentaires retirées." };
 }
 
+/** Switches which provider powers extraction/complément — an alternative to Gemini when its quota runs out. */
+export async function updateAiProvider(provider: "gemini" | "claude"): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_settings")
+    .update({ ai_provider: provider, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) return { error: "Impossible de changer de fournisseur IA." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: provider === "claude" ? "Claude activé pour l'extraction." : "Gemini activé pour l'extraction." };
+}
+
+export async function updateClaudeModel(model: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const trimmed = model.trim();
+  if (!trimmed) return { error: "Le nom du modèle est obligatoire." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_settings")
+    .update({ claude_model: trimmed, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) return { error: "Impossible de mettre à jour le modèle." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Modèle mis à jour." };
+}
+
+export async function updateClaudeApiKey(apiKey: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const trimmed = apiKey.trim();
+  if (!trimmed) return { error: "La clé API est obligatoire." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_secrets")
+    .update({ claude_api_key_encrypted: encryptSecret(trimmed), updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) return { error: "Impossible d'enregistrer la clé API." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Clé API enregistrée." };
+}
+
+export async function clearClaudeApiKey(): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_secrets")
+    .update({ claude_api_key_encrypted: null, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) return { error: "Impossible de supprimer la clé API." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Clé API supprimée." };
+}
+
 /** Secondary model tried (for every configured key) if the primary model keeps failing with quota/capacity errors. */
 export async function updateGeminiFallbackModel(model: string): Promise<ActionState> {
   await requireElProfesorAdmin();

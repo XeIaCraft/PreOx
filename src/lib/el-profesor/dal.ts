@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireProfile } from "@/lib/auth/dal";
 import { getAppBySlugForProfile } from "@/lib/apps";
 import { EL_PROFESOR_GEMINI_MODEL_DEFAULT } from "./gemini";
+import { EL_PROFESOR_CLAUDE_MODEL_DEFAULT } from "./anthropic";
 import { decryptSecret } from "@/lib/crypto";
 import { GeminiError } from "@/lib/gemini-shared";
 import { blockToPlainText } from "./block-text";
@@ -1034,6 +1035,47 @@ export async function getElProfesorGeminiConfig(): Promise<{ apiKeys: string[]; 
   }
 
   return { apiKeys, models };
+}
+
+export type ElProfesorAiProvider = "gemini" | "claude";
+
+/** Which AI provider powers extraction/complément — an admin-configurable alternative to Gemini when its quota runs out. */
+export async function getElProfesorAiProvider(): Promise<ElProfesorAiProvider> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_settings").select("ai_provider").eq("id", true).maybeSingle();
+  return data?.ai_provider === "claude" ? "claude" : "gemini";
+}
+
+/** Currently configured Claude model — falls back to the built-in default if the settings row is somehow missing. */
+export async function getElProfesorClaudeModel(): Promise<string> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_settings").select("claude_model").eq("id", true).maybeSingle();
+  return data?.claude_model || EL_PROFESOR_CLAUDE_MODEL_DEFAULT;
+}
+
+/** Whether an admin has configured the Claude key — safe to expose to any user, unlike the key itself. */
+export async function hasElProfesorClaudeKey(): Promise<boolean> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_secrets").select("claude_api_key_encrypted").eq("id", true).maybeSingle();
+  return Boolean(data?.claude_api_key_encrypted);
+}
+
+/** Decrypted Claude API key + configured model, for the trusted-server-action extraction pipeline (same pattern as getElProfesorGeminiConfig). */
+export async function getElProfesorClaudeConfig(): Promise<{ apiKey: string; model: string }> {
+  const admin = createAdminClient();
+  const [{ data: settings }, { data: secrets }] = await Promise.all([
+    admin.from("el_profesor_settings").select("claude_model").eq("id", true).maybeSingle(),
+    admin.from("el_profesor_secrets").select("claude_api_key_encrypted").eq("id", true).maybeSingle(),
+  ]);
+
+  if (!secrets?.claude_api_key_encrypted) {
+    throw new GeminiError("Clé API Claude non configurée. Un administrateur doit la renseigner dans les réglages d'El Profesor.");
+  }
+
+  return {
+    apiKey: decryptSecret(secrets.claude_api_key_encrypted),
+    model: settings?.claude_model || EL_PROFESOR_CLAUDE_MODEL_DEFAULT,
+  };
 }
 
 export interface GeminiUsageStats {

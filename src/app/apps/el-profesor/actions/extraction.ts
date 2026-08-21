@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireElProfesorAdmin, getElProfesorGeminiConfig } from "@/lib/el-profesor/dal";
+import { requireElProfesorAdmin, getElProfesorGeminiConfig, getElProfesorAiProvider, getElProfesorClaudeConfig } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import {
@@ -12,6 +12,7 @@ import {
   generateMnemonic,
   BLOCK_TYPES,
 } from "@/lib/el-profesor/gemini";
+import { extractChapterContentClaude, extractComplementaryContentClaude, type ClaudeConfig } from "@/lib/el-profesor/anthropic";
 import { GeminiError } from "@/lib/gemini-shared";
 import { getChapterContent } from "@/lib/el-profesor/dal";
 import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-profesor/content-log";
@@ -44,11 +45,30 @@ function needsReview(flags: VerificationFlag[], subEntityIndex: number, blockInd
   );
 }
 
+function allNeedReviewFlags(extraction: ExtractionResult): VerificationFlag[] {
+  const flags: VerificationFlag[] = [];
+  extraction.sub_entities.forEach((sub, subIndex) => {
+    sub.fiche.blocks.forEach((_, blockIndex) =>
+      flags.push({ sub_entity_index: subIndex, block_index: blockIndex, flashcard_index: null, needs_review: true, reason: "Non vérifié automatiquement." })
+    );
+    sub.fiche.flashcards.forEach((_, flashcardIndex) =>
+      flags.push({ sub_entity_index: subIndex, block_index: null, flashcard_index: flashcardIndex, needs_review: true, reason: "Non vérifié automatiquement." })
+    );
+  });
+  return flags;
+}
+
 /**
- * Runs the full extraction pipeline for a chapter: upload to Gemini,
- * structured extraction, verification pass, then persists everything as
- * `draft` — nothing here is visible to non-admins until reviewed and
- * published via `publishFiche`/`finalizeChapterPublication`.
+ * Runs the full extraction pipeline for a chapter: upload to the configured
+ * provider, structured extraction, then persists everything as `draft` —
+ * nothing here is visible to non-admins until reviewed and published via
+ * `publishFiche`/`finalizeChapterPublication`.
+ *
+ * With Gemini (the default), a verification pass double-checks each
+ * block/flashcard against the source PDF and only flags the ones it doubts.
+ * With Claude — an alternative provider for when Gemini's quota runs out,
+ * chosen from "Réglages IA" — there's no equivalent verification call yet,
+ * so every element is conservatively marked needs_review instead.
  */
 export async function extractChapter(chapterId: string): Promise<ActionState> {
   await requireElProfesorAdmin();
@@ -64,28 +84,45 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
   let apiKey = "";
 
   try {
-    const config = await getElProfesorGeminiConfig();
-
+    const provider = await getElProfesorAiProvider();
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
-    const [{ extraction, apiKey: winningKey, model, file }, pageTexts] = await Promise.all([
-      extractChapterContentWithRotation(config, bytes, chapter.title, chapter.title),
-      extractPdfPageTexts(bytes).catch(() => null),
-    ]);
-    apiKey = winningKey;
-    geminiFileName = file.name;
 
-    // Ground-truth-corrects citation pages against the PDF's actual text
-    // when possible (best-effort — null on a malformed/unparseable file,
-    // in which case citations are left exactly as the model produced them).
-    if (pageTexts) correctExtractionCitations(extraction, pageTexts);
-
+    let extraction: ExtractionResult;
+    let flags: VerificationFlag[];
     let verificationFailed = false;
-    const verification = await verifyExtraction(apiKey, model, file, extraction).catch(() => {
-      verificationFailed = true;
-      return { flags: [] as VerificationFlag[] };
-    });
 
-    await persistExtraction(chapterId, extraction, verification.flags);
+    if (provider === "claude") {
+      const claudeConfig = await getElProfesorClaudeConfig();
+      const [claudeExtraction, pageTexts] = await Promise.all([
+        extractChapterContentClaude(claudeConfig, bytes, chapter.title),
+        extractPdfPageTexts(bytes).catch(() => null),
+      ]);
+      extraction = claudeExtraction;
+      if (pageTexts) correctExtractionCitations(extraction, pageTexts);
+      flags = allNeedReviewFlags(extraction);
+    } else {
+      const config = await getElProfesorGeminiConfig();
+      const [{ extraction: geminiExtraction, apiKey: winningKey, model, file }, pageTexts] = await Promise.all([
+        extractChapterContentWithRotation(config, bytes, chapter.title, chapter.title),
+        extractPdfPageTexts(bytes).catch(() => null),
+      ]);
+      extraction = geminiExtraction;
+      apiKey = winningKey;
+      geminiFileName = file.name;
+
+      // Ground-truth-corrects citation pages against the PDF's actual text
+      // when possible (best-effort — null on a malformed/unparseable file,
+      // in which case citations are left exactly as the model produced them).
+      if (pageTexts) correctExtractionCitations(extraction, pageTexts);
+
+      const verification = await verifyExtraction(apiKey, model, file, extraction).catch(() => {
+        verificationFailed = true;
+        return { flags: [] as VerificationFlag[] };
+      });
+      flags = verification.flags;
+    }
+
+    await persistExtraction(chapterId, extraction, flags);
 
     await supabase
       .from("el_profesor_extraction_jobs")
@@ -101,7 +138,8 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
         "Extraction terminée. Relisez le contenu généré avant publication." +
         (verificationFailed
           ? " Attention : la passe de vérification des citations a échoué et n'a pas pu tourner — relecture manuelle recommandée."
-          : ""),
+          : "") +
+        (provider === "claude" ? " Chaque élément est marqué « à vérifier » (pas de passe de vérification automatique avec Claude)." : ""),
     };
   } catch (err) {
     const message = err instanceof GeminiError ? err.message : "Échec de l'extraction du chapitre.";
@@ -189,19 +227,6 @@ function parseImportedExtraction(raw: string): ExtractionResult {
   return { sub_entities, estimated_remaining_passes };
 }
 
-function allImportedNeedReviewFlags(extraction: ExtractionResult): VerificationFlag[] {
-  const flags: VerificationFlag[] = [];
-  extraction.sub_entities.forEach((sub, subIndex) => {
-    sub.fiche.blocks.forEach((_, blockIndex) =>
-      flags.push({ sub_entity_index: subIndex, block_index: blockIndex, flashcard_index: null, needs_review: true, reason: "Contenu importé — non vérifié automatiquement." })
-    );
-    sub.fiche.flashcards.forEach((_, flashcardIndex) =>
-      flags.push({ sub_entity_index: subIndex, block_index: null, flashcard_index: flashcardIndex, needs_review: true, reason: "Contenu importé — non vérifié automatiquement." })
-    );
-  });
-  return flags;
-}
-
 /**
  * Imports hand-pasted extraction JSON (produced elsewhere, e.g. by pasting
  * buildExternalImportPrompt's prompt into an external Claude.ai chat with
@@ -233,7 +258,7 @@ export async function importChapterContent(chapterId: string, rawJson: string): 
     const pageTexts = await extractPdfPageTexts(bytes).catch(() => null);
     if (pageTexts) correctExtractionCitations(extraction, pageTexts);
 
-    await persistExtraction(chapterId, extraction, allImportedNeedReviewFlags(extraction));
+    await persistExtraction(chapterId, extraction, allNeedReviewFlags(extraction));
 
     await supabase
       .from("el_profesor_extraction_jobs")
@@ -412,18 +437,23 @@ async function persistComplementaryAdditions(
   return added;
 }
 
+type ProviderConfig =
+  | { provider: "gemini"; config: Awaited<ReturnType<typeof getElProfesorGeminiConfig>> }
+  | { provider: "claude"; config: ClaudeConfig };
+
 /**
  * Gap-fill pass: re-reads the chapter's PDF alongside a summary of what's
- * already extracted, and asks Gemini to generate only what's missing —
- * never a duplicate of already-covered content. New content lands as
+ * already extracted, and asks the configured provider (Gemini by default,
+ * or Claude — see "Réglages IA") to generate only what's missing — never a
+ * duplicate of already-covered content. New content lands as
  * `draft`/`needs_review` under the existing sub-entities (or as new
  * sub-entities), and goes through the same admin review before publication.
  */
-/** Runs exactly one complementary pass against already-uploaded bytes. Throws on Gemini/persist failure — caller handles status/job bookkeeping. */
+/** Runs exactly one complementary pass. Throws on API/persist failure — caller handles status/job bookkeeping. */
 async function runOneComplementaryPass(
   chapterId: string,
   chapter: { title: string },
-  config: Awaited<ReturnType<typeof getElProfesorGeminiConfig>>,
+  providerConfig: ProviderConfig,
   bytes: Uint8Array,
   existingContent: Awaited<ReturnType<typeof getChapterContent>>,
   pageTexts: string[] | null
@@ -432,16 +462,18 @@ async function runOneComplementaryPass(
   let geminiFileName: string | null = null;
   let apiKey = "";
   try {
-    const { complementary, apiKey: winningKey, file } = await extractComplementaryContentWithRotation(
-      config,
-      bytes,
-      chapter.title,
-      chapter.title,
-      coverageSummary
-    );
-    apiKey = winningKey;
-    geminiFileName = file.name;
+    let complementary: ComplementaryResult;
+    if (providerConfig.provider === "claude") {
+      complementary = await extractComplementaryContentClaude(providerConfig.config, bytes, chapter.title, coverageSummary);
+    } else {
+      const result = await extractComplementaryContentWithRotation(providerConfig.config, bytes, chapter.title, chapter.title, coverageSummary);
+      complementary = result.complementary;
+      apiKey = result.apiKey;
+      geminiFileName = result.file.name;
+    }
     if (pageTexts) correctComplementaryCitations(complementary, pageTexts);
+    // Already conservative regardless of provider — persistComplementaryAdditions
+    // marks every gap-fill addition needs_review unconditionally (see below).
     const addedCount = await persistComplementaryAdditions(chapterId, complementary, existingContent);
 
     const supabase = await createClient();
@@ -481,7 +513,9 @@ export async function extractChapterComplementary(chapterId: string, options?: {
   await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
 
   try {
-    const config = await getElProfesorGeminiConfig();
+    const provider = await getElProfesorAiProvider();
+    const providerConfig: ProviderConfig =
+      provider === "claude" ? { provider: "claude", config: await getElProfesorClaudeConfig() } : { provider: "gemini", config: await getElProfesorGeminiConfig() };
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
     // Extracted once and reused across every auto-run pass (see below) rather than per pass.
     const pageTexts = await extractPdfPageTexts(bytes).catch(() => null);
@@ -493,7 +527,7 @@ export async function extractChapterComplementary(chapterId: string, options?: {
 
     do {
       const existingContent = await getChapterContent(chapterId, true);
-      const pass = await runOneComplementaryPass(chapterId, chapter, config, bytes, existingContent, pageTexts);
+      const pass = await runOneComplementaryPass(chapterId, chapter, providerConfig, bytes, existingContent, pageTexts);
       totalAdded += pass.addedCount;
       passesRun += 1;
       estimatedRemainingPasses = pass.estimatedRemainingPasses;

@@ -59,6 +59,7 @@ import type {
   StaleChapterAlert,
   BlockTypeFlagStat,
   GeminiUsageStats,
+  ElProfesorAiProvider,
 } from "@/lib/el-profesor/dal";
 import type { ChapterStatus, Flashcard, BlockType } from "@/lib/el-profesor/types";
 
@@ -196,6 +197,9 @@ export function ElProfesorBoard({
   geminiExtraKeyCount,
   geminiFallbackModel,
   geminiUsageStats,
+  aiProvider,
+  hasClaudeKey,
+  claudeModel,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -219,6 +223,9 @@ export function ElProfesorBoard({
   geminiExtraKeyCount: number;
   geminiFallbackModel: string | null;
   geminiUsageStats: GeminiUsageStats | null;
+  aiProvider: ElProfesorAiProvider;
+  hasClaudeKey: boolean;
+  claudeModel: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -982,6 +989,9 @@ export function ElProfesorBoard({
           extraKeyCount={geminiExtraKeyCount}
           fallbackModel={geminiFallbackModel}
           usageStats={geminiUsageStats}
+          aiProvider={aiProvider}
+          hasClaudeKey={hasClaudeKey}
+          claudeModel={claudeModel || "claude-sonnet-5"}
           onClose={() => {
             setModal(null);
             refresh();

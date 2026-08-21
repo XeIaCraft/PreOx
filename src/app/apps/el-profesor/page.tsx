@@ -21,6 +21,9 @@ import {
   getElProfesorGeminiExtraKeyCount,
   getElProfesorGeminiFallbackModel,
   getGeminiUsageStats,
+  getElProfesorAiProvider,
+  hasElProfesorClaudeKey,
+  getElProfesorClaudeModel,
 } from "@/lib/el-profesor/dal";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { ToastProvider } from "@/components/ui/toast";
@@ -56,6 +59,9 @@ export default async function ElProfesorPage() {
     geminiExtraKeyCount,
     geminiFallbackModel,
     geminiUsageStats,
+    aiProvider,
+    hasClaudeKey,
+    claudeModel,
   ] = await Promise.all([
     getDueCountsByChapter(profile.id, allChapters),
     isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
@@ -77,6 +83,9 @@ export default async function ElProfesorPage() {
     isAdmin ? getElProfesorGeminiExtraKeyCount() : Promise.resolve(0),
     isAdmin ? getElProfesorGeminiFallbackModel() : Promise.resolve(null),
     isAdmin ? getGeminiUsageStats() : Promise.resolve(null),
+    isAdmin ? getElProfesorAiProvider() : Promise.resolve("gemini" as const),
+    isAdmin ? hasElProfesorClaudeKey() : Promise.resolve(false),
+    isAdmin ? getElProfesorClaudeModel() : Promise.resolve(""),
   ]);
 
   return (
@@ -104,6 +113,9 @@ export default async function ElProfesorPage() {
         geminiExtraKeyCount={geminiExtraKeyCount}
         geminiFallbackModel={geminiFallbackModel}
         geminiUsageStats={geminiUsageStats}
+        aiProvider={aiProvider}
+        hasClaudeKey={hasClaudeKey}
+        claudeModel={claudeModel}
       />
     </ToastProvider>
   );
