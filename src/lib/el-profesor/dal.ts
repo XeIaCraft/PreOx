@@ -8,6 +8,7 @@ import { getAppBySlugForProfile } from "@/lib/apps";
 import { EL_PROFESOR_GEMINI_MODEL_DEFAULT } from "./gemini";
 import { decryptSecret } from "@/lib/crypto";
 import { GeminiError } from "@/lib/gemini-shared";
+import { blockToPlainText } from "./block-text";
 import type { Profile } from "@/lib/supabase/types";
 import type {
   Book,
@@ -22,6 +23,11 @@ import type {
   BlockContent,
   Citation,
   FlashcardSide,
+  Notion,
+  NotionLinkedFiche,
+  NotionSummary,
+  Contradiction,
+  ContradictionStatus,
 } from "./types";
 import type {
   ElProfesorBookRow,
@@ -952,4 +958,153 @@ export async function getElProfesorGeminiConfig(): Promise<{ apiKeys: string[]; 
   }
 
   return { apiKeys, models };
+}
+
+// -- Notion tagging + cross-fiche contradiction detection (admin-only) ------
+
+/** Plain-text content of a fiche's published blocks, for feeding to an LLM prompt (categorization, contradiction check). */
+export async function getFicheTextForAI(ficheId: string): Promise<{ title: string; text: string } | null> {
+  const supabase = await createClient();
+  const { data: fiche } = await supabase.from("el_profesor_fiches").select("id, title").eq("id", ficheId).maybeSingle();
+  if (!fiche) return null;
+
+  const { data: blocks } = await supabase
+    .from("el_profesor_fiche_blocks")
+    .select("block_type, content")
+    .eq("fiche_id", ficheId)
+    .eq("status", "published")
+    .order("order_index", { ascending: true });
+
+  const text = ((blocks ?? []) as { block_type: string; content: BlockContent }[])
+    .map((b) => blockToPlainText(b.block_type, b.content))
+    .join("\n\n");
+
+  return { title: fiche.title, text };
+}
+
+export async function getAllNotionNames(): Promise<string[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_notions").select("name").order("name", { ascending: true });
+  return (data ?? []).map((n) => n.name);
+}
+
+/** Reuses an existing notion by case-insensitive name match, or creates a new one. Race-safe enough for admin-only, low-frequency use. */
+export async function findOrCreateNotion(name: string): Promise<string | null> {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const supabase = await createClient();
+
+  const { data: all } = await supabase.from("el_profesor_notions").select("id, name");
+  const existing = (all ?? []).find((n) => n.name.toLowerCase() === trimmed.toLowerCase());
+  if (existing) return existing.id;
+
+  const { data: created, error } = await supabase.from("el_profesor_notions").insert({ name: trimmed }).select("id").maybeSingle();
+  if (error || !created) {
+    // Likely a race on the unique constraint — re-fetch and use whichever won.
+    const { data: retry } = await supabase.from("el_profesor_notions").select("id, name").ilike("name", trimmed).maybeSingle();
+    return retry?.id ?? null;
+  }
+  return created.id;
+}
+
+export async function linkFicheToNotion(notionId: string, ficheId: string): Promise<void> {
+  const supabase = await createClient();
+  await supabase.from("el_profesor_notion_links").upsert({ notion_id: notionId, fiche_id: ficheId }, { onConflict: "notion_id,fiche_id" });
+}
+
+/** Resolves fiche IDs to their book/chapter context in a handful of batched queries (not N+1) — shared by the notion summary and contradiction listing below. */
+async function resolveFicheContexts(ficheIds: string[]): Promise<Map<string, NotionLinkedFiche>> {
+  const supabase = await createClient();
+  const result = new Map<string, NotionLinkedFiche>();
+  if (ficheIds.length === 0) return result;
+
+  const { data: fiches } = await supabase.from("el_profesor_fiches").select("id, title, sub_entity_id").in("id", ficheIds);
+  const subEntityIds = [...new Set((fiches ?? []).map((f) => f.sub_entity_id))];
+  if (subEntityIds.length === 0) return result;
+
+  const { data: subEntities } = await supabase.from("el_profesor_sub_entities").select("id, chapter_id").in("id", subEntityIds);
+  const chapterIds = [...new Set((subEntities ?? []).map((s) => s.chapter_id))];
+  if (chapterIds.length === 0) return result;
+
+  const { data: chapters } = await supabase.from("el_profesor_chapters").select("id, title, book_id").in("id", chapterIds);
+  const bookIds = [...new Set((chapters ?? []).map((c) => c.book_id))];
+  const { data: books } = bookIds.length ? await supabase.from("el_profesor_books").select("id, title").in("id", bookIds) : { data: [] };
+
+  const bookById = new Map((books ?? []).map((b) => [b.id, b]));
+  const chapterById = new Map((chapters ?? []).map((c) => [c.id, c]));
+  const subEntityById = new Map((subEntities ?? []).map((s) => [s.id, s]));
+
+  for (const fiche of fiches ?? []) {
+    const subEntity = subEntityById.get(fiche.sub_entity_id);
+    const chapter = subEntity ? chapterById.get(subEntity.chapter_id) : undefined;
+    const book = chapter ? bookById.get(chapter.book_id) : undefined;
+    if (!subEntity || !chapter || !book) continue;
+    result.set(fiche.id, {
+      ficheId: fiche.id,
+      ficheTitle: fiche.title,
+      chapterId: chapter.id,
+      chapterTitle: chapter.title,
+      bookId: book.id,
+      bookTitle: book.title,
+    });
+  }
+  return result;
+}
+
+/** Every notion with the fiches linked to it (cross-book context included), for the admin notions/contradictions screen. */
+export async function getNotionSummaries(): Promise<NotionSummary[]> {
+  const supabase = await createClient();
+  const [{ data: notions }, { data: links }] = await Promise.all([
+    supabase.from("el_profesor_notions").select("*").order("name", { ascending: true }),
+    supabase.from("el_profesor_notion_links").select("notion_id, fiche_id"),
+  ]);
+  if (!notions || notions.length === 0) return [];
+
+  const ficheIds = [...new Set((links ?? []).map((l) => l.fiche_id))];
+  const ficheContexts = await resolveFicheContexts(ficheIds);
+
+  return (notions as { id: string; name: string; created_at: string }[]).map((n) => ({
+    notion: { id: n.id, name: n.name, createdAt: n.created_at } as Notion,
+    fiches: (links ?? [])
+      .filter((l) => l.notion_id === n.id)
+      .map((l) => ficheContexts.get(l.fiche_id))
+      .filter((f): f is NotionLinkedFiche => Boolean(f)),
+  }));
+}
+
+/** Pending/resolved/dismissed contradiction findings, most recent first. */
+export async function getContradictions(status?: ContradictionStatus): Promise<Contradiction[]> {
+  const supabase = await createClient();
+  let query = supabase.from("el_profesor_contradictions").select("*").order("created_at", { ascending: false });
+  if (status) query = query.eq("status", status);
+  const { data } = await query;
+  if (!data || data.length === 0) return [];
+
+  const ficheIds = [...new Set(data.flatMap((c) => [c.fiche_id_a, c.fiche_id_b]))];
+  const ficheContexts = await resolveFicheContexts(ficheIds);
+
+  const notionIds = [...new Set(data.map((c) => c.notion_id).filter((id): id is string => Boolean(id)))];
+  const { data: notions } = notionIds.length
+    ? await supabase.from("el_profesor_notions").select("id, name").in("id", notionIds)
+    : { data: [] as { id: string; name: string }[] };
+  const notionNameById = new Map((notions ?? []).map((n) => [n.id, n.name]));
+
+  return data
+    .map((c) => {
+      const ficheA = ficheContexts.get(c.fiche_id_a);
+      const ficheB = ficheContexts.get(c.fiche_id_b);
+      if (!ficheA || !ficheB) return null;
+      return {
+        id: c.id,
+        notionId: c.notion_id,
+        notionName: c.notion_id ? (notionNameById.get(c.notion_id) ?? null) : null,
+        ficheA,
+        ficheB,
+        explanation: c.explanation,
+        status: c.status,
+        resolutionNote: c.resolution_note,
+        createdAt: c.created_at,
+      } satisfies Contradiction;
+    })
+    .filter((c): c is Contradiction => Boolean(c));
 }

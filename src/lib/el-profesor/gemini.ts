@@ -1,8 +1,24 @@
 import "server-only";
 
 import { GeminiError, parseGeminiJson } from "@/lib/gemini-shared";
-import { buildExtractionPrompt, buildVerificationPrompt, buildComplementaryPrompt, buildSelectionPrompt, buildMnemonicPrompt } from "@/lib/el-profesor/prompts";
-import type { ComplementaryResult, ExtractionResult, VerificationResult, SelectionResult, BlockType } from "@/lib/el-profesor/types";
+import {
+  buildExtractionPrompt,
+  buildVerificationPrompt,
+  buildComplementaryPrompt,
+  buildSelectionPrompt,
+  buildMnemonicPrompt,
+  buildNotionCategorizationPrompt,
+  buildContradictionCheckPrompt,
+} from "@/lib/el-profesor/prompts";
+import type {
+  ComplementaryResult,
+  ExtractionResult,
+  VerificationResult,
+  SelectionResult,
+  BlockType,
+  NotionCategorizationResult,
+  ContradictionCheckResult,
+} from "@/lib/el-profesor/types";
 
 const FILES_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files";
 const FILES_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
@@ -171,6 +187,23 @@ const VERIFICATION_RESPONSE_SCHEMA = {
     },
   },
   required: ["flags"],
+};
+
+const NOTION_CATEGORIZATION_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    notions: { type: "ARRAY", items: { type: "STRING" } },
+  },
+  required: ["notions"],
+};
+
+const CONTRADICTION_CHECK_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    contradictory: { type: "BOOLEAN" },
+    explanation: { type: "STRING" },
+  },
+  required: ["contradictory", "explanation"],
 };
 
 export type UploadedGeminiFile = {
@@ -469,6 +502,50 @@ export async function generateMnemonic(config: GeminiRotationConfig, subEntityNa
     try {
       const result = await callGeminiJson(apiKey, model, [{ text: instructions }], MNEMONIC_RESPONSE_SCHEMA);
       return result as { text: string };
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaOrCapacityError(err)) throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+}
+
+/** Assigns 1-3 cross-book "notion" tags to a fiche's content, reusing existing notion names when they fit. Rotates on quota/capacity errors. */
+export async function categorizeFicheNotions(
+  config: GeminiRotationConfig,
+  ficheTitle: string,
+  ficheText: string,
+  existingNotionNames: string[]
+): Promise<NotionCategorizationResult> {
+  const instructions = buildNotionCategorizationPrompt(ficheTitle, ficheText, existingNotionNames);
+  let lastError: unknown;
+  for (const { apiKey, model } of rotationCombos(config)) {
+    try {
+      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], NOTION_CATEGORIZATION_SCHEMA);
+      return result as NotionCategorizationResult;
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaOrCapacityError(err)) throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+}
+
+/** Checks whether two fiches sharing a notion actually contradict each other on a factual point. Rotates on quota/capacity errors. */
+export async function checkContradiction(
+  config: GeminiRotationConfig,
+  notionName: string,
+  ficheATitle: string,
+  ficheAText: string,
+  ficheBTitle: string,
+  ficheBText: string
+): Promise<ContradictionCheckResult> {
+  const instructions = buildContradictionCheckPrompt(notionName, ficheATitle, ficheAText, ficheBTitle, ficheBText);
+  let lastError: unknown;
+  for (const { apiKey, model } of rotationCombos(config)) {
+    try {
+      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], CONTRADICTION_CHECK_SCHEMA);
+      return result as ContradictionCheckResult;
     } catch (err) {
       lastError = err;
       if (!isQuotaOrCapacityError(err)) throw err;

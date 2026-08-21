@@ -23,6 +23,7 @@ import {
   Search,
   Trophy,
   Zap,
+  Tag,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -411,6 +412,11 @@ export function ElProfesorBoard({
           </Button>
           {isAdmin && (
             <>
+              <Link href="/apps/el-profesor/notions">
+                <Button variant="ghost" size="icon" aria-label="Notions et contradictions" title="Notions et contradictions">
+                  <Tag className="h-4 w-4" />
+                </Button>
+              </Link>
               <Button
                 variant="ghost"
                 size="icon"

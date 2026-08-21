@@ -330,6 +330,32 @@ export type ElProfesorNoteRow = {
   updated_at: string;
 };
 
+export type ElProfesorNotionRow = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+export type ElProfesorNotionLinkRow = {
+  id: string;
+  notion_id: string;
+  fiche_id: string;
+  created_at: string;
+};
+
+export type ElProfesorContradictionRow = {
+  id: string;
+  notion_id: string | null;
+  fiche_id_a: string;
+  fiche_id_b: string;
+  explanation: string;
+  status: "pending" | "dismissed" | "resolved";
+  resolution_note: string;
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+};
+
 export type UserLoginLogRow = {
   id: string;
   user_id: string;
@@ -548,6 +574,24 @@ export type Database = {
         Row: ElProfesorFlagRow;
         Insert: Partial<ElProfesorFlagRow> & { target_type: "block" | "flashcard"; target_id: string; flagged_by: string };
         Update: Partial<ElProfesorFlagRow>;
+        Relationships: [];
+      };
+      el_profesor_notions: {
+        Row: ElProfesorNotionRow;
+        Insert: Partial<ElProfesorNotionRow> & { name: string };
+        Update: Partial<ElProfesorNotionRow>;
+        Relationships: [];
+      };
+      el_profesor_notion_links: {
+        Row: ElProfesorNotionLinkRow;
+        Insert: Partial<ElProfesorNotionLinkRow> & { notion_id: string; fiche_id: string };
+        Update: Partial<ElProfesorNotionLinkRow>;
+        Relationships: [];
+      };
+      el_profesor_contradictions: {
+        Row: ElProfesorContradictionRow;
+        Insert: Partial<ElProfesorContradictionRow> & { fiche_id_a: string; fiche_id_b: string; explanation: string };
+        Update: Partial<ElProfesorContradictionRow>;
         Relationships: [];
       };
       el_profesor_settings: {

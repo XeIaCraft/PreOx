@@ -104,6 +104,41 @@ export type Flag = {
   status: "open" | "resolved";
 };
 
+export type Notion = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
+/** One fiche linked to a notion, with enough book/chapter context to tell cross-book links apart at a glance. */
+export type NotionLinkedFiche = {
+  ficheId: string;
+  ficheTitle: string;
+  chapterId: string;
+  chapterTitle: string;
+  bookId: string;
+  bookTitle: string;
+};
+
+export type NotionSummary = {
+  notion: Notion;
+  fiches: NotionLinkedFiche[];
+};
+
+export type ContradictionStatus = "pending" | "dismissed" | "resolved";
+
+export type Contradiction = {
+  id: string;
+  notionId: string | null;
+  notionName: string | null;
+  ficheA: NotionLinkedFiche;
+  ficheB: NotionLinkedFiche;
+  explanation: string;
+  status: ContradictionStatus;
+  resolutionNote: string;
+  createdAt: string;
+};
+
 export type ReviewState = {
   flashcardId: string;
   due: string;
@@ -179,4 +214,15 @@ export type ComplementaryResult = {
 export type SelectionResult = {
   block: ExtractedFicheBlock;
   flashcard?: ExtractedFlashcard;
+};
+
+// -- Notion categorization + cross-fiche contradiction detection ------------
+
+export type NotionCategorizationResult = {
+  notions: string[];
+};
+
+export type ContradictionCheckResult = {
+  contradictory: boolean;
+  explanation: string;
 };

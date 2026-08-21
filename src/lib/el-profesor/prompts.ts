@@ -124,6 +124,40 @@ Réponds uniquement avec le JSON demandé (un champ "text"), structuré exacteme
 `.trim();
 }
 
+export function buildNotionCategorizationPrompt(ficheTitle: string, ficheText: string, existingNotionNames: string[]): string {
+  return `
+Tu catégorises le contenu médical d'une fiche de révision par "notions" transversales — des concepts qui peuvent apparaître dans plusieurs chapitres ou plusieurs livres différents (ex: "Hyperkaliémie", "Choc anaphylactique", "Anticoagulants et chirurgie", "Ventilation protectrice"). Le but : pouvoir un jour comparer entre eux tous les passages de la bibliothèque qui parlent de la même notion, même extraits de livres différents.
+
+Fiche « ${ficheTitle} » :
+« ${ficheText} »
+
+Notions déjà existantes dans la bibliothèque (réutilise-les si elles correspondent vraiment, plutôt que de créer un quasi-doublon avec un nom légèrement différent) :
+${existingNotionNames.length > 0 ? existingNotionNames.map((n) => `- ${n}`).join("\n") : "(aucune pour l'instant)"}
+
+Attribue à cette fiche entre 1 et 3 notions parmi celles-ci ou, si aucune ne convient vraiment, un nom de notion nouveau et précis (pas trop large : "Anesthésie" est trop vague, "Anesthésie et insuffisance rénale" est utile). Réponds uniquement avec le JSON demandé (un champ "notions", liste de chaînes), structuré exactement selon le schéma fourni.
+`.trim();
+}
+
+export function buildContradictionCheckPrompt(
+  notionName: string,
+  ficheATitle: string,
+  ficheAText: string,
+  ficheBTitle: string,
+  ficheBText: string
+): string {
+  return `
+Tu compares deux fiches de révision médicale qui partagent la même notion transversale « ${notionName} », potentiellement issues de livres ou chapitres différents. Ta tâche : détecter si elles se contredisent réellement sur un point de fait (valeur numérique différente, conduite à tenir opposée, mécanisme décrit différemment...) — pas juste des différences de formulation, de niveau de détail, ou des angles complémentaires qui ne se contredisent pas.
+
+Fiche A — « ${ficheATitle} » :
+« ${ficheAText} »
+
+Fiche B — « ${ficheBTitle} » :
+« ${ficheBText} »
+
+Réponds uniquement avec le JSON demandé : "contradictory" (booléen — true seulement si tu es raisonnablement confiant qu'il y a une vraie contradiction factuelle exploitable, pas un simple doute) et "explanation" (si contradictoire : quel point précis diverge et comment, en une ou deux phrases ; sinon une chaîne vide), structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildVerificationPrompt(extractionJson: string): string {
   return `
 Tu reçois le document source (chapitre PDF) et, ci-dessous, un JSON d'extraction déjà produit à partir de ce document (sous-entités, fiches, blocs avec citations, flashcards). Ta seule tâche : vérifier la fidélité de chaque bloc et chaque flashcard à sa citation et au document source.

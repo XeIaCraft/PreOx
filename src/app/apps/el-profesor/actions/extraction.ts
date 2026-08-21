@@ -14,6 +14,7 @@ import {
 import { GeminiError } from "@/lib/gemini-shared";
 import { getChapterContent } from "@/lib/el-profesor/dal";
 import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-profesor/content-log";
+import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import type {
   ExtractionResult,
   ComplementaryResult,
@@ -449,18 +450,6 @@ export async function updateFlashcard(
   await logContentChange(profile.id, "flashcard", flashcardId, "edit");
   revalidatePath("/apps/el-profesor");
   return { success: "Flashcard mise à jour." };
-}
-
-function blockToPlainText(blockType: string, content: BlockContent): string {
-  if (blockType === "tableau_comparatif") {
-    const c = content as TableBlockContent;
-    return [(c.headers ?? []).join(" | "), ...(c.rows ?? []).map((r) => r.join(" | "))].join("\n");
-  }
-  if (blockType === "protocole_paliers") {
-    const c = content as ProtocolBlockContent;
-    return (c.steps ?? []).map((s, i) => `${i + 1}. ${s.label} — ${s.detail}`).join("\n");
-  }
-  return (content as { text?: string }).text ?? "";
 }
 
 /** Proposes a mnemonic as a new draft block on the same fiche, for a block that isn't itself a mnemonic. Never overwrites the source block. */
