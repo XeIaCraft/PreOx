@@ -1,28 +1,62 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Image from "next/image";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, ShoppingCart } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
+import { ShoppingListPreview } from "@/components/a-table/ui/shopping-list-preview";
 import { Button } from "@/components/ui/button";
 import { validateDraft, regenerateProposal, refineProposal } from "@/app/apps/a-table/actions/drafts";
+import { buildShoppingList, previewWithExtraIngredients, type ShoppingItem } from "@/lib/a-table/shopping";
 import { useToast } from "@/components/ui/toast";
-import type { DraftProposal } from "@/lib/a-table/types";
+import type { Appetite, DraftProposal, GuestMenu, MealCard, Recipe, ShoppingManualItem } from "@/lib/a-table/types";
 
 interface ValidateDraftDialogProps {
   draftId: string;
   proposals: DraftProposal[];
   onClose: () => void;
   onSaved: () => void;
+  /** Current board state, only needed to compute the live shopping-list preview on tablet+. */
+  mealCards: MealCard[];
+  recipesById: Map<string, Recipe>;
+  guestMenus: GuestMenu[];
+  appetite: Appetite;
+  exportedRecipeIds: string[];
+  shoppingChecked: Record<string, boolean>;
+  manualItems: ShoppingManualItem[];
 }
 
-export function ValidateDraftDialog({ draftId, proposals, onClose, onSaved }: ValidateDraftDialogProps) {
+export function ValidateDraftDialog({
+  draftId,
+  proposals,
+  onClose,
+  onSaved,
+  mealCards,
+  recipesById,
+  guestMenus,
+  appetite,
+  exportedRecipeIds,
+  shoppingChecked,
+  manualItems,
+}: ValidateDraftDialogProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<number>>(new Set(proposals.map((_, i) => i)));
   const [openRefine, setOpenRefine] = useState<number | null>(null);
   const [regenerating, setRegenerating] = useState<number | null>(null);
+
+  // Live preview (tablet+ two-column layout): current shopping list plus the
+  // ingredients of whichever proposals are checked right now, recomputed on
+  // every toggle — item requested alongside the "à table" génération flow.
+  const baseShoppingList = useMemo(
+    () => buildShoppingList(mealCards, recipesById, guestMenus, appetite, exportedRecipeIds, shoppingChecked, manualItems),
+    [mealCards, recipesById, guestMenus, appetite, exportedRecipeIds, shoppingChecked, manualItems]
+  );
+  const previewItems: ShoppingItem[] = useMemo(() => {
+    const extraIngredients = Array.from(selected).flatMap((i) => proposals[i]?.ingredients ?? []);
+    return previewWithExtraIngredients(baseShoppingList, extraIngredients);
+  }, [baseShoppingList, selected, proposals]);
 
   function toggle(index: number) {
     setSelected((prev) => {
@@ -80,7 +114,15 @@ export function ValidateDraftDialog({ draftId, proposals, onClose, onSaved }: Va
         </>
       }
     >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="md:grid md:grid-cols-[240px_1fr] md:gap-5">
+        <aside className="hidden md:sticky md:top-0 md:block md:max-h-[65vh] md:overflow-y-auto md:border-r md:border-border md:pr-4">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+            <ShoppingCart className="h-3.5 w-3.5" /> Liste de courses (aperçu)
+          </p>
+          <ShoppingListPreview items={previewItems} />
+        </aside>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2">
         {proposals.map((proposal, index) => (
           <div key={index} className="overflow-hidden rounded-[var(--radius-md)] border border-border">
             {proposal.image_url && (
@@ -154,6 +196,7 @@ export function ValidateDraftDialog({ draftId, proposals, onClose, onSaved }: Va
             </div>
           </div>
         ))}
+        </div>
       </div>
     </Modal>
   );

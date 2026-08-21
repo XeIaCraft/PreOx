@@ -731,6 +731,13 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           proposals={validateDraft.proposals}
           onClose={() => setModal(null)}
           onSaved={refresh}
+          mealCards={activeCards}
+          recipesById={recipesById}
+          guestMenus={data.guestMenus}
+          appetite={data.settings.preferences.appetite}
+          exportedRecipeIds={data.settings.shopping_list_exported_recipe_ids}
+          shoppingChecked={data.settings.shopping_list_checked}
+          manualItems={data.settings.shopping_list_manual_items}
         />
       )}
 
