@@ -21,7 +21,8 @@ export default async function ReviewPage({
   const { mode, all, limit } = await searchParams;
   const source = mode === "free" ? "free" : "scheduled";
 
-  const fullQueue: Flashcard[] = source === "free" ? await getFreeReviewQueue(chapterId) : await getDueQueue(profile.id, chapterId);
+  const fullQueue: Flashcard[] =
+    source === "free" ? await getFreeReviewQueue(chapterId, profile.id) : await getDueQueue(profile.id, chapterId);
 
   let queue = fullQueue;
   let cappedFrom: number | null = null;

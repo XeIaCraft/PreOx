@@ -323,6 +323,12 @@ export type ElProfesorGeminiUsageLogRow = {
   error_message: string | null;
 };
 
+export type ElProfesorSuspendedFlashcardRow = {
+  user_id: string;
+  flashcard_id: string;
+  created_at: string;
+};
+
 export type ElProfesorSettingsRow = {
   id: boolean;
   gemini_model: string;
@@ -608,6 +614,12 @@ export type Database = {
         Row: ElProfesorGeminiUsageLogRow;
         Insert: Partial<ElProfesorGeminiUsageLogRow> & { model: string; success: boolean };
         Update: Partial<ElProfesorGeminiUsageLogRow>;
+        Relationships: [];
+      };
+      el_profesor_suspended_flashcards: {
+        Row: ElProfesorSuspendedFlashcardRow;
+        Insert: Partial<ElProfesorSuspendedFlashcardRow> & { user_id: string; flashcard_id: string };
+        Update: Partial<ElProfesorSuspendedFlashcardRow>;
         Relationships: [];
       };
       el_profesor_notions: {

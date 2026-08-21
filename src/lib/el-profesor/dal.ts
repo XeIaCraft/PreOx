@@ -287,6 +287,67 @@ export async function getChapterContent(chapterId: string, includeDrafts = false
   });
 }
 
+/** Flashcard IDs this user has excluded from their own reviews — never affects other users or deletes the card itself. */
+async function getSuspendedFlashcardIds(userId: string): Promise<Set<string>> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_suspended_flashcards").select("flashcard_id").eq("user_id", userId);
+  return new Set((data ?? []).map((r) => r.flashcard_id));
+}
+
+/** Excludes a flashcard from this user's own reviews (scheduled, global due, carnet d'erreurs, carte du jour, free review). */
+export async function suspendFlashcard(userId: string, flashcardId: string): Promise<void> {
+  const supabase = await createClient();
+  await supabase
+    .from("el_profesor_suspended_flashcards")
+    .upsert({ user_id: userId, flashcard_id: flashcardId }, { onConflict: "user_id,flashcard_id" });
+}
+
+/** Puts a previously-excluded flashcard back into this user's reviews. */
+export async function unsuspendFlashcard(userId: string, flashcardId: string): Promise<void> {
+  const supabase = await createClient();
+  await supabase.from("el_profesor_suspended_flashcards").delete().eq("user_id", userId).eq("flashcard_id", flashcardId);
+}
+
+export interface SuspendedFlashcard {
+  flashcardId: string;
+  front: string;
+  chapterId: string;
+  chapterTitle: string;
+  bookTitle: string;
+}
+
+/** Every flashcard this user has excluded from their reviews, for a small "cartes exclues" management screen. */
+export async function getSuspendedFlashcards(userId: string): Promise<SuspendedFlashcard[]> {
+  const supabase = await createClient();
+  const { data: rows } = await supabase
+    .from("el_profesor_suspended_flashcards")
+    .select("flashcard_id")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  const ids = (rows ?? []).map((r) => r.flashcard_id);
+  if (ids.length === 0) return [];
+
+  const { data: cards } = await supabase.from("el_profesor_flashcards").select("id, front, fiche_id").in("id", ids);
+  if (!cards || cards.length === 0) return [];
+
+  const ficheIds = [...new Set(cards.map((c) => c.fiche_id))];
+  const ficheContexts = await resolveFicheContexts(ficheIds);
+
+  return cards
+    .map((c) => {
+      const ctx = ficheContexts.get(c.fiche_id);
+      if (!ctx) return null;
+      return {
+        flashcardId: c.id,
+        front: (c.front as FlashcardSide).text,
+        chapterId: ctx.chapterId,
+        chapterTitle: ctx.chapterTitle,
+        bookTitle: ctx.bookTitle,
+      } satisfies SuspendedFlashcard;
+    })
+    .filter((c): c is SuspendedFlashcard => c !== null);
+}
+
 /** Flashcards due today (or new) for a chapter, for the scheduled review queue. */
 export async function getDueQueue(userId: string, chapterId: string): Promise<Flashcard[]> {
   const supabase = await createClient();
@@ -294,19 +355,23 @@ export async function getDueQueue(userId: string, chapterId: string): Promise<Fl
   const flashcards = content.flatMap((s) => s.fiche?.flashcards ?? []);
   if (flashcards.length === 0) return [];
 
-  const { data: states } = await supabase
-    .from("el_profesor_review_state")
-    .select("*")
-    .eq("user_id", userId)
-    .in(
-      "flashcard_id",
-      flashcards.map((f) => f.id)
-    );
+  const [{ data: states }, suspended] = await Promise.all([
+    supabase
+      .from("el_profesor_review_state")
+      .select("*")
+      .eq("user_id", userId)
+      .in(
+        "flashcard_id",
+        flashcards.map((f) => f.id)
+      ),
+    getSuspendedFlashcardIds(userId),
+  ]);
 
   const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s as ElProfesorReviewStateRow]));
   const now = Date.now();
 
   const due = flashcards
+    .filter((card) => !suspended.has(card.id))
     .map((card) => ({ card, dueAt: stateByCard.get(card.id)?.due }))
     .filter(({ dueAt }) => !dueAt || new Date(dueAt).getTime() <= now);
 
@@ -336,6 +401,7 @@ export async function getGlobalDueQueue(userId: string, chapters: Chapter[]): Pr
 export async function getDifficultQueue(userId: string, chapters: Chapter[]): Promise<Flashcard[]> {
   const supabase = await createClient();
   const published = chapters.filter((c) => c.status === "published");
+  const suspended = await getSuspendedFlashcardIds(userId);
 
   const perChapter = await Promise.all(
     published.map(async (chapter) => {
@@ -354,6 +420,7 @@ export async function getDifficultQueue(userId: string, chapters: Chapter[]): Pr
       const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s]));
 
       return flashcards.filter((card) => {
+        if (suspended.has(card.id)) return false;
         const state = stateByCard.get(card.id);
         return !!state && (state.state === "relearning" || state.lapses >= 2);
       });
@@ -375,8 +442,14 @@ export async function getDailyCard(userId: string, chapters: Chapter[]): Promise
   const supabase = await createClient();
   const published = chapters.filter((c) => c.status === "published");
 
-  const perChapter = await Promise.all(published.map((c) => getChapterContent(c.id, false)));
-  const all = perChapter.flat().flatMap((s) => s.fiche?.flashcards ?? []);
+  const [perChapter, suspended] = await Promise.all([
+    Promise.all(published.map((c) => getChapterContent(c.id, false))),
+    getSuspendedFlashcardIds(userId),
+  ]);
+  const all = perChapter
+    .flat()
+    .flatMap((s) => s.fiche?.flashcards ?? [])
+    .filter((c) => !suspended.has(c.id));
   if (all.length === 0) return null;
 
   const { data: states } = await supabase
@@ -400,6 +473,7 @@ export async function getDailyCard(userId: string, chapters: Chapter[]): Promise
 export async function getDifficultCountsByChapter(userId: string, chapters: Chapter[]): Promise<ChapterDueCounts> {
   const counts: ChapterDueCounts = {};
   const supabase = await createClient();
+  const suspended = await getSuspendedFlashcardIds(userId);
 
   await Promise.all(
     chapters
@@ -423,6 +497,7 @@ export async function getDifficultCountsByChapter(userId: string, chapters: Chap
         const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s]));
 
         counts[chapter.id] = flashcards.filter((card) => {
+          if (suspended.has(card.id)) return false;
           const state = stateByCard.get(card.id);
           return !!state && (state.state === "relearning" || state.lapses >= 2);
         }).length;
@@ -503,9 +578,9 @@ function shuffle<T>(items: T[]): T[] {
 }
 
 /** Every published flashcard for a chapter, ignoring due dates — free/on-demand review, shuffled for variety across sessions. */
-export async function getFreeReviewQueue(chapterId: string): Promise<Flashcard[]> {
-  const content = await getChapterContent(chapterId, false);
-  return shuffle(content.flatMap((s) => s.fiche?.flashcards ?? []));
+export async function getFreeReviewQueue(chapterId: string, userId: string): Promise<Flashcard[]> {
+  const [content, suspended] = await Promise.all([getChapterContent(chapterId, false), getSuspendedFlashcardIds(userId)]);
+  return shuffle(content.flatMap((s) => s.fiche?.flashcards ?? []).filter((c) => !suspended.has(c.id)));
 }
 
 export async function getReviewState(userId: string, flashcardId: string): Promise<ReviewState | null> {

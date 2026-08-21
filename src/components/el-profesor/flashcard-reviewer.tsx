@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, X, PartyPopper, Undo2, Info, Keyboard, Timer, Square, PenLine, Maximize2, Minimize2 } from "lucide-react";
+import { ArrowLeft, Check, X, PartyPopper, Undo2, Info, Keyboard, Timer, Square, PenLine, Maximize2, Minimize2, BellOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { submitReview, undoReview } from "@/app/apps/el-profesor/actions/review";
+import { submitReview, undoReview, excludeFlashcardFromReviews } from "@/app/apps/el-profesor/actions/review";
 import { FlagButton } from "@/components/el-profesor/flag-button";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { useToast } from "@/components/ui/toast";
@@ -145,6 +145,24 @@ export function FlashcardReviewer({
       setDone((d) => d + 1);
       setTally((t) => (rating === "again" ? { ...t, again: t.again + 1 } : { ...t, good: t.good + 1 }));
       if (rating === "again") setStruggled((s) => [...s, current.front.text]);
+      setRevealed(false);
+      setDictationInput("");
+      setIndex((i) => i + 1);
+    });
+  }
+
+  // Skips the card out of this session without recording a rating — never
+  // affects other users, and it can be reinstated later from "Cartes exclues".
+  function handleExclude() {
+    if (!current) return;
+    const excludedId = current.id;
+    startTransition(async () => {
+      const result = await excludeFlashcardFromReviews(excludedId);
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      toast("Carte exclue de vos révisions.", { variant: "success" });
       setRevealed(false);
       setDictationInput("");
       setIndex((i) => i + 1);
@@ -460,7 +478,17 @@ export function FlashcardReviewer({
             </div>
             <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-primary/30 bg-surface p-8 text-center shadow-sm [backface-visibility:hidden] [transform:rotateY(180deg)]">
               {revealed && (
-                <div className="absolute right-3 top-3">
+                <div className="absolute right-3 top-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExclude}
+                    disabled={isPending}
+                    className="text-foreground-subtle transition-colors hover:text-danger"
+                    aria-label="Exclure cette carte de mes révisions"
+                    title="Exclure cette carte de mes révisions"
+                  >
+                    <BellOff className="h-3.5 w-3.5" />
+                  </button>
                   <FlagButton targetType="flashcard" targetId={current.id} />
                 </div>
               )}

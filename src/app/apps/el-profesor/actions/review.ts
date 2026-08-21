@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireElProfesorAccess } from "@/lib/el-profesor/dal";
-import { getReviewState } from "@/lib/el-profesor/dal";
+import { getReviewState, suspendFlashcard, unsuspendFlashcard } from "@/lib/el-profesor/dal";
 import { scheduleReview } from "@/lib/el-profesor/fsrs";
 import { createClient } from "@/lib/supabase/server";
 import type { ReviewRating, ReviewSource, ReviewState } from "@/lib/el-profesor/types";
@@ -111,4 +111,20 @@ export async function undoReview(
 
   revalidatePath("/apps/el-profesor");
   return { success: "Réponse annulée." };
+}
+
+/** Excludes a flashcard from this user's own reviews — never affects other users or deletes the card itself. */
+export async function excludeFlashcardFromReviews(flashcardId: string): Promise<ActionState> {
+  const profile = await requireElProfesorAccess();
+  await suspendFlashcard(profile.id, flashcardId);
+  revalidatePath("/apps/el-profesor");
+  return { success: "Carte exclue de vos révisions." };
+}
+
+/** Puts a previously-excluded flashcard back into this user's reviews. */
+export async function reincludeFlashcardInReviews(flashcardId: string): Promise<ActionState> {
+  const profile = await requireElProfesorAccess();
+  await unsuspendFlashcard(profile.id, flashcardId);
+  revalidatePath("/apps/el-profesor");
+  return { success: "Carte réintégrée dans vos révisions." };
 }
