@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import Image from "next/image";
-import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy, Minus, Plus, Upload, Wine, Share2 } from "lucide-react";
+import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy, Minus, Plus, Upload, Wine, Share2, Snowflake } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
   uploadRecipePhoto,
   suggestWineForRecipe,
   toggleRecipeShare,
+  toggleNeedsDefrost,
 } from "@/app/apps/a-table/actions/recipes";
 import { useToast } from "@/components/ui/toast";
 import { scaleFactor } from "@/lib/a-table/shopping";
@@ -56,6 +57,14 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
   function handleFavorite() {
     startTransition(async () => {
       const result = await toggleFavorite(recipe.id);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onSaved();
+    });
+  }
+
+  function handleToggleDefrost() {
+    startTransition(async () => {
+      const result = await toggleNeedsDefrost(recipe.id);
       if (result.error) toast(result.error, { variant: "error" });
       else onSaved();
     });
@@ -142,6 +151,17 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
         <Button className="shrink-0" variant={recipe.is_favorite ? "primary" : "secondary"} size="sm" onClick={handleFavorite} disabled={isPending}>
           <Star className="h-4 w-4" />
           {recipe.is_favorite ? "Favori" : "Ajouter aux favoris"}
+        </Button>
+        <Button
+          className="shrink-0"
+          variant={recipe.needs_defrost ? "primary" : "secondary"}
+          size="sm"
+          onClick={handleToggleDefrost}
+          disabled={isPending}
+          title="Recevoir un rappel la veille au soir de sortir un ingrédient du congélateur"
+        >
+          <Snowflake className="h-4 w-4" />
+          {recipe.needs_defrost ? "Nécessite un dégivrage" : "Ingrédient à décongeler ?"}
         </Button>
         <Button className="shrink-0" variant="secondary" size="sm" onClick={handleFetchImage} disabled={isPending}>
           <ImageIcon className="h-4 w-4" />
@@ -248,7 +268,13 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
             ))}
           </ul>
           {(() => {
-            const substitutions = findSubstitutions(recipe.ingredients.map((ing) => ing.name));
+            const substitutions = findSubstitutions(
+              recipe.ingredients.map((ing) => ({
+                name: ing.name,
+                quantity: typeof ing.quantity === "number" ? Math.round(ing.quantity * factor * 100) / 100 : null,
+                unit: ing.unit,
+              }))
+            );
             if (substitutions.length === 0) return null;
             return (
               <details className="mt-3 print:hidden">
@@ -256,7 +282,8 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
                 <ul className="mt-1.5 space-y-1 text-xs text-foreground-subtle">
                   {substitutions.map((s) => (
                     <li key={s.ingredient}>
-                      <span className="font-medium text-foreground-muted">{s.ingredient}</span> → {s.alternatives.join(", ")}
+                      <span className="font-medium text-foreground-muted">{s.ingredient}</span> →{" "}
+                      {s.alternatives.map((a) => a.label).join(", ")}
                     </li>
                   ))}
                 </ul>

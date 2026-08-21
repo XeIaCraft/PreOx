@@ -62,6 +62,7 @@ export interface Recipe {
   times_cooked: number;
   ratings: Rating[];
   share_token: string | null;
+  needs_defrost: boolean;
   created_at: string;
   updated_at: string;
 }

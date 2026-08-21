@@ -137,6 +137,31 @@ export async function toggleFavorite(recipeId: string): Promise<ActionState> {
   return { success: "" };
 }
 
+export async function toggleNeedsDefrost(recipeId: string): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const { data: recipe } = await supabase
+    .from("a_table_recipes")
+    .select("needs_defrost")
+    .eq("id", recipeId)
+    .eq("user_id", profile.id)
+    .single();
+
+  if (!recipe) return { error: "Recette introuvable." };
+
+  const { error } = await supabase
+    .from("a_table_recipes")
+    .update({ needs_defrost: !recipe.needs_defrost })
+    .eq("id", recipeId)
+    .eq("user_id", profile.id);
+
+  if (error) return { error: "Impossible de mettre à jour la recette." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "" };
+}
+
 export async function rateRecipe(recipeId: string, liked: boolean, comment: string): Promise<ActionState> {
   const profile = await requireATableAccess();
   const supabase = await createClient();

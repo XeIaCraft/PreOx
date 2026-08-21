@@ -6,6 +6,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { buildShoppingList } from "@/lib/a-table/shopping";
+import { findNearDuplicateIngredients } from "@/lib/a-table/dedupe";
 import { SHOPPING_CATEGORIES, SHOPPING_OTHER_CATEGORY } from "@/lib/a-table/constants";
 import {
   toggleShoppingChecked,
@@ -149,6 +150,8 @@ export function ShoppingDialog({
   const unchecked = items.filter((i) => !i.checked);
   const checkedItems = items.filter((i) => i.checked);
 
+  const nearDuplicates = useMemo(() => findNearDuplicateIngredients(unchecked), [unchecked]);
+
   function handleToggle(key: string) {
     const desired = !effectiveChecked[key];
     setPendingChecks((prev) => {
@@ -252,6 +255,18 @@ export function ShoppingDialog({
       {isOnline && Object.keys(pendingChecks).length > 0 && (
         <div className="mb-4 flex items-center gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-muted/50 px-3 py-2 text-xs text-foreground-subtle print:hidden">
           Synchronisation de {Object.keys(pendingChecks).length} article(s) en attente…
+        </div>
+      )}
+      {nearDuplicates.length > 0 && (
+        <div className="mb-4 rounded-[var(--radius-sm)] border border-accent/30 bg-accent-tint px-3 py-2 text-xs text-accent print:hidden">
+          <p className="font-medium">Peut-être le même ingrédient sous un autre nom :</p>
+          <ul className="mt-1 space-y-0.5">
+            {nearDuplicates.map((p, i) => (
+              <li key={i}>
+                « {p.a} » et « {p.b} »
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       <details className="mb-4 print:hidden">

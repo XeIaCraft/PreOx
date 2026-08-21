@@ -44,3 +44,47 @@ export function findSimilarRecipe<T extends { title: string }>(title: string, ex
   }
   return bestScore >= 0.6 ? best : null;
 }
+
+function bigrams(s: string): Set<string> {
+  const set = new Set<string>();
+  for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+  return set;
+}
+
+/** Sørensen–Dice coefficient on character bigrams — better than word-overlap for short
+    ingredient names with morphological variants ("beurre salé" vs "beurre demi-sel"). */
+function bigramSimilarity(a: string, b: string): number {
+  const setA = bigrams(a);
+  const setB = bigrams(b);
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let intersection = 0;
+  for (const bg of setA) if (setB.has(bg)) intersection++;
+  return (2 * intersection) / (setA.size + setB.size);
+}
+
+export interface NearDuplicatePair {
+  a: string;
+  b: string;
+}
+
+/** Flags ingredient names on a shopping list that likely refer to the same thing but didn't
+    merge because the wording differs slightly — the scenario that makes you buy two jars of
+    a specialty ingredient (e.g. "beurre salé" and "beurre demi-sel") instead of one. Only
+    compares items already in the same shopping category, to keep false positives down. */
+export function findNearDuplicateIngredients<T extends { key: string; name: string; category: string }>(
+  items: T[]
+): NearDuplicatePair[] {
+  const pairs: NearDuplicatePair[] = [];
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      const a = items[i];
+      const b = items[j];
+      if (a.category !== b.category) continue;
+      if (normalize(a.name) === normalize(b.name)) continue; // already merged upstream (same key)
+      if (bigramSimilarity(normalize(a.name), normalize(b.name)) >= 0.55) {
+        pairs.push({ a: a.name, b: b.name });
+      }
+    }
+  }
+  return pairs;
+}

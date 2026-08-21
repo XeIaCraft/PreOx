@@ -44,6 +44,7 @@ import { generateRecipeFromLeftovers } from "@/app/apps/a-table/actions/recipes"
 import { removeTemporaryIngredient } from "@/app/apps/a-table/actions/temp_ingredients";
 import { scaleFactor } from "@/lib/a-table/shopping";
 import { buildWeekIcs } from "@/lib/a-table/ics";
+import { findOutOfSeasonIngredients } from "@/lib/a-table/seasonality";
 import type { ATableData, Placement, TemporaryIngredient } from "@/lib/a-table/types";
 
 type ModalState =
@@ -165,6 +166,13 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
   const todayKey = WEEKDAY_PLACEMENTS[(new Date().getDay() + 6) % 7];
   const todayCard = activeCards.find((c) => c.placement === todayKey) ?? null;
   const todayRecipe = todayCard ? (recipesById.get(todayCard.recipe_id) ?? null) : null;
+
+  const outOfSeasonIngredients = useMemo(() => {
+    const names = activeCards
+      .filter((c) => WEEKDAY_PLACEMENTS.includes(c.placement))
+      .flatMap((c) => recipesById.get(c.recipe_id)?.ingredients.map((i) => i.name) ?? []);
+    return findOutOfSeasonIngredients(names);
+  }, [activeCards, recipesById]);
 
   function handleMove(cardId: string, placement: Placement) {
     setPendingCardId(cardId);
@@ -477,6 +485,12 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
             {data.settings.preferences.weekly_budget_cap.toFixed(2)} €.
           </div>
         )}
+
+      {outOfSeasonIngredients.length > 0 && (
+        <p className="text-xs text-foreground-subtle print:hidden">
+          Hors saison ce mois-ci : {outOfSeasonIngredients.join(", ")}.
+        </p>
+      )}
 
       {weekTotals.hasKcal && (data.settings.preferences.target_kcal_per_serving || weekTotals.macroPct) && (
         <div className="flex flex-wrap items-center gap-4 rounded-[var(--radius-md)] border border-border bg-surface-muted/50 px-3 py-2 text-xs text-foreground-muted print:hidden">

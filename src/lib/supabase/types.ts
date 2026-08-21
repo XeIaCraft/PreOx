@@ -83,6 +83,7 @@ export type ATableRecipeRow = {
   times_cooked: number;
   ratings: Json;
   share_token: string | null;
+  needs_defrost: boolean;
   created_at: string;
   updated_at: string;
 };
