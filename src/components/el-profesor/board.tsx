@@ -24,6 +24,7 @@ import {
   Trophy,
   Zap,
   Tag,
+  Gauge,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -418,6 +419,11 @@ export function ElProfesorBoard({
               <Link href="/apps/el-profesor/notions">
                 <Button variant="ghost" size="icon" aria-label="Notions et contradictions" title="Notions et contradictions">
                   <Tag className="h-4 w-4" />
+                </Button>
+              </Link>
+              <Link href="/apps/el-profesor/quality">
+                <Button variant="ghost" size="icon" aria-label="Tableau de bord qualité" title="Tableau de bord qualité">
+                  <Gauge className="h-4 w-4" />
                 </Button>
               </Link>
               <Button

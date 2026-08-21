@@ -9,6 +9,7 @@ import { EL_PROFESOR_GEMINI_MODEL_DEFAULT } from "./gemini";
 import { decryptSecret } from "@/lib/crypto";
 import { GeminiError } from "@/lib/gemini-shared";
 import { blockToPlainText } from "./block-text";
+import { findDuplicateFlashcards, findSimilarSubEntities, type DuplicateFlashcardPair, type SimilarSubEntityPair } from "./dedupe";
 import type { Profile } from "@/lib/supabase/types";
 import type {
   Book,
@@ -1007,6 +1008,89 @@ export async function getGeminiUsageStats(): Promise<GeminiUsageStats> {
       .slice(0, 5)
       .map((r) => ({ calledAt: r.called_at, model: r.model, statusCode: r.status_code, errorMessage: r.error_message })),
   };
+}
+
+// -- Per-book quality dashboard (admin-only) ---------------------------------
+
+export interface BookQualityChapterStat {
+  chapterId: string;
+  chapterTitle: string;
+  openFlagCount: number;
+  lastReviewedAt: string | null;
+}
+
+export interface BookQualityDashboard {
+  chapters: BookQualityChapterStat[];
+  duplicateFlashcards: DuplicateFlashcardPair[];
+  similarSubEntities: (SimilarSubEntityPair & { chapterTitle: string })[];
+}
+
+/** Combines coverage (open signalements, staleness), near-duplicate flashcards, and near-duplicate sub-entity names into one per-book admin view — items 43/45/50 of the backlog. Deterministic dedup, no Gemini cost. */
+export async function getBookQualityDashboard(bookId: string): Promise<BookQualityDashboard> {
+  const supabase = createAdminClient();
+
+  const { data: chapterRows } = await supabase
+    .from("el_profesor_chapters")
+    .select("id, title")
+    .eq("book_id", bookId)
+    .eq("status", "published")
+    .order("order_index", { ascending: true });
+  const chapters = chapterRows ?? [];
+  if (chapters.length === 0) return { chapters: [], duplicateFlashcards: [], similarSubEntities: [] };
+
+  const chapterTitleById = new Map(chapters.map((c) => [c.id, c.title]));
+
+  const allFlashcards: { id: string; front: string }[] = [];
+  const allSubEntities: { id: string; name: string; chapterId: string }[] = [];
+  const flagCountByChapter = new Map<string, number>();
+  const lastReviewedByChapter = new Map<string, string | null>();
+
+  await Promise.all(
+    chapters.map(async (chapter) => {
+      const content = await getChapterContent(chapter.id, false);
+      for (const sub of content) {
+        allSubEntities.push({ id: sub.id, name: sub.name, chapterId: chapter.id });
+        if (!sub.fiche) continue;
+        for (const card of sub.fiche.flashcards) allFlashcards.push({ id: card.id, front: card.front.text });
+      }
+
+      const blockIds = content.flatMap((s) => s.fiche?.blocks.map((b) => b.id) ?? []);
+      const flashcardIds = content.flatMap((s) => s.fiche?.flashcards.map((f) => f.id) ?? []);
+      const targetIds = [...blockIds, ...flashcardIds];
+
+      const [{ count }, { data: reviewLog }] = await Promise.all([
+        targetIds.length > 0
+          ? supabase.from("el_profesor_flags").select("id", { count: "exact", head: true }).eq("status", "open").in("target_id", targetIds)
+          : Promise.resolve({ count: 0 }),
+        flashcardIds.length > 0
+          ? supabase
+              .from("el_profesor_review_log")
+              .select("reviewed_at")
+              .in("flashcard_id", flashcardIds)
+              .order("reviewed_at", { ascending: false })
+              .limit(1)
+          : Promise.resolve({ data: [] as { reviewed_at: string }[] }),
+      ]);
+
+      flagCountByChapter.set(chapter.id, count ?? 0);
+      lastReviewedByChapter.set(chapter.id, reviewLog?.[0]?.reviewed_at ?? null);
+    })
+  );
+
+  const duplicateFlashcards = findDuplicateFlashcards(allFlashcards);
+  const similarSubEntities = findSimilarSubEntities(allSubEntities).map((pair) => ({
+    ...pair,
+    chapterTitle: chapterTitleById.get(pair.a.chapterId) ?? "",
+  }));
+
+  const chapterStats: BookQualityChapterStat[] = chapters.map((c) => ({
+    chapterId: c.id,
+    chapterTitle: c.title,
+    openFlagCount: flagCountByChapter.get(c.id) ?? 0,
+    lastReviewedAt: lastReviewedByChapter.get(c.id) ?? null,
+  }));
+
+  return { chapters: chapterStats, duplicateFlashcards, similarSubEntities };
 }
 
 // -- Notion tagging + cross-fiche contradiction detection (admin-only) ------
