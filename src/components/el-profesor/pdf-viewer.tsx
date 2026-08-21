@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, ZoomIn, ZoomOut, Layers, Maximize, Minimize } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, ZoomIn, ZoomOut, Layers, Maximize, Minimize, Highlighter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getPdfZoom, setPdfZoom } from "@/lib/el-profesor/local-prefs";
 
@@ -106,6 +106,11 @@ export function PdfViewer({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingSelection, setPendingSelection] = useState<string | null>(null);
+  // Fallback selection path for mobile browsers where long-press-and-drag
+  // native text selection over the (transparent, canvas-overlaid) text
+  // layer is unreliable: tap one word to anchor, tap another to extend.
+  const [tapMode, setTapMode] = useState(false);
+  const [tapRange, setTapRange] = useState<{ start: number; end: number } | null>(null);
 
   // Adjust the current page when a new highlight target arrives, computed
   // during render (React's recommended pattern for "state depends on a
@@ -262,6 +267,7 @@ export function PdfViewer({
   useEffect(() => {
     if (!onSelection) return;
     function handleSelectionChange() {
+      if (tapMode) return; // tap-to-select mode derives its own selection instead
       const selection = document.getSelection();
       const text = selection?.toString().trim() ?? "";
       if (!text || !textLayerRef.current || !selection || selection.rangeCount === 0) {
@@ -277,19 +283,60 @@ export function PdfViewer({
     }
     document.addEventListener("selectionchange", handleSelectionChange);
     return () => document.removeEventListener("selectionchange", handleSelectionChange);
-  }, [onSelection]);
+  }, [onSelection, tapMode]);
+
+  // A tap range refers to indices into this page's textSpans — stale once
+  // the page changes, so drop it (same "derive during render" pattern as
+  // highlightKey above, to avoid a setState-in-effect cascade).
+  const [lastPageNumForTap, setLastPageNumForTap] = useState(pageNum);
+  if (pageNum !== lastPageNumForTap) {
+    setLastPageNumForTap(pageNum);
+    if (tapRange) setTapRange(null);
+  }
+
+  function toggleTapMode() {
+    setTapMode((v) => !v);
+    document.getSelection()?.removeAllRanges();
+    setTapRange(null);
+    setPendingSelection(null);
+  }
+
+  function handleSpanTap(i: number) {
+    setTapRange((prev) => (prev ? { start: prev.start, end: i } : { start: i, end: i }));
+  }
+
+  // The tapped word range (mobile fallback) derives its text directly at
+  // render time rather than being mirrored into pendingSelection via an
+  // effect; native browser selection still drives pendingSelection itself.
+  const tapSelectionText =
+    tapMode && tapRange
+      ? textSpans
+          .slice(Math.min(tapRange.start, tapRange.end), Math.max(tapRange.start, tapRange.end) + 1)
+          .map((s) => s.text)
+          .join(" ")
+          .trim() || null
+      : null;
+  const activeSelection = tapMode ? tapSelectionText : pendingSelection;
 
   function handleUseSelection() {
-    if (!pendingSelection) return;
-    onSelection?.({ page: pageNum, quote: pendingSelection });
+    if (!activeSelection) return;
+    onSelection?.({ page: pageNum, quote: activeSelection });
     document.getSelection()?.removeAllRanges();
     setPendingSelection(null);
+    setTapRange(null);
   }
 
   function handleClearSelection() {
     document.getSelection()?.removeAllRanges();
     setPendingSelection(null);
+    setTapRange(null);
   }
+
+  const tapRects: Rect[] = tapMode && tapRange
+    ? textSpans
+        .slice(Math.min(tapRange.start, tapRange.end), Math.max(tapRange.start, tapRange.end) + 1)
+        .map((s) => ({ left: s.left, top: s.top, width: s.width, height: s.height }))
+    : [];
 
   return (
     <div ref={containerRef} className="flex h-full flex-col bg-surface">
@@ -317,6 +364,18 @@ export function PdfViewer({
         </div>
 
         <div className="flex items-center gap-1.5">
+          {onSelection && (
+            <button
+              type="button"
+              onClick={toggleTapMode}
+              className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ${
+                tapMode ? "bg-primary-tint text-primary-strong" : "text-foreground-subtle hover:bg-surface-muted"
+              }`}
+              title="Sélectionner en touchant les mots — utile si la sélection tactile classique ne fonctionne pas"
+            >
+              <Highlighter className="h-3.5 w-3.5" /> Sélection tactile
+            </button>
+          )}
           {coverage && coverage.length > 0 && (
             <button
               type="button"
@@ -348,6 +407,14 @@ export function PdfViewer({
           </Button>
         </div>
       </div>
+
+      {tapMode && (
+        <div className="border-b border-border bg-surface-muted px-3 py-1.5 text-[11px] text-foreground-subtle">
+          {tapRange
+            ? "Touchez un autre mot pour étendre la sélection, puis « Utiliser cette sélection » ci-dessous."
+            : "Touchez un mot pour commencer la sélection, puis un second mot pour la terminer."}
+        </div>
+      )}
 
       {showCoverage && coverage && coverage.length > 0 && (
         <div className="flex items-center gap-3 border-b border-border bg-surface-muted px-3 py-1.5 text-[11px] text-foreground-subtle">
@@ -390,16 +457,19 @@ export function PdfViewer({
               textSpans.map((s, i) => (
                 <span
                   key={i}
+                  onClick={tapMode ? () => handleSpanTap(i) : undefined}
                   style={{
                     position: "absolute",
                     left: s.left,
                     top: s.top,
+                    width: s.width,
+                    height: s.height,
                     fontSize: s.height,
                     color: "transparent",
                     whiteSpace: "pre",
-                    cursor: "text",
-                    WebkitUserSelect: "text",
-                    userSelect: "text",
+                    cursor: tapMode ? "pointer" : "text",
+                    WebkitUserSelect: tapMode ? "none" : "text",
+                    userSelect: tapMode ? "none" : "text",
                   }}
                 >
                   {s.text}
@@ -420,6 +490,13 @@ export function PdfViewer({
               style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
             />
           ))}
+          {tapRects.map((r, i) => (
+            <div
+              key={i}
+              className="pointer-events-none absolute rounded-sm bg-primary/30 ring-2 ring-primary/70"
+              style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
+            />
+          ))}
         </div>
         {!loading && !error && highlight && highlight.page === pageNum && rects.length === 0 && (
           <p className="mt-2 text-center text-xs text-foreground-subtle">
@@ -428,9 +505,9 @@ export function PdfViewer({
         )}
       </div>
 
-      {onSelection && pendingSelection && (
+      {onSelection && activeSelection && (
         <div className="flex items-center justify-between gap-3 border-t border-border bg-surface px-3 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2">
-          <p className="line-clamp-1 text-xs text-foreground-muted">« {pendingSelection} »</p>
+          <p className="line-clamp-1 text-xs text-foreground-muted">« {activeSelection} »</p>
           <div className="flex shrink-0 items-center gap-1.5">
             <Button variant="ghost" size="sm" onClick={handleClearSelection}>
               Annuler
