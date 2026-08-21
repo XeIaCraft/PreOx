@@ -4,6 +4,14 @@ const nextConfig: NextConfig = {
   // Don't advertise the framework in responses — no functional benefit to
   // a would-be attacker knowing, but no reason to hand it out either.
   poweredByHeader: false,
+  experimental: {
+    // Default is 1MB — a dense chapter's hand-pasted extraction JSON
+    // (many sub-entities, blocks, verbatim citation quotes) can exceed
+    // that, so importChapterContent's Server Action needs more room.
+    serverActions: {
+      bodySizeLimit: "8mb",
+    },
+  },
   images: {
     remotePatterns: [
       {

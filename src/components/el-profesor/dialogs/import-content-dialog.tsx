@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Copy, Check } from "lucide-react";
+import { useRef, useState, useTransition } from "react";
+import { Copy, Check, Upload } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { importChapterContent } from "@/app/apps/el-profesor/actions/extraction";
@@ -23,6 +23,15 @@ export function ImportContentDialog({
   const [isPending, startTransition] = useTransition();
   const [json, setJson] = useState("");
   const [copied, setCopied] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function handleFileChosen(file: File | null) {
+    if (!file) return;
+    file
+      .text()
+      .then((text) => setJson(text))
+      .catch(() => toast("Impossible de lire ce fichier.", { variant: "error" }));
+  }
 
   function handleCopyPrompt() {
     const prompt = buildExternalImportPrompt(chapterTitle);
@@ -61,16 +70,32 @@ export function ImportContentDialog({
             {copied ? "Copié !" : "Copier le prompt"}
           </Button>
           <p className="mt-1.5 text-xs text-foreground-subtle">
-            Collez ce texte dans une conversation avec le PDF du chapitre joint à la main, puis collez sa réponse (le JSON) ci-dessous.
+            Collez ce texte dans une conversation avec le PDF du chapitre joint à la main, puis récupérez sa réponse (le JSON)
+            ci-dessous — collée, ou déposée en fichier si le copier-coller tronque un contenu très long (fréquent sur mobile).
           </p>
         </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isPending}>
+            <Upload className="h-3.5 w-3.5" /> Charger un fichier .json/.txt
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,.txt,text/plain,application/json"
+            className="hidden"
+            onChange={(e) => handleFileChosen(e.target.files?.[0] ?? null)}
+          />
+          <span className="text-xs text-foreground-subtle">{json.length.toLocaleString("fr-FR")} caractère{json.length > 1 ? "s" : ""}</span>
+        </div>
+
         <textarea
           value={json}
           onChange={(e) => setJson(e.target.value)}
           placeholder='{"sub_entities": [...], "estimated_remaining_passes": 0}'
-          rows={10}
+          rows={20}
           disabled={isPending}
-          className="w-full rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 font-mono text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          className="min-h-[50vh] w-full resize-y rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 font-mono text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
         />
         <p className="text-xs text-foreground-subtle">
           Les pages de citation sont revérifiées automatiquement contre le PDF du chapitre, comme pour une extraction normale, et
