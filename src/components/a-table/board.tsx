@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus, Sparkles, CookingPot, ImageDown } from "lucide-react";
+import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus, Sparkles, CookingPot, ImageDown, LayoutTemplate } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
 import { A_TABLE_ONBOARDING_STEPS } from "@/components/a-table/onboarding-steps";
@@ -19,6 +19,7 @@ import { AddRecipeDialog } from "@/components/a-table/dialogs/add-recipe-dialog"
 import { TempIngredientDialog } from "@/components/a-table/dialogs/temp-ingredient-dialog";
 import { LibraryDialog } from "@/components/a-table/dialogs/library-dialog";
 import { BatchCookDialog } from "@/components/a-table/dialogs/batch-cook-dialog";
+import { WeekTemplatesDialog } from "@/components/a-table/dialogs/week-templates-dialog";
 import { CollectionsDialog } from "@/components/a-table/dialogs/collections-dialog";
 import { RateDialog } from "@/components/a-table/dialogs/rate-dialog";
 import { HistoryDialog } from "@/components/a-table/dialogs/history-dialog";
@@ -55,6 +56,7 @@ type ModalState =
   | { type: "edit_temp"; ingredient: TemporaryIngredient }
   | { type: "library" }
   | { type: "batch_cook" }
+  | { type: "week_templates" }
   | { type: "collections" }
   | { type: "rate"; recipeId: string; recipeTitle: string }
   | { type: "history" }
@@ -359,6 +361,9 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setModal({ type: "batch_cook" })}>
             <CookingPot className="h-4 w-4" /> Cuisiner en lot
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setModal({ type: "week_templates" })}>
+            <LayoutTemplate className="h-4 w-4" /> Modèles de semaine
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setModal({ type: "collections" })}>
             <FolderHeart className="h-4 w-4" /> Collections
@@ -684,6 +689,10 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
 
       {modal?.type === "collections" && (
         <CollectionsDialog collections={data.collections} recipes={data.recipes} onClose={() => setModal(null)} onSaved={refresh} />
+      )}
+
+      {modal?.type === "week_templates" && (
+        <WeekTemplatesDialog templates={data.weekTemplates} recipesById={recipesById} onClose={() => setModal(null)} onSaved={refresh} />
       )}
 
       {modal?.type === "rate" && (

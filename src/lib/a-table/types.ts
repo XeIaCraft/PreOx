@@ -249,6 +249,20 @@ export interface RecipeCollection {
   updated_at: string;
 }
 
+export interface WeekTemplateItem {
+  placement: Placement;
+  recipe_id: string;
+  servings: number;
+}
+
+export interface WeekTemplate {
+  id: string;
+  user_id: string;
+  name: string;
+  items: WeekTemplateItem[];
+  created_at: string;
+}
+
 export interface ATableData {
   settings: ATableSettings;
   recipes: Recipe[];
@@ -258,4 +272,5 @@ export interface ATableData {
   guestMenus: GuestMenu[];
   history: HistoryEntry[];
   collections: RecipeCollection[];
+  weekTemplates: WeekTemplate[];
 }

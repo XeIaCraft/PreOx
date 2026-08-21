@@ -151,6 +151,14 @@ export type ATableCollectionRow = {
   updated_at: string;
 };
 
+export type ATableWeekTemplateRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  items: Json;
+  created_at: string;
+};
+
 export type ATableSettingsRow = {
   user_id: string;
   preferences: Json;
@@ -498,6 +506,12 @@ export type Database = {
         Row: ATableCollectionRow;
         Insert: Partial<ATableCollectionRow> & { user_id: string; name: string };
         Update: Partial<ATableCollectionRow>;
+        Relationships: [];
+      };
+      a_table_week_templates: {
+        Row: ATableWeekTemplateRow;
+        Insert: Partial<ATableWeekTemplateRow> & { user_id: string; name: string };
+        Update: Partial<ATableWeekTemplateRow>;
         Relationships: [];
       };
       a_table_settings: {

@@ -18,6 +18,7 @@ import type {
   RecipeCollection,
   ShoppingManualItem,
   TemporaryIngredient,
+  WeekTemplate,
 } from "./types";
 
 /** Same access-check every other module page uses — gated by the hub's own RBAC. */
@@ -87,7 +88,7 @@ export async function getOrCreateSettings(userId: string): Promise<ATableSetting
 export async function getATableData(userId: string): Promise<ATableData> {
   const supabase = await createClient();
 
-  const [settings, recipesRes, cardsRes, draftsRes, tempRes, guestRes, historyRes, collectionsRes] = await Promise.all([
+  const [settings, recipesRes, cardsRes, draftsRes, tempRes, guestRes, historyRes, collectionsRes, weekTemplatesRes] = await Promise.all([
     getOrCreateSettings(userId),
     supabase.from("a_table_recipes").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
     supabase.from("a_table_meal_cards").select("*").eq("user_id", userId).eq("status", "active"),
@@ -105,6 +106,7 @@ export async function getATableData(userId: string): Promise<ATableData> {
       .order("cooked_at", { ascending: false })
       .limit(200),
     supabase.from("a_table_collections").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+    supabase.from("a_table_week_templates").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
   ]);
 
   return {
@@ -116,5 +118,6 @@ export async function getATableData(userId: string): Promise<ATableData> {
     collections: (collectionsRes.data ?? []) as unknown as RecipeCollection[],
     guestMenus: (guestRes.data ?? []) as unknown as GuestMenu[],
     history: (historyRes.data ?? []) as unknown as HistoryEntry[],
+    weekTemplates: (weekTemplatesRes.data ?? []) as unknown as WeekTemplate[],
   };
 }
