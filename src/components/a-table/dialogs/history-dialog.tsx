@@ -1,12 +1,16 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { Trash2, RotateCcw, Download, Flame, Award, BookOpen } from "lucide-react";
+import { useMemo, useRef, useState, useTransition } from "react";
+import Image from "next/image";
+import { Trash2, RotateCcw, Download, Flame, Award, BookOpen, Camera } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { removeHistoryEntry, restoreHistoryEntry, addRecipeToBacklog } from "@/app/apps/a-table/actions/planning";
+import { removeHistoryEntry, restoreHistoryEntry, addRecipeToBacklog, addHistoryPhoto } from "@/app/apps/a-table/actions/planning";
 import { useToast } from "@/components/ui/toast";
+import { fileToBase64 } from "@/lib/client-file";
 import type { HistoryEntry, Recipe } from "@/lib/a-table/types";
+
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
 function csvEscape(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
@@ -170,6 +174,30 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
     URL.revokeObjectURL(link.href);
   }
 
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [photoTargetId, setPhotoTargetId] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  function handlePhotoSelected(file: File | undefined) {
+    if (!file || !photoTargetId) return;
+    if (!file.type.startsWith("image/")) {
+      toast("Seules les images sont acceptées.", { variant: "error" });
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      toast("Photo trop lourde (8 Mo maximum).", { variant: "error" });
+      return;
+    }
+    setUploadingPhoto(true);
+    fileToBase64(file)
+      .then((base64) => addHistoryPhoto(photoTargetId, base64, file.type || "image/jpeg"))
+      .then((result) => {
+        if (result.error) toast(result.error, { variant: "error" });
+        else onSaved();
+      })
+      .finally(() => setUploadingPhoto(false));
+  }
+
   function handleRemove(entry: HistoryEntry) {
     startTransition(async () => {
       const result = await removeHistoryEntry(entry.id);
@@ -316,14 +344,33 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
           {visible.map((entry) => {
             const recipe = entry.recipe_id ? recipesById.get(entry.recipe_id) : undefined;
             return (
-              <li key={entry.id} className="flex items-center justify-between py-2.5">
-                <div>
-                  <p className="text-sm font-medium text-foreground">{recipe?.title ?? "Recette supprimée"}</p>
-                  <p className="text-xs text-foreground-subtle">
-                    {new Date(entry.cooked_at).toLocaleDateString("fr-FR")} · {entry.servings} pers.
-                  </p>
+              <li key={entry.id} className="flex items-center justify-between gap-2 py-2.5">
+                <div className="flex items-center gap-2.5">
+                  {entry.photo_url && (
+                    <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded-[var(--radius-sm)] border border-border bg-surface-muted">
+                      <Image src={entry.photo_url} alt="" fill sizes="40px" className="object-cover" />
+                    </span>
+                  )}
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{recipe?.title ?? "Recette supprimée"}</p>
+                    <p className="text-xs text-foreground-subtle">
+                      {new Date(entry.cooked_at).toLocaleDateString("fr-FR")} · {entry.servings} pers.
+                    </p>
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhotoTargetId(entry.id);
+                      photoInputRef.current?.click();
+                    }}
+                    disabled={uploadingPhoto}
+                    title={entry.photo_url ? "Remplacer la photo" : "Ajouter une photo"}
+                    className="rounded p-1.5 text-foreground-subtle hover:bg-primary-tint hover:text-primary-strong"
+                  >
+                    <Camera className="h-4 w-4" />
+                  </button>
                   {recipe && (
                     <button
                       type="button"
@@ -350,6 +397,16 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
           })}
         </ul>
       )}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          handlePhotoSelected(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
     </Modal>
   );
 }

@@ -88,6 +88,7 @@ export interface HistoryEntry {
   recipe_id: string | null;
   cooked_at: string;
   servings: number;
+  photo_url: string | null;
 }
 
 export type DraftProposal = {

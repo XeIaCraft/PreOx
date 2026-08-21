@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireATableAccess } from "@/lib/a-table/dal";
 import { createClient } from "@/lib/supabase/server";
 import { PLACEMENTS, WEEKDAY_PLACEMENTS } from "@/lib/a-table/constants";
+import { uploadHistoryPhoto } from "@/lib/a-table/storage";
 import type { HistoryEntry, Placement } from "@/lib/a-table/types";
 
 export interface ActionState {
@@ -312,6 +313,27 @@ export async function batchAddRecipeToDays(recipeId: string, servings: number, p
   return { success: `Recette placée sur ${targetDays.length} jour${targetDays.length > 1 ? "s" : ""}.` };
 }
 
+export async function addHistoryPhoto(historyId: string, imageBase64: string, mimeType: string): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const { data: entry } = await supabase.from("a_table_history").select("id").eq("id", historyId).eq("user_id", profile.id).maybeSingle();
+  if (!entry) return { error: "Entrée d'historique introuvable." };
+
+  let photoUrl: string;
+  try {
+    photoUrl = await uploadHistoryPhoto(profile.id, historyId, Buffer.from(imageBase64, "base64"), mimeType);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Échec de l'envoi de la photo." };
+  }
+
+  const { error } = await supabase.from("a_table_history").update({ photo_url: photoUrl }).eq("id", historyId).eq("user_id", profile.id);
+  if (error) return { error: "Photo envoyée, mais impossible à enregistrer." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "Photo ajoutée au journal." };
+}
+
 export async function removeHistoryEntry(historyId: string): Promise<ActionState> {
   const profile = await requireATableAccess();
   const supabase = await createClient();
@@ -335,6 +357,7 @@ export async function restoreHistoryEntry(entry: HistoryEntry): Promise<ActionSt
     recipe_id: entry.recipe_id,
     cooked_at: entry.cooked_at,
     servings: entry.servings,
+    photo_url: entry.photo_url,
   });
 
   if (error) return { error: "Impossible de restaurer cette entrée." };
