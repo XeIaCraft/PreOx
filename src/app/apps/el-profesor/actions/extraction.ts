@@ -71,7 +71,11 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
     apiKey = winningKey;
     geminiFileName = file.name;
 
-    const verification = await verifyExtraction(apiKey, model, file, extraction).catch(() => ({ flags: [] as VerificationFlag[] }));
+    let verificationFailed = false;
+    const verification = await verifyExtraction(apiKey, model, file, extraction).catch(() => {
+      verificationFailed = true;
+      return { flags: [] as VerificationFlag[] };
+    });
 
     await persistExtraction(chapterId, extraction, verification.flags);
 
@@ -84,7 +88,13 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
       .eq("id", chapterId);
 
     revalidatePath("/apps/el-profesor");
-    return { success: "Extraction terminée. Relisez le contenu généré avant publication." };
+    return {
+      success:
+        "Extraction terminée. Relisez le contenu généré avant publication." +
+        (verificationFailed
+          ? " Attention : la passe de vérification des citations a échoué et n'a pas pu tourner — relecture manuelle recommandée."
+          : ""),
+    };
   } catch (err) {
     const message = err instanceof GeminiError ? err.message : "Échec de l'extraction du chapitre.";
     await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
@@ -261,7 +271,52 @@ async function persistComplementaryAdditions(
  * `draft`/`needs_review` under the existing sub-entities (or as new
  * sub-entities), and goes through the same admin review before publication.
  */
-export async function extractChapterComplementary(chapterId: string): Promise<ActionState> {
+/** Runs exactly one complementary pass against already-uploaded bytes. Throws on Gemini/persist failure — caller handles status/job bookkeeping. */
+async function runOneComplementaryPass(
+  chapterId: string,
+  chapter: { title: string },
+  config: Awaited<ReturnType<typeof getElProfesorGeminiConfig>>,
+  bytes: Uint8Array,
+  existingContent: Awaited<ReturnType<typeof getChapterContent>>
+): Promise<{ addedCount: number; estimatedRemainingPasses: number | null }> {
+  const coverageSummary = buildCoverageSummary(existingContent);
+  let geminiFileName: string | null = null;
+  let apiKey = "";
+  try {
+    const { complementary, apiKey: winningKey, file } = await extractComplementaryContentWithRotation(
+      config,
+      bytes,
+      chapter.title,
+      chapter.title,
+      coverageSummary
+    );
+    apiKey = winningKey;
+    geminiFileName = file.name;
+    const addedCount = await persistComplementaryAdditions(chapterId, complementary, existingContent);
+
+    const supabase = await createClient();
+    await supabase
+      .from("el_profesor_extraction_jobs")
+      .insert({ chapter_id: chapterId, status: "succeeded", raw_output: complementary as unknown as never });
+
+    return { addedCount, estimatedRemainingPasses: complementary.estimated_remaining_passes };
+  } finally {
+    if (geminiFileName) await deleteGeminiFile(apiKey, geminiFileName);
+  }
+}
+
+// Safety cap on auto-run passes — each pass is a real (costly, slow) Gemini
+// call, so "until complete" still stops well short of runaway spend if the
+// model keeps reporting non-zero remaining passes indefinitely.
+const MAX_AUTO_COMPLEMENTARY_PASSES = 6;
+
+/**
+ * Gap-fill pass(es). By default runs a single pass (unchanged behavior). With
+ * `untilComplete: true`, loops automatically — re-downloading the latest
+ * persisted content between passes — until the model reports no remaining
+ * gaps, a pass adds nothing new, or the safety cap is hit.
+ */
+export async function extractChapterComplementary(chapterId: string, options?: { untilComplete?: boolean }): Promise<ActionState> {
   await requireElProfesorAdmin();
   const supabase = await createClient();
 
@@ -275,47 +330,44 @@ export async function extractChapterComplementary(chapterId: string): Promise<Ac
   const originalStatus = chapter.status;
   await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
 
-  let geminiFileName: string | null = null;
-  let apiKey = "";
-
   try {
     const config = await getElProfesorGeminiConfig();
-
-    const existingContent = await getChapterContent(chapterId, true);
-    const coverageSummary = buildCoverageSummary(existingContent);
-
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
-    const { complementary, apiKey: winningKey, file } = await extractComplementaryContentWithRotation(
-      config,
-      bytes,
-      chapter.title,
-      chapter.title,
-      coverageSummary
-    );
-    apiKey = winningKey;
-    geminiFileName = file.name;
-    const addedCount = await persistComplementaryAdditions(chapterId, complementary, existingContent);
 
-    await supabase
-      .from("el_profesor_extraction_jobs")
-      .insert({ chapter_id: chapterId, status: "succeeded", raw_output: complementary as unknown as never });
-    await supabase
-      .from("el_profesor_chapters")
-      .update({ status: originalStatus, estimated_remaining_passes: complementary.estimated_remaining_passes })
-      .eq("id", chapterId);
+    let totalAdded = 0;
+    let passesRun = 0;
+    let estimatedRemainingPasses: number | null = null;
+    const maxPasses = options?.untilComplete ? MAX_AUTO_COMPLEMENTARY_PASSES : 1;
 
+    do {
+      const existingContent = await getChapterContent(chapterId, true);
+      const pass = await runOneComplementaryPass(chapterId, chapter, config, bytes, existingContent);
+      totalAdded += pass.addedCount;
+      passesRun += 1;
+      estimatedRemainingPasses = pass.estimatedRemainingPasses;
+      await supabase.from("el_profesor_chapters").update({ estimated_remaining_passes: estimatedRemainingPasses }).eq("id", chapterId);
+
+      if (pass.addedCount === 0) break; // no progress this pass — further passes won't help
+    } while (options?.untilComplete && (estimatedRemainingPasses ?? 0) > 0 && passesRun < maxPasses);
+
+    await supabase.from("el_profesor_chapters").update({ status: originalStatus }).eq("id", chapterId);
     revalidatePath("/apps/el-profesor");
-    if (addedCount === 0) {
+
+    if (totalAdded === 0) {
       return { success: "Aucun trou détecté : l'extraction semble déjà complète." };
     }
-    return { success: `${addedCount} élément(s) complémentaire(s) ajouté(s) en brouillon — à relire avant publication.` };
+    const passSuffix = passesRun > 1 ? ` en ${passesRun} passes` : "";
+    const stillRemaining = options?.untilComplete && (estimatedRemainingPasses ?? 0) > 0 && passesRun >= maxPasses;
+    return {
+      success:
+        `${totalAdded} élément(s) complémentaire(s) ajouté(s)${passSuffix} — à relire avant publication.` +
+        (stillRemaining ? " Du contenu reste probablement à combler (limite de passes automatiques atteinte)." : ""),
+    };
   } catch (err) {
     const message = err instanceof GeminiError ? err.message : "Échec de la génération complémentaire.";
     await supabase.from("el_profesor_chapters").update({ status: originalStatus, extraction_error: message }).eq("id", chapterId);
     await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "failed", error: message });
     return { error: message };
-  } finally {
-    if (geminiFileName) await deleteGeminiFile(apiKey, geminiFileName);
   }
 }
 

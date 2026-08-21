@@ -290,13 +290,13 @@ export function FlashcardReviewer({
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-xl flex-col px-4 py-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-y-1.5">
         <Link href={backHref}>
           <Button variant="ghost" size="icon" aria-label="Retour">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {undoButton}
           <Badge variant={source === "scheduled" ? "primary" : "neutral"}>
             {badgeLabel ?? (source === "scheduled" ? "Planifiée" : "Libre")}
@@ -374,12 +374,12 @@ export function FlashcardReviewer({
 
       <div className="flex flex-1 items-center justify-center [perspective:1200px]">
         <div
-          className="relative min-h-[220px] w-full touch-pan-y"
+          className="relative min-h-[min(220px,45vh)] w-full touch-pan-y"
           onPointerDown={handleCardPointerDown}
           onPointerUp={handleCardPointerUp}
         >
           <div
-            className={`relative h-full min-h-[220px] w-full transition-transform duration-500 [transform-style:preserve-3d] ${
+            className={`relative h-full min-h-[min(220px,45vh)] w-full transition-transform duration-500 [transform-style:preserve-3d] ${
               revealed ? "[transform:rotateY(180deg)]" : ""
             }`}
           >

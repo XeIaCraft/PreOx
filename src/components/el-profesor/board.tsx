@@ -22,6 +22,7 @@ import {
   ChevronDown,
   Search,
   Trophy,
+  Zap,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -262,11 +263,11 @@ export function ElProfesorBoard({
     });
   }
 
-  function handleComplement(chapterId: string) {
+  function handleComplement(chapterId: string, untilComplete?: boolean) {
     setPendingId(chapterId);
     setPendingStartedAt(() => Date.now());
     startTransition(async () => {
-      const result = await extractChapterComplementary(chapterId);
+      const result = await extractChapterComplementary(chapterId, { untilComplete });
       setPendingId(null);
       setPendingStartedAt(null);
       if (result.error) toast(result.error, { variant: "error" });
@@ -798,24 +799,37 @@ export function ElProfesorBoard({
                         </Button>
                       )}
                       {isAdmin && (chapter.status === "draft_ready" || chapter.status === "published") && (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleComplement(chapter.id)}
-                          disabled={busy}
-                          title="Relit le PDF et ne génère que les notions pas encore couvertes"
-                        >
-                          <SearchCheck className="h-3.5 w-3.5" />
-                          {busy ? (
-                            <>
-                              Analyse… {pendingStartedAt && <ElapsedTime startedAt={pendingStartedAt} />}
-                            </>
-                          ) : chapter.estimatedRemainingPasses ? (
-                            `Compléter (≈${chapter.estimatedRemainingPasses})`
-                          ) : (
-                            "Compléter"
+                        <>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleComplement(chapter.id)}
+                            disabled={busy}
+                            title="Relit le PDF et ne génère que les notions pas encore couvertes (une passe)"
+                          >
+                            <SearchCheck className="h-3.5 w-3.5" />
+                            {busy ? (
+                              <>
+                                Analyse… {pendingStartedAt && <ElapsedTime startedAt={pendingStartedAt} />}
+                              </>
+                            ) : chapter.estimatedRemainingPasses ? (
+                              `Compléter (≈${chapter.estimatedRemainingPasses})`
+                            ) : (
+                              "Compléter"
+                            )}
+                          </Button>
+                          {!busy && (chapter.estimatedRemainingPasses ?? 0) > 1 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleComplement(chapter.id, true)}
+                              disabled={busy}
+                              title="Enchaîne automatiquement plusieurs passes, jusqu'à couverture complète ou blocage (limite de sécurité incluse)"
+                            >
+                              <Zap className="h-3.5 w-3.5" /> Jusqu&apos;à couverture
+                            </Button>
                           )}
-                        </Button>
+                        </>
                       )}
                       {isAdmin && (
                         <Button
