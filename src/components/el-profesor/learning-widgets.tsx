@@ -2,33 +2,116 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star, Download, History } from "lucide-react";
+import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star, Download, History, Tag, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getDailyGoal, setDailyGoal } from "@/lib/el-profesor/local-prefs";
+import { setBookmarkTags } from "@/app/apps/el-profesor/actions/bookmarks";
 import type { ReviewActivitySummary, UpcomingForecastDay, BookmarkedEntity, OnThisDayNote } from "@/lib/el-profesor/dal";
 import type { Flashcard } from "@/lib/el-profesor/types";
 
-/** Quick-access list of the user's bookmarked fiches, when there are any. */
+/** Quick-access list of the user's bookmarked fiches, filterable by personal tag (item 35 of the backlog). */
 export function BookmarksList({ bookmarks }: { bookmarks: BookmarkedEntity[] }) {
+  const [tagsBySubEntity, setTagsBySubEntity] = useState(() => new Map(bookmarks.map((b) => [b.subEntityId, b.tags])));
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+
   if (bookmarks.length === 0) return null;
+
+  const allTags = [...new Set([...tagsBySubEntity.values()].flat())].sort();
+  const visible = activeTag ? bookmarks.filter((b) => tagsBySubEntity.get(b.subEntityId)?.includes(activeTag)) : bookmarks;
+
+  function startEditing(b: BookmarkedEntity) {
+    setEditingId(b.subEntityId);
+    setDraft((tagsBySubEntity.get(b.subEntityId) ?? []).join(", "));
+  }
+
+  function saveTags(subEntityId: string) {
+    const tags = draft
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    setTagsBySubEntity((prev) => new Map(prev).set(subEntityId, tags));
+    setEditingId(null);
+    setBookmarkTags(subEntityId, tags);
+  }
+
   return (
     <div className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
       <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
         <Star className="h-3.5 w-3.5 fill-accent text-accent" /> Mes favoris
       </p>
-      <div className="mt-2 space-y-1">
-        {bookmarks.map((b) => (
-          <Link
-            key={b.subEntityId}
-            href={`/apps/el-profesor/chapters/${b.chapterId}?entity=${b.subEntityId}`}
-            className="block rounded-[var(--radius-sm)] px-2 py-1.5 hover:bg-surface-muted"
+
+      {allTags.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setActiveTag(null)}
+            className={`rounded-full px-2 py-0.5 text-[11px] ${!activeTag ? "bg-primary-tint text-primary-strong" : "text-foreground-subtle hover:bg-surface-muted"}`}
           >
-            <p className="text-sm font-medium text-foreground">{b.subEntityName}</p>
-            <p className="text-xs text-foreground-subtle">
-              {b.bookTitle} — {b.chapterTitle}
-            </p>
-          </Link>
-        ))}
+            Tous
+          </button>
+          {allTags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => setActiveTag((t) => (t === tag ? null : tag))}
+              className={`rounded-full px-2 py-0.5 text-[11px] ${activeTag === tag ? "bg-primary-tint text-primary-strong" : "text-foreground-subtle hover:bg-surface-muted"}`}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2 space-y-1">
+        {visible.map((b) => {
+          const tags = tagsBySubEntity.get(b.subEntityId) ?? [];
+          return (
+            <div key={b.subEntityId} className="rounded-[var(--radius-sm)] px-2 py-1.5 hover:bg-surface-muted">
+              <div className="flex items-start justify-between gap-2">
+                <Link href={`/apps/el-profesor/chapters/${b.chapterId}?entity=${b.subEntityId}`} className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-foreground">{b.subEntityName}</p>
+                  <p className="text-xs text-foreground-subtle">
+                    {b.bookTitle} — {b.chapterTitle}
+                  </p>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => (editingId === b.subEntityId ? saveTags(b.subEntityId) : startEditing(b))}
+                  className="shrink-0 text-foreground-subtle hover:text-accent"
+                  aria-label={editingId === b.subEntityId ? "Enregistrer les tags" : "Modifier les tags"}
+                  title={editingId === b.subEntityId ? "Enregistrer les tags" : "Modifier les tags"}
+                >
+                  {editingId === b.subEntityId ? <Check className="h-3.5 w-3.5" /> : <Tag className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+              {editingId === b.subEntityId ? (
+                <input
+                  autoFocus
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveTags(b.subEntityId);
+                  }}
+                  onBlur={() => saveTags(b.subEntityId)}
+                  placeholder="tags séparés par des virgules"
+                  className="mt-1 w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                />
+              ) : (
+                tags.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {tags.map((tag) => (
+                      <span key={tag} className="rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px] text-foreground-subtle">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

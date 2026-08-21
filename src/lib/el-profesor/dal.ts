@@ -144,6 +144,7 @@ export interface BookmarkedEntity {
   chapterId: string;
   chapterTitle: string;
   bookTitle: string;
+  tags: string[];
 }
 
 /** Sub-entity ids the user has bookmarked — for showing a filled/outline star in the UI. */
@@ -158,7 +159,7 @@ export async function getBookmarkedEntities(userId: string): Promise<BookmarkedE
   const supabase = await createClient();
   const { data: bookmarks } = await supabase
     .from("el_profesor_bookmarks")
-    .select("sub_entity_id, created_at")
+    .select("sub_entity_id, tags, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   const subEntityIds = (bookmarks ?? []).map((b) => b.sub_entity_id);
@@ -191,6 +192,7 @@ export async function getBookmarkedEntities(userId: string): Promise<BookmarkedE
       chapterId: chapter.id,
       chapterTitle: chapter.title,
       bookTitle: bookTitleById.get(chapter.book_id) ?? "",
+      tags: bookmark.tags ?? [],
     });
   }
   return results;

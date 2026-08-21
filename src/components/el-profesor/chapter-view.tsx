@@ -16,7 +16,7 @@ import { RelatedFiches } from "@/components/el-profesor/related-fiches";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { toggleBookmark } from "@/app/apps/el-profesor/actions/bookmarks";
-import { getMyNote, saveMyNote } from "@/app/apps/el-profesor/actions/notes";
+import { getMyNote, saveMyNote, toggleNoteShare } from "@/app/apps/el-profesor/actions/notes";
 import { toggleFicheShare } from "@/app/apps/el-profesor/actions/share";
 import { recordReadingPosition } from "@/app/apps/el-profesor/actions/reading-position";
 import {
@@ -563,14 +563,19 @@ export function ChapterView({
 
 /** Keyed by sub-entity id at the call site so switching notions remounts it fresh — no manual reset-on-change effect needed. */
 function NoteEditor({ subEntityId }: { subEntityId: string }) {
+  const { toast } = useToast();
   const [content, setContent] = useState<string | null>(null);
+  const [shareToken, setShareToken] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     getMyNote(subEntityId).then((note) => {
-      if (!cancelled) setContent(note);
+      if (!cancelled) {
+        setContent(note.content);
+        setShareToken(note.shareToken);
+      }
     });
     return () => {
       cancelled = true;
@@ -586,14 +591,42 @@ function NoteEditor({ subEntityId }: { subEntityId: string }) {
     }, 800);
   }
 
+  function handleShareNote() {
+    toggleNoteShare(subEntityId, !shareToken).then((result) => {
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      setShareToken(result.shareToken ?? null);
+      if (result.shareToken) {
+        navigator.clipboard.writeText(`${window.location.origin}/share/note/${result.shareToken}`).catch(() => {});
+        toast("Lien de partage copié.", { variant: "success" });
+      } else {
+        toast("Partage désactivé.", { variant: "success" });
+      }
+    });
+  }
+
   if (content === null) return null;
 
   return (
     <div className="mt-6 border-t border-border pt-4 print:hidden">
-      <p className="mb-1.5 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
-        Mes notes personnelles
-        {saving && <span className="text-foreground-subtle">(enregistrement…)</span>}
-      </p>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+          Mes notes personnelles
+          {saving && <span className="text-foreground-subtle">(enregistrement…)</span>}
+        </p>
+        {content.trim() && (
+          <button
+            type="button"
+            onClick={handleShareNote}
+            className={`flex items-center gap-1 text-xs ${shareToken ? "text-primary-strong" : "text-foreground-subtle hover:text-foreground"}`}
+            title={shareToken ? "Partagée — cliquer pour copier le lien, re-cliquer pour désactiver" : "Partager cette note (lien public en lecture seule)"}
+          >
+            <Link2 className="h-3.5 w-3.5" /> {shareToken ? "Partagée" : "Partager"}
+          </button>
+        )}
+      </div>
       <textarea
         value={content}
         onChange={(e) => handleChange(e.target.value)}

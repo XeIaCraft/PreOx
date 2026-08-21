@@ -350,6 +350,7 @@ export type ElProfesorBookmarkRow = {
   id: string;
   user_id: string;
   sub_entity_id: string;
+  tags: string[];
   created_at: string;
 };
 
@@ -367,6 +368,7 @@ export type ElProfesorNoteRow = {
   content: string;
   updated_at: string;
   created_at: string;
+  share_token: string | null;
 };
 
 export type ElProfesorNotionRow = {

@@ -1,23 +1,53 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { requireElProfesorAccess } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export interface ActionState {
   error?: string;
   success?: string;
 }
 
-export async function getMyNote(subEntityId: string): Promise<string> {
+export interface MyNote {
+  content: string;
+  shareToken: string | null;
+}
+
+export async function getMyNote(subEntityId: string): Promise<MyNote> {
   const profile = await requireElProfesorAccess();
   const supabase = await createClient();
   const { data } = await supabase
     .from("el_profesor_notes")
-    .select("content")
+    .select("content, share_token")
     .eq("user_id", profile.id)
     .eq("sub_entity_id", subEntityId)
     .maybeSingle();
-  return data?.content ?? "";
+  return { content: data?.content ?? "", shareToken: data?.share_token ?? null };
+}
+
+/**
+ * Toggles a public, read-only share link for one personal note — selective
+ * sharing (item 27 of the backlog): only the note you explicitly share
+ * becomes visible to whoever has the link, every other note stays private.
+ * Uses the service-role client for the scoped update (el_profesor_notes'
+ * RLS is strictly per-user with no admin bypass — see the schema note —
+ * so a plain client update on someone else's note would just no-op under
+ * RLS; the admin client plus the explicit .eq("user_id", ...) below keeps
+ * this scoped to the caller's own row regardless).
+ */
+export async function toggleNoteShare(subEntityId: string, share: boolean): Promise<ActionState & { shareToken?: string | null }> {
+  const profile = await requireElProfesorAccess();
+  const shareToken = share ? randomUUID() : null;
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("el_profesor_notes")
+    .update({ share_token: shareToken })
+    .eq("user_id", profile.id)
+    .eq("sub_entity_id", subEntityId);
+  if (error) return { error: "Impossible de mettre à jour le partage." };
+  return { success: share ? "Lien de partage créé." : "Partage désactivé.", shareToken };
 }
 
 /** Upserts the current user's note for a sub-entity — one row per user per sub-entity (unique constraint). */

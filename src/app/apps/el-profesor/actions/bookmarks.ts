@@ -33,3 +33,20 @@ export async function toggleBookmark(subEntityId: string): Promise<ActionState &
   revalidatePath("/apps/el-profesor");
   return { bookmarked: true };
 }
+
+/** Replaces the personal tags on a bookmarked sub-entity — for filtering "Mes favoris" (item 35 of the backlog). */
+export async function setBookmarkTags(subEntityId: string, tags: string[]): Promise<ActionState> {
+  const profile = await requireElProfesorAccess();
+  const supabase = await createClient();
+
+  const cleaned = [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
+  const { error } = await supabase
+    .from("el_profesor_bookmarks")
+    .update({ tags: cleaned })
+    .eq("user_id", profile.id)
+    .eq("sub_entity_id", subEntityId);
+  if (error) return { error: "Impossible de mettre à jour les tags." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Tags mis à jour." };
+}
