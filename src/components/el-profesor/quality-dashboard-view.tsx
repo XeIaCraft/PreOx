@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ShieldAlert, Copy, Merge } from "lucide-react";
+import { ArrowLeft, ShieldAlert, Copy, Merge, AlertTriangle } from "lucide-react";
 import { Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import type { BookQualityDashboard } from "@/lib/el-profesor/dal";
@@ -89,6 +89,32 @@ export function QualityDashboardView({
                         <p className="text-foreground">« {pair.a.front} »</p>
                         <p className="mt-1 text-foreground-muted">« {pair.b.front} »</p>
                         <p className="mt-1 text-xs text-foreground-subtle">{Math.round(pair.similarity * 100)}% de similarité</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="mt-6">
+                <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground">
+                  <AlertTriangle className="h-4 w-4" /> Sous-entités potentiellement incomplètes ({dashboard.thinSubEntities.length})
+                </p>
+                <p className="mb-2 text-xs text-foreground-subtle">
+                  Nettement moins de contenu que la moyenne du livre — une suggestion, pas un lancement d&apos;extraction.
+                </p>
+                {dashboard.thinSubEntities.length === 0 ? (
+                  <p className="text-sm text-foreground-subtle">Rien ne ressort en dessous de la moyenne.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {dashboard.thinSubEntities.map((s) => (
+                      <li key={s.subEntityId} className="rounded-[var(--radius-md)] border border-danger/30 bg-danger-tint/40 p-3 text-sm">
+                        <Link href={`/apps/el-profesor/chapters/${s.chapterId}`} className="font-medium text-foreground hover:underline">
+                          {s.subEntityName}
+                        </Link>
+                        <p className="mt-1 text-xs text-foreground-subtle">
+                          {s.chapterTitle} — {s.blockCount} bloc{s.blockCount > 1 ? "s" : ""}, {s.flashcardCount} flashcard
+                          {s.flashcardCount > 1 ? "s" : ""}
+                        </p>
                       </li>
                     ))}
                   </ul>

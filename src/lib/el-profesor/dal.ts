@@ -1311,10 +1311,20 @@ export interface BookQualityChapterStat {
   lastReviewedAt: string | null;
 }
 
+export interface ThinSubEntity {
+  subEntityId: string;
+  subEntityName: string;
+  chapterId: string;
+  chapterTitle: string;
+  blockCount: number;
+  flashcardCount: number;
+}
+
 export interface BookQualityDashboard {
   chapters: BookQualityChapterStat[];
   duplicateFlashcards: DuplicateFlashcardPair[];
   similarSubEntities: (SimilarSubEntityPair & { chapterTitle: string })[];
+  thinSubEntities: ThinSubEntity[];
 }
 
 /** Combines coverage (open signalements, staleness), near-duplicate flashcards, and near-duplicate sub-entity names into one per-book admin view — items 43/45/50 of the backlog. Deterministic dedup, no Gemini cost. */
@@ -1328,12 +1338,13 @@ export async function getBookQualityDashboard(bookId: string): Promise<BookQuali
     .eq("status", "published")
     .order("order_index", { ascending: true });
   const chapters = chapterRows ?? [];
-  if (chapters.length === 0) return { chapters: [], duplicateFlashcards: [], similarSubEntities: [] };
+  if (chapters.length === 0) return { chapters: [], duplicateFlashcards: [], similarSubEntities: [], thinSubEntities: [] };
 
   const chapterTitleById = new Map(chapters.map((c) => [c.id, c.title]));
 
   const allFlashcards: { id: string; front: string }[] = [];
   const allSubEntities: { id: string; name: string; chapterId: string }[] = [];
+  const contentSizeBySubEntity = new Map<string, { blockCount: number; flashcardCount: number }>();
   const flagCountByChapter = new Map<string, number>();
   const lastReviewedByChapter = new Map<string, string | null>();
 
@@ -1342,6 +1353,9 @@ export async function getBookQualityDashboard(bookId: string): Promise<BookQuali
       const content = await getChapterContent(chapter.id, false);
       for (const sub of content) {
         allSubEntities.push({ id: sub.id, name: sub.name, chapterId: chapter.id });
+        const blockCount = sub.fiche?.blocks.length ?? 0;
+        const flashcardCount = sub.fiche?.flashcards.length ?? 0;
+        contentSizeBySubEntity.set(sub.id, { blockCount, flashcardCount });
         if (!sub.fiche) continue;
         for (const card of sub.fiche.flashcards) allFlashcards.push({ id: card.id, front: card.front.text });
       }
@@ -1382,7 +1396,35 @@ export async function getBookQualityDashboard(bookId: string): Promise<BookQuali
     lastReviewedAt: lastReviewedByChapter.get(c.id) ?? null,
   }));
 
-  return { chapters: chapterStats, duplicateFlashcards, similarSubEntities };
+  // Proactive "this sub-entity looks thin" nudge — item 11 of the backlog.
+  // Purely a heuristic on already-fetched counts (no extraction, no AI
+  // call): flags sub-entities whose block+flashcard count sits well below
+  // this book's own average. Needs at least 4 sub-entities for "average" to
+  // mean anything.
+  const thinSubEntities: ThinSubEntity[] = [];
+  if (allSubEntities.length >= 4) {
+    const sizes = allSubEntities.map((s) => {
+      const size = contentSizeBySubEntity.get(s.id) ?? { blockCount: 0, flashcardCount: 0 };
+      return size.blockCount + size.flashcardCount;
+    });
+    const average = sizes.reduce((sum, n) => sum + n, 0) / sizes.length;
+    const threshold = average * 0.4;
+    for (const sub of allSubEntities) {
+      const size = contentSizeBySubEntity.get(sub.id) ?? { blockCount: 0, flashcardCount: 0 };
+      if (size.blockCount + size.flashcardCount < threshold) {
+        thinSubEntities.push({
+          subEntityId: sub.id,
+          subEntityName: sub.name,
+          chapterId: sub.chapterId,
+          chapterTitle: chapterTitleById.get(sub.chapterId) ?? "",
+          blockCount: size.blockCount,
+          flashcardCount: size.flashcardCount,
+        });
+      }
+    }
+  }
+
+  return { chapters: chapterStats, duplicateFlashcards, similarSubEntities, thinSubEntities };
 }
 
 // -- Notion tagging + cross-fiche contradiction detection (admin-only) ------
