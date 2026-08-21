@@ -353,12 +353,20 @@ export type ElProfesorBookmarkRow = {
   created_at: string;
 };
 
+export type ElProfesorReadingPositionRow = {
+  user_id: string;
+  chapter_id: string;
+  sub_entity_id: string | null;
+  updated_at: string;
+};
+
 export type ElProfesorNoteRow = {
   id: string;
   user_id: string;
   sub_entity_id: string;
   content: string;
   updated_at: string;
+  created_at: string;
 };
 
 export type ElProfesorNotionRow = {
@@ -653,6 +661,12 @@ export type Database = {
         Row: ElProfesorSecretsRow;
         Insert: Partial<ElProfesorSecretsRow>;
         Update: Partial<ElProfesorSecretsRow>;
+        Relationships: [];
+      };
+      el_profesor_reading_position: {
+        Row: ElProfesorReadingPositionRow;
+        Insert: Partial<ElProfesorReadingPositionRow> & { user_id: string; chapter_id: string };
+        Update: Partial<ElProfesorReadingPositionRow>;
         Relationships: [];
       };
       el_profesor_bookmarks: {

@@ -40,7 +40,7 @@ import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog"
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
-import { LearningWidgets, DailyCard, LibraryStats, BookmarksList } from "@/components/el-profesor/learning-widgets";
+import { LearningWidgets, DailyCard, LibraryStats, BookmarksList, OnThisDayNoteCard } from "@/components/el-profesor/learning-widgets";
 import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
@@ -60,6 +60,7 @@ import type {
   BlockTypeFlagStat,
   GeminiUsageStats,
   ElProfesorAiProvider,
+  OnThisDayNote,
 } from "@/lib/el-profesor/dal";
 import type { ChapterStatus, Flashcard, BlockType } from "@/lib/el-profesor/types";
 
@@ -200,6 +201,8 @@ export function ElProfesorBoard({
   aiProvider,
   hasClaudeKey,
   claudeModel,
+  serverResumeChapterId,
+  onThisDayNote,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -226,6 +229,9 @@ export function ElProfesorBoard({
   aiProvider: ElProfesorAiProvider;
   hasClaudeKey: boolean;
   claudeModel: string;
+  /** Cross-device resume position (server-stored) — preferred over the local-only cache when present. */
+  serverResumeChapterId: string | null;
+  onThisDayNote: OnThisDayNote | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -237,7 +243,7 @@ export function ElProfesorBoard({
   const [exportingId, setExportingId] = useState<string | null>(null);
   // Lazy initializer (client-only read), same pattern used elsewhere for
   // one-time localStorage reads — null on the server, resolved on mount.
-  const [resumeChapterId] = useState(() => getLastChapter());
+  const [resumeChapterId] = useState(() => serverResumeChapterId ?? getLastChapter());
   const [tourOpen, setTourOpen] = useState(() => !hasSeenOnboarding("el-profesor"));
 
   let resume: { book: BookWithChapters; chapter: BookWithChapters["chapters"][number] } | null = null;
@@ -483,6 +489,7 @@ export function ElProfesorBoard({
       )}
 
       {dailyCard && <DailyCard card={dailyCard} />}
+      {onThisDayNote && <OnThisDayNoteCard note={onThisDayNote} />}
 
       <BookmarksList bookmarks={bookmarks} />
 

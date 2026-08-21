@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Fraunces } from "next/font/google";
+import { Inter, Fraunces, Atkinson_Hyperlegible } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 
@@ -31,6 +31,15 @@ const fraunces = Fraunces({
   variable: "--font-fraunces",
   subsets: ["latin"],
   axes: ["opsz", "SOFT", "WONK"],
+  display: "swap",
+});
+
+// Designed for low-vision/dyslexic readability (Braille Institute) — opt-in
+// via a toggle in El Profesor's chapter reading view, not applied by default.
+const atkinsonHyperlegible = Atkinson_Hyperlegible({
+  variable: "--font-dyslexic",
+  subsets: ["latin"],
+  weight: ["400", "700"],
   display: "swap",
 });
 
@@ -67,7 +76,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="fr"
-      className={`${inter.variable} ${fraunces.variable} h-full antialiased`}
+      className={`${inter.variable} ${fraunces.variable} ${atkinsonHyperlegible.variable} h-full antialiased`}
       data-scroll-behavior="smooth"
       suppressHydrationWarning
     >

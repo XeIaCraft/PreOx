@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireElProfesorAccess, getChapterContent, getBookmarkedSubEntityIds } from "@/lib/el-profesor/dal";
+import { requireElProfesorAccess, getChapterContent, getBookmarkedSubEntityIds, getReadingPosition } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { ChapterView } from "@/components/el-profesor/chapter-view";
 import { ToastProvider } from "@/components/ui/toast";
@@ -19,10 +19,16 @@ export default async function ChapterPage({
   const { data: chapter } = await supabase.from("el_profesor_chapters").select("*").eq("id", chapterId).single();
   if (!chapter || chapter.status !== "published") notFound();
 
-  const [subEntities, bookmarkedIds] = await Promise.all([
+  const [subEntities, bookmarkedIds, readingPosition] = await Promise.all([
     getChapterContent(chapterId, false),
     getBookmarkedSubEntityIds(profile.id),
+    entity ? Promise.resolve(null) : getReadingPosition(profile.id),
   ]);
+
+  // Server-side cross-device resume: only applies when there's no explicit
+  // deep link and the saved position was in this same chapter — the client
+  // still falls back to its own localStorage cache before this value loads.
+  const resumeEntityId = readingPosition?.chapterId === chapterId ? (readingPosition.subEntityId ?? undefined) : undefined;
 
   return (
     <ToastProvider>
@@ -30,7 +36,7 @@ export default async function ChapterPage({
         chapterId={chapterId}
         chapterTitle={chapter.title}
         subEntities={subEntities}
-        initialEntityId={entity}
+        initialEntityId={entity ?? resumeEntityId}
         bookmarkedIds={[...bookmarkedIds]}
       />
     </ToastProvider>

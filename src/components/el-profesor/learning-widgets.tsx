@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star, Download } from "lucide-react";
+import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star, Download, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getDailyGoal, setDailyGoal } from "@/lib/el-profesor/local-prefs";
-import type { ReviewActivitySummary, UpcomingForecastDay, BookmarkedEntity } from "@/lib/el-profesor/dal";
+import type { ReviewActivitySummary, UpcomingForecastDay, BookmarkedEntity, OnThisDayNote } from "@/lib/el-profesor/dal";
 import type { Flashcard } from "@/lib/el-profesor/types";
 
 /** Quick-access list of the user's bookmarked fiches, when there are any. */
@@ -96,6 +96,35 @@ export function DailyCard({ card }: { card: Flashcard }) {
         <p className="mt-1 text-xs text-foreground-subtle">Touchez pour voir la réponse</p>
       )}
     </button>
+  );
+}
+
+function timeAgoLabel(createdAt: string): string {
+  const days = Math.round((Date.now() - new Date(createdAt).getTime()) / 86_400_000);
+  const months = Math.round(days / 30.44);
+  if (months >= 12) {
+    const years = Math.round(months / 12);
+    return years > 1 ? `il y a ${years} ans` : "il y a 1 an";
+  }
+  return months > 1 ? `il y a ${months} mois` : "il y a 1 mois";
+}
+
+/** "Ce jour-là" — resurfaces one personal note written months/years ago, item 36 of the backlog. */
+export function OnThisDayNoteCard({ note }: { note: OnThisDayNote }) {
+  return (
+    <Link
+      href={`/apps/el-profesor/chapters/${note.chapterId}?entity=${note.subEntityId}`}
+      className="mt-6 block rounded-[var(--radius-lg)] border border-border bg-surface p-4 hover:border-accent/40"
+    >
+      <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">
+        <History className="h-3 w-3" /> Ce jour-là — {timeAgoLabel(note.createdAt)}
+      </p>
+      <p className="mt-1.5 text-sm font-medium text-foreground">{note.subEntityName}</p>
+      <p className="mt-1 line-clamp-3 text-sm text-foreground-muted">{note.content}</p>
+      <p className="mt-1 text-xs text-foreground-subtle">
+        {note.bookTitle} — {note.chapterTitle}
+      </p>
+    </Link>
   );
 }
 

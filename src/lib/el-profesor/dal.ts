@@ -196,6 +196,90 @@ export async function getBookmarkedEntities(userId: string): Promise<BookmarkedE
   return results;
 }
 
+export interface OnThisDayNote {
+  subEntityId: string;
+  subEntityName: string;
+  chapterId: string;
+  chapterTitle: string;
+  bookTitle: string;
+  content: string;
+  createdAt: string;
+}
+
+const ON_THIS_DAY_MONTHS_AGO = [1, 3, 6, 12, 18, 24, 36];
+
+/** Resurfaces one personal note written roughly N months/years ago today — a lightweight "on this day" nudge, item 36 of the backlog. */
+export async function getOnThisDayNote(userId: string): Promise<OnThisDayNote | null> {
+  const supabase = await createClient();
+  const now = new Date();
+
+  for (const monthsAgo of ON_THIS_DAY_MONTHS_AGO) {
+    const anchor = new Date(now);
+    anchor.setUTCMonth(anchor.getUTCMonth() - monthsAgo);
+    const windowStart = new Date(anchor);
+    windowStart.setUTCDate(windowStart.getUTCDate() - 3);
+    const windowEnd = new Date(anchor);
+    windowEnd.setUTCDate(windowEnd.getUTCDate() + 3);
+
+    const { data: notes } = await supabase
+      .from("el_profesor_notes")
+      .select("sub_entity_id, content, created_at")
+      .eq("user_id", userId)
+      .neq("content", "")
+      .gte("created_at", windowStart.toISOString())
+      .lte("created_at", windowEnd.toISOString())
+      .order("created_at", { ascending: true })
+      .limit(1);
+
+    const note = notes?.[0];
+    if (!note) continue;
+
+    const { data: subEntity } = await supabase
+      .from("el_profesor_sub_entities")
+      .select("id, name, chapter_id")
+      .eq("id", note.sub_entity_id)
+      .maybeSingle();
+    if (!subEntity) continue;
+
+    const { data: chapter } = await supabase
+      .from("el_profesor_chapters")
+      .select("id, title, book_id")
+      .eq("id", subEntity.chapter_id)
+      .eq("status", "published")
+      .maybeSingle();
+    if (!chapter) continue; // chapter unpublished/deleted since the note was written
+
+    const { data: book } = await supabase.from("el_profesor_books").select("title").eq("id", chapter.book_id).maybeSingle();
+
+    return {
+      subEntityId: subEntity.id,
+      subEntityName: subEntity.name,
+      chapterId: chapter.id,
+      chapterTitle: chapter.title,
+      bookTitle: book?.title ?? "",
+      content: note.content,
+      createdAt: note.created_at,
+    };
+  }
+  return null;
+}
+
+export interface ReadingPosition {
+  chapterId: string;
+  subEntityId: string | null;
+}
+
+/** Server-side "where was I" — makes the resume banner and the chapter view's default sub-entity work across devices, not just on the device that set localStorage. */
+export async function getReadingPosition(userId: string): Promise<ReadingPosition | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("el_profesor_reading_position")
+    .select("chapter_id, sub_entity_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return data ? { chapterId: data.chapter_id, subEntityId: data.sub_entity_id } : null;
+}
+
 function toReviewState(row: ElProfesorReviewStateRow): ReviewState {
   return {
     flashcardId: row.flashcard_id,
@@ -1329,6 +1413,37 @@ export async function getGlossary(): Promise<NotionSummary[]> {
         .filter((f): f is NotionLinkedFiche => Boolean(f)),
     }))
     .filter((s) => s.fiches.length > 0);
+}
+
+/**
+ * Other published fiches that share at least one notion with this one —
+ * inline cross-links shown directly on a fiche, rather than only reachable
+ * through the admin notions page. Item 4 of the backlog.
+ */
+export async function getRelatedFiches(ficheId: string): Promise<NotionLinkedFiche[]> {
+  const supabase = await createClient();
+  const { data: myLinks } = await supabase.from("el_profesor_notion_links").select("notion_id").eq("fiche_id", ficheId);
+  const notionIds = (myLinks ?? []).map((l) => l.notion_id);
+  if (notionIds.length === 0) return [];
+
+  const { data: otherLinks } = await supabase
+    .from("el_profesor_notion_links")
+    .select("fiche_id")
+    .in("notion_id", notionIds)
+    .neq("fiche_id", ficheId);
+  const otherFicheIds = [...new Set((otherLinks ?? []).map((l) => l.fiche_id))];
+  if (otherFicheIds.length === 0) return [];
+
+  const { data: publishedFiches } = await supabase
+    .from("el_profesor_fiches")
+    .select("id")
+    .in("id", otherFicheIds)
+    .eq("status", "published");
+  const publishedIds = (publishedFiches ?? []).map((f) => f.id);
+  if (publishedIds.length === 0) return [];
+
+  const contexts = await resolveFicheContexts(publishedIds);
+  return [...contexts.values()];
 }
 
 /** Every notion with the fiches linked to it (cross-book context included), for the admin notions/contradictions screen. */

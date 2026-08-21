@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2 } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck } from "lucide-react";
 import { QuizMode } from "@/components/el-profesor/quiz-mode";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -12,11 +12,13 @@ import { FicheViewer } from "@/components/el-profesor/fiche-viewer";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
+import { RelatedFiches } from "@/components/el-profesor/related-fiches";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { toggleBookmark } from "@/app/apps/el-profesor/actions/bookmarks";
 import { getMyNote, saveMyNote } from "@/app/apps/el-profesor/actions/notes";
 import { toggleFicheShare } from "@/app/apps/el-profesor/actions/share";
+import { recordReadingPosition } from "@/app/apps/el-profesor/actions/reading-position";
 import {
   getLastSubEntity,
   setLastSubEntity,
@@ -25,6 +27,8 @@ import {
   setFontScale,
   getReadingComfort,
   setReadingComfort,
+  getDyslexicFont,
+  setDyslexicFont,
   type FontScale,
 } from "@/lib/el-profesor/local-prefs";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
@@ -62,6 +66,7 @@ export function ChapterView({
   const [searchOpen, setSearchOpen] = useState(false);
   const [fontScale, setFontScaleState] = useState<FontScale>(() => getFontScale() ?? "md");
   const [readingComfort, setReadingComfortState] = useState(() => getReadingComfort());
+  const [dyslexicFont, setDyslexicFontState] = useState(() => getDyslexicFont());
   const [scrollProgress, setScrollProgress] = useState(0);
   const [bookmarks, setBookmarks] = useState(() => new Set(bookmarkedIds ?? []));
   const [bookmarkPending, setBookmarkPending] = useState(false);
@@ -120,6 +125,7 @@ export function ChapterView({
 
   useEffect(() => {
     if (selectedId) setLastSubEntity(chapterId, selectedId);
+    recordReadingPosition(chapterId, selectedId ?? null);
   }, [chapterId, selectedId]);
 
   useEffect(() => {
@@ -177,6 +183,14 @@ export function ChapterView({
     setReadingComfortState((prev) => {
       const next = !prev;
       setReadingComfort(next);
+      return next;
+    });
+  }
+
+  function toggleDyslexicFont() {
+    setDyslexicFontState((prev) => {
+      const next = !prev;
+      setDyslexicFont(next);
       return next;
     });
   }
@@ -294,6 +308,16 @@ export function ChapterView({
             title="Mode lecture confort (sépia)"
           >
             <Sun className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={`hidden sm:inline-flex ${dyslexicFont ? "text-accent" : ""}`}
+            onClick={toggleDyslexicFont}
+            aria-label={dyslexicFont ? "Désactiver la police adaptée dyslexie" : "Activer la police adaptée dyslexie"}
+            title="Police adaptée dyslexie (Atkinson Hyperlegible)"
+          >
+            <SpellCheck className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
@@ -428,17 +452,20 @@ export function ChapterView({
               onScroll={handleContentScroll}
               className={`h-full min-h-0 rounded-[var(--radius-lg)] border border-border bg-surface p-5 text-foreground print:overflow-visible print:rounded-none print:border-0 print:p-0 md:overflow-y-auto lg:overflow-y-auto ${printTarget === "single" ? "print-area" : ""}`}
               style={
-                readingComfort
-                  ? ({
-                      "--background": "#f4ecd8",
-                      "--surface": "#f4ecd8",
-                      "--surface-muted": "#ece0c6",
-                      "--foreground": "#3b3226",
-                      "--foreground-muted": "#5a4d3a",
-                      "--foreground-subtle": "#7a6c54",
-                      "--border": "#ddceac",
-                    } as CSSProperties)
-                  : undefined
+                {
+                  ...(readingComfort
+                    ? {
+                        "--background": "#f4ecd8",
+                        "--surface": "#f4ecd8",
+                        "--surface-muted": "#ece0c6",
+                        "--foreground": "#3b3226",
+                        "--foreground-muted": "#5a4d3a",
+                        "--foreground-subtle": "#7a6c54",
+                        "--border": "#ddceac",
+                      }
+                    : {}),
+                  ...(dyslexicFont ? { fontFamily: "var(--font-dyslexic)" } : {}),
+                } as CSSProperties
               }
               onPointerDown={handleContentPointerDown}
               onPointerUp={handleContentPointerUp}
@@ -453,6 +480,7 @@ export function ChapterView({
                     fontScale={fontScale}
                   />
                   <NoteEditor key={selected.id} subEntityId={selected.id} />
+                  <RelatedFiches key={selected.fiche.id} ficheId={selected.fiche.id} />
                 </>
               ) : (
                 <p className="text-sm text-foreground-subtle">Sélectionnez une entrée.</p>

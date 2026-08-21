@@ -61,6 +61,15 @@ export function setReadingComfort(enabled: boolean) {
   setItem("reading-comfort", enabled ? "1" : "0");
 }
 
+/** Dyslexia-friendly typeface (Atkinson Hyperlegible) for the fiche content pane — opt-in, independent of the global font-scale setting. */
+export function getDyslexicFont(): boolean {
+  return getItem("dyslexic-font") === "1";
+}
+
+export function setDyslexicFont(enabled: boolean) {
+  setItem("dyslexic-font", enabled ? "1" : "0");
+}
+
 const DEFAULT_DAILY_GOAL = 15;
 
 export function getDailyGoal(): number {
