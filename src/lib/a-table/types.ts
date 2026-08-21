@@ -210,6 +210,8 @@ export type Preferences = {
   auto_illustrate?: boolean;
   /** Total weekly grocery budget (€); a banner warns when the planned week's cost exceeds it. Absent/null = no cap. */
   weekly_budget_cap?: number | null;
+  /** Opt-in: weekly emailed JSON export of the full À table data (recipes, planning, history…). Absent/false = disabled. */
+  backup_export_enabled?: boolean;
 };
 
 export type GenerationRules = {

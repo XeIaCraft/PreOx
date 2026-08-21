@@ -234,6 +234,15 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
             />
             Illustrer automatiquement les propositions générées (photos Pexels)
           </label>
+          <label className="flex items-center gap-2 text-sm text-foreground-muted">
+            <input
+              type="checkbox"
+              checked={prefs.backup_export_enabled === true}
+              onChange={(e) => setPref("backup_export_enabled", e.target.checked)}
+              className="h-4 w-4 rounded border-border-strong text-primary focus-visible:ring-primary/30"
+            />
+            Recevoir une sauvegarde hebdomadaire par e-mail (JSON de toutes mes données)
+          </label>
           <div className="space-y-1.5">
             <Label>Consigne libre pour l&rsquo;IA</Label>
             <textarea

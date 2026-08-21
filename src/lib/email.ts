@@ -9,7 +9,18 @@ import { Resend } from "resend";
  * called from (same "non-blocking integration" pattern as Pexels image
  * fetch elsewhere in the app).
  */
-export async function sendEmail({ to, subject, html }: { to: string; subject: string; html: string }): Promise<void> {
+export async function sendEmail({
+  to,
+  subject,
+  html,
+  attachments,
+}: {
+  to: string;
+  subject: string;
+  html: string;
+  /** Base64-encoded file content, as accepted by the Resend API. */
+  attachments?: { filename: string; content: string }[];
+}): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
   if (!apiKey || !from) {
@@ -19,7 +30,7 @@ export async function sendEmail({ to, subject, html }: { to: string; subject: st
 
   try {
     const resend = new Resend(apiKey);
-    await resend.emails.send({ from, to, subject, html });
+    await resend.emails.send({ from, to, subject, html, attachments });
   } catch (err) {
     console.error("sendEmail failed:", err);
   }
