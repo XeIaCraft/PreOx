@@ -13,6 +13,7 @@ import {
   updateGeminiFallbackModel,
 } from "@/app/apps/el-profesor/actions/settings";
 import { useToast } from "@/components/ui/toast";
+import type { GeminiUsageStats } from "@/lib/el-profesor/dal";
 
 // Kept in sync with EL_PROFESOR_GEMINI_MODEL_DEFAULT in src/lib/el-profesor/gemini.ts
 // (that module is server-only and can't be imported from a client component).
@@ -23,12 +24,14 @@ export function GeminiSettingsDialog({
   hasApiKey,
   extraKeyCount,
   fallbackModel,
+  usageStats,
   onClose,
 }: {
   currentModel: string;
   hasApiKey: boolean;
   extraKeyCount: number;
   fallbackModel: string | null;
+  usageStats: GeminiUsageStats | null;
   onClose: () => void;
 }) {
   const { toast } = useToast();
@@ -209,6 +212,49 @@ export function GeminiSettingsDialog({
           Essayé (avec chaque clé) si le modèle principal échoue encore après avoir épuisé toutes les clés.
         </p>
       </div>
+
+      {usageStats && (
+        <div className="mt-5 space-y-2 border-t border-border pt-4">
+          <p className="text-sm font-medium text-foreground">Consommation Gemini</p>
+          <div className="grid grid-cols-2 gap-3 text-xs text-foreground-muted">
+            <div className="rounded-[var(--radius-sm)] border border-border bg-surface-muted/50 p-2.5">
+              <p className="font-medium text-foreground">{usageStats.last24h.calls} appel(s) — 24 h</p>
+              <p>
+                {usageStats.last24h.failures} échec(s) · {usageStats.last24h.totalTokens.toLocaleString("fr-FR")} tokens
+              </p>
+            </div>
+            <div className="rounded-[var(--radius-sm)] border border-border bg-surface-muted/50 p-2.5">
+              <p className="font-medium text-foreground">{usageStats.last7d.calls} appel(s) — 7 j</p>
+              <p>
+                {usageStats.last7d.failures} échec(s) · {usageStats.last7d.totalTokens.toLocaleString("fr-FR")} tokens
+              </p>
+            </div>
+          </div>
+          {usageStats.byModel.length > 0 && (
+            <ul className="text-xs text-foreground-subtle">
+              {usageStats.byModel.map((m) => (
+                <li key={m.model}>
+                  {m.model} : {m.calls} appel(s){m.failures > 0 ? `, ${m.failures} échec(s)` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+          {usageStats.recentFailures.length > 0 && (
+            <details className="text-xs">
+              <summary className="cursor-pointer text-danger">{usageStats.recentFailures.length} échec(s) récent(s)</summary>
+              <ul className="mt-1.5 space-y-1 text-foreground-subtle">
+                {usageStats.recentFailures.map((f, i) => (
+                  <li key={i}>
+                    {new Date(f.calledAt).toLocaleString("fr-FR")} — {f.model}
+                    {f.statusCode ? ` (${f.statusCode})` : ""}
+                    {f.errorMessage ? ` — ${f.errorMessage.slice(0, 120)}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
 
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="secondary" onClick={onClose}>

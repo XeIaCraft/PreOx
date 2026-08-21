@@ -960,6 +960,55 @@ export async function getElProfesorGeminiConfig(): Promise<{ apiKeys: string[]; 
   return { apiKeys, models };
 }
 
+export interface GeminiUsageStats {
+  last24h: { calls: number; failures: number; totalTokens: number };
+  last7d: { calls: number; failures: number; totalTokens: number };
+  byModel: { model: string; calls: number; failures: number }[];
+  recentFailures: { calledAt: string; model: string; statusCode: number | null; errorMessage: string | null }[];
+}
+
+/** Quota/consumption journal summary for the admin "Réglages IA" panel — item 48 of the backlog. */
+export async function getGeminiUsageStats(): Promise<GeminiUsageStats> {
+  const supabase = await createClient();
+  const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: rows } = await supabase
+    .from("el_profesor_gemini_usage_log")
+    .select("called_at, model, success, status_code, total_tokens, error_message")
+    .gte("called_at", since7d)
+    .order("called_at", { ascending: false });
+
+  const since24h = Date.now() - 24 * 60 * 60 * 1000;
+  const all = rows ?? [];
+  const last24hRows = all.filter((r) => new Date(r.called_at).getTime() >= since24h);
+
+  function summarize(list: typeof all) {
+    return {
+      calls: list.length,
+      failures: list.filter((r) => !r.success).length,
+      totalTokens: list.reduce((sum, r) => sum + (r.total_tokens ?? 0), 0),
+    };
+  }
+
+  const byModelMap = new Map<string, { calls: number; failures: number }>();
+  for (const r of all) {
+    const entry = byModelMap.get(r.model) ?? { calls: 0, failures: 0 };
+    entry.calls += 1;
+    if (!r.success) entry.failures += 1;
+    byModelMap.set(r.model, entry);
+  }
+
+  return {
+    last24h: summarize(last24hRows),
+    last7d: summarize(all),
+    byModel: [...byModelMap.entries()].map(([model, stats]) => ({ model, ...stats })).sort((a, b) => b.calls - a.calls),
+    recentFailures: all
+      .filter((r) => !r.success)
+      .slice(0, 5)
+      .map((r) => ({ calledAt: r.called_at, model: r.model, statusCode: r.status_code, errorMessage: r.error_message })),
+  };
+}
+
 // -- Notion tagging + cross-fiche contradiction detection (admin-only) ------
 
 /** Plain-text content of a fiche's published blocks, for feeding to an LLM prompt (categorization, contradiction check). */

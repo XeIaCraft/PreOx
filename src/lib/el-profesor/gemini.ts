@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createAdminClient } from "@/lib/supabase/admin";
 import { GeminiError, parseGeminiJson } from "@/lib/gemini-shared";
 import {
   buildExtractionPrompt,
@@ -323,6 +324,32 @@ export async function deleteGeminiFile(apiKey: string, name: string): Promise<vo
 const RETRYABLE_STATUS = new Set([429, 503]);
 const RETRY_DELAYS_MS = [2000, 5000];
 
+/** Best-effort quota/consumption journal — never lets a logging failure affect the actual Gemini call. */
+async function logGeminiUsage(entry: {
+  model: string;
+  success: boolean;
+  statusCode?: number;
+  promptTokens?: number;
+  candidatesTokens?: number;
+  totalTokens?: number;
+  errorMessage?: string;
+}) {
+  try {
+    const admin = createAdminClient();
+    await admin.from("el_profesor_gemini_usage_log").insert({
+      model: entry.model,
+      success: entry.success,
+      status_code: entry.statusCode ?? null,
+      prompt_tokens: entry.promptTokens ?? null,
+      candidates_tokens: entry.candidatesTokens ?? null,
+      total_tokens: entry.totalTokens ?? null,
+      error_message: entry.errorMessage ?? null,
+    });
+  } catch {
+    // best-effort — never block the actual Gemini call on logging
+  }
+}
+
 async function callGeminiJson(
   apiKey: string,
   model: string,
@@ -343,19 +370,33 @@ async function callGeminiJson(
   });
 
   if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    await logGeminiUsage({ model, success: false, statusCode: response.status, errorMessage: body.slice(0, 300) });
     if (RETRYABLE_STATUS.has(response.status) && attempt < RETRY_DELAYS_MS.length) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
       return callGeminiJson(apiKey, model, parts, responseSchema, attempt + 1);
     }
-    const body = await response.text().catch(() => "");
     throw new GeminiError(`Appel Gemini échoué (${response.status}) : ${body.slice(0, 300) || "erreur inconnue"}.`);
   }
 
   const payload = await response.json();
+  const usage = payload?.usageMetadata as
+    | { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number }
+    | undefined;
   const text: string | undefined = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) {
+    await logGeminiUsage({ model, success: false, statusCode: response.status, errorMessage: "Réponse vide ou inattendue." });
     throw new GeminiError("Réponse Gemini vide ou inattendue.");
   }
+
+  await logGeminiUsage({
+    model,
+    success: true,
+    statusCode: response.status,
+    promptTokens: usage?.promptTokenCount,
+    candidatesTokens: usage?.candidatesTokenCount,
+    totalTokens: usage?.totalTokenCount,
+  });
 
   return parseGeminiJson(text);
 }

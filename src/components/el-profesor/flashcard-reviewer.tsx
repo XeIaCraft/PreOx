@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, X, PartyPopper, Undo2, Info, Keyboard, Timer, Square, PenLine } from "lucide-react";
+import { ArrowLeft, Check, X, PartyPopper, Undo2, Info, Keyboard, Timer, Square, PenLine, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { submitReview, undoReview } from "@/app/apps/el-profesor/actions/review";
@@ -112,6 +112,8 @@ export function FlashcardReviewer({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [dictationMode, setDictationMode] = useState(false);
   const [dictationInput, setDictationInput] = useState("");
+  const [focusMode, setFocusMode] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const revealedAtRef = useRef<number | null>(null);
   // Picked once per session mount so it stays stable across re-renders but varies session to session.
   const [completionMessage] = useState(() => COMPLETION_MESSAGES[Math.floor(Math.random() * COMPLETION_MESSAGES.length)]);
@@ -146,6 +148,25 @@ export function FlashcardReviewer({
       setIndex((i) => i + 1);
     });
   }
+
+  function toggleFocusMode() {
+    if (!focusMode) {
+      containerRef.current?.requestFullscreen?.().catch(() => {});
+      setFocusMode(true);
+    } else {
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+      setFocusMode(false);
+    }
+  }
+
+  // Keeps focusMode in sync if the user exits fullscreen via Esc/browser chrome rather than our own button.
+  useEffect(() => {
+    function handleFullscreenChange() {
+      if (!document.fullscreenElement) setFocusMode(false);
+    }
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
 
   function handleRestart() {
     setIndex(0);
@@ -289,54 +310,73 @@ export function FlashcardReviewer({
   }
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-xl flex-col px-4 py-6">
+    <div ref={containerRef} className={`mx-auto flex min-h-[calc(100vh-4rem)] max-w-xl flex-col bg-background px-4 py-6 ${focusMode ? "justify-center" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-y-1.5">
-        <Link href={backHref}>
-          <Button variant="ghost" size="icon" aria-label="Retour">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {undoButton}
-          <Badge variant={source === "scheduled" ? "primary" : "neutral"}>
-            {badgeLabel ?? (source === "scheduled" ? "Planifiée" : "Libre")}
-          </Badge>
-          {source === "scheduled" && (
-            <button
-              type="button"
-              className="text-foreground-subtle hover:text-foreground"
-              title="Répétition espacée : chaque carte revient juste avant que vous ne risquiez de l'oublier. Répondre « Incorrect » la fait revenir plus vite, « Correct » espace l'intervalle suivant — plus fiable pour la mémoire à long terme qu'une simple relecture."
-              aria-label="Comment fonctionne la planification des révisions"
-            >
-              <Info className="h-3.5 w-3.5" />
-            </button>
+        {!focusMode && (
+          <Link href={backHref}>
+            <Button variant="ghost" size="icon" aria-label="Retour">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+        )}
+        <div className={`flex flex-wrap items-center gap-2 ${focusMode ? "w-full justify-between" : "justify-end"}`}>
+          {!focusMode && (
+            <>
+              {undoButton}
+              <Badge variant={source === "scheduled" ? "primary" : "neutral"}>
+                {badgeLabel ?? (source === "scheduled" ? "Planifiée" : "Libre")}
+              </Badge>
+              {source === "scheduled" && (
+                <button
+                  type="button"
+                  className="text-foreground-subtle hover:text-foreground"
+                  title="Répétition espacée : chaque carte revient juste avant que vous ne risquiez de l'oublier. Répondre « Incorrect » la fait revenir plus vite, « Correct » espace l'intervalle suivant — plus fiable pour la mémoire à long terme qu'une simple relecture."
+                  aria-label="Comment fonctionne la planification des révisions"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </>
           )}
           <span className="text-xs text-foreground-subtle">
             {index + 1} / {cards.length}
           </span>
-          <PomodoroTimer toast={toast} />
-          <Button
-            variant={dictationMode ? "secondary" : "ghost"}
-            size="icon"
-            className="hidden sm:inline-flex"
-            onClick={() => {
-              setDictationMode((m) => !m);
-              setDictationInput("");
-            }}
-            aria-label={dictationMode ? "Désactiver le mode dictée" : "Activer le mode dictée"}
-            title="Mode dictée : tapez la réponse au clavier plutôt que de la deviner"
-          >
-            <PenLine className="h-4 w-4" />
-          </Button>
+          {!focusMode && (
+            <>
+              <PomodoroTimer toast={toast} />
+              <Button
+                variant={dictationMode ? "secondary" : "ghost"}
+                size="icon"
+                className="hidden sm:inline-flex"
+                onClick={() => {
+                  setDictationMode((m) => !m);
+                  setDictationInput("");
+                }}
+                aria-label={dictationMode ? "Désactiver le mode dictée" : "Activer le mode dictée"}
+                title="Mode dictée : tapez la réponse au clavier plutôt que de la deviner"
+              >
+                <PenLine className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="hidden sm:inline-flex"
+                onClick={() => setShortcutsOpen(true)}
+                aria-label="Raccourcis clavier"
+                title="Raccourcis clavier (?)"
+              >
+                <Keyboard className="h-4 w-4" />
+              </Button>
+            </>
+          )}
           <Button
             variant="ghost"
             size="icon"
-            className="hidden sm:inline-flex"
-            onClick={() => setShortcutsOpen(true)}
-            aria-label="Raccourcis clavier"
-            title="Raccourcis clavier (?)"
+            onClick={toggleFocusMode}
+            aria-label={focusMode ? "Quitter le mode focus" : "Mode focus plein écran"}
+            title={focusMode ? "Quitter le mode focus" : "Mode focus plein écran, sans distraction"}
           >
-            <Keyboard className="h-4 w-4" />
+            {focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </Button>
         </div>
       </div>
@@ -350,7 +390,7 @@ export function FlashcardReviewer({
         />
       </div>
 
-      {cappedFrom && chapterId && (
+      {!focusMode && cappedFrom && chapterId && (
         <p className="mt-2 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-center text-xs text-foreground-subtle">
           <span>
             Session limitée à {cards.length} cartes sur {cappedFrom} —

@@ -311,6 +311,18 @@ export type ElProfesorFlagRow = {
   created_at: string;
 };
 
+export type ElProfesorGeminiUsageLogRow = {
+  id: string;
+  called_at: string;
+  model: string;
+  success: boolean;
+  status_code: number | null;
+  prompt_tokens: number | null;
+  candidates_tokens: number | null;
+  total_tokens: number | null;
+  error_message: string | null;
+};
+
 export type ElProfesorSettingsRow = {
   id: boolean;
   gemini_model: string;
@@ -590,6 +602,12 @@ export type Database = {
         Row: ElProfesorFlagRow;
         Insert: Partial<ElProfesorFlagRow> & { target_type: "block" | "flashcard"; target_id: string; flagged_by: string };
         Update: Partial<ElProfesorFlagRow>;
+        Relationships: [];
+      };
+      el_profesor_gemini_usage_log: {
+        Row: ElProfesorGeminiUsageLogRow;
+        Insert: Partial<ElProfesorGeminiUsageLogRow> & { model: string; success: boolean };
+        Update: Partial<ElProfesorGeminiUsageLogRow>;
         Relationships: [];
       };
       el_profesor_notions: {

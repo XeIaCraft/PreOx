@@ -55,6 +55,7 @@ import type {
   ChapterMasteryPercentile,
   StaleChapterAlert,
   BlockTypeFlagStat,
+  GeminiUsageStats,
 } from "@/lib/el-profesor/dal";
 import type { ChapterStatus, Flashcard, BlockType } from "@/lib/el-profesor/types";
 
@@ -190,6 +191,7 @@ export function ElProfesorBoard({
   hasGeminiKey,
   geminiExtraKeyCount,
   geminiFallbackModel,
+  geminiUsageStats,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -212,6 +214,7 @@ export function ElProfesorBoard({
   hasGeminiKey: boolean;
   geminiExtraKeyCount: number;
   geminiFallbackModel: string | null;
+  geminiUsageStats: GeminiUsageStats | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -938,6 +941,7 @@ export function ElProfesorBoard({
           hasApiKey={hasGeminiKey}
           extraKeyCount={geminiExtraKeyCount}
           fallbackModel={geminiFallbackModel}
+          usageStats={geminiUsageStats}
           onClose={() => {
             setModal(null);
             refresh();
