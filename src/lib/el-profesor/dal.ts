@@ -267,6 +267,87 @@ export async function getOnThisDayNote(userId: string): Promise<OnThisDayNote | 
   return null;
 }
 
+export interface BookRecommendation {
+  bookId: string;
+  bookTitle: string;
+  firstChapterId: string;
+  otherUsersEngaged: number;
+}
+
+/**
+ * "Recommandé par les autres utilisateurs" — item 29 of the backlog.
+ * Simple collaborative signal, single pass over the library rather than a
+ * query per book: among published books this user hasn't started yet, picks
+ * the one the most *other* users have review history on. Returns null
+ * rather than guessing when there's no real signal (fewer than 2 published
+ * books, or no other user has engaged with any book this user hasn't
+ * started) — a recommendation with no basis is worse than none.
+ */
+export async function getRecommendedNextBook(userId: string, books: BookWithChapters[]): Promise<BookRecommendation | null> {
+  const published = books.filter((b) => b.chapters.some((c) => c.status === "published"));
+  if (published.length < 2) return null;
+
+  const supabase = await createClient();
+  const publishedChapters = published.flatMap((b) => b.chapters.filter((c) => c.status === "published"));
+  const chapterIds = publishedChapters.map((c) => c.id);
+  if (chapterIds.length === 0) return null;
+
+  const { data: subEntities } = await supabase.from("el_profesor_sub_entities").select("id, chapter_id").in("chapter_id", chapterIds);
+  const subEntityIds = (subEntities ?? []).map((s) => s.id);
+  const { data: fiches } = subEntityIds.length
+    ? await supabase.from("el_profesor_fiches").select("id, sub_entity_id").in("sub_entity_id", subEntityIds).eq("status", "published")
+    : { data: [] };
+  const ficheIds = (fiches ?? []).map((f) => f.id);
+  const { data: flashcards } = ficheIds.length
+    ? await supabase.from("el_profesor_flashcards").select("id, fiche_id").in("fiche_id", ficheIds)
+    : { data: [] };
+
+  const chapterToBook = new Map<string, string>();
+  for (const book of published) for (const c of book.chapters) chapterToBook.set(c.id, book.id);
+  const subEntityToChapter = new Map((subEntities ?? []).map((s) => [s.id, s.chapter_id]));
+  const ficheToSubEntity = new Map((fiches ?? []).map((f) => [f.id, f.sub_entity_id]));
+
+  const flashcardToBook = new Map<string, string>();
+  for (const card of flashcards ?? []) {
+    const subEntityId = ficheToSubEntity.get(card.fiche_id);
+    const chapterId = subEntityId ? subEntityToChapter.get(subEntityId) : undefined;
+    const bookId = chapterId ? chapterToBook.get(chapterId) : undefined;
+    if (bookId) flashcardToBook.set(card.id, bookId);
+  }
+
+  const allFlashcardIds = [...flashcardToBook.keys()];
+  if (allFlashcardIds.length === 0) return null;
+
+  const { data: states } = await supabase.from("el_profesor_review_state").select("user_id, flashcard_id").in("flashcard_id", allFlashcardIds);
+
+  const engagedUsersByBook = new Map<string, Set<string>>();
+  const myBookIds = new Set<string>();
+  for (const s of states ?? []) {
+    const bookId = flashcardToBook.get(s.flashcard_id);
+    if (!bookId) continue;
+    if (s.user_id === userId) {
+      myBookIds.add(bookId);
+      continue;
+    }
+    if (!engagedUsersByBook.has(bookId)) engagedUsersByBook.set(bookId, new Set());
+    engagedUsersByBook.get(bookId)!.add(s.user_id);
+  }
+
+  let best: { bookId: string; count: number } | null = null;
+  for (const book of published) {
+    if (myBookIds.has(book.id)) continue;
+    const count = engagedUsersByBook.get(book.id)?.size ?? 0;
+    if (count > 0 && (!best || count > best.count)) best = { bookId: book.id, count };
+  }
+  if (!best) return null;
+
+  const book = published.find((b) => b.id === best!.bookId);
+  const firstChapter = book?.chapters.find((c) => c.status === "published");
+  if (!book || !firstChapter) return null;
+
+  return { bookId: book.id, bookTitle: book.title, firstChapterId: firstChapter.id, otherUsersEngaged: best.count };
+}
+
 export interface ReadingPosition {
   chapterId: string;
   subEntityId: string | null;

@@ -231,6 +231,25 @@ Réponds uniquement avec le JSON demandé (un champ "text"), structuré exacteme
 `.trim();
 }
 
+/** On-demand exam-style question generation from a fiche's content — ephemeral, never persisted. Item 8 of the backlog. */
+export function buildExamQuestionsPrompt(subEntityName: string, ficheText: string): string {
+  return `
+${EXPERT_READER_CONTEXT}
+
+Voici le contenu déjà rédigé pour la sous-entité « ${subEntityName} » :
+« ${ficheText} »
+
+Ta tâche : rédige 3 à 5 questions dans le style d'un concours/examen d'anesthésie-réanimation (registre européen UEMS/EBA/EDAIC), à partir UNIQUEMENT de ce contenu. Varie les formats pertinents pour ce contenu (QCM à une bonne réponse avec distracteurs plausibles, question à réponse courte, question de type "quelle est la conduite à tenir"...). Pour chaque question :
+1. L'énoncé complet (avec les options si QCM).
+2. La bonne réponse.
+3. Une justification brève qui s'appuie sur le contenu de la fiche, y compris pourquoi les distracteurs sont incorrects si pertinent.
+
+Format de sortie : TEXTE BRUT uniquement, pas de Markdown — numérote les questions.
+
+Réponds uniquement avec le JSON demandé (un champ "text"), structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildNotionCategorizationPrompt(ficheTitle: string, ficheText: string, existingNotionNames: string[]): string {
   return `
 Tu catégorises le contenu médical d'une fiche de révision par "notions" transversales — des concepts qui peuvent apparaître dans plusieurs chapitres ou plusieurs livres différents (ex: "Hyperkaliémie", "Choc anaphylactique", "Anticoagulants et chirurgie", "Ventilation protectrice"). Le but : pouvoir un jour comparer entre eux tous les passages de la bibliothèque qui parlent de la même notion, même extraits de livres différents.

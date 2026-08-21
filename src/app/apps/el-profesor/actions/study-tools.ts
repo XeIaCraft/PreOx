@@ -1,7 +1,7 @@
 "use server";
 
 import { requireElProfesorAccess, getElProfesorGeminiConfig } from "@/lib/el-profesor/dal";
-import { translateFicheText, generateClinicalCase } from "@/lib/el-profesor/gemini";
+import { translateFicheText, generateClinicalCase, generateExamQuestions } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
 
 /**
@@ -31,5 +31,18 @@ export async function getClinicalCase(subEntityName: string, ficheText: string):
     return await generateClinicalCase(config, subEntityName, ficheText);
   } catch (err) {
     return { error: err instanceof GeminiError ? err.message : "Échec de la génération du cas clinique." };
+  }
+}
+
+/** On-demand exam-style question generation from a fiche's content — ephemeral, never persisted. Item 8 of the backlog. */
+export async function getExamQuestions(subEntityName: string, ficheText: string): Promise<{ text: string } | { error: string }> {
+  await requireElProfesorAccess();
+  if (!ficheText.trim()) return { error: "Cette fiche n'a pas encore assez de contenu pour générer des questions." };
+
+  try {
+    const config = await getElProfesorGeminiConfig();
+    return await generateExamQuestions(config, subEntityName, ficheText);
+  } catch (err) {
+    return { error: err instanceof GeminiError ? err.message : "Échec de la génération des questions." };
   }
 }

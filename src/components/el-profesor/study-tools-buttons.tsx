@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Languages, Stethoscope } from "lucide-react";
+import { Languages, Stethoscope, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/input";
-import { getFicheTranslation, getClinicalCase } from "@/app/apps/el-profesor/actions/study-tools";
+import { getFicheTranslation, getClinicalCase, getExamQuestions } from "@/app/apps/el-profesor/actions/study-tools";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import type { FicheBlock } from "@/lib/el-profesor/types";
 
@@ -17,7 +17,7 @@ function ficheText(blocks: FicheBlock[]): string {
 
 /** "Traduire" and "Cas clinique" — items 12 and 13 of the backlog, both ephemeral (never persisted). */
 export function StudyToolsButtons({ ficheTitle, subEntityName, blocks }: { ficheTitle: string; subEntityName: string; blocks: FicheBlock[] }) {
-  const [openTool, setOpenTool] = useState<"translate" | "case" | null>(null);
+  const [openTool, setOpenTool] = useState<"translate" | "case" | "exam" | null>(null);
   const [language, setLanguage] = useState(TRANSLATION_LANGUAGES[0]);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState<string | null>(null);
@@ -52,6 +52,18 @@ export function StudyToolsButtons({ ficheTitle, subEntityName, blocks }: { fiche
     });
   }
 
+  function openExam() {
+    setOpenTool("exam");
+    setLoading(true);
+    setError(null);
+    setText(null);
+    getExamQuestions(subEntityName, ficheText(blocks)).then((result) => {
+      setLoading(false);
+      if ("error" in result) setError(result.error);
+      else setText(result.text);
+    });
+  }
+
   return (
     <>
       <Button variant="ghost" size="icon" className="hidden sm:inline-flex" onClick={openTranslate} aria-label="Traduire cette fiche" title="Traduire cette fiche">
@@ -59,6 +71,9 @@ export function StudyToolsButtons({ ficheTitle, subEntityName, blocks }: { fiche
       </Button>
       <Button variant="ghost" size="icon" className="hidden sm:inline-flex" onClick={openCase} aria-label="Générer un cas clinique" title="Générer un cas clinique d'entraînement">
         <Stethoscope className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" className="hidden sm:inline-flex" onClick={openExam} aria-label="Générer des questions type concours" title="Générer des questions type concours">
+        <ListChecks className="h-4 w-4" />
       </Button>
 
       {openTool === "translate" && (
@@ -85,6 +100,19 @@ export function StudyToolsButtons({ ficheTitle, subEntityName, blocks }: { fiche
         <Modal
           title="Cas clinique d'entraînement"
           description="Généré à partir du contenu de cette fiche, jamais enregistré."
+          onClose={() => setOpenTool(null)}
+          size="md"
+        >
+          {loading && <p className="text-sm text-foreground-subtle">Génération en cours…</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
+          {text && <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{text}</div>}
+        </Modal>
+      )}
+
+      {openTool === "exam" && (
+        <Modal
+          title="Questions type concours"
+          description="Générées à partir du contenu de cette fiche, jamais enregistrées."
           onClose={() => setOpenTool(null)}
           size="md"
         >

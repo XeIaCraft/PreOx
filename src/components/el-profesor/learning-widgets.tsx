@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star, Download, History, Tag, Check, Target } from "lucide-react";
+import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star, Download, History, Tag, Check, Target, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { getDailyGoal, setDailyGoal, getWeeklyGoal, setWeeklyGoal } from "@/lib/el-profesor/local-prefs";
 import { setBookmarkTags } from "@/app/apps/el-profesor/actions/bookmarks";
 import { getWeaknessSynthesis } from "@/app/apps/el-profesor/actions/synthesis";
-import type { ReviewActivitySummary, UpcomingForecastDay, BookmarkedEntity, OnThisDayNote } from "@/lib/el-profesor/dal";
+import type { ReviewActivitySummary, UpcomingForecastDay, BookmarkedEntity, OnThisDayNote, BookRecommendation } from "@/lib/el-profesor/dal";
 import type { Flashcard } from "@/lib/el-profesor/types";
 
 /** Quick-access list of the user's bookmarked fiches, filterable by personal tag (item 35 of the backlog). */
@@ -274,6 +274,26 @@ function WeaknessSynthesisButton() {
         </Modal>
       )}
     </>
+  );
+}
+
+/** "Recommandé par les autres utilisateurs" — item 29 of the backlog. */
+export function BookRecommendationCard({ recommendation }: { recommendation: BookRecommendation }) {
+  return (
+    <Link
+      href={`/apps/el-profesor/chapters/${recommendation.firstChapterId}`}
+      className="mt-6 block rounded-[var(--radius-lg)] border border-border bg-surface p-4 hover:border-accent/40"
+    >
+      <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">
+        <Users className="h-3 w-3" /> Recommandé par d&apos;autres utilisateurs
+      </p>
+      <p className="mt-1.5 text-sm font-medium text-foreground">{recommendation.bookTitle}</p>
+      <p className="mt-1 text-xs text-foreground-subtle">
+        {recommendation.otherUsersEngaged} autre{recommendation.otherUsersEngaged > 1 ? "s" : ""} utilisateur
+        {recommendation.otherUsersEngaged > 1 ? "s" : ""} y révise{recommendation.otherUsersEngaged > 1 ? "nt" : ""} déjà — vous ne l&apos;avez
+        pas encore commencé.
+      </p>
+    </Link>
   );
 }
 

@@ -41,7 +41,7 @@ import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog"
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
-import { LearningWidgets, DailyCard, LibraryStats, BookmarksList, OnThisDayNoteCard } from "@/components/el-profesor/learning-widgets";
+import { LearningWidgets, DailyCard, LibraryStats, BookmarksList, OnThisDayNoteCard, BookRecommendationCard } from "@/components/el-profesor/learning-widgets";
 import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
@@ -63,6 +63,7 @@ import type {
   GeminiUsageStats,
   ElProfesorAiProvider,
   OnThisDayNote,
+  BookRecommendation,
 } from "@/lib/el-profesor/dal";
 import type { ChapterStatus, Flashcard, BlockType } from "@/lib/el-profesor/types";
 
@@ -206,6 +207,7 @@ export function ElProfesorBoard({
   claudeModel,
   serverResumeChapterId,
   onThisDayNote,
+  bookRecommendation,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -235,6 +237,7 @@ export function ElProfesorBoard({
   /** Cross-device resume position (server-stored) — preferred over the local-only cache when present. */
   serverResumeChapterId: string | null;
   onThisDayNote: OnThisDayNote | null;
+  bookRecommendation: BookRecommendation | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -523,6 +526,7 @@ export function ElProfesorBoard({
 
       {dailyCard && <DailyCard card={dailyCard} />}
       {onThisDayNote && <OnThisDayNoteCard note={onThisDayNote} />}
+      {bookRecommendation && <BookRecommendationCard recommendation={bookRecommendation} />}
 
       <BookmarksList bookmarks={bookmarks} />
 
