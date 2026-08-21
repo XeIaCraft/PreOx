@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star, Download, History, Tag, Check } from "lucide-react";
+import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star, Download, History, Tag, Check, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getDailyGoal, setDailyGoal } from "@/lib/el-profesor/local-prefs";
+import { getDailyGoal, setDailyGoal, getWeeklyGoal, setWeeklyGoal } from "@/lib/el-profesor/local-prefs";
 import { setBookmarkTags } from "@/app/apps/el-profesor/actions/bookmarks";
 import type { ReviewActivitySummary, UpcomingForecastDay, BookmarkedEntity, OnThisDayNote } from "@/lib/el-profesor/dal";
 import type { Flashcard } from "@/lib/el-profesor/types";
@@ -211,6 +211,35 @@ export function OnThisDayNoteCard({ note }: { note: OnThisDayNote }) {
   );
 }
 
+const WEEKLY_GOAL_PRESETS = [3, 5, 7];
+
+/** Personal weekly-regularity target, tracked against actual days active this week — item 21 of the backlog. */
+function WeeklyRegularityGoal({ activeDays }: { activeDays: number }) {
+  const [goal, setGoalState] = useState(() => getWeeklyGoal());
+  const met = activeDays >= goal;
+
+  function cycleGoal() {
+    const idx = WEEKLY_GOAL_PRESETS.indexOf(goal);
+    const next = WEEKLY_GOAL_PRESETS[(idx + 1) % WEEKLY_GOAL_PRESETS.length] ?? WEEKLY_GOAL_PRESETS[0];
+    setGoalState(next);
+    setWeeklyGoal(next);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={cycleGoal}
+      className="mt-1.5 flex items-center gap-1.5 text-xs"
+      title="Objectif de régularité hebdomadaire — cliquer pour changer"
+    >
+      <Target className={`h-3.5 w-3.5 ${met ? "text-success" : "text-foreground-subtle"}`} />
+      <span className={met ? "text-success" : "text-foreground-subtle"}>
+        Régularité : {activeDays}/{goal} jour{goal > 1 ? "s" : ""} actifs cette semaine (objectif)
+      </span>
+    </button>
+  );
+}
+
 function ActivityHeatmap({ days }: { days: { date: string; count: number }[] }) {
   // Oldest-first list -> 12 columns (weeks) x 7 rows (days), left to right.
   const weeks: { date: string; count: number }[][] = [];
@@ -397,6 +426,7 @@ export function LearningWidgets({
           {reviewTimeStats && reviewTimeStats.last7DaysMs > 0 ? ` — ${formatReviewDuration(reviewTimeStats.last7DaysMs)} de révision` : ""}.
         </p>
       )}
+      <WeeklyRegularityGoal activeDays={activeDays} />
       {reviewTimeStats && reviewTimeStats.totalMs > 0 && (
         <p className="text-xs text-foreground-subtle">Temps total investi : {formatReviewDuration(reviewTimeStats.totalMs)}.</p>
       )}

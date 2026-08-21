@@ -82,6 +82,19 @@ export function setDailyGoal(goal: number) {
   setItem("daily-goal", String(goal));
 }
 
+const DEFAULT_WEEKLY_GOAL = 5;
+
+/** Personal weekly-regularity target (days active per week), item 21 of the backlog. */
+export function getWeeklyGoal(): number {
+  const raw = getItem("weekly-goal");
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 && n <= 7 ? n : DEFAULT_WEEKLY_GOAL;
+}
+
+export function setWeeklyGoal(goal: number) {
+  setItem("weekly-goal", String(goal));
+}
+
 export function getPdfZoom(): number | null {
   const raw = getItem("pdf-zoom");
   const n = raw ? Number(raw) : NaN;
