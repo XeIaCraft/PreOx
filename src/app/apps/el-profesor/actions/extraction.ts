@@ -15,6 +15,7 @@ import { GeminiError } from "@/lib/gemini-shared";
 import { getChapterContent } from "@/lib/el-profesor/dal";
 import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-profesor/content-log";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
+import { extractPdfPageTexts, correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
 import type {
   ExtractionResult,
   ComplementaryResult,
@@ -63,14 +64,17 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
     const config = await getElProfesorGeminiConfig();
 
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
-    const { extraction, apiKey: winningKey, model, file } = await extractChapterContentWithRotation(
-      config,
-      bytes,
-      chapter.title,
-      chapter.title
-    );
+    const [{ extraction, apiKey: winningKey, model, file }, pageTexts] = await Promise.all([
+      extractChapterContentWithRotation(config, bytes, chapter.title, chapter.title),
+      extractPdfPageTexts(bytes).catch(() => null),
+    ]);
     apiKey = winningKey;
     geminiFileName = file.name;
+
+    // Ground-truth-corrects citation pages against the PDF's actual text
+    // when possible (best-effort — null on a malformed/unparseable file,
+    // in which case citations are left exactly as the model produced them).
+    if (pageTexts) correctExtractionCitations(extraction, pageTexts);
 
     let verificationFailed = false;
     const verification = await verifyExtraction(apiKey, model, file, extraction).catch(() => {
@@ -278,7 +282,8 @@ async function runOneComplementaryPass(
   chapter: { title: string },
   config: Awaited<ReturnType<typeof getElProfesorGeminiConfig>>,
   bytes: Uint8Array,
-  existingContent: Awaited<ReturnType<typeof getChapterContent>>
+  existingContent: Awaited<ReturnType<typeof getChapterContent>>,
+  pageTexts: string[] | null
 ): Promise<{ addedCount: number; estimatedRemainingPasses: number | null }> {
   const coverageSummary = buildCoverageSummary(existingContent);
   let geminiFileName: string | null = null;
@@ -293,6 +298,7 @@ async function runOneComplementaryPass(
     );
     apiKey = winningKey;
     geminiFileName = file.name;
+    if (pageTexts) correctComplementaryCitations(complementary, pageTexts);
     const addedCount = await persistComplementaryAdditions(chapterId, complementary, existingContent);
 
     const supabase = await createClient();
@@ -334,6 +340,8 @@ export async function extractChapterComplementary(chapterId: string, options?: {
   try {
     const config = await getElProfesorGeminiConfig();
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
+    // Extracted once and reused across every auto-run pass (see below) rather than per pass.
+    const pageTexts = await extractPdfPageTexts(bytes).catch(() => null);
 
     let totalAdded = 0;
     let passesRun = 0;
@@ -342,7 +350,7 @@ export async function extractChapterComplementary(chapterId: string, options?: {
 
     do {
       const existingContent = await getChapterContent(chapterId, true);
-      const pass = await runOneComplementaryPass(chapterId, chapter, config, bytes, existingContent);
+      const pass = await runOneComplementaryPass(chapterId, chapter, config, bytes, existingContent, pageTexts);
       totalAdded += pass.addedCount;
       passesRun += 1;
       estimatedRemainingPasses = pass.estimatedRemainingPasses;
