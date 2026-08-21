@@ -901,29 +901,55 @@ export async function hasElProfesorGeminiKey(): Promise<boolean> {
   return Boolean(data?.gemini_api_key_encrypted);
 }
 
+/** How many extra rotation keys are configured — safe to expose as a count, unlike the keys themselves. */
+export async function getElProfesorGeminiExtraKeyCount(): Promise<number> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_secrets").select("gemini_extra_keys_encrypted").eq("id", true).maybeSingle();
+  return ((data?.gemini_extra_keys_encrypted as string[] | null) ?? []).length;
+}
+
+/** Configured fallback model (or null if unset) — just a model name, safe to expose. */
+export async function getElProfesorGeminiFallbackModel(): Promise<string | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_settings").select("gemini_fallback_model").eq("id", true).maybeSingle();
+  return data?.gemini_fallback_model ?? null;
+}
+
 /**
- * Decrypted Gemini key + model in one call — every extraction/proposal
- * action needs both together. Uses the service-role client: the key table
- * is admin-write/admin-read RLS (see 20260101000019), but reading the
- * *decrypted* key server-side to call Gemini on behalf of a non-admin user
- * (e.g. "select passage -> generate") is exactly the trusted-server-action
- * pattern already used elsewhere (`toggleFicheShare`, `proposeFromSelection`'s
- * insert) — the caller's own access was already checked by
- * `requireElProfesorAccess()` before this is reached.
+ * Ordered lists of Gemini API keys and models to try — every
+ * extraction/proposal action needs this together. Uses the service-role
+ * client: the key table is admin-write/admin-read RLS (see 20260101000019),
+ * but reading the *decrypted* key server-side to call Gemini on behalf of a
+ * non-admin user (e.g. "select passage -> generate") is exactly the
+ * trusted-server-action pattern already used elsewhere (`toggleFicheShare`,
+ * `proposeFromSelection`'s insert) — the caller's own access was already
+ * checked by `requireElProfesorAccess()` before this is reached.
+ *
+ * `apiKeys` is [primary, ...extra keys] in the admin-configured order;
+ * `models` is [primary model, fallback model] (fallback omitted if unset).
+ * The caller (see lib/el-profesor/gemini.ts's rotation helpers) tries every
+ * key for the primary model before falling back to the secondary model, so a
+ * quota (429) or capacity (503) error on one key/model automatically retries
+ * with the next before surfacing an error to the admin.
  */
-export async function getElProfesorGeminiConfig(): Promise<{ apiKey: string; model: string }> {
+export async function getElProfesorGeminiConfig(): Promise<{ apiKeys: string[]; models: string[] }> {
   const admin = createAdminClient();
   const [{ data: settings }, { data: secrets }] = await Promise.all([
-    admin.from("el_profesor_settings").select("gemini_model").eq("id", true).maybeSingle(),
-    admin.from("el_profesor_secrets").select("gemini_api_key_encrypted").eq("id", true).maybeSingle(),
+    admin.from("el_profesor_settings").select("gemini_model, gemini_fallback_model").eq("id", true).maybeSingle(),
+    admin.from("el_profesor_secrets").select("gemini_api_key_encrypted, gemini_extra_keys_encrypted").eq("id", true).maybeSingle(),
   ]);
 
   if (!secrets?.gemini_api_key_encrypted) {
     throw new GeminiError("Clé API Gemini non configurée. Un administrateur doit la renseigner dans les réglages d'El Profesor.");
   }
 
-  return {
-    apiKey: decryptSecret(secrets.gemini_api_key_encrypted),
-    model: settings?.gemini_model || EL_PROFESOR_GEMINI_MODEL_DEFAULT,
-  };
+  const extraKeys = ((secrets.gemini_extra_keys_encrypted as string[] | null) ?? []).map((k) => decryptSecret(k));
+  const apiKeys = [decryptSecret(secrets.gemini_api_key_encrypted), ...extraKeys];
+
+  const models = [settings?.gemini_model || EL_PROFESOR_GEMINI_MODEL_DEFAULT];
+  if (settings?.gemini_fallback_model && settings.gemini_fallback_model !== models[0]) {
+    models.push(settings.gemini_fallback_model);
+  }
+
+  return { apiKeys, models };
 }

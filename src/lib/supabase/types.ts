@@ -304,12 +304,14 @@ export type ElProfesorFlagRow = {
 export type ElProfesorSettingsRow = {
   id: boolean;
   gemini_model: string;
+  gemini_fallback_model: string | null;
   updated_at: string;
 };
 
 export type ElProfesorSecretsRow = {
   id: boolean;
   gemini_api_key_encrypted: string | null;
+  gemini_extra_keys_encrypted: string[];
   updated_at: string;
 };
 

@@ -186,6 +186,8 @@ export function ElProfesorBoard({
   reviewTimeStats,
   flagStatsByBlockType,
   hasGeminiKey,
+  geminiExtraKeyCount,
+  geminiFallbackModel,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -206,6 +208,8 @@ export function ElProfesorBoard({
   reviewTimeStats: { totalMs: number; last7DaysMs: number };
   flagStatsByBlockType: BlockTypeFlagStat[];
   hasGeminiKey: boolean;
+  geminiExtraKeyCount: number;
+  geminiFallbackModel: string | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -912,6 +916,8 @@ export function ElProfesorBoard({
         <GeminiSettingsDialog
           currentModel={geminiModel ?? "gemini-flash-latest"}
           hasApiKey={hasGeminiKey}
+          extraKeyCount={geminiExtraKeyCount}
+          fallbackModel={geminiFallbackModel}
           onClose={() => {
             setModal(null);
             refresh();

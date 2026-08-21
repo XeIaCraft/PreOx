@@ -46,8 +46,8 @@ export async function proposeFromSelection(
   if (trimmedQuote.length < 10) return { error: "Sélectionne un passage un peu plus long." };
 
   try {
-    const { apiKey, model } = await getElProfesorGeminiConfig();
-    const result = await generateFromSelection(apiKey, model, subEntity.name, chapterTitle, page, trimmedQuote);
+    const config = await getElProfesorGeminiConfig();
+    const result = await generateFromSelection(config, subEntity.name, chapterTitle, page, trimmedQuote);
 
     const admin = createAdminClient();
 

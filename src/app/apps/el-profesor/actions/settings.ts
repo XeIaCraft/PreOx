@@ -55,3 +55,62 @@ export async function clearGeminiApiKey(): Promise<ActionState> {
   revalidatePath("/apps/el-profesor");
   return { success: "Clé API supprimée." };
 }
+
+/**
+ * Additional Gemini keys tried in order after the primary one, only when a
+ * call fails with a quota (429) or capacity (503) error — e.g. several free
+ * accounts round-robined to spread quota. Appends to the existing list
+ * rather than replacing it: the stored keys are never decrypted back to the
+ * client, so the admin has no way to see (and therefore no way to safely
+ * retype) what's already saved — use clearGeminiExtraKeys() to start over.
+ */
+export async function addGeminiExtraKeys(keys: string[]): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const trimmed = keys.map((k) => k.trim()).filter(Boolean);
+  if (trimmed.length === 0) return { error: "Aucune clé à ajouter." };
+
+  const supabase = await createClient();
+  const { data: existing } = await supabase.from("el_profesor_secrets").select("gemini_extra_keys_encrypted").eq("id", true).maybeSingle();
+  const existingKeys = (existing?.gemini_extra_keys_encrypted as string[] | null) ?? [];
+
+  const { error } = await supabase
+    .from("el_profesor_secrets")
+    .update({
+      gemini_extra_keys_encrypted: [...existingKeys, ...trimmed.map((k) => encryptSecret(k))],
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", true);
+  if (error) return { error: "Impossible d'enregistrer les clés API supplémentaires." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: `${trimmed.length} clé(s) ajoutée(s).` };
+}
+
+export async function clearGeminiExtraKeys(): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_secrets")
+    .update({ gemini_extra_keys_encrypted: [], updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) return { error: "Impossible de retirer les clés API supplémentaires." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Clés supplémentaires retirées." };
+}
+
+/** Secondary model tried (for every configured key) if the primary model keeps failing with quota/capacity errors. */
+export async function updateGeminiFallbackModel(model: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const trimmed = model.trim();
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_settings")
+    .update({ gemini_fallback_model: trimmed || null, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) return { error: "Impossible de mettre à jour le modèle de secours." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: trimmed ? "Modèle de secours enregistré." : "Modèle de secours retiré." };
+}

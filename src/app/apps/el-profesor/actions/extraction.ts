@@ -5,10 +5,9 @@ import { requireElProfesorAdmin, getElProfesorGeminiConfig } from "@/lib/el-prof
 import { createClient } from "@/lib/supabase/server";
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import {
-  uploadPdfToGemini,
   deleteGeminiFile,
-  extractChapterContent,
-  extractComplementaryContent,
+  extractChapterContentWithRotation,
+  extractComplementaryContentWithRotation,
   verifyExtraction,
   generateMnemonic,
 } from "@/lib/el-profesor/gemini";
@@ -61,14 +60,17 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
 
   try {
     const config = await getElProfesorGeminiConfig();
-    apiKey = config.apiKey;
-    const model = config.model;
 
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
-    const file = await uploadPdfToGemini(apiKey, bytes, chapter.title);
+    const { extraction, apiKey: winningKey, model, file } = await extractChapterContentWithRotation(
+      config,
+      bytes,
+      chapter.title,
+      chapter.title
+    );
+    apiKey = winningKey;
     geminiFileName = file.name;
 
-    const extraction = await extractChapterContent(apiKey, model, file, chapter.title);
     const verification = await verifyExtraction(apiKey, model, file, extraction).catch(() => ({ flags: [] as VerificationFlag[] }));
 
     await persistExtraction(chapterId, extraction, verification.flags);
@@ -278,17 +280,20 @@ export async function extractChapterComplementary(chapterId: string): Promise<Ac
 
   try {
     const config = await getElProfesorGeminiConfig();
-    apiKey = config.apiKey;
-    const model = config.model;
 
     const existingContent = await getChapterContent(chapterId, true);
     const coverageSummary = buildCoverageSummary(existingContent);
 
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
-    const file = await uploadPdfToGemini(apiKey, bytes, chapter.title);
+    const { complementary, apiKey: winningKey, file } = await extractComplementaryContentWithRotation(
+      config,
+      bytes,
+      chapter.title,
+      chapter.title,
+      coverageSummary
+    );
+    apiKey = winningKey;
     geminiFileName = file.name;
-
-    const complementary = await extractComplementaryContent(apiKey, model, file, chapter.title, coverageSummary);
     const addedCount = await persistComplementaryAdditions(chapterId, complementary, existingContent);
 
     await supabase
@@ -421,8 +426,8 @@ export async function suggestMnemonicForBlock(blockId: string): Promise<ActionSt
   if (!sourceText.trim()) return { error: "Ce bloc n'a pas assez de contenu pour en tirer un moyen mnémotechnique." };
 
   try {
-    const { apiKey, model } = await getElProfesorGeminiConfig();
-    const result = await generateMnemonic(apiKey, model, subEntity?.name ?? "", sourceText);
+    const config = await getElProfesorGeminiConfig();
+    const result = await generateMnemonic(config, subEntity?.name ?? "", sourceText);
 
     const { count } = await supabase.from("el_profesor_fiche_blocks").select("id", { count: "exact", head: true }).eq("fiche_id", block.fiche_id);
     const { error } = await supabase.from("el_profesor_fiche_blocks").insert({

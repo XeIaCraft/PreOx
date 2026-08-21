@@ -179,6 +179,23 @@ export type UploadedGeminiFile = {
   mimeType: string;
 };
 
+/** Ordered lists to try — see getElProfesorGeminiConfig in lib/el-profesor/dal.ts for how these are built. */
+export interface GeminiRotationConfig {
+  apiKeys: string[];
+  models: string[];
+}
+
+function isQuotaOrCapacityError(err: unknown): boolean {
+  return err instanceof GeminiError && /\((429|503)\)/.test(err.message);
+}
+
+/** Every (key, model) combo to try, primary model across all keys before falling back to the secondary model. */
+function rotationCombos(config: GeminiRotationConfig): { apiKey: string; model: string }[] {
+  const combos: { apiKey: string; model: string }[] = [];
+  for (const model of config.models) for (const apiKey of config.apiKeys) combos.push({ apiKey, model });
+  return combos;
+}
+
 /**
  * Uploads a PDF to the Gemini Files API (resumable upload protocol) rather
  * than sending it inline — avoids the inline-request size cap, which matters
@@ -344,29 +361,120 @@ export async function extractComplementaryContent(
 }
 
 /**
+ * Uploads the PDF and runs `attempt` for each (key, model) combo, re-uploading
+ * only when the key actually changes (the Gemini Files API scopes uploads per
+ * key/project, but the model doesn't affect where the file lives). On a
+ * quota/capacity failure the file for that key is kept in case a later combo
+ * reuses the same key with the fallback model; every file except the winning
+ * one (or all of them, on total failure) is cleaned up before returning.
+ */
+async function withFileRotation<T>(
+  config: GeminiRotationConfig,
+  bytes: Uint8Array,
+  displayName: string,
+  attempt: (apiKey: string, model: string, file: UploadedGeminiFile) => Promise<T>
+): Promise<{ result: T; apiKey: string; model: string; file: UploadedGeminiFile }> {
+  const uploadedByKey = new Map<string, UploadedGeminiFile>();
+
+  async function cleanupExcept(exceptKey: string | null) {
+    for (const [key, file] of uploadedByKey) {
+      if (key === exceptKey) continue;
+      await deleteGeminiFile(key, file.name).catch(() => {});
+    }
+  }
+
+  let lastError: unknown;
+  for (const { apiKey, model } of rotationCombos(config)) {
+    try {
+      let file = uploadedByKey.get(apiKey);
+      if (!file) {
+        file = await uploadPdfToGemini(apiKey, bytes, displayName);
+        uploadedByKey.set(apiKey, file);
+      }
+      const result = await attempt(apiKey, model, file);
+      await cleanupExcept(apiKey);
+      return { result, apiKey, model, file };
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaOrCapacityError(err)) {
+        await cleanupExcept(null);
+        throw err;
+      }
+    }
+  }
+  await cleanupExcept(null);
+  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+}
+
+/** Rotation-aware wrapper around uploadPdfToGemini + extractChapterContent — see withFileRotation. */
+export async function extractChapterContentWithRotation(
+  config: GeminiRotationConfig,
+  bytes: Uint8Array,
+  displayName: string,
+  chapterTitle: string
+): Promise<{ extraction: ExtractionResult; apiKey: string; model: string; file: UploadedGeminiFile }> {
+  const { result, apiKey, model, file } = await withFileRotation(config, bytes, displayName, (key, m, file) =>
+    extractChapterContent(key, m, file, chapterTitle)
+  );
+  return { extraction: result, apiKey, model, file };
+}
+
+/** Rotation-aware wrapper around uploadPdfToGemini + extractComplementaryContent — see withFileRotation. */
+export async function extractComplementaryContentWithRotation(
+  config: GeminiRotationConfig,
+  bytes: Uint8Array,
+  displayName: string,
+  chapterTitle: string,
+  coverageSummaryJson: string
+): Promise<{ complementary: ComplementaryResult; apiKey: string; model: string; file: UploadedGeminiFile }> {
+  const { result, apiKey, model, file } = await withFileRotation(config, bytes, displayName, (key, m, file) =>
+    extractComplementaryContent(key, m, file, chapterTitle, coverageSummaryJson)
+  );
+  return { complementary: result, apiKey, model, file };
+}
+
+/**
  * Turns one user-selected passage (picked by hand in the PDF viewer, not
  * chosen by the model) into a single fiche block + optional flashcard. No
  * file upload needed — the exact text is already known, so this is a plain
- * text-only call, much cheaper than a full extraction pass.
+ * text-only call, much cheaper than a full extraction pass. Rotates through
+ * every configured key/model on quota (429) or capacity (503) errors.
  */
 export async function generateFromSelection(
-  apiKey: string,
-  model: string,
+  config: GeminiRotationConfig,
   subEntityName: string,
   chapterTitle: string,
   page: number,
   quote: string
 ): Promise<SelectionResult> {
   const instructions = buildSelectionPrompt(subEntityName, chapterTitle, page, quote);
-  const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SELECTION_RESPONSE_SCHEMA);
-  return result as SelectionResult;
+  let lastError: unknown;
+  for (const { apiKey, model } of rotationCombos(config)) {
+    try {
+      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SELECTION_RESPONSE_SCHEMA);
+      return result as SelectionResult;
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaOrCapacityError(err)) throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
 }
 
-/** Generates a single mnemonic suggestion (as plain text) for a block that doesn't already have one. */
-export async function generateMnemonic(apiKey: string, model: string, subEntityName: string, sourceText: string): Promise<{ text: string }> {
+/** Generates a single mnemonic suggestion (as plain text) for a block that doesn't already have one. Rotates on quota/capacity errors. */
+export async function generateMnemonic(config: GeminiRotationConfig, subEntityName: string, sourceText: string): Promise<{ text: string }> {
   const instructions = buildMnemonicPrompt(subEntityName, sourceText);
-  const result = await callGeminiJson(apiKey, model, [{ text: instructions }], MNEMONIC_RESPONSE_SCHEMA);
-  return result as { text: string };
+  let lastError: unknown;
+  for (const { apiKey, model } of rotationCombos(config)) {
+    try {
+      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], MNEMONIC_RESPONSE_SCHEMA);
+      return result as { text: string };
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaOrCapacityError(err)) throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
 }
 
 export async function verifyExtraction(
