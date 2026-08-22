@@ -12,8 +12,8 @@ export interface ActionState {
   success?: string;
 }
 
-/** Snapshots the current week's weekday placements (recipe + servings per day) as a reusable named template. */
-export async function saveWeekAsTemplate(name: string): Promise<ActionState> {
+/** Snapshots the given week's weekday placements (recipe + servings per day) as a reusable named template. */
+export async function saveWeekAsTemplate(name: string, weekStart: string): Promise<ActionState> {
   const profile = await requireATableAccess();
   const trimmed = name.trim();
   if (!trimmed) return { error: "Donnez un nom au modèle." };
@@ -24,6 +24,7 @@ export async function saveWeekAsTemplate(name: string): Promise<ActionState> {
     .select("placement, recipe_id, servings")
     .eq("user_id", profile.id)
     .eq("status", "active")
+    .eq("week_start", weekStart)
     .in("placement", WEEKDAY_PLACEMENTS);
 
   if (!cards || cards.length === 0) return { error: "Aucun repas planifié cette semaine à enregistrer." };
@@ -46,7 +47,7 @@ export async function saveWeekAsTemplate(name: string): Promise<ActionState> {
  * placements that are currently empty, so it never overwrites a plan
  * already in progress. Skips items whose recipe was since deleted.
  */
-export async function applyWeekTemplate(templateId: string): Promise<ActionState> {
+export async function applyWeekTemplate(templateId: string, weekStart: string): Promise<ActionState> {
   const profile = await requireATableAccess();
   const supabase = await createClient();
 
@@ -62,7 +63,13 @@ export async function applyWeekTemplate(templateId: string): Promise<ActionState
   if (items.length === 0) return { error: "Ce modèle est vide." };
 
   const [{ data: occupied }, { data: recipes }] = await Promise.all([
-    supabase.from("a_table_meal_cards").select("placement").eq("user_id", profile.id).eq("status", "active").in("placement", WEEKDAY_PLACEMENTS),
+    supabase
+      .from("a_table_meal_cards")
+      .select("placement")
+      .eq("user_id", profile.id)
+      .eq("status", "active")
+      .eq("week_start", weekStart)
+      .in("placement", WEEKDAY_PLACEMENTS),
     supabase
       .from("a_table_recipes")
       .select("id")
@@ -83,7 +90,7 @@ export async function applyWeekTemplate(templateId: string): Promise<ActionState
   }
 
   const { error } = await supabase.from("a_table_meal_cards").insert(
-    toInsert.map((i) => ({ user_id: profile.id, recipe_id: i.recipe_id, placement: i.placement, servings: i.servings, position: 0 }))
+    toInsert.map((i) => ({ user_id: profile.id, recipe_id: i.recipe_id, placement: i.placement, servings: i.servings, position: 0, week_start: weekStart }))
   );
   if (error) return { error: "Impossible d'appliquer ce modèle." };
 

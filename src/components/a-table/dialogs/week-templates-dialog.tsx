@@ -13,11 +13,13 @@ import type { Recipe, WeekTemplate } from "@/lib/a-table/types";
 export function WeekTemplatesDialog({
   templates,
   recipesById,
+  weekStart,
   onClose,
   onSaved,
 }: {
   templates: WeekTemplate[];
   recipesById: Map<string, Recipe>;
+  weekStart: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -28,7 +30,7 @@ export function WeekTemplatesDialog({
   function handleSave() {
     if (!name.trim()) return;
     startTransition(async () => {
-      const result = await saveWeekAsTemplate(name);
+      const result = await saveWeekAsTemplate(name, weekStart);
       if (result.error) toast(result.error, { variant: "error" });
       else {
         toast(result.success ?? "", { variant: "success" });
@@ -40,7 +42,7 @@ export function WeekTemplatesDialog({
 
   function handleApply(templateId: string) {
     startTransition(async () => {
-      const result = await applyWeekTemplate(templateId);
+      const result = await applyWeekTemplate(templateId, weekStart);
       if (result.error) toast(result.error, { variant: "error" });
       else {
         toast(result.success ?? "", { variant: "success" });

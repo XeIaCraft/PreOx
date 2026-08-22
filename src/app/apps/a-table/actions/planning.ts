@@ -12,7 +12,8 @@ export interface ActionState {
   success?: string;
 }
 
-export async function moveMealCard(cardId: string, placement: Placement): Promise<ActionState> {
+/** `weekStart` (the target week's Monday, ISO date) is required for a weekday placement, ignored (forced to null) for backlog — a card in the queue isn't tied to any week. */
+export async function moveMealCard(cardId: string, placement: Placement, weekStart: string | null = null): Promise<ActionState> {
   const profile = await requireATableAccess();
 
   if (!PLACEMENTS.includes(placement)) return { error: "Emplacement invalide." };
@@ -28,20 +29,22 @@ export async function moveMealCard(cardId: string, placement: Placement): Promis
 
   if (!card || card.status !== "active") return { error: "Carte introuvable ou déjà traitée." };
 
-  const { data: existing } = await supabase
+  const targetWeekStart = placement === "backlog" ? null : weekStart;
+
+  let positionQuery = supabase
     .from("a_table_meal_cards")
     .select("position")
     .eq("user_id", profile.id)
     .eq("placement", placement)
-    .eq("status", "active")
-    .order("position", { ascending: false })
-    .limit(1);
+    .eq("status", "active");
+  positionQuery = targetWeekStart ? positionQuery.eq("week_start", targetWeekStart) : positionQuery.is("week_start", null);
+  const { data: existing } = await positionQuery.order("position", { ascending: false }).limit(1);
 
   const position = (existing?.[0]?.position ?? -1) + 1;
 
   const { error } = await supabase
     .from("a_table_meal_cards")
-    .update({ placement, position })
+    .update({ placement, position, week_start: targetWeekStart })
     .eq("id", cardId)
     .eq("user_id", profile.id);
 
@@ -128,26 +131,29 @@ export interface ClearedCardPlacement {
   id: string;
   placement: Placement;
   position: number;
+  week_start: string | null;
 }
 
-export async function clearWeek(): Promise<ActionState & { cleared?: ClearedCardPlacement[] }> {
+export async function clearWeek(weekStart: string): Promise<ActionState & { cleared?: ClearedCardPlacement[] }> {
   const profile = await requireATableAccess();
   const supabase = await createClient();
 
   const { data: toClear } = await supabase
     .from("a_table_meal_cards")
-    .select("id, placement, position")
+    .select("id, placement, position, week_start")
     .eq("user_id", profile.id)
     .eq("status", "active")
     .eq("locked", false)
+    .eq("week_start", weekStart)
     .in("placement", WEEKDAY_PLACEMENTS);
 
   const { error } = await supabase
     .from("a_table_meal_cards")
-    .update({ placement: "backlog" })
+    .update({ placement: "backlog", week_start: null })
     .eq("user_id", profile.id)
     .eq("status", "active")
     .eq("locked", false)
+    .eq("week_start", weekStart)
     .in("placement", WEEKDAY_PLACEMENTS);
 
   if (error) return { error: "Impossible de vider la semaine." };
@@ -166,7 +172,7 @@ export async function restoreWeekPlacements(cleared: ClearedCardPlacement[]): Pr
   for (const entry of cleared) {
     await supabase
       .from("a_table_meal_cards")
-      .update({ placement: entry.placement, position: entry.position })
+      .update({ placement: entry.placement, position: entry.position, week_start: entry.week_start })
       .eq("id", entry.id)
       .eq("user_id", profile.id)
       .eq("status", "active");
@@ -276,8 +282,8 @@ export async function addRecipeToBacklog(recipeId: string, servings?: number): P
   return { success: "Ajouté à « À cuisiner »." };
 }
 
-/** "Batch cooking": places the same recipe on several days at once (cook once, eat the leftovers reheated), instead of dragging it onto each day individually. */
-export async function batchAddRecipeToDays(recipeId: string, servings: number, placements: Placement[]): Promise<ActionState> {
+/** "Batch cooking": places the same recipe on several days of the given week at once (cook once, eat the leftovers reheated), instead of dragging it onto each day individually. */
+export async function batchAddRecipeToDays(recipeId: string, servings: number, placements: Placement[], weekStart: string): Promise<ActionState> {
   const profile = await requireATableAccess();
   const targetDays = placements.filter((p) => WEEKDAY_PLACEMENTS.includes(p));
   if (targetDays.length === 0) return { error: "Choisissez au moins un jour." };
@@ -291,6 +297,7 @@ export async function batchAddRecipeToDays(recipeId: string, servings: number, p
     .select("placement, position")
     .eq("user_id", profile.id)
     .eq("status", "active")
+    .eq("week_start", weekStart)
     .in("placement", targetDays);
   const nextPosition = new Map<Placement, number>();
   for (const row of positions ?? []) {
@@ -304,6 +311,7 @@ export async function batchAddRecipeToDays(recipeId: string, servings: number, p
     placement,
     position: (nextPosition.get(placement) ?? -1) + 1,
     servings: servings || recipe.servings,
+    week_start: weekStart,
   }));
 
   const { error } = await supabase.from("a_table_meal_cards").insert(rows);

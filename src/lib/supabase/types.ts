@@ -97,6 +97,7 @@ export type ATableMealCardRow = {
   position: number;
   servings: number;
   locked: boolean;
+  week_start: string | null;
   created_at: string;
   updated_at: string;
 };

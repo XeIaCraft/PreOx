@@ -47,6 +47,8 @@ import { scaleFactor, findRareIngredientOverlaps } from "@/lib/a-table/shopping"
 import { buildWeekIcs } from "@/lib/a-table/ics";
 import { buildWeekImage } from "@/lib/a-table/week-image";
 import { findOutOfSeasonIngredients } from "@/lib/a-table/seasonality";
+import { mondayIso, addDaysIso, formatWeekRange } from "@/lib/a-table/week";
+import { MonthViewDialog } from "@/components/a-table/dialogs/month-view-dialog";
 import type { ATableData, Placement, TemporaryIngredient } from "@/lib/a-table/types";
 
 type ModalState =
@@ -65,6 +67,7 @@ type ModalState =
   | { type: "settings" }
   | { type: "guest"; menuId: string | null }
   | { type: "cook"; recipeIds: string[] }
+  | { type: "month" }
   | null;
 
 export function ATableBoard({ initialData }: { initialData: ATableData }) {
@@ -81,6 +84,11 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
   const { timers, startTimer, dismissTimer } = useTimers();
   const [selectingForCombinedCook, setSelectingForCombinedCook] = useState(false);
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
+  // Multi-week planning: which week the board currently displays. Backlog
+  // cards ignore this entirely (they aren't tied to any week); only the
+  // weekday columns, week totals, and print/export views are scoped to it.
+  const [viewedWeekStart, setViewedWeekStart] = useState(() => mondayIso(new Date()));
+  const isCurrentWeek = viewedWeekStart === mondayIso(new Date());
   // Cards being actively cooked (mode recette open) are frozen — protects
   // against an accidental drag/removal mid-cook, distinct from the manual
   // "locked" flag which only guards against "Vider la semaine".
@@ -96,6 +104,11 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
     for (const r of data.recipes) for (const tag of r.tags) tags.add(tag);
     return [...tags].sort((a, b) => a.localeCompare(b));
   }, [data.recipes]);
+  const activeCards = useMemo(() => data.mealCards.filter((c) => c.status === "active"), [data.mealCards]);
+  const weekCards = useMemo(
+    () => activeCards.filter((c) => WEEKDAY_PLACEMENTS.includes(c.placement) && c.week_start === viewedWeekStart),
+    [activeCards, viewedWeekStart]
+  );
   const weekTotals = useMemo(() => {
     let kcal = 0;
     let cost = 0;
@@ -106,8 +119,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
     let hasKcal = false;
     let hasCost = false;
     let cookingMinutes = 0;
-    for (const card of data.mealCards) {
-      if (card.status !== "active" || !WEEKDAY_PLACEMENTS.includes(card.placement)) continue;
+    for (const card of weekCards) {
       const recipe = recipesById.get(card.recipe_id);
       if (!recipe) continue;
       mealCount += 1;
@@ -139,7 +151,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       macroPct,
       cookingMinutes,
     };
-  }, [data.mealCards, data.settings.preferences.appetite, recipesById]);
+  }, [weekCards, data.settings.preferences.appetite, recipesById]);
   const allergyRecipeIds = useMemo(() => {
     // Union with every household member's own allergies — warn if the meal
     // could bother anyone in the household, not just the account owner.
@@ -169,36 +181,33 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       .sort((a, b) => b.matches - a.matches)
       .slice(0, 4);
   }, [data.temporaryIngredients, data.recipes]);
-  const activeCards = useMemo(() => data.mealCards.filter((c) => c.status === "active"), [data.mealCards]);
   const backlogCards = useMemo(
     () => activeCards.filter((c) => c.placement === "backlog").sort((a, b) => a.position - b.position),
     [activeCards]
   );
 
   const todayKey = WEEKDAY_PLACEMENTS[(new Date().getDay() + 6) % 7];
-  const todayCard = activeCards.find((c) => c.placement === todayKey) ?? null;
+  const currentRealWeekStart = mondayIso(new Date());
+  const todayCard = activeCards.find((c) => c.placement === todayKey && c.week_start === currentRealWeekStart) ?? null;
   const todayRecipe = todayCard ? (recipesById.get(todayCard.recipe_id) ?? null) : null;
 
   const outOfSeasonIngredients = useMemo(() => {
-    const names = activeCards
-      .filter((c) => WEEKDAY_PLACEMENTS.includes(c.placement))
-      .flatMap((c) => recipesById.get(c.recipe_id)?.ingredients.map((i) => i.name) ?? []);
+    const names = weekCards.flatMap((c) => recipesById.get(c.recipe_id)?.ingredients.map((i) => i.name) ?? []);
     return findOutOfSeasonIngredients(names);
-  }, [activeCards, recipesById]);
+  }, [weekCards, recipesById]);
 
   const rareIngredientOverlaps = useMemo(() => {
-    const entries = activeCards
-      .filter((c) => WEEKDAY_PLACEMENTS.includes(c.placement))
+    const entries = weekCards
       .map((c) => recipesById.get(c.recipe_id))
       .filter((r): r is NonNullable<typeof r> => Boolean(r))
       .map((r) => ({ title: r.title, ingredients: r.ingredients }));
     return findRareIngredientOverlaps(entries);
-  }, [activeCards, recipesById]);
+  }, [weekCards, recipesById]);
 
   function handleMove(cardId: string, placement: Placement) {
     setPendingCardId(cardId);
     startTransition(async () => {
-      const result = await moveMealCard(cardId, placement);
+      const result = await moveMealCard(cardId, placement, placement === "backlog" ? null : viewedWeekStart);
       setPendingCardId(null);
       if (result.error) toast(result.error, { variant: "error" });
       else refresh();
@@ -250,7 +259,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
   }
 
   function handleExportIcs() {
-    const ics = buildWeekIcs(activeCards, recipesById);
+    const ics = buildWeekIcs(weekCards, recipesById, new Date(`${viewedWeekStart}T00:00:00`));
     const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -261,7 +270,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
 
   async function handleShareWeekImage() {
     try {
-      const blob = await buildWeekImage(activeCards, recipesById);
+      const blob = await buildWeekImage(weekCards, recipesById, new Date(`${viewedWeekStart}T00:00:00`));
       const file = new File([blob], "menu-semaine.png", { type: "image/png" });
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: "Menu de la semaine" });
@@ -325,7 +334,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
 
   function handleClearWeek() {
     startTransition(async () => {
-      const result = await clearWeek();
+      const result = await clearWeek(viewedWeekStart);
       if (result.error) {
         toast(result.error, { variant: "error" });
         return;
@@ -567,9 +576,9 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       )}
 
       <div className="print-area hidden print:block">
-        <h1 className="mb-4 font-serif-display text-xl font-medium text-foreground">Menu de la semaine</h1>
+        <h1 className="mb-4 font-serif-display text-xl font-medium text-foreground">Menu de la semaine du {formatWeekRange(viewedWeekStart)}</h1>
         {WEEKDAY_PLACEMENTS.map((placement) => {
-          const dayCards = activeCards.filter((c) => c.placement === placement);
+          const dayCards = weekCards.filter((c) => c.placement === placement);
           return (
             <div key={placement} className="mb-3">
               <p className="font-semibold text-foreground">{DAY_LABELS[placement]}</p>
@@ -592,8 +601,36 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
         })}
       </div>
 
-      <div className="flex items-center justify-between print:hidden">
-        <p className="text-sm font-medium text-foreground-muted">Cette semaine</p>
+      <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setViewedWeekStart((w) => addDaysIso(w, -7))}
+            aria-label="Semaine précédente"
+            className="rounded p-1 text-foreground-subtle hover:bg-surface-muted"
+          >
+            ‹
+          </button>
+          <p className="text-sm font-medium text-foreground-muted">
+            {isCurrentWeek ? "Cette semaine" : `Semaine du ${formatWeekRange(viewedWeekStart)}`}
+          </p>
+          <button
+            type="button"
+            onClick={() => setViewedWeekStart((w) => addDaysIso(w, 7))}
+            aria-label="Semaine suivante"
+            className="rounded p-1 text-foreground-subtle hover:bg-surface-muted"
+          >
+            ›
+          </button>
+          {!isCurrentWeek && (
+            <button type="button" onClick={() => setViewedWeekStart(mondayIso(new Date()))} className="text-xs text-primary-strong underline">
+              Revenir à cette semaine
+            </button>
+          )}
+          <button type="button" onClick={() => setModal({ type: "month" })} className="text-xs text-foreground-subtle underline hover:text-foreground">
+            Vue mensuelle
+          </button>
+        </div>
         {selectingForCombinedCook ? (
           <div className="flex items-center gap-2">
             <span className="text-xs text-foreground-subtle">{selectedCardIds.size} sélectionnée(s)</span>
@@ -633,9 +670,9 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
             key={placement}
             placement={placement}
             label={DAY_LABELS[placement]}
-            cards={activeCards.filter((c) => c.placement === placement).sort((a, b) => a.position - b.position)}
+            cards={weekCards.filter((c) => c.placement === placement).sort((a, b) => a.position - b.position)}
             recipesById={recipesById}
-            isToday={placement === todayKey}
+            isToday={isCurrentWeek && placement === todayKey}
             onDrop={handleMove}
             onOpenDetail={(recipeId) => setModal({ type: "detail", recipeId })}
             onCook={handleCook}
@@ -716,6 +753,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       {modal?.type === "batch_cook" && (
         <BatchCookDialog
           recipes={data.recipes}
+          weekStart={viewedWeekStart}
           onClose={() => setModal(null)}
           onSaved={refresh}
         />
@@ -726,7 +764,25 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       )}
 
       {modal?.type === "week_templates" && (
-        <WeekTemplatesDialog templates={data.weekTemplates} recipesById={recipesById} onClose={() => setModal(null)} onSaved={refresh} />
+        <WeekTemplatesDialog
+          templates={data.weekTemplates}
+          recipesById={recipesById}
+          weekStart={viewedWeekStart}
+          onClose={() => setModal(null)}
+          onSaved={refresh}
+        />
+      )}
+
+      {modal?.type === "month" && (
+        <MonthViewDialog
+          mealCards={data.mealCards}
+          recipesById={recipesById}
+          onClose={() => setModal(null)}
+          onSelectWeek={(weekStart) => {
+            setViewedWeekStart(weekStart);
+            setModal(null);
+          }}
+        />
       )}
 
       {modal?.type === "rate" && (

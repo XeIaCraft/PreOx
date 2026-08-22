@@ -7,7 +7,7 @@ import type { MealCard, Recipe } from "./types";
  * images that aren't served with permissive CORS headers), just a clean
  * typographic card per day. Client-only.
  */
-export function buildWeekImage(activeCards: MealCard[], recipesById: Map<string, Recipe>): Promise<Blob> {
+export function buildWeekImage(activeCards: MealCard[], recipesById: Map<string, Recipe>, weekStart: Date = new Date()): Promise<Blob> {
   const width = 900;
   const rowHeight = 110;
   const headerHeight = 130;
@@ -26,7 +26,7 @@ export function buildWeekImage(activeCards: MealCard[], recipesById: Map<string,
   ctx.font = "600 40px Georgia, serif";
   ctx.fillText("Menu de la semaine", 40, 65);
 
-  const weekLabel = new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+  const weekLabel = weekStart.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
   ctx.fillStyle = "#6b7563";
   ctx.font = "18px sans-serif";
   ctx.fillText(`Semaine du ${weekLabel}`, 40, 95);

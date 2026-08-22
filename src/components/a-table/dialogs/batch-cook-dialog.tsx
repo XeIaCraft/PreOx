@@ -15,7 +15,17 @@ function equipmentTags(recipe: Recipe): string[] {
   return recipe.tags.filter((tag) => labels.some((label) => tag.toLowerCase().includes(label) || label.includes(tag.toLowerCase())));
 }
 
-export function BatchCookDialog({ recipes, onClose, onSaved }: { recipes: Recipe[]; onClose: () => void; onSaved: () => void }) {
+export function BatchCookDialog({
+  recipes,
+  weekStart,
+  onClose,
+  onSaved,
+}: {
+  recipes: Recipe[];
+  weekStart: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const active = recipes.filter((r) => !r.is_archived);
@@ -48,7 +58,7 @@ export function BatchCookDialog({ recipes, onClose, onSaved }: { recipes: Recipe
   function handleSave() {
     if (!recipeId || days.size === 0) return;
     startTransition(async () => {
-      const result = await batchAddRecipeToDays(recipeId, servings, [...days]);
+      const result = await batchAddRecipeToDays(recipeId, servings, [...days], weekStart);
       if (result.error) toast(result.error, { variant: "error" });
       else {
         toast(result.success ?? "", { variant: "success" });

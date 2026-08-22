@@ -76,6 +76,8 @@ export interface MealCard {
   position: number;
   servings: number;
   locked: boolean;
+  /** Monday (ISO date) of the week this card is scheduled in; null for backlog cards, which aren't tied to a week. */
+  week_start: string | null;
   created_at: string;
   updated_at: string;
 }

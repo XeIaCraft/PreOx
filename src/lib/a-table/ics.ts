@@ -17,11 +17,9 @@ function dateForPlacement(placement: Placement, weekStart: Date): Date {
   return date;
 }
 
-/** Builds a downloadable .ics with one all-day event per planned meal, this week's actual dates. */
-export function buildWeekIcs(activeCards: MealCard[], recipesById: Map<string, Recipe>): string {
+/** Builds a downloadable .ics with one all-day event per planned meal, using the given week's actual calendar dates. */
+export function buildWeekIcs(activeCards: MealCard[], recipesById: Map<string, Recipe>, weekStart: Date): string {
   const now = new Date();
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7));
 
   const events = activeCards
     .filter((c) => WEEKDAY_PLACEMENTS.includes(c.placement))
