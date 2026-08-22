@@ -819,6 +819,8 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
         <ValidateDraftDialog
           draftId={validateDraft.id}
           proposals={validateDraft.proposals}
+          voteToken={validateDraft.vote_token}
+          votes={validateDraft.votes}
           onClose={() => setModal(null)}
           onSaved={refresh}
           mealCards={activeCards}

@@ -2,12 +2,12 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Image from "next/image";
-import { RefreshCw, ShoppingCart } from "lucide-react";
+import { RefreshCw, ShoppingCart, Users } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { ShoppingListPreview } from "@/components/a-table/ui/shopping-list-preview";
 import { Button } from "@/components/ui/button";
-import { validateDraft, regenerateProposal, refineProposal } from "@/app/apps/a-table/actions/drafts";
+import { validateDraft, regenerateProposal, refineProposal, toggleDraftVoting } from "@/app/apps/a-table/actions/drafts";
 import { buildShoppingList, previewWithExtraIngredients, type ShoppingItem } from "@/lib/a-table/shopping";
 import { useToast } from "@/components/ui/toast";
 import type { Appetite, DraftProposal, GuestMenu, MealCard, Recipe, ShoppingManualItem } from "@/lib/a-table/types";
@@ -15,6 +15,8 @@ import type { Appetite, DraftProposal, GuestMenu, MealCard, Recipe, ShoppingManu
 interface ValidateDraftDialogProps {
   draftId: string;
   proposals: DraftProposal[];
+  voteToken: string | null;
+  votes: Record<string, string[]>;
   onClose: () => void;
   onSaved: () => void;
   /** Current board state, only needed to compute the live shopping-list preview on tablet+. */
@@ -30,6 +32,8 @@ interface ValidateDraftDialogProps {
 export function ValidateDraftDialog({
   draftId,
   proposals,
+  voteToken,
+  votes,
   onClose,
   onSaved,
   mealCards,
@@ -43,6 +47,24 @@ export function ValidateDraftDialog({
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<number>>(new Set(proposals.map((_, i) => i)));
+
+  function handleToggleVoting() {
+    startTransition(async () => {
+      const result = await toggleDraftVoting(draftId, !voteToken);
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      onSaved();
+      if (result.voteToken) {
+        const url = `${window.location.origin}/share/vote/${result.voteToken}`;
+        navigator.clipboard.writeText(url).catch(() => {});
+        toast("Lien de vote copié dans le presse-papier.", { variant: "success" });
+      } else {
+        toast("Vote désactivé.", { variant: "success" });
+      }
+    });
+  }
   const [openRefine, setOpenRefine] = useState<number | null>(null);
   const [regenerating, setRegenerating] = useState<number | null>(null);
 
@@ -114,6 +136,12 @@ export function ValidateDraftDialog({
         </>
       }
     >
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <Button variant={voteToken ? "primary" : "secondary"} size="sm" onClick={handleToggleVoting} disabled={isPending}>
+          <Users className="h-3.5 w-3.5" /> {voteToken ? "Vote familial actif (copier le lien)" : "Demander l'avis de la famille"}
+        </Button>
+      </div>
+
       <div className="md:grid md:grid-cols-[240px_1fr] md:gap-5">
         <aside className="hidden md:sticky md:top-0 md:block md:max-h-[65vh] md:overflow-y-auto md:border-r md:border-border md:pr-4">
           <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
@@ -139,7 +167,14 @@ export function ValidateDraftDialog({
                   onChange={() => toggle(index)}
                   className="mt-1 h-4 w-4 rounded border-border-strong text-primary focus-visible:ring-primary/30"
                 />
-                <span className="font-medium text-foreground">{proposal.title}</span>
+                <span className="font-medium text-foreground">
+                  {proposal.title}
+                  {(votes[String(index)]?.length ?? 0) > 0 && (
+                    <span className="ml-1.5 text-xs font-normal text-foreground-subtle">
+                      · {votes[String(index)].length} vote{votes[String(index)].length > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </span>
               </label>
               <button
                 type="button"

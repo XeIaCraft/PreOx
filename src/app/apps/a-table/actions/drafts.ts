@@ -1,8 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "node:crypto";
 import { requireATableAccess } from "@/lib/a-table/dal";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getDecryptedGeminiConfig, getDecryptedPexelsKey } from "@/lib/a-table/ai-config";
 import { callGemini, GeminiError, validStepLabels } from "@/lib/a-table/gemini";
 import { searchPexelsImage } from "@/lib/a-table/pexels";
@@ -304,5 +306,49 @@ export async function refineProposal(draftId: string, index: number, message: st
   }
 
   revalidatePath("/apps/a-table");
+  return { success: "" };
+}
+
+/** Toggles the public family-voting link for a draft — same opaque-token model as a recipe share link. */
+export async function toggleDraftVoting(draftId: string, enable: boolean): Promise<ActionState & { voteToken?: string | null }> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const voteToken = enable ? randomUUID() : null;
+  const { error } = await supabase
+    .from("a_table_drafts")
+    .update({ vote_token: voteToken, votes: {} })
+    .eq("id", draftId)
+    .eq("user_id", profile.id);
+
+  if (error) return { error: "Impossible de mettre à jour le vote." };
+
+  revalidatePath("/apps/a-table");
+  return { success: enable ? "Vote activé." : "Vote désactivé.", voteToken };
+}
+
+/**
+ * Public, unauthenticated: toggles one anonymous voter's pick on one
+ * proposal. No requireATableAccess — the draft is looked up by its opaque
+ * vote_token instead, same trust model as the public share links.
+ */
+export async function castDraftVote(voteToken: string, proposalIndex: number, voterId: string): Promise<ActionState> {
+  if (!voteToken || !voterId) return { error: "Requête invalide." };
+
+  const supabase = createAdminClient();
+  const { data: draft } = await supabase.from("a_table_drafts").select("id, proposals, votes").eq("vote_token", voteToken).maybeSingle();
+  if (!draft) return { error: "Ce vote n'est plus disponible." };
+
+  const proposals = (draft.proposals as unknown as DraftProposal[]) ?? [];
+  if (proposalIndex < 0 || proposalIndex >= proposals.length) return { error: "Proposition introuvable." };
+
+  const votes = { ...((draft.votes as unknown as Record<string, string[]>) ?? {}) };
+  const key = String(proposalIndex);
+  const current = votes[key] ?? [];
+  votes[key] = current.includes(voterId) ? current.filter((v) => v !== voterId) : [...current, voterId];
+
+  const { error } = await supabase.from("a_table_drafts").update({ votes }).eq("id", draft.id);
+  if (error) return { error: "Impossible d'enregistrer ce vote." };
+
   return { success: "" };
 }

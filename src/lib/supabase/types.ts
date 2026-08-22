@@ -117,6 +117,8 @@ export type ATableDraftRow = {
   user_id: string;
   created_at: string;
   proposals: Json;
+  vote_token: string | null;
+  votes: Json;
 };
 
 export type ATableTemporaryIngredientRow = {

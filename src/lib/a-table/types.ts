@@ -114,6 +114,9 @@ export interface Draft {
   user_id: string;
   created_at: string;
   proposals: DraftProposal[];
+  vote_token: string | null;
+  /** Proposal index (as string, jsonb object keys are strings) → anonymous voter ids who picked it. */
+  votes: Record<string, string[]>;
 }
 
 export interface TemporaryIngredient {
