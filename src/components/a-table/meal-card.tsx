@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Star, Trash2, CheckCircle2, GripVertical, Clock, Copy, Lock, LockOpen, ShieldAlert } from "lucide-react";
+import { Star, Trash2, CheckCircle2, GripVertical, Clock, Copy, Lock, LockOpen, ShieldAlert, ChefHat } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select } from "@/components/ui/input";
 import { DAY_LABELS, PLACEMENTS } from "@/lib/a-table/constants";
@@ -35,6 +35,8 @@ interface MealCardProps {
   onToggleLock?: () => void;
   allergyWarning?: boolean;
   isPending?: boolean;
+  /** Mode recette open for this card — freezes drag/removal/move while cooking. */
+  frozen?: boolean;
 }
 
 export function MealCard({
@@ -48,20 +50,24 @@ export function MealCard({
   onToggleLock,
   allergyWarning,
   isPending,
+  frozen,
 }: MealCardProps) {
   const [dragging, setDragging] = useState(false);
   const swatch = SWATCHES[categoryFor(recipe.tags)];
+  const disabled = isPending || frozen;
 
   return (
     <div
-      draggable
+      draggable={!frozen}
       onDragStart={(e) => {
+        if (frozen) return;
         e.dataTransfer.setData("text/plain", card.id);
         setDragging(true);
       }}
       onDragEnd={() => setDragging(false)}
       className={cn(
-        "group relative flex flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface transition-opacity",
+        "group relative flex flex-col overflow-hidden rounded-[var(--radius-md)] border bg-surface transition-opacity",
+        frozen ? "border-primary/60 ring-1 ring-primary/30" : "border-border",
         dragging && "opacity-40"
       )}
     >
@@ -93,6 +99,14 @@ export function MealCard({
             <Lock className="h-3 w-3" />
           </span>
         )}
+        {frozen && (
+          <span
+            className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground"
+            title="Cuisson en cours — carte figée"
+          >
+            <ChefHat className="h-3 w-3" /> En cuisson
+          </span>
+        )}
       </button>
 
       <div className="flex-1 p-2.5">
@@ -115,7 +129,8 @@ export function MealCard({
         <Select
           value={card.placement}
           onChange={(e) => onMove(e.target.value as Placement)}
-          disabled={isPending}
+          disabled={disabled}
+          title={frozen ? "Cuisson en cours — déplacement désactivé" : undefined}
           className="h-7 w-24 border-none bg-transparent px-1 text-xs"
           aria-label="Déplacer vers"
         >
@@ -129,7 +144,7 @@ export function MealCard({
           <button
             type="button"
             onClick={onToggleLock}
-            disabled={isPending}
+            disabled={disabled}
             title={card.locked ? "Déverrouiller (peut être vidée)" : "Verrouiller (protégée de « Vider la semaine »)"}
             className="rounded p-1 text-foreground-subtle hover:bg-surface-muted"
           >
@@ -140,7 +155,7 @@ export function MealCard({
           <button
             type="button"
             onClick={onDuplicate}
-            disabled={isPending}
+            disabled={disabled}
             title="Dupliquer vers « À cuisiner »"
             className="rounded p-1 text-foreground-subtle hover:bg-surface-muted"
           >
@@ -150,7 +165,7 @@ export function MealCard({
         <button
           type="button"
           onClick={onCook}
-          disabled={isPending}
+          disabled={disabled}
           title="Marquer comme cuisiné"
           className="rounded p-1 text-foreground-subtle hover:bg-success-tint hover:text-success"
         >
@@ -159,8 +174,8 @@ export function MealCard({
         <button
           type="button"
           onClick={onRemove}
-          disabled={isPending}
-          title="Supprimer"
+          disabled={disabled}
+          title={frozen ? "Cuisson en cours — suppression désactivée" : "Supprimer"}
           className="rounded p-1 text-foreground-subtle hover:bg-danger-tint hover:text-danger"
         >
           <Trash2 className="h-3.5 w-3.5" />

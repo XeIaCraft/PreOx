@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Timer, X, BellRing } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { generateCookPlan, type CookPlanStep } from "@/app/apps/a-table/actions/cook_mode";
 import type { RunningTimer } from "@/components/a-table/ui/timer-bar";
+import { formatCookQuantity } from "@/lib/a-table/unit-convert";
 import type { Ingredient } from "@/lib/a-table/types";
 
 export interface CookModeRecipe {
@@ -136,7 +137,7 @@ export function CookModeDialog({ recipes, onClose, timers, onStartTimer, onDismi
                 <ul className="mt-1 space-y-0.5 text-sm text-foreground-muted">
                   {recipe.ingredients.map((ing, i) => (
                     <li key={i}>
-                      {ing.quantity ?? ""} {ing.unit} {ing.name}
+                      {formatCookQuantity(ing.quantity, ing.unit)} {ing.name}
                     </li>
                   ))}
                 </ul>

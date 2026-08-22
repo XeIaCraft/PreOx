@@ -19,6 +19,8 @@ interface DayColumnProps {
   onDuplicate?: (cardId: string) => void;
   onToggleLock?: (cardId: string, locked: boolean) => void;
   allergyRecipeIds?: Set<string>;
+  /** Cards whose "mode recette" is currently open — frozen against drag/removal. */
+  frozenCardIds?: Set<string>;
   selectable?: boolean;
   selectedCardIds?: Set<string>;
   onToggleSelect?: (cardId: string) => void;
@@ -38,6 +40,7 @@ export function DayColumn({
   onDuplicate,
   onToggleLock,
   allergyRecipeIds,
+  frozenCardIds,
   selectable,
   selectedCardIds,
   onToggleSelect,
@@ -87,6 +90,7 @@ export function DayColumn({
               onDuplicate={onDuplicate ? () => onDuplicate(card.id) : undefined}
               onToggleLock={onToggleLock ? () => onToggleLock(card.id, !card.locked) : undefined}
               allergyWarning={allergyRecipeIds?.has(recipe.id)}
+              frozen={frozenCardIds?.has(card.id)}
             />
           );
           if (!selectable) return cardEl;

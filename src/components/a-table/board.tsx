@@ -81,6 +81,10 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
   const { timers, startTimer, dismissTimer } = useTimers();
   const [selectingForCombinedCook, setSelectingForCombinedCook] = useState(false);
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
+  // Cards being actively cooked (mode recette open) are frozen — protects
+  // against an accidental drag/removal mid-cook, distinct from the manual
+  // "locked" flag which only guards against "Vider la semaine".
+  const [cookingCardIds, setCookingCardIds] = useState<Set<string>>(new Set());
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -576,6 +580,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
               disabled={selectedCardIds.size < 2}
               onClick={() => {
                 setModal({ type: "cook", recipeIds: [...selectedCardIds].map((id) => activeCards.find((c) => c.id === id)?.recipe_id).filter((id): id is string => Boolean(id)) });
+                setCookingCardIds(new Set(selectedCardIds));
                 setSelectingForCombinedCook(false);
                 setSelectedCardIds(new Set());
               }}
@@ -617,6 +622,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
             onDuplicate={handleDuplicateCard}
             onToggleLock={handleToggleLock}
             allergyRecipeIds={allergyRecipeIds}
+            frozenCardIds={cookingCardIds}
             selectable={selectingForCombinedCook}
             selectedCardIds={selectedCardIds}
             onToggleSelect={(cardId) =>
@@ -642,7 +648,10 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           appetite={data.settings.preferences.appetite}
           onClose={() => setModal(null)}
           onSaved={refresh}
-          onCookMode={() => setModal({ type: "cook", recipeIds: [detailRecipe.id] })}
+          onCookMode={() => {
+            setModal({ type: "cook", recipeIds: [detailRecipe.id] });
+            setCookingCardIds(detailCard ? new Set([detailCard.id]) : new Set());
+          }}
           onServingsChange={detailCard ? (s) => handleServingsChange(detailCard.id, s) : undefined}
         />
       )}
@@ -653,7 +662,10 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
             .map((id) => recipesById.get(id))
             .filter((r): r is NonNullable<typeof r> => Boolean(r))
             .map((r) => ({ id: r.id, title: r.title, ingredients: r.ingredients, steps: r.steps }))}
-          onClose={() => setModal(null)}
+          onClose={() => {
+            setModal(null);
+            setCookingCardIds(new Set());
+          }}
           timers={timers}
           onStartTimer={startTimer}
           onDismissTimer={dismissTimer}

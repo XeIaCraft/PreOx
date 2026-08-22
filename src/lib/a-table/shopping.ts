@@ -79,7 +79,7 @@ function normalizeIngredientName(name: string): string {
 }
 
 /** Matching key for a unit — not for display, which keeps the first-seen spelling. */
-function normalizeUnit(unit: string): string {
+export function normalizeUnit(unit: string): string {
   const cleaned = singularize(stripAccents(unit.trim().toLowerCase()).replace(/[.\s'’]/g, ""));
   return UNIT_ALIASES[cleaned] ?? cleaned;
 }
