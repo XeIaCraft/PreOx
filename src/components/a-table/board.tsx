@@ -43,7 +43,7 @@ import {
 import { generateDraft } from "@/app/apps/a-table/actions/drafts";
 import { generateRecipeFromLeftovers } from "@/app/apps/a-table/actions/recipes";
 import { removeTemporaryIngredient } from "@/app/apps/a-table/actions/temp_ingredients";
-import { scaleFactor } from "@/lib/a-table/shopping";
+import { scaleFactor, findRareIngredientOverlaps } from "@/lib/a-table/shopping";
 import { buildWeekIcs } from "@/lib/a-table/ics";
 import { buildWeekImage } from "@/lib/a-table/week-image";
 import { findOutOfSeasonIngredients } from "@/lib/a-table/seasonality";
@@ -141,7 +141,12 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
     };
   }, [data.mealCards, data.settings.preferences.appetite, recipesById]);
   const allergyRecipeIds = useMemo(() => {
-    const allergies = data.settings.preferences.allergies.map((a) => a.toLowerCase());
+    // Union with every household member's own allergies — warn if the meal
+    // could bother anyone in the household, not just the account owner.
+    const allergies = [
+      ...data.settings.preferences.allergies,
+      ...data.householdMembers.flatMap((m) => m.allergies),
+    ].map((a) => a.toLowerCase());
     if (allergies.length === 0) return new Set<string>();
     const ids = new Set<string>();
     for (const r of data.recipes) {
@@ -149,7 +154,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       if (allergies.some((a) => haystack.some((h) => h.includes(a)))) ids.add(r.id);
     }
     return ids;
-  }, [data.recipes, data.settings.preferences.allergies]);
+  }, [data.recipes, data.settings.preferences.allergies, data.householdMembers]);
 
   const cookableWithLeftovers = useMemo(() => {
     const leftoverNames = data.temporaryIngredients.map((t) => t.name.toLowerCase());
@@ -179,6 +184,15 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       .filter((c) => WEEKDAY_PLACEMENTS.includes(c.placement))
       .flatMap((c) => recipesById.get(c.recipe_id)?.ingredients.map((i) => i.name) ?? []);
     return findOutOfSeasonIngredients(names);
+  }, [activeCards, recipesById]);
+
+  const rareIngredientOverlaps = useMemo(() => {
+    const entries = activeCards
+      .filter((c) => WEEKDAY_PLACEMENTS.includes(c.placement))
+      .map((c) => recipesById.get(c.recipe_id))
+      .filter((r): r is NonNullable<typeof r> => Boolean(r))
+      .map((r) => ({ title: r.title, ingredients: r.ingredients }));
+    return findRareIngredientOverlaps(entries);
   }, [activeCards, recipesById]);
 
   function handleMove(cardId: string, placement: Placement) {
@@ -524,6 +538,14 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
         </p>
       )}
 
+      {rareIngredientOverlaps.length > 0 && (
+        <p className="text-xs text-foreground-subtle print:hidden">
+          Ingrédient rare demandé par plusieurs recettes cette semaine —{" "}
+          {rareIngredientOverlaps.map((o) => `${o.ingredientName} (${o.recipeTitles.join(", ")})`).join(" · ")} : pensez à en acheter assez
+          en une fois.
+        </p>
+      )}
+
       {weekTotals.hasKcal && (data.settings.preferences.target_kcal_per_serving || weekTotals.macroPct) && (
         <div className="flex flex-wrap items-center gap-4 rounded-[var(--radius-md)] border border-border bg-surface-muted/50 px-3 py-2 text-xs text-foreground-muted print:hidden">
           {data.settings.preferences.target_kcal_per_serving && (
@@ -754,7 +776,7 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
       )}
 
       {modal?.type === "settings" && (
-        <SettingsDialog settings={data.settings} onClose={() => setModal(null)} onSaved={refresh} />
+        <SettingsDialog settings={data.settings} householdMembers={data.householdMembers} onClose={() => setModal(null)} onSaved={refresh} />
       )}
 
       {modal?.type === "guest" && (

@@ -268,6 +268,15 @@ export interface WeekTemplate {
   created_at: string;
 }
 
+export interface HouseholdMember {
+  id: string;
+  user_id: string;
+  name: string;
+  allergies: string[];
+  diet: string;
+  created_at: string;
+}
+
 export interface ATableData {
   settings: ATableSettings;
   recipes: Recipe[];
@@ -278,4 +287,5 @@ export interface ATableData {
   history: HistoryEntry[];
   collections: RecipeCollection[];
   weekTemplates: WeekTemplate[];
+  householdMembers: HouseholdMember[];
 }

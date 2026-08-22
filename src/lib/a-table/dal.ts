@@ -11,6 +11,7 @@ import type {
   Draft,
   GuestMenu,
   HistoryEntry,
+  HouseholdMember,
   MealCard,
   Preferences,
   GenerationRules,
@@ -92,26 +93,28 @@ export async function getOrCreateSettings(userId: string): Promise<ATableSetting
 export async function getATableData(userId: string): Promise<ATableData> {
   const supabase = await createClient();
 
-  const [settings, recipesRes, cardsRes, draftsRes, tempRes, guestRes, historyRes, collectionsRes, weekTemplatesRes] = await Promise.all([
-    getOrCreateSettings(userId),
-    supabase.from("a_table_recipes").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-    supabase.from("a_table_meal_cards").select("*").eq("user_id", userId).eq("status", "active"),
-    supabase.from("a_table_drafts").select("*").eq("user_id", userId),
-    supabase
-      .from("a_table_temporary_ingredients")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false }),
-    supabase.from("a_table_guest_menus").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-    supabase
-      .from("a_table_history")
-      .select("*")
-      .eq("user_id", userId)
-      .order("cooked_at", { ascending: false })
-      .limit(200),
-    supabase.from("a_table_collections").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-    supabase.from("a_table_week_templates").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-  ]);
+  const [settings, recipesRes, cardsRes, draftsRes, tempRes, guestRes, historyRes, collectionsRes, weekTemplatesRes, householdRes] =
+    await Promise.all([
+      getOrCreateSettings(userId),
+      supabase.from("a_table_recipes").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+      supabase.from("a_table_meal_cards").select("*").eq("user_id", userId).eq("status", "active"),
+      supabase.from("a_table_drafts").select("*").eq("user_id", userId),
+      supabase
+        .from("a_table_temporary_ingredients")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false }),
+      supabase.from("a_table_guest_menus").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+      supabase
+        .from("a_table_history")
+        .select("*")
+        .eq("user_id", userId)
+        .order("cooked_at", { ascending: false })
+        .limit(200),
+      supabase.from("a_table_collections").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+      supabase.from("a_table_week_templates").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+      supabase.from("a_table_household_members").select("*").eq("user_id", userId).order("created_at", { ascending: true }),
+    ]);
 
   return {
     settings,
@@ -123,5 +126,6 @@ export async function getATableData(userId: string): Promise<ATableData> {
     guestMenus: (guestRes.data ?? []) as unknown as GuestMenu[],
     history: (historyRes.data ?? []) as unknown as HistoryEntry[],
     weekTemplates: (weekTemplatesRes.data ?? []) as unknown as WeekTemplate[],
+    householdMembers: (householdRes.data ?? []) as unknown as HouseholdMember[],
   };
 }

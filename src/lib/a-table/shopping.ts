@@ -78,6 +78,37 @@ function normalizeIngredientName(name: string): string {
   return singularize(stripAccents(name.trim().toLowerCase()));
 }
 
+export interface RareIngredientOverlap {
+  ingredientName: string;
+  recipeTitles: string[];
+}
+
+/**
+ * Flags an ingredient the shopping categories don't recognize by any common
+ * keyword — a reasonable proxy for "rare/specialty item" — when it's
+ * required by two or more different recipes planned in the same week: worth
+ * a heads-up so the shopper buys enough of it in one trip rather than
+ * discovering the shortfall mid-week. Not a flavor/dietary conflict check —
+ * "conflit" here means "competing demand on the same hard-to-find item".
+ */
+export function findRareIngredientOverlaps(recipeIngredients: { title: string; ingredients: Ingredient[] }[]): RareIngredientOverlap[] {
+  const byIngredient = new Map<string, { name: string; titles: Set<string> }>();
+  for (const { title, ingredients } of recipeIngredients) {
+    for (const ing of ingredients) {
+      const name = (ing.name || "").trim();
+      if (!name || categorizeIngredient(name) !== SHOPPING_OTHER_CATEGORY.key) continue;
+      const key = normalizeIngredientName(name);
+      const entry = byIngredient.get(key) ?? { name, titles: new Set<string>() };
+      entry.titles.add(title);
+      byIngredient.set(key, entry);
+    }
+  }
+  return [...byIngredient.values()]
+    .filter((entry) => entry.titles.size >= 2)
+    .map((entry) => ({ ingredientName: entry.name, recipeTitles: [...entry.titles] }))
+    .sort((a, b) => a.ingredientName.localeCompare(b.ingredientName, "fr"));
+}
+
 /** Matching key for a unit — not for display, which keeps the first-seen spelling. */
 export function normalizeUnit(unit: string): string {
   const cleaned = singularize(stripAccents(unit.trim().toLowerCase()).replace(/[.\s'’]/g, ""));

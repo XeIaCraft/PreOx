@@ -160,6 +160,15 @@ export type ATableWeekTemplateRow = {
   created_at: string;
 };
 
+export type ATableHouseholdMemberRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  allergies: string[];
+  diet: string;
+  created_at: string;
+};
+
 export type ATableSettingsRow = {
   user_id: string;
   preferences: Json;
@@ -553,6 +562,12 @@ export type Database = {
         Row: ATableSettingsRow;
         Insert: Partial<ATableSettingsRow> & { user_id: string };
         Update: Partial<ATableSettingsRow>;
+        Relationships: [];
+      };
+      a_table_household_members: {
+        Row: ATableHouseholdMemberRow;
+        Insert: Partial<ATableHouseholdMemberRow> & { user_id: string; name: string };
+        Update: Partial<ATableHouseholdMemberRow>;
         Relationships: [];
       };
       el_profesor_books: {

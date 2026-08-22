@@ -27,11 +27,13 @@ import {
   regenerateApiToken,
   revokeApiToken,
 } from "@/app/apps/a-table/actions/settings";
+import { addHouseholdMember, removeHouseholdMember } from "@/app/apps/a-table/actions/household";
 import { useToast } from "@/components/ui/toast";
-import type { ATableSettings, Preferences, GenerationRules } from "@/lib/a-table/types";
+import type { ATableSettings, Preferences, GenerationRules, HouseholdMember } from "@/lib/a-table/types";
 
 interface SettingsDialogProps {
   settings: ATableSettings;
+  householdMembers: HouseholdMember[];
   onClose: () => void;
   onSaved: () => void;
 }
@@ -54,7 +56,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
-export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogProps) {
+export function SettingsDialog({ settings, householdMembers, onClose, onSaved }: SettingsDialogProps) {
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>("Général");
   const [isPending, startTransition] = useTransition();
@@ -68,6 +70,29 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
   const [testingConnection, setTestingConnection] = useState(false);
   const [widgetToken, setWidgetToken] = useState(settings.today_widget_token);
   const [revealedApiToken, setRevealedApiToken] = useState<string | null>(null);
+  const [newMemberName, setNewMemberName] = useState("");
+  const [newMemberAllergies, setNewMemberAllergies] = useState<string[]>([]);
+
+  function handleAddMember() {
+    if (!newMemberName.trim()) return;
+    startTransition(async () => {
+      const result = await addHouseholdMember({ name: newMemberName, allergies: newMemberAllergies, diet: "" });
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        setNewMemberName("");
+        setNewMemberAllergies([]);
+        onSaved();
+      }
+    });
+  }
+
+  function handleRemoveMember(id: string) {
+    startTransition(async () => {
+      const result = await removeHouseholdMember(id);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onSaved();
+    });
+  }
 
   function handleToggleWidget() {
     startTransition(async () => {
@@ -349,6 +374,51 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
                 placeholder="Précisez vos allergies"
               />
             )}
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <p className="mb-1 text-sm font-medium text-foreground-muted">Profils du foyer</p>
+            <p className="mb-2 text-xs text-foreground-subtle">
+              Les allergies de chaque profil s&rsquo;ajoutent aux vôtres pour l&rsquo;avertissement sur les recettes.
+            </p>
+            {householdMembers.length > 0 && (
+              <ul className="mb-3 space-y-1.5">
+                {householdMembers.map((member) => (
+                  <li key={member.id} className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-border px-2.5 py-1.5 text-sm">
+                    <span>
+                      {member.name}
+                      {member.allergies.length > 0 && (
+                        <span className="ml-1.5 text-xs text-foreground-subtle">
+                          ({member.allergies.map((a) => ALLERGY_OPTIONS.find((o) => o.value === a)?.label ?? a).join(", ")})
+                        </span>
+                      )}
+                    </span>
+                    <button type="button" onClick={() => handleRemoveMember(member.id)} disabled={isPending} className="text-xs text-danger underline">
+                      Retirer
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="space-y-2 rounded-[var(--radius-sm)] border border-dashed border-border p-2.5">
+              <Input value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} placeholder="Nom du profil" className="max-w-xs" />
+              <div className="flex flex-wrap gap-1.5">
+                {ALLERGY_OPTIONS.map((opt) => (
+                  <Chip
+                    key={opt.value}
+                    active={newMemberAllergies.includes(opt.value)}
+                    onClick={() =>
+                      setNewMemberAllergies((prev) => (prev.includes(opt.value) ? prev.filter((v) => v !== opt.value) : [...prev, opt.value]))
+                    }
+                  >
+                    {opt.label}
+                  </Chip>
+                ))}
+              </div>
+              <Button variant="secondary" size="sm" onClick={handleAddMember} disabled={isPending || !newMemberName.trim()}>
+                Ajouter ce profil
+              </Button>
+            </div>
           </div>
         </div>
       )}
