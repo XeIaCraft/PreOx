@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { addRecipe, importRecipe, importRecipeFromUrl } from "@/app/apps/a-table/actions/recipes";
+import { importPaprikaExport } from "@/app/apps/a-table/actions/paprika";
 import { useToast } from "@/components/ui/toast";
 import { fileToBase64 } from "@/lib/client-file";
 import { findSimilarRecipe } from "@/lib/a-table/dedupe";
@@ -30,6 +31,7 @@ export function AddRecipeDialog({ existingTags, existingRecipes, onClose, onSave
   const [url, setUrl] = useState("");
   const [aiLabel, setAiLabel] = useState("Importer");
   const [isImportingUrl, setIsImportingUrl] = useState(false);
+  const [isImportingPaprika, setIsImportingPaprika] = useState(false);
 
   // Manual tab
   const [title, setTitle] = useState("");
@@ -81,6 +83,22 @@ export function AddRecipeDialog({ existingTags, existingRecipes, onClose, onSave
         }
       })
       .finally(() => setIsImportingUrl(false));
+  }
+
+  function handleImportPaprika(file: File | null) {
+    if (!file) return;
+    setIsImportingPaprika(true);
+    fileToBase64(file)
+      .then((base64) => importPaprikaExport(base64))
+      .then((result) => {
+        if (result.error) toast(result.error, { variant: "error" });
+        else {
+          toast(result.success ?? "", { variant: "success" });
+          onSaved();
+          onClose();
+        }
+      })
+      .finally(() => setIsImportingPaprika(false));
   }
 
   function parseIngredients(): { name: string; quantity: number | null; unit: string }[] {
@@ -192,6 +210,22 @@ export function AddRecipeDialog({ existingTags, existingRecipes, onClose, onSave
                 setPhoto(file);
               }}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ar-paprika">Ou un export Paprika (.paprikarecipes)</Label>
+            <Input
+              id="ar-paprika"
+              type="file"
+              accept=".paprikarecipes"
+              disabled={isImportingPaprika}
+              onChange={(e) => {
+                handleImportPaprika(e.target.files?.[0] ?? null);
+                e.target.value = "";
+              }}
+            />
+            <p className="text-xs text-foreground-subtle">
+              {isImportingPaprika ? "Import en cours (peut prendre une minute)…" : "Jusqu'à 15 recettes par import, structurées par l'IA."}
+            </p>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={onClose}>
