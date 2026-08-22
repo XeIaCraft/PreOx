@@ -41,6 +41,8 @@ interface SettingsRow {
   gemini_api_key_encrypted: string | null;
   gemini_model: string;
   pexels_api_key_encrypted: string | null;
+  today_widget_token: string | null;
+  api_token_hash: string | null;
   updated_at: string;
 }
 
@@ -55,6 +57,8 @@ function toPublicSettings(row: SettingsRow): ATableSettings {
     has_gemini_key: Boolean(row.gemini_api_key_encrypted),
     gemini_model: row.gemini_model,
     has_pexels_key: Boolean(row.pexels_api_key_encrypted),
+    today_widget_token: row.today_widget_token,
+    api_token_hash: row.api_token_hash,
     updated_at: row.updated_at,
   };
 }

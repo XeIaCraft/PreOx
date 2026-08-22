@@ -23,6 +23,9 @@ import {
   analyzeTastes,
   clearCardsAndHistory,
   testGeminiConnection,
+  toggleTodayWidget,
+  regenerateApiToken,
+  revokeApiToken,
 } from "@/app/apps/a-table/actions/settings";
 import { useToast } from "@/components/ui/toast";
 import type { ATableSettings, Preferences, GenerationRules } from "@/lib/a-table/types";
@@ -63,6 +66,46 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
   const [suggestions, setSuggestions] = useState<{ liked: string[]; disliked: string[] }>({ liked: [], disliked: [] });
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
+  const [widgetToken, setWidgetToken] = useState(settings.today_widget_token);
+  const [revealedApiToken, setRevealedApiToken] = useState<string | null>(null);
+
+  function handleToggleWidget() {
+    startTransition(async () => {
+      const result = await toggleTodayWidget(!widgetToken);
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      setWidgetToken(result.token ?? null);
+      if (result.token) {
+        const url = `${window.location.origin}/share/today/${result.token}`;
+        navigator.clipboard.writeText(url).catch(() => {});
+        toast("Lien du widget copié dans le presse-papier.", { variant: "success" });
+      } else {
+        toast("Widget désactivé.", { variant: "success" });
+      }
+    });
+  }
+
+  function handleRegenerateApiToken() {
+    startTransition(async () => {
+      const result = await regenerateApiToken();
+      if (result.error) toast(result.error, { variant: "error" });
+      else setRevealedApiToken(result.token ?? null);
+    });
+  }
+
+  function handleRevokeApiToken() {
+    startTransition(async () => {
+      const result = await revokeApiToken();
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        setRevealedApiToken(null);
+        onSaved();
+        toast("Jeton révoqué.", { variant: "success" });
+      }
+    });
+  }
 
   function setPref<K extends keyof Preferences>(key: K, value: Preferences[K]) {
     setPrefs((p) => ({ ...p, [key]: value }));
@@ -497,6 +540,42 @@ export function SettingsDialog({ settings, onClose, onSaved }: SettingsDialogPro
               </a>
               . Facultatif — sans clé, les illustrations restent simplement désactivées.
             </p>
+          </div>
+
+          <div className="space-y-1.5 border-t border-border pt-4">
+            <Label>Widget « repas du jour » (embarquable)</Label>
+            <p className="text-xs text-foreground-subtle">
+              Un lien public en lecture seule affichant uniquement le repas du jour — à intégrer ailleurs (ex. une page d&rsquo;accueil
+              personnelle) via une iframe.
+            </p>
+            <Button variant={widgetToken ? "primary" : "secondary"} size="sm" onClick={handleToggleWidget} disabled={isPending}>
+              {widgetToken ? "Widget actif (copier le lien)" : "Activer le widget"}
+            </Button>
+          </div>
+
+          <div className="space-y-1.5 border-t border-border pt-4">
+            <Label>Jeton API personnel {settings.api_token_hash && !revealedApiToken && <span className="text-xs text-success">(configuré)</span>}</Label>
+            <p className="text-xs text-foreground-subtle">
+              Pour scripter vos propres automatisations : <code className="text-[11px]">GET /api/a-table/v1/summary</code> avec l&rsquo;en-tête{" "}
+              <code className="text-[11px]">Authorization: Bearer &lt;jeton&gt;</code> (lecture seule : repas du jour, semaine, liste de
+              courses).
+            </p>
+            {revealedApiToken && (
+              <div className="rounded-[var(--radius-sm)] border border-primary/40 bg-primary-tint px-3 py-2">
+                <p className="break-all font-mono text-xs text-primary-strong">{revealedApiToken}</p>
+                <p className="mt-1 text-xs text-foreground-subtle">Copiez-le maintenant — il ne sera plus jamais affiché.</p>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button variant="secondary" size="sm" onClick={handleRegenerateApiToken} disabled={isPending}>
+                {settings.api_token_hash ? "Régénérer" : "Générer un jeton"}
+              </Button>
+              {settings.api_token_hash && (
+                <Button variant="ghost" size="sm" onClick={handleRevokeApiToken} disabled={isPending}>
+                  Révoquer
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}

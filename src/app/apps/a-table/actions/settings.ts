@@ -1,11 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "node:crypto";
 import { requireATableAccess } from "@/lib/a-table/dal";
 import { createClient } from "@/lib/supabase/server";
 import { encryptSecret } from "@/lib/crypto";
 import { callGemini, GeminiError } from "@/lib/a-table/gemini";
 import { getDecryptedGeminiConfig } from "@/lib/a-table/ai-config";
+import { generateApiToken } from "@/lib/a-table/api-token";
 import type { GenerationRules, Preferences } from "@/lib/a-table/types";
 import type { Json } from "@/lib/supabase/types";
 
@@ -222,6 +224,46 @@ export async function clearShoppingChecked(): Promise<ActionState> {
 
   revalidatePath("/apps/a-table");
   return { success: "Liste réinitialisée." };
+}
+
+/** Toggles the public "repas du jour" embeddable widget — same opaque-token model as a recipe share link. */
+export async function toggleTodayWidget(enable: boolean): Promise<ActionState & { token?: string | null }> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const token = enable ? randomUUID() : null;
+  const { error } = await supabase.from("a_table_settings").update({ today_widget_token: token }).eq("user_id", profile.id);
+
+  if (error) return { error: "Impossible de mettre à jour le widget." };
+
+  revalidatePath("/apps/a-table");
+  return { success: enable ? "Widget activé." : "Widget désactivé.", token };
+}
+
+/** Generates a fresh personal API token — the raw value is returned once and never stored. */
+export async function regenerateApiToken(): Promise<ActionState & { token?: string }> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const { token, hash } = generateApiToken();
+  const { error } = await supabase.from("a_table_settings").update({ api_token_hash: hash }).eq("user_id", profile.id);
+
+  if (error) return { error: "Impossible de générer le jeton." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "Jeton généré — copiez-le, il ne sera plus jamais affiché.", token };
+}
+
+export async function revokeApiToken(): Promise<ActionState> {
+  const profile = await requireATableAccess();
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("a_table_settings").update({ api_token_hash: null }).eq("user_id", profile.id);
+
+  if (error) return { error: "Impossible de révoquer le jeton." };
+
+  revalidatePath("/apps/a-table");
+  return { success: "Jeton révoqué." };
 }
 
 export async function clearCardsAndHistory(): Promise<ActionState> {

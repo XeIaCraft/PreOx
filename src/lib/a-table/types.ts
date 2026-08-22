@@ -240,6 +240,8 @@ export interface ATableSettings {
   has_gemini_key: boolean;
   gemini_model: string;
   has_pexels_key: boolean;
+  today_widget_token: string | null;
+  api_token_hash: string | null;
   updated_at: string;
 }
 

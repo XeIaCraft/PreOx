@@ -170,6 +170,8 @@ export type ATableSettingsRow = {
   gemini_api_key_encrypted: string | null;
   gemini_model: string;
   pexels_api_key_encrypted: string | null;
+  today_widget_token: string | null;
+  api_token_hash: string | null;
   created_at: string;
   updated_at: string;
 };
