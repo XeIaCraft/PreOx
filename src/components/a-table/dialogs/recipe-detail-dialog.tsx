@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import Image from "next/image";
-import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy, Minus, Plus, Upload, Wine, Share2, Snowflake } from "lucide-react";
+import { Star, Image as ImageIcon, Clock, Users, Euro, Printer, Copy, Minus, Plus, Upload, Wine, Share2, Snowflake, Users2 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { RefineBox } from "@/components/a-table/ui/refine-box";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
   toggleRecipeShare,
   toggleNeedsDefrost,
 } from "@/app/apps/a-table/actions/recipes";
+import { toggleRecipeSharing } from "@/app/apps/a-table/actions/sharing";
 import { useToast } from "@/components/ui/toast";
 import { scaleFactor } from "@/lib/a-table/shopping";
 import { fileToBase64 } from "@/lib/client-file";
@@ -121,6 +122,17 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
     });
   }
 
+  function handleToggleHubSharing() {
+    startTransition(async () => {
+      const result = await toggleRecipeSharing(recipe.id, !recipe.shared_at);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "", { variant: "success" });
+        onSaved();
+      }
+    });
+  }
+
   function handleShare() {
     startTransition(async () => {
       const result = await toggleRecipeShare(recipe.id, !recipe.share_token);
@@ -201,7 +213,19 @@ export function RecipeDetailDialog({ recipe, servings, appetite, onClose, onSave
           <Share2 className="h-4 w-4" />
           {recipe.share_token ? "Partagée (copier)" : "Partager"}
         </Button>
+        <Button
+          className="shrink-0"
+          variant={recipe.shared_at ? "primary" : "secondary"}
+          size="sm"
+          onClick={handleToggleHubSharing}
+          disabled={isPending}
+          title="Visible par les autres utilisateurs du hub dans « Découvrir »"
+        >
+          <Users2 className="h-4 w-4" />
+          {recipe.shared_at ? "Sur le hub" : "Partager sur le hub"}
+        </Button>
       </div>
+      {recipe.recommended_by && <p className="mb-3 text-xs text-foreground-subtle">Recommandée par {recipe.recommended_by.toLowerCase()}.</p>}
       {onCookMode && (
         <Button className="mb-4 w-full print:hidden" variant="outline" size="sm" onClick={onCookMode}>
           Mode recette

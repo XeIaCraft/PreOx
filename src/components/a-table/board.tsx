@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus, Sparkles, CookingPot, ImageDown, LayoutTemplate } from "lucide-react";
+import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus, Sparkles, CookingPot, ImageDown, LayoutTemplate, Users2 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
 import { A_TABLE_ONBOARDING_STEPS } from "@/components/a-table/onboarding-steps";
@@ -49,6 +49,7 @@ import { buildWeekImage } from "@/lib/a-table/week-image";
 import { findOutOfSeasonIngredients } from "@/lib/a-table/seasonality";
 import { mondayIso, addDaysIso, formatWeekRange } from "@/lib/a-table/week";
 import { MonthViewDialog } from "@/components/a-table/dialogs/month-view-dialog";
+import { DiscoverDialog } from "@/components/a-table/dialogs/discover-dialog";
 import type { ATableData, Placement, TemporaryIngredient } from "@/lib/a-table/types";
 
 type ModalState =
@@ -68,6 +69,7 @@ type ModalState =
   | { type: "guest"; menuId: string | null }
   | { type: "cook"; recipeIds: string[] }
   | { type: "month" }
+  | { type: "discover" }
   | null;
 
 export function ATableBoard({ initialData }: { initialData: ATableData }) {
@@ -385,6 +387,9 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setModal({ type: "library" })}>
             <BookOpen className="h-4 w-4" /> Mes recettes
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setModal({ type: "discover" })}>
+            <Users2 className="h-4 w-4" /> Découvrir
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setModal({ type: "batch_cook" })}>
             <CookingPot className="h-4 w-4" /> Cuisiner en lot
@@ -784,6 +789,8 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           }}
         />
       )}
+
+      {modal?.type === "discover" && <DiscoverDialog onClose={() => setModal(null)} onSaved={refresh} />}
 
       {modal?.type === "rate" && (
         <RateDialog

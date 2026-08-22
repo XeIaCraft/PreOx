@@ -63,8 +63,22 @@ export interface Recipe {
   ratings: Rating[];
   share_token: string | null;
   needs_defrost: boolean;
+  /** Non-null when opted into the hub-wide "Découvrir" directory (item 24) — distinct from share_token, the unauthenticated public link. */
+  shared_at: string | null;
+  /** Set when this recipe was copied from another hub member's shared library (item 29) — kept anonymous by design, never a resolved name. */
+  recommended_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface RecipeComment {
+  id: string;
+  recipe_id: string;
+  author_user_id: string;
+  body: string;
+  created_at: string;
+  /** True when the current viewer authored this comment — the only identity ever exposed. */
+  isMine: boolean;
 }
 
 export interface MealCard {

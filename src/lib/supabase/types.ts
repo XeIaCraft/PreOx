@@ -84,8 +84,18 @@ export type ATableRecipeRow = {
   ratings: Json;
   share_token: string | null;
   needs_defrost: boolean;
+  shared_at: string | null;
+  recommended_by: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ATableRecipeCommentRow = {
+  id: string;
+  recipe_id: string;
+  author_user_id: string;
+  body: string;
+  created_at: string;
 };
 
 export type ATableMealCardRow = {
@@ -571,6 +581,12 @@ export type Database = {
         Row: ATableHouseholdMemberRow;
         Insert: Partial<ATableHouseholdMemberRow> & { user_id: string; name: string };
         Update: Partial<ATableHouseholdMemberRow>;
+        Relationships: [];
+      };
+      a_table_recipe_comments: {
+        Row: ATableRecipeCommentRow;
+        Insert: Partial<ATableRecipeCommentRow> & { recipe_id: string; author_user_id: string; body: string };
+        Update: Partial<ATableRecipeCommentRow>;
         Relationships: [];
       };
       el_profesor_books: {
