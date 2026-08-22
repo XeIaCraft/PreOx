@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Search, Star, Archive, ArchiveRestore, Plus, Download, Sparkle } from "lucide-react";
+import Image from "next/image";
+import { Search, Star, Archive, ArchiveRestore, Plus, Download, Sparkle, Printer } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Input, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +44,11 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
     for (const r of recipes) for (const tag of r.tags) tags.add(tag);
     return [...tags].sort((a, b) => a.localeCompare(b));
   }, [recipes]);
+
+  const printableRecipes = useMemo(
+    () => recipes.filter((r) => !r.is_archived).sort((a, b) => a.title.localeCompare(b.title, "fr")),
+    [recipes]
+  );
 
   const filtered = useMemo(() => {
     const result = recipes.filter((r) => {
@@ -147,6 +153,58 @@ export function LibraryDialog({ recipes, onClose, onSaved, onOpenDetail }: Libra
         >
           <Download className="h-3.5 w-3.5" /> Exporter
         </button>
+        <button
+          type="button"
+          onClick={() => window.print()}
+          disabled={printableRecipes.length === 0}
+          title="Exporter la bibliothèque complète en PDF (impression)"
+          className="flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-sm text-foreground-muted hover:text-foreground disabled:opacity-40"
+        >
+          <Printer className="h-3.5 w-3.5" /> PDF illustré
+        </button>
+      </div>
+
+      {/* Print-only: the whole non-archived library, illustrated — hidden on
+          screen, takes over the page via .print-area (see globals.css) when
+          "PDF illustré" triggers window.print(). */}
+      <div className="print-area hidden print:block">
+        <h1 className="mb-4 font-serif-display text-xl font-medium text-foreground">Ma bibliothèque de recettes</h1>
+        {printableRecipes.map((recipe) => (
+          <div key={recipe.id} className="mb-6 break-inside-avoid">
+            <div className="flex items-start gap-3">
+              {recipe.image_url && (
+                <div className="relative h-20 w-28 shrink-0 overflow-hidden rounded">
+                  <Image src={recipe.image_url} alt={recipe.image_alt || recipe.title} fill sizes="112px" className="object-cover" />
+                </div>
+              )}
+              <div>
+                <p className="font-semibold text-foreground">{recipe.title}</p>
+                <p className="text-xs text-foreground-subtle">
+                  {recipe.servings} portion{recipe.servings > 1 ? "s" : ""}
+                  {recipe.cooking_minutes != null ? ` · ${recipe.cooking_minutes} min` : ""}
+                  {recipe.tags.length > 0 ? ` · ${recipe.tags.join(", ")}` : ""}
+                </p>
+              </div>
+            </div>
+            {recipe.ingredients.length > 0 && (
+              <ul className="ml-4 mt-1 list-disc text-sm text-foreground-muted">
+                {recipe.ingredients.map((ing, i) => (
+                  <li key={i}>
+                    {ing.quantity ? `${ing.quantity} ${ing.unit} ` : ""}
+                    {ing.name}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {recipe.steps.length > 0 && (
+              <ol className="ml-4 mt-1 list-decimal text-sm text-foreground-muted">
+                {recipe.steps.map((step, i) => (
+                  <li key={i}>{step}</li>
+                ))}
+              </ol>
+            )}
+          </div>
+        ))}
       </div>
 
       {allTags.length > 0 && (

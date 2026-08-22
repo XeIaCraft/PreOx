@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { removeHistoryEntry, restoreHistoryEntry, addRecipeToBacklog, addHistoryPhoto } from "@/app/apps/a-table/actions/planning";
 import { useToast } from "@/components/ui/toast";
 import { fileToBase64 } from "@/lib/client-file";
+import { computeSeasonalityStats } from "@/lib/a-table/seasonality";
 import type { HistoryEntry, Recipe } from "@/lib/a-table/types";
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
@@ -118,6 +119,16 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
     const maxKcal = Math.max(1, ...weeks.map((w) => w.avgKcal ?? 0));
     return { weeks, hasData, maxMeals, maxKcal };
   }, [history, recipesById, now]);
+
+  const seasonalityStats = useMemo(() => {
+    const stats = computeSeasonalityStats(
+      history.map((h) => ({
+        cooked_at: h.cooked_at,
+        ingredientNames: (h.recipe_id ? recipesById.get(h.recipe_id)?.ingredients : undefined)?.map((i) => i.name) ?? [],
+      }))
+    );
+    return { stats, hasData: stats.some((s) => s.mealsWithTrackedProduce > 0) };
+  }, [history, recipesById]);
 
   const badges = useMemo(() => {
     const weekStart = (t: number) => {
@@ -274,6 +285,30 @@ export function HistoryDialog({ history, recipesById, onClose, onSaved }: Histor
                 </div>
               </div>
             )}
+          </div>
+        </details>
+      )}
+
+      {seasonalityStats.hasData && (
+        <details className="mb-4">
+          <summary className="cursor-pointer text-xs font-medium text-foreground-subtle">Saisonnalité sur les 6 derniers mois</summary>
+          <div className="mt-2 space-y-1">
+            {seasonalityStats.stats.map((s) => {
+              const pct = s.mealsWithTrackedProduce > 0 ? Math.round((s.outOfSeasonMeals / s.mealsWithTrackedProduce) * 100) : 0;
+              return (
+                <div key={s.label} className="flex items-center gap-2 text-xs">
+                  <span className="w-8 shrink-0 capitalize text-foreground-subtle">{s.label}</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-muted">
+                    {s.mealsWithTrackedProduce > 0 && (
+                      <div className={`h-full ${pct > 0 ? "bg-accent/70" : "bg-success/50"}`} style={{ width: `${Math.max(4, pct)}%` }} />
+                    )}
+                  </div>
+                  <span className="w-28 shrink-0 text-foreground-subtle">
+                    {s.mealsWithTrackedProduce > 0 ? `${s.outOfSeasonMeals}/${s.mealsWithTrackedProduce} hors saison` : "—"}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </details>
       )}

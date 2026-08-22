@@ -388,6 +388,24 @@ export async function refineRecipe(recipeId: string, message: string): Promise<A
   return { success: "Recette mise à jour." };
 }
 
+/**
+ * Open Graph meta tags (og:title/og:description) — on JS-rendered pages like
+ * Instagram/TikTok, the server-rendered body is mostly an empty app shell,
+ * but the caption is almost always still present in these meta tags, so
+ * pulling them out separately and putting them first gives the AI parser a
+ * much better shot than the stripped body text alone.
+ */
+function extractOpenGraphText(html: string): string {
+  const get = (property: string) => {
+    const match = html.match(new RegExp(`<meta[^>]+property=["']og:${property}["'][^>]+content=["']([^"']*)["']`, "i"));
+    return match?.[1]?.trim() ?? "";
+  };
+  const title = get("title");
+  const description = get("description");
+  if (!title && !description) return "";
+  return [title, description].filter(Boolean).join("\n\n");
+}
+
 /** Strips tags/scripts/styles down to readable text — good enough input for Gemini to parse, no HTML parser dependency needed. */
 function htmlToText(html: string): string {
   return html
@@ -457,7 +475,8 @@ export async function importRecipeFromUrl(url: string): Promise<ActionState> {
     return { error: "Impossible de joindre cette page. Vérifiez l'URL." };
   }
 
-  const text = htmlToText(html);
+  const openGraphText = extractOpenGraphText(html);
+  const text = [openGraphText, htmlToText(html)].filter(Boolean).join("\n\n---\n\n");
   if (text.length < 100) return { error: "Cette page ne semble pas contenir de recette exploitable." };
 
   return importRecipe({ text });

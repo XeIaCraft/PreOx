@@ -71,3 +71,50 @@ export function findOutOfSeasonIngredients(ingredientNames: string[], month: num
   }
   return [...outOfSeason].sort((a, b) => a.localeCompare(b, "fr"));
 }
+
+export interface MonthlySeasonalityStat {
+  month: number;
+  label: string;
+  mealsWithTrackedProduce: number;
+  outOfSeasonMeals: number;
+}
+
+/**
+ * Aggregates, from actual cooking history, how often meals used an
+ * out-of-season ingredient — upgrades the one-off planning warning into a
+ * trend over time. Only meals containing at least one ingredient the
+ * reference table has an opinion on are counted (a meal of just meat/pasta
+ * is neither "in" nor "out" of season, so it's excluded rather than
+ * counted as a false positive).
+ */
+export function computeSeasonalityStats(
+  entries: { cooked_at: string; ingredientNames: string[] }[],
+  monthsBack = 6,
+  now: Date = new Date()
+): MonthlySeasonalityStat[] {
+  const buckets = new Map<string, MonthlySeasonalityStat>();
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    buckets.set(key, {
+      month: d.getMonth() + 1,
+      label: d.toLocaleDateString("fr-FR", { month: "short" }),
+      mealsWithTrackedProduce: 0,
+      outOfSeasonMeals: 0,
+    });
+  }
+
+  for (const entry of entries) {
+    const cookedAt = new Date(entry.cooked_at);
+    const key = `${cookedAt.getFullYear()}-${cookedAt.getMonth()}`;
+    const bucket = buckets.get(key);
+    if (!bucket) continue;
+
+    const checks = entry.ingredientNames.map((n) => checkSeasonality(n, cookedAt.getMonth() + 1)).filter((c): c is SeasonalityCheck => Boolean(c));
+    if (checks.length === 0) continue;
+    bucket.mealsWithTrackedProduce += 1;
+    if (checks.some((c) => !c.inSeason)) bucket.outOfSeasonMeals += 1;
+  }
+
+  return [...buckets.values()];
+}

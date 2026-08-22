@@ -1,13 +1,19 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { batchAddRecipeToDays } from "@/app/apps/a-table/actions/planning";
-import { DAY_LABELS, WEEKDAY_PLACEMENTS } from "@/lib/a-table/constants";
+import { DAY_LABELS, EQUIPMENT_OPTIONS, WEEKDAY_PLACEMENTS } from "@/lib/a-table/constants";
 import { useToast } from "@/components/ui/toast";
 import type { Placement, Recipe } from "@/lib/a-table/types";
+
+/** Which of a recipe's freeform tags name a piece of equipment, matched against the settings' equipment list. */
+function equipmentTags(recipe: Recipe): string[] {
+  const labels = EQUIPMENT_OPTIONS.map((e) => e.label.toLowerCase());
+  return recipe.tags.filter((tag) => labels.some((label) => tag.toLowerCase().includes(label) || label.includes(tag.toLowerCase())));
+}
 
 export function BatchCookDialog({ recipes, onClose, onSaved }: { recipes: Recipe[]; onClose: () => void; onSaved: () => void }) {
   const { toast } = useToast();
@@ -17,6 +23,18 @@ export function BatchCookDialog({ recipes, onClose, onSaved }: { recipes: Recipe
   const recipe = active.find((r) => r.id === recipeId);
   const [servings, setServings] = useState(recipe?.servings ?? 2);
   const [days, setDays] = useState<Set<Placement>>(new Set());
+
+  // "Optimiseur de vaisselle" v1: recipes tagged with the same equipment as
+  // the selected one are worth cooking in the same session (oven/plancha
+  // already hot, one less appliance to wash) — surfaced as a hint, not
+  // auto-selected, since batch cooking one recipe on several days is still
+  // the dialog's primary purpose.
+  const sameEquipmentRecipes = useMemo(() => {
+    if (!recipe) return [];
+    const tags = equipmentTags(recipe);
+    if (tags.length === 0) return [];
+    return active.filter((r) => r.id !== recipe.id && equipmentTags(r).some((t) => tags.includes(t)));
+  }, [recipe, active]);
 
   function toggleDay(day: Placement) {
     setDays((prev) => {
@@ -69,6 +87,11 @@ export function BatchCookDialog({ recipes, onClose, onSaved }: { recipes: Recipe
           <Label htmlFor="batch-servings">Portions par jour</Label>
           <Input id="batch-servings" type="number" min={1} value={servings} onChange={(e) => setServings(Number(e.target.value))} />
         </div>
+        {sameEquipmentRecipes.length > 0 && (
+          <p className="rounded-[var(--radius-sm)] border border-border bg-surface-muted/50 px-2.5 py-2 text-xs text-foreground-subtle">
+            Même équipement : {sameEquipmentRecipes.map((r) => r.title).join(", ")}. Les cuisiner la même session limite la vaisselle.
+          </p>
+        )}
         <div className="space-y-1.5">
           <Label>Jours</Label>
           <div className="flex flex-wrap gap-1.5">
