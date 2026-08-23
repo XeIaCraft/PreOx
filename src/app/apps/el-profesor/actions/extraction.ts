@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireElProfesorAdmin, getElProfesorGeminiConfig, getElProfesorAiProvider, getElProfesorClaudeConfig } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
-import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
+import { downloadChapterPdfBytes, uploadPublicImage } from "@/lib/el-profesor/storage";
 import {
   deleteGeminiFile,
   extractChapterContentWithRotation,
@@ -686,12 +686,15 @@ export async function uploadFlashcardImage(flashcardId: string, imageBase64: str
   const ext = mimeType.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "png";
   const path = `${flashcardId}-${Date.now()}.${ext}`;
 
-  const supabase = await createClient();
-  const { error: uploadError } = await supabase.storage.from("el-profesor-flashcard-images").upload(path, bytes, { contentType: mimeType, upsert: true });
-  if (uploadError) return { error: "Échec de l'envoi de l'image." };
+  let publicUrl: string;
+  try {
+    publicUrl = await uploadPublicImage("el-profesor-flashcard-images", path, bytes, mimeType);
+  } catch {
+    return { error: "Échec de l'envoi de l'image." };
+  }
 
-  const { data: pub } = supabase.storage.from("el-profesor-flashcard-images").getPublicUrl(path);
-  const { error } = await supabase.from("el_profesor_flashcards").update({ image_url: pub.publicUrl, image_alt: alt?.trim() || null }).eq("id", flashcardId);
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_flashcards").update({ image_url: publicUrl, image_alt: alt?.trim() || null }).eq("id", flashcardId);
   if (error) return { error: "Image envoyée, mais impossible de l'enregistrer." };
 
   revalidatePath("/apps/el-profesor");

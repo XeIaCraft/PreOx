@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireElProfesorAdmin } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
-import { uploadChapterPdf as uploadPdfBytes, deleteChapterPdf } from "@/lib/el-profesor/storage";
+import { uploadChapterPdf as uploadPdfBytes, deleteChapterPdf, uploadPublicImage } from "@/lib/el-profesor/storage";
 import { extractDocxText, extractPptxText } from "@/lib/el-profesor/office-text";
 import { GeminiError } from "@/lib/gemini-shared";
 
@@ -119,12 +119,15 @@ export async function uploadBookCover(bookId: string, imageBase64: string, mimeT
   const ext = mimeType.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "jpg";
   const path = `${bookId}.${ext}`;
 
-  const supabase = await createClient();
-  const { error: uploadError } = await supabase.storage.from("el-profesor-covers").upload(path, bytes, { contentType: mimeType, upsert: true });
-  if (uploadError) return { error: "Échec de l'envoi de l'image." };
+  let publicUrl: string;
+  try {
+    publicUrl = await uploadPublicImage("el-profesor-covers", path, bytes, mimeType);
+  } catch {
+    return { error: "Échec de l'envoi de l'image." };
+  }
 
-  const { data: pub } = supabase.storage.from("el-profesor-covers").getPublicUrl(path);
-  const { error } = await supabase.from("el_profesor_books").update({ cover_url: pub.publicUrl }).eq("id", bookId);
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_books").update({ cover_url: publicUrl }).eq("id", bookId);
   if (error) return { error: "Image envoyée, mais impossible de l'enregistrer." };
 
   revalidatePath("/apps/el-profesor");

@@ -543,6 +543,31 @@ export async function extractComplementaryContentWithRotation(
 }
 
 /**
+ * Shared retry loop for every text-only Gemini call (no file attachment):
+ * tries each configured (key, model) combo in order, rotating to the next
+ * on a quota (429) or capacity (503) error. File-based calls have their own
+ * withFileRotation above — they also need to manage upload/cleanup per key,
+ * which this simpler loop doesn't need to do.
+ */
+async function textRotation<T>(
+  config: GeminiRotationConfig,
+  instructions: string,
+  responseSchema: Record<string, unknown>
+): Promise<{ result: T; apiKey: string; model: string }> {
+  let lastError: unknown;
+  for (const { apiKey, model } of rotationCombos(config)) {
+    try {
+      const result = (await callGeminiJson(apiKey, model, [{ text: instructions }], responseSchema)) as T;
+      return { result, apiKey, model };
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaOrCapacityError(err)) throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+}
+
+/**
  * Text-only counterpart to extractChapterContentWithRotation for a chapter
  * sourced from Word/PowerPoint (item 5 of the backlog): no file upload, the
  * already-extracted plain text goes straight into the prompt. No
@@ -556,17 +581,8 @@ export async function extractChapterContentFromTextWithRotation(
   sourceText: string
 ): Promise<{ extraction: ExtractionResult; apiKey: string; model: string }> {
   const instructions = buildTextExtractionPrompt(chapterTitle, sourceText);
-  let lastError: unknown;
-  for (const { apiKey, model } of rotationCombos(config)) {
-    try {
-      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], EXTRACTION_RESPONSE_SCHEMA);
-      return { extraction: result as ExtractionResult, apiKey, model };
-    } catch (err) {
-      lastError = err;
-      if (!isQuotaOrCapacityError(err)) throw err;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+  const { result, apiKey, model } = await textRotation<ExtractionResult>(config, instructions, EXTRACTION_RESPONSE_SCHEMA);
+  return { extraction: result, apiKey, model };
 }
 
 /**
@@ -584,33 +600,15 @@ export async function generateFromSelection(
   quote: string
 ): Promise<SelectionResult> {
   const instructions = buildSelectionPrompt(subEntityName, chapterTitle, page, quote);
-  let lastError: unknown;
-  for (const { apiKey, model } of rotationCombos(config)) {
-    try {
-      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SELECTION_RESPONSE_SCHEMA);
-      return result as SelectionResult;
-    } catch (err) {
-      lastError = err;
-      if (!isQuotaOrCapacityError(err)) throw err;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+  const { result } = await textRotation<SelectionResult>(config, instructions, SELECTION_RESPONSE_SCHEMA);
+  return result;
 }
 
 /** Generates a single mnemonic suggestion (as plain text) for a block that doesn't already have one. Rotates on quota/capacity errors. */
 export async function generateMnemonic(config: GeminiRotationConfig, subEntityName: string, sourceText: string): Promise<{ text: string }> {
   const instructions = buildMnemonicPrompt(subEntityName, sourceText);
-  let lastError: unknown;
-  for (const { apiKey, model } of rotationCombos(config)) {
-    try {
-      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], MNEMONIC_RESPONSE_SCHEMA);
-      return result as { text: string };
-    } catch (err) {
-      lastError = err;
-      if (!isQuotaOrCapacityError(err)) throw err;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+  const { result } = await textRotation<{ text: string }>(config, instructions, MNEMONIC_RESPONSE_SCHEMA);
+  return result;
 }
 
 /** Generates a plain-text synthesis of a batch of struggled-with flashcards, grouped by theme with actionable retention tips. Rotates on quota/capacity errors. Item 19 of the backlog. */
@@ -619,65 +617,29 @@ export async function generateWeaknessSynthesis(
   items: { front: string; back: string }[]
 ): Promise<{ text: string }> {
   const instructions = buildWeaknessSynthesisPrompt(items);
-  let lastError: unknown;
-  for (const { apiKey, model } of rotationCombos(config)) {
-    try {
-      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SYNTHESIS_RESPONSE_SCHEMA);
-      return result as { text: string };
-    } catch (err) {
-      lastError = err;
-      if (!isQuotaOrCapacityError(err)) throw err;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+  const { result } = await textRotation<{ text: string }>(config, instructions, SYNTHESIS_RESPONSE_SCHEMA);
+  return result;
 }
 
 /** On-demand fiche translation — ephemeral, never persisted. Rotates on quota/capacity errors. Item 12 of the backlog. */
 export async function translateFicheText(config: GeminiRotationConfig, ficheTitle: string, ficheText: string, targetLanguage: string): Promise<{ text: string }> {
   const instructions = buildFicheTranslationPrompt(ficheTitle, ficheText, targetLanguage);
-  let lastError: unknown;
-  for (const { apiKey, model } of rotationCombos(config)) {
-    try {
-      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SYNTHESIS_RESPONSE_SCHEMA);
-      return result as { text: string };
-    } catch (err) {
-      lastError = err;
-      if (!isQuotaOrCapacityError(err)) throw err;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+  const { result } = await textRotation<{ text: string }>(config, instructions, SYNTHESIS_RESPONSE_SCHEMA);
+  return result;
 }
 
 /** On-demand clinical-vignette generation from a fiche's content — ephemeral, never persisted. Rotates on quota/capacity errors. Item 13 of the backlog. */
 export async function generateClinicalCase(config: GeminiRotationConfig, subEntityName: string, ficheText: string): Promise<{ text: string }> {
   const instructions = buildClinicalCasePrompt(subEntityName, ficheText);
-  let lastError: unknown;
-  for (const { apiKey, model } of rotationCombos(config)) {
-    try {
-      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SYNTHESIS_RESPONSE_SCHEMA);
-      return result as { text: string };
-    } catch (err) {
-      lastError = err;
-      if (!isQuotaOrCapacityError(err)) throw err;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+  const { result } = await textRotation<{ text: string }>(config, instructions, SYNTHESIS_RESPONSE_SCHEMA);
+  return result;
 }
 
 /** On-demand exam-style question generation from a fiche's content — ephemeral, never persisted. Rotates on quota/capacity errors. Item 8 of the backlog. */
 export async function generateExamQuestions(config: GeminiRotationConfig, subEntityName: string, ficheText: string): Promise<{ text: string }> {
   const instructions = buildExamQuestionsPrompt(subEntityName, ficheText);
-  let lastError: unknown;
-  for (const { apiKey, model } of rotationCombos(config)) {
-    try {
-      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SYNTHESIS_RESPONSE_SCHEMA);
-      return result as { text: string };
-    } catch (err) {
-      lastError = err;
-      if (!isQuotaOrCapacityError(err)) throw err;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+  const { result } = await textRotation<{ text: string }>(config, instructions, SYNTHESIS_RESPONSE_SCHEMA);
+  return result;
 }
 
 export interface MindMap {
@@ -692,17 +654,8 @@ export async function generateMindMap(
   subEntitySummaries: { name: string; text: string }[]
 ): Promise<MindMap> {
   const instructions = buildMindMapPrompt(chapterTitle, subEntitySummaries);
-  let lastError: unknown;
-  for (const { apiKey, model } of rotationCombos(config)) {
-    try {
-      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], MIND_MAP_RESPONSE_SCHEMA);
-      return result as MindMap;
-    } catch (err) {
-      lastError = err;
-      if (!isQuotaOrCapacityError(err)) throw err;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+  const { result } = await textRotation<MindMap>(config, instructions, MIND_MAP_RESPONSE_SCHEMA);
+  return result;
 }
 
 /** Assigns 1-3 cross-book "notion" tags to a fiche's content, reusing existing notion names when they fit. Rotates on quota/capacity errors. */
@@ -713,17 +666,8 @@ export async function categorizeFicheNotions(
   existingNotionNames: string[]
 ): Promise<NotionCategorizationResult> {
   const instructions = buildNotionCategorizationPrompt(ficheTitle, ficheText, existingNotionNames);
-  let lastError: unknown;
-  for (const { apiKey, model } of rotationCombos(config)) {
-    try {
-      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], NOTION_CATEGORIZATION_SCHEMA);
-      return result as NotionCategorizationResult;
-    } catch (err) {
-      lastError = err;
-      if (!isQuotaOrCapacityError(err)) throw err;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+  const { result } = await textRotation<NotionCategorizationResult>(config, instructions, NOTION_CATEGORIZATION_SCHEMA);
+  return result;
 }
 
 /** Checks whether two fiches sharing a notion actually contradict each other on a factual point. Rotates on quota/capacity errors. */
@@ -736,17 +680,8 @@ export async function checkContradiction(
   ficheBText: string
 ): Promise<ContradictionCheckResult> {
   const instructions = buildContradictionCheckPrompt(notionName, ficheATitle, ficheAText, ficheBTitle, ficheBText);
-  let lastError: unknown;
-  for (const { apiKey, model } of rotationCombos(config)) {
-    try {
-      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], CONTRADICTION_CHECK_SCHEMA);
-      return result as ContradictionCheckResult;
-    } catch (err) {
-      lastError = err;
-      if (!isQuotaOrCapacityError(err)) throw err;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+  const { result } = await textRotation<ContradictionCheckResult>(config, instructions, CONTRADICTION_CHECK_SCHEMA);
+  return result;
 }
 
 export async function verifyExtraction(
