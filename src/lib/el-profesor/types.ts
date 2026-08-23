@@ -66,12 +66,18 @@ export type SubEntity = {
   summary: string;
 };
 
+export type SupersededReason = "duplicate" | "outdated";
+
 export type Fiche = {
   id: string;
   subEntityId: string;
   title: string;
   status: ContentStatus;
   shareToken: string | null;
+  /** Set when this fiche was fused into (reason "duplicate") or replaced by (reason "outdated") another one — excluded from every review queue while set. */
+  supersededByFicheId: string | null;
+  supersededReason: SupersededReason | null;
+  supersededNote: string;
 };
 
 export type FicheBlock = {
@@ -138,6 +144,22 @@ export type Contradiction = {
   status: ContradictionStatus;
   resolutionNote: string;
   createdAt: string;
+};
+
+export type SupersededFicheEntry = {
+  fiche: NotionLinkedFiche;
+  supersededBy: NotionLinkedFiche;
+  reason: "duplicate" | "outdated";
+  note: string;
+};
+
+/** Near-identical flashcards belonging to two different fiches under the same notion — item 53 of the backlog, the cross-book counterpart of the existing per-book duplicate detection. */
+export type CrossBookDuplicateFlashcards = {
+  notionId: string;
+  notionName: string;
+  ficheA: NotionLinkedFiche;
+  ficheB: NotionLinkedFiche;
+  pairs: { frontA: string; frontB: string; similarity: number }[];
 };
 
 export type ReviewState = {

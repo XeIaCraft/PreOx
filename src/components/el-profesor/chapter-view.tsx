@@ -482,6 +482,11 @@ export function ChapterView({
                     blocks={selected.fiche.blocks}
                     onCitationClick={handleCitationClick}
                     fontScale={fontScale}
+                    superseded={
+                      selected.fiche.supersededByFicheId
+                        ? { reason: selected.fiche.supersededReason ?? "outdated", note: selected.fiche.supersededNote }
+                        : undefined
+                    }
                   />
                   <NoteEditor key={selected.id} subEntityId={selected.id} />
                   <RelatedFiches key={selected.fiche.id} ficheId={selected.fiche.id} />

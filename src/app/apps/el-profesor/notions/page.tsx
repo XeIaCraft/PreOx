@@ -1,11 +1,24 @@
-import { requireElProfesorAdmin, getLibrary, getNotionSummaries, getContradictions } from "@/lib/el-profesor/dal";
+import {
+  requireElProfesorAdmin,
+  getLibrary,
+  getNotionSummaries,
+  getContradictions,
+  getCrossBookFlashcardDuplicates,
+  getSupersededFiches,
+} from "@/lib/el-profesor/dal";
 import { NotionsView } from "@/components/el-profesor/notions-view";
 import { ToastProvider } from "@/components/ui/toast";
 
 export default async function NotionsPage() {
   await requireElProfesorAdmin();
 
-  const [books, notionSummaries, contradictions] = await Promise.all([getLibrary(), getNotionSummaries(), getContradictions()]);
+  const [books, notionSummaries, contradictions, crossBookDuplicates, supersededFiches] = await Promise.all([
+    getLibrary(),
+    getNotionSummaries(),
+    getContradictions(),
+    getCrossBookFlashcardDuplicates(),
+    getSupersededFiches(),
+  ]);
 
   const chapters = books.flatMap((book) =>
     book.chapters
@@ -15,7 +28,13 @@ export default async function NotionsPage() {
 
   return (
     <ToastProvider>
-      <NotionsView chapters={chapters} notionSummaries={notionSummaries} contradictions={contradictions} />
+      <NotionsView
+        chapters={chapters}
+        notionSummaries={notionSummaries}
+        contradictions={contradictions}
+        crossBookDuplicates={crossBookDuplicates}
+        supersededFiches={supersededFiches}
+      />
     </ToastProvider>
   );
 }

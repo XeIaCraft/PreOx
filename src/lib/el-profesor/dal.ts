@@ -30,6 +30,8 @@ import type {
   NotionSummary,
   Contradiction,
   ContradictionStatus,
+  CrossBookDuplicateFlashcards,
+  SupersededFicheEntry,
 } from "./types";
 import type {
   ElProfesorBookRow,
@@ -94,7 +96,16 @@ function toSubEntity(row: ElProfesorSubEntityRow): SubEntity {
 }
 
 function toFiche(row: ElProfesorFicheRow): Fiche {
-  return { id: row.id, subEntityId: row.sub_entity_id, title: row.title, status: row.status, shareToken: row.share_token };
+  return {
+    id: row.id,
+    subEntityId: row.sub_entity_id,
+    title: row.title,
+    status: row.status,
+    shareToken: row.share_token,
+    supersededByFicheId: row.superseded_by_fiche_id,
+    supersededReason: row.superseded_reason,
+    supersededNote: row.superseded_note,
+  };
 }
 
 function toFicheBlock(row: ElProfesorFicheBlockRow): FicheBlock {
@@ -463,6 +474,18 @@ export async function getChapterContent(chapterId: string, includeDrafts = false
   });
 }
 
+/**
+ * Flashcards from every fiche in this content set, excluding ones whose
+ * fiche has been merged/superseded (items 52/56 — "don't learn the same
+ * fact, or an outdated one, twice"). Used everywhere a review queue,
+ * forecast, or mastery stat is built from getChapterContent's output;
+ * admin tools that need to see superseded content too (e.g. the quality
+ * dashboard) read `fiche.flashcards` directly instead of calling this.
+ */
+function activeFlashcards(content: SubEntityWithFiche[]): Flashcard[] {
+  return content.flatMap((s) => (s.fiche && !s.fiche.supersededByFicheId ? s.fiche.flashcards : []));
+}
+
 /** Flashcard IDs this user has excluded from their own reviews — never affects other users or deletes the card itself. */
 async function getSuspendedFlashcardIds(userId: string): Promise<Set<string>> {
   const supabase = await createClient();
@@ -528,7 +551,7 @@ export async function getSuspendedFlashcards(userId: string): Promise<SuspendedF
 export async function getDueQueue(userId: string, chapterId: string): Promise<Flashcard[]> {
   const supabase = await createClient();
   const content = await getChapterContent(chapterId, false);
-  const flashcards = content.flatMap((s) => s.fiche?.flashcards ?? []);
+  const flashcards = activeFlashcards(content);
   if (flashcards.length === 0) return [];
 
   const [{ data: states }, suspended] = await Promise.all([
@@ -569,6 +592,57 @@ export async function getGlobalDueQueue(userId: string, chapters: Chapter[]): Pr
 }
 
 /**
+ * Due queue for one notion, across every book that covers it — item 54 of
+ * the backlog: revise a theme in one interleaved session instead of
+ * repeating the same fact once per book. Mirrors getDueQueue's due-date
+ * logic exactly, just sourced from the notion's linked (published,
+ * non-superseded) fiches instead of one chapter's.
+ */
+export async function getNotionDueQueue(userId: string, notionId: string): Promise<Flashcard[]> {
+  const supabase = await createClient();
+
+  const { data: links } = await supabase.from("el_profesor_notion_links").select("fiche_id").eq("notion_id", notionId);
+  const linkedFicheIds = [...new Set((links ?? []).map((l) => l.fiche_id))];
+  if (linkedFicheIds.length === 0) return [];
+
+  const { data: ficheRows } = await supabase
+    .from("el_profesor_fiches")
+    .select("*")
+    .in("id", linkedFicheIds)
+    .eq("status", "published");
+  const activeFicheIds = ((ficheRows ?? []) as ElProfesorFicheRow[])
+    .filter((f) => !f.superseded_by_fiche_id)
+    .map((f) => f.id);
+  if (activeFicheIds.length === 0) return [];
+
+  const [{ data: cardRows }, suspended] = await Promise.all([
+    supabase.from("el_profesor_flashcards").select("*").in("fiche_id", activeFicheIds).eq("status", "published"),
+    getSuspendedFlashcardIds(userId),
+  ]);
+  const flashcards = ((cardRows ?? []) as ElProfesorFlashcardRow[]).map(toFlashcard);
+  if (flashcards.length === 0) return [];
+
+  const { data: states } = await supabase
+    .from("el_profesor_review_state")
+    .select("*")
+    .eq("user_id", userId)
+    .in(
+      "flashcard_id",
+      flashcards.map((f) => f.id)
+    );
+  const stateByCard = new Map(((states ?? []) as ElProfesorReviewStateRow[]).map((s) => [s.flashcard_id, s]));
+  const now = Date.now();
+
+  const due = flashcards
+    .filter((card) => !suspended.has(card.id))
+    .map((card) => ({ card, dueAt: stateByCard.get(card.id)?.due }))
+    .filter(({ dueAt }) => !dueAt || new Date(dueAt).getTime() <= now);
+
+  due.sort((a, b) => (a.dueAt ? new Date(a.dueAt).getTime() : now) - (b.dueAt ? new Date(b.dueAt).getTime() : now));
+  return due.map(({ card }) => card);
+}
+
+/**
  * "Carnet d'erreurs": flashcards the user is currently struggling with —
  * either FSRS put them back in "relearning" after a recent miss, or they've
  * accumulated repeat lapses over time. Deliberate practice on known weak
@@ -582,7 +656,7 @@ export async function getDifficultQueue(userId: string, chapters: Chapter[]): Pr
   const perChapter = await Promise.all(
     published.map(async (chapter) => {
       const content = await getChapterContent(chapter.id, false);
-      const flashcards = content.flatMap((s) => s.fiche?.flashcards ?? []);
+      const flashcards = activeFlashcards(content);
       if (flashcards.length === 0) return [];
 
       const { data: states } = await supabase
@@ -622,10 +696,7 @@ export async function getDailyCard(userId: string, chapters: Chapter[]): Promise
     Promise.all(published.map((c) => getChapterContent(c.id, false))),
     getSuspendedFlashcardIds(userId),
   ]);
-  const all = perChapter
-    .flat()
-    .flatMap((s) => s.fiche?.flashcards ?? [])
-    .filter((c) => !suspended.has(c.id));
+  const all = activeFlashcards(perChapter.flat()).filter((c) => !suspended.has(c.id));
   if (all.length === 0) return null;
 
   const { data: states } = await supabase
@@ -656,7 +727,7 @@ export async function getDifficultCountsByChapter(userId: string, chapters: Chap
       .filter((c) => c.status === "published")
       .map(async (chapter) => {
         const content = await getChapterContent(chapter.id, false);
-        const flashcards = content.flatMap((s) => s.fiche?.flashcards ?? []);
+        const flashcards = activeFlashcards(content);
         if (flashcards.length === 0) {
           counts[chapter.id] = 0;
           return;
@@ -756,7 +827,7 @@ function shuffle<T>(items: T[]): T[] {
 /** Every published flashcard for a chapter, ignoring due dates — free/on-demand review, shuffled for variety across sessions. */
 export async function getFreeReviewQueue(chapterId: string, userId: string): Promise<Flashcard[]> {
   const [content, suspended] = await Promise.all([getChapterContent(chapterId, false), getSuspendedFlashcardIds(userId)]);
-  return shuffle(content.flatMap((s) => s.fiche?.flashcards ?? []).filter((c) => !suspended.has(c.id)));
+  return shuffle(activeFlashcards(content).filter((c) => !suspended.has(c.id)));
 }
 
 export async function getReviewState(userId: string, flashcardId: string): Promise<ReviewState | null> {
@@ -787,7 +858,7 @@ export async function getUpcomingReviewForecast(userId: string, chapters: Chapte
   const supabase = await createClient();
   const published = chapters.filter((c) => c.status === "published");
   const perChapterContent = await Promise.all(published.map((c) => getChapterContent(c.id, false)));
-  const flashcardIds = perChapterContent.flatMap((content) => content.flatMap((s) => s.fiche?.flashcards ?? []).map((f) => f.id));
+  const flashcardIds = perChapterContent.flatMap((content) => activeFlashcards(content).map((f) => f.id));
 
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
@@ -853,7 +924,7 @@ export async function getMasteryCountsByChapter(userId: string, chapters: Chapte
       .filter((c) => c.status === "published")
       .map(async (chapter) => {
         const content = await getChapterContent(chapter.id, false);
-        const flashcards = content.flatMap((s) => s.fiche?.flashcards ?? []);
+        const flashcards = activeFlashcards(content);
         const total = flashcards.length;
         if (total === 0) {
           counts[chapter.id] = { total: 0, new: 0, learning: 0, acquired: 0 };
@@ -1115,7 +1186,7 @@ export async function getGlobalChapterMasteryPercentages(chapters: Chapter[]): P
   await Promise.all(
     published.map(async (chapter) => {
       const content = await getChapterContent(chapter.id, false);
-      const flashcardIds = content.flatMap((s) => s.fiche?.flashcards ?? []).map((f) => f.id);
+      const flashcardIds = activeFlashcards(content).map((f) => f.id);
       if (flashcardIds.length === 0) return;
 
       const { data: states } = await supabase
@@ -1598,6 +1669,83 @@ export async function getNotionSummaries(): Promise<NotionSummary[]> {
       .map((l) => ficheContexts.get(l.fiche_id))
       .filter((f): f is NotionLinkedFiche => Boolean(f)),
   }));
+}
+
+/**
+ * Near-duplicate flashcards across two different books' fiches, for every
+ * notion that links fiches from more than one book — item 53 of the
+ * backlog. Reuses the same deterministic bigram similarity as the existing
+ * per-book duplicate detection (item 45), just sourced across the notion's
+ * fiches instead of one book's, and only reports pairs that actually cross
+ * a book boundary (same-book duplicates are already covered by item 45).
+ */
+export async function getCrossBookFlashcardDuplicates(): Promise<CrossBookDuplicateFlashcards[]> {
+  const summaries = await getNotionSummaries();
+  const supabase = await createClient();
+  const results: CrossBookDuplicateFlashcards[] = [];
+
+  for (const { notion, fiches } of summaries) {
+    const distinctBooks = new Set(fiches.map((f) => f.bookId));
+    if (fiches.length < 2 || distinctBooks.size < 2) continue;
+
+    const { data: cardRows } = await supabase
+      .from("el_profesor_flashcards")
+      .select("id, front, fiche_id")
+      .in(
+        "fiche_id",
+        fiches.map((f) => f.ficheId)
+      )
+      .eq("status", "published");
+    const cards = (cardRows ?? []) as { id: string; front: FlashcardSide; fiche_id: string }[];
+    if (cards.length < 2) continue;
+
+    const byFiche = new Map<string, NotionLinkedFiche>(fiches.map((f) => [f.ficheId, f]));
+    const flat = cards.map((c) => ({ id: c.id, front: c.front.text, ficheId: c.fiche_id }));
+    const pairs = findDuplicateFlashcards(flat.map(({ id, front }) => ({ id, front })));
+
+    const byFichePair = new Map<string, { ficheA: NotionLinkedFiche; ficheB: NotionLinkedFiche; pairs: { frontA: string; frontB: string; similarity: number }[] }>();
+    for (const pair of pairs) {
+      const cardA = flat.find((c) => c.id === pair.a.id);
+      const cardB = flat.find((c) => c.id === pair.b.id);
+      if (!cardA || !cardB || cardA.ficheId === cardB.ficheId) continue;
+      const ficheA = byFiche.get(cardA.ficheId);
+      const ficheB = byFiche.get(cardB.ficheId);
+      if (!ficheA || !ficheB || ficheA.bookId === ficheB.bookId) continue;
+
+      const key = [ficheA.ficheId, ficheB.ficheId].sort().join("|");
+      const entry = byFichePair.get(key) ?? { ficheA, ficheB, pairs: [] };
+      entry.pairs.push({ frontA: pair.a.front, frontB: pair.b.front, similarity: pair.similarity });
+      byFichePair.set(key, entry);
+    }
+
+    for (const entry of byFichePair.values()) {
+      results.push({ notionId: notion.id, notionName: notion.name, ...entry });
+    }
+  }
+
+  return results;
+}
+
+/** Every currently merged/replaced fiche, for the admin "fusions & obsolescences" oversight list (with a way back via clearFicheSuperseded). */
+export async function getSupersededFiches(): Promise<SupersededFicheEntry[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("el_profesor_fiches")
+    .select("id, superseded_by_fiche_id, superseded_reason, superseded_note")
+    .not("superseded_by_fiche_id", "is", null);
+  const rows = (data ?? []) as { id: string; superseded_by_fiche_id: string; superseded_reason: "duplicate" | "outdated"; superseded_note: string }[];
+  if (rows.length === 0) return [];
+
+  const contexts = await resolveFicheContexts([...rows.map((r) => r.id), ...rows.map((r) => r.superseded_by_fiche_id)]);
+
+  return rows
+    .map((row) => {
+      const fiche = contexts.get(row.id);
+      const supersededBy = contexts.get(row.superseded_by_fiche_id);
+      if (!fiche || !supersededBy) return null;
+      return { fiche, supersededBy, reason: row.superseded_reason, note: row.superseded_note } satisfies SupersededFicheEntry;
+    })
+    .filter((e): e is SupersededFicheEntry => Boolean(e));
 }
 
 /** Pending/resolved/dismissed contradiction findings, most recent first. */

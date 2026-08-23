@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, Search } from "lucide-react";
+import { ArrowLeft, BookOpen, Search, GraduationCap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { NotionSummary } from "@/lib/el-profesor/types";
 
@@ -50,10 +50,18 @@ export function GlossaryView({ notions }: { notions: NotionSummary[] }) {
               <div key={notion.id} id={`notion-${notion.id}`} className="rounded-[var(--radius-md)] border border-border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium text-foreground">{notion.name}</p>
-                  <Badge variant="neutral">
-                    {fiches.length} fiche{fiches.length > 1 ? "s" : ""}
-                    {distinctBooks > 1 ? ` · ${distinctBooks} livres` : ""}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="neutral">
+                      {fiches.length} fiche{fiches.length > 1 ? "s" : ""}
+                      {distinctBooks > 1 ? ` · ${distinctBooks} livres` : ""}
+                    </Badge>
+                    <Link
+                      href={`/apps/el-profesor/review?mode=theme&notionId=${notion.id}&name=${encodeURIComponent(notion.name)}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary-tint px-2.5 py-1 text-xs font-medium text-primary-strong hover:bg-primary-tint/70"
+                    >
+                      <GraduationCap className="h-3.5 w-3.5" /> Réviser ce thème
+                    </Link>
+                  </div>
                 </div>
                 <ul className="mt-2 space-y-1 text-xs text-foreground-subtle">
                   {fiches.map((f) => (

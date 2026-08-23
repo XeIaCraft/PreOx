@@ -156,3 +156,78 @@ export async function dismissContradiction(id: string): Promise<ActionState> {
   revalidatePath("/apps/el-profesor/notions");
   return { success: "Ignorée." };
 }
+
+/**
+ * Marks a fiche as merged into (reason "duplicate") or replaced by (reason
+ * "outdated") another one — items 52/56 of the backlog. The superseded
+ * fiche's flashcards drop out of every review queue immediately; its
+ * content stays in place (readable, with a banner) rather than being
+ * deleted, so the merge/supersede is always reversible via clearFicheSuperseded.
+ */
+export async function markFicheSuperseded(
+  ficheId: string,
+  supersededByFicheId: string,
+  reason: "duplicate" | "outdated",
+  note: string
+): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  if (ficheId === supersededByFicheId) return { error: "Une fiche ne peut pas remplacer elle-même." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_fiches")
+    .update({ superseded_by_fiche_id: supersededByFicheId, superseded_reason: reason, superseded_note: note.trim() })
+    .eq("id", ficheId);
+  if (error) return { error: "Impossible de marquer cette fiche." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  return { success: reason === "duplicate" ? "Fiches fusionnées." : "Fiche marquée comme remplacée." };
+}
+
+export async function clearFicheSuperseded(ficheId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_fiches")
+    .update({ superseded_by_fiche_id: null, superseded_reason: null, superseded_note: "" })
+    .eq("id", ficheId);
+  if (error) return { error: "Impossible d'annuler ce statut." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  return { success: "Fiche réactivée." };
+}
+
+/**
+ * Closes the loop from a contradiction finding straight to obsolescence
+ * (item 55): resolving in favor of one fiche marks the other as replaced by
+ * it, in one action instead of two separate screens.
+ */
+export async function resolveContradictionAndSupersede(
+  contradictionId: string,
+  supersededFicheId: string,
+  replacementFicheId: string,
+  note: string
+): Promise<ActionState> {
+  const profile = await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { error: ficheError } = await supabase
+    .from("el_profesor_fiches")
+    .update({ superseded_by_fiche_id: replacementFicheId, superseded_reason: "outdated", superseded_note: note.trim() })
+    .eq("id", supersededFicheId);
+  if (ficheError) return { error: "Impossible de marquer la fiche remplacée." };
+
+  const { error } = await supabase
+    .from("el_profesor_contradictions")
+    .update({
+      status: "resolved",
+      resolution_note: note.trim() || "Fiche obsolète remplacée par la plus récente.",
+      resolved_at: new Date().toISOString(),
+      resolved_by: profile.id,
+    })
+    .eq("id", contradictionId);
+  if (error) return { error: "Fiche marquée, mais impossible de résoudre la contradiction." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  return { success: "Fiche remplacée et contradiction résolue." };
+}

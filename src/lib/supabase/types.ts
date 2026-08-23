@@ -253,6 +253,9 @@ export type ElProfesorFicheRow = {
   title: string;
   status: ElProfesorContentStatus;
   share_token: string | null;
+  superseded_by_fiche_id: string | null;
+  superseded_reason: "duplicate" | "outdated" | null;
+  superseded_note: string;
   created_by: string | null;
   created_at: string;
   updated_at: string;

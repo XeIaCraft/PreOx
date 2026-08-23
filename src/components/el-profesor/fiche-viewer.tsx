@@ -290,12 +290,15 @@ export function FicheViewer({
   blocks,
   onCitationClick,
   fontScale = "md",
+  superseded,
 }: {
   title: string;
   summary?: string;
   blocks: FicheBlock[];
   onCitationClick?: (c: Citation) => void;
   fontScale?: FontScale;
+  /** Set when this fiche was merged/replaced (items 52/56) — shows a warning banner instead of hiding the content outright. */
+  superseded?: { reason: "duplicate" | "outdated"; note: string };
 }) {
   return (
     <div>
@@ -306,6 +309,14 @@ export function FicheViewer({
           <CopyFicheButton title={title} summary={summary} blocks={blocks} />
         </div>
       </div>
+      {superseded && (
+        <div className="mt-2 rounded-[var(--radius-sm)] border border-accent/40 bg-accent-tint px-3 py-2 text-xs text-accent">
+          {superseded.reason === "duplicate"
+            ? "Cette fiche fait doublon avec une autre et a été fusionnée — son contenu ne fait plus partie de la révision."
+            : "Cette fiche a été marquée obsolète, remplacée par une recommandation plus récente — elle ne fait plus partie de la révision."}
+          {superseded.note && ` ${superseded.note}`}
+        </div>
+      )}
       {summary && <p className={`mt-1 text-foreground-subtle ${SUMMARY_TEXT_SIZE[fontScale]}`}>{summary}</p>}
       <BlockNav blocks={blocks} />
       <div className="mt-4 space-y-4">
