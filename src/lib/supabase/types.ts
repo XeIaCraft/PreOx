@@ -222,6 +222,7 @@ export type ElProfesorBookRow = {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+  previous_edition_book_id: string | null;
 };
 
 export type ElProfesorChapterSourceKind = "pdf" | "docx" | "pptx";

@@ -44,6 +44,7 @@ export type Book = {
   orderIndex: number;
   createdAt: string;
   archivedAt: string | null;
+  previousEditionBookId: string | null;
 };
 
 export type ChapterSourceKind = "pdf" | "docx" | "pptx";

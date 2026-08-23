@@ -2,17 +2,17 @@
 
 import { useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Archive, Download, Undo2 } from "lucide-react";
+import { ArrowLeft, Archive, Download, Undo2, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { exportBookArchive, unarchiveBook } from "@/app/apps/el-profesor/actions/archive";
-import type { Book } from "@/lib/el-profesor/types";
+import type { ArchivedBookEntry } from "@/lib/el-profesor/dal";
 
-export function ArchivedBooksView({ books }: { books: Book[] }) {
+export function ArchivedBooksView({ books }: { books: ArchivedBookEntry[] }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
 
-  function handleDownload(book: Book) {
+  function handleDownload(book: ArchivedBookEntry) {
     startTransition(async () => {
       const result = await exportBookArchive(book.id);
       if ("error" in result) {
@@ -29,7 +29,7 @@ export function ArchivedBooksView({ books }: { books: Book[] }) {
     });
   }
 
-  function handleUnarchive(book: Book) {
+  function handleUnarchive(book: ArchivedBookEntry) {
     startTransition(async () => {
       const result = await unarchiveBook(book.id);
       if (result.error) toast(result.error, { variant: "error" });
@@ -63,6 +63,11 @@ export function ArchivedBooksView({ books }: { books: Book[] }) {
                 <p className="text-xs text-foreground-subtle">
                   Archivé le {book.archivedAt ? new Date(book.archivedAt).toLocaleDateString("fr-FR") : ""}
                 </p>
+                {book.newerEdition && (
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-primary-strong">
+                    <GitBranch className="h-3 w-3" /> Nouvelle édition : « {book.newerEdition.title} »
+                  </p>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 <Button variant="ghost" size="icon" onClick={() => handleDownload(book)} disabled={isPending} aria-label="Télécharger l'export" title="Télécharger l'export">

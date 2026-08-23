@@ -75,6 +75,7 @@ function toBook(row: ElProfesorBookRow): Book {
     orderIndex: row.order_index,
     createdAt: row.created_at,
     archivedAt: row.archived_at,
+    previousEditionBookId: row.previous_edition_book_id,
   };
 }
 
@@ -413,10 +414,25 @@ export async function getLibrary(): Promise<BookWithChapters[]> {
 }
 
 /** Archived books (item 49 of the backlog) — hidden from the active library, listed here for the admin "Livres archivés" screen. */
-export async function getArchivedBooks(): Promise<Book[]> {
+export type ArchivedBookEntry = Book & { newerEdition: { bookId: string; title: string } | null };
+
+/** Archived books, each decorated with its newer edition (if any) so the archived-books screen can link straight to it — item 6 of the backlog. */
+export async function getArchivedBooks(): Promise<ArchivedBookEntry[]> {
   const supabase = await createClient();
   const { data } = await supabase.from("el_profesor_books").select("*").not("archived_at", "is", null).order("archived_at", { ascending: false });
-  return ((data ?? []) as ElProfesorBookRow[]).map(toBook);
+  const books = ((data ?? []) as ElProfesorBookRow[]).map(toBook);
+  if (books.length === 0) return [];
+
+  const { data: newerEditions } = await supabase
+    .from("el_profesor_books")
+    .select("id, title, previous_edition_book_id")
+    .in(
+      "previous_edition_book_id",
+      books.map((b) => b.id)
+    );
+  const newerByOldId = new Map((newerEditions ?? []).map((b) => [b.previous_edition_book_id as string, { bookId: b.id, title: b.title }]));
+
+  return books.map((book) => ({ ...book, newerEdition: newerByOldId.get(book.id) ?? null }));
 }
 
 export type SubEntityWithFiche = SubEntity & { fiche: (Fiche & { blocks: FicheBlock[]; flashcards: Flashcard[] }) | null };

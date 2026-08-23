@@ -28,6 +28,7 @@ import {
   BellOff,
   Archive,
   ListTree,
+  GitBranch,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -178,6 +179,7 @@ type ModalState =
   | { type: "search_notes" }
   | { type: "import_content"; chapterId: string; chapterTitle: string }
   | { type: "archive_book"; bookId: string; title: string }
+  | { type: "new_edition"; book: { id: string; title: string; author: string | null; edition: string | null; theme: string | null } }
   | null;
 
 export function ElProfesorBoard({
@@ -773,6 +775,20 @@ export function ElProfesorBoard({
                   <Button
                     variant="ghost"
                     size="icon"
+                    onClick={() =>
+                      setModal({
+                        type: "new_edition",
+                        book: { id: book.id, title: book.title, author: book.author, edition: book.edition, theme: book.theme },
+                      })
+                    }
+                    aria-label="Nouvelle édition de ce livre"
+                    title="Nouvelle édition (archive celle-ci, en garde l'historique)"
+                  >
+                    <GitBranch className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => setModal({ type: "archive_book", bookId: book.id, title: book.title })}
                     aria-label="Archiver le livre"
                     title="Exporter puis archiver ce livre (réversible)"
@@ -982,6 +998,16 @@ export function ElProfesorBoard({
       {modal?.type === "edit_book" && (
         <AddBookDialog
           book={modal.book}
+          onClose={() => setModal(null)}
+          onSaved={() => {
+            setModal(null);
+            refresh();
+          }}
+        />
+      )}
+      {modal?.type === "new_edition" && (
+        <AddBookDialog
+          newEditionOf={modal.book}
           onClose={() => setModal(null)}
           onSaved={() => {
             setModal(null);

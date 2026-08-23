@@ -5,7 +5,7 @@ import { Upload } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
-import { createBook, updateBook, uploadBookCover } from "@/app/apps/el-profesor/actions/library";
+import { createBook, updateBook, uploadBookCover, createNewEditionOfBook } from "@/app/apps/el-profesor/actions/library";
 import { useToast } from "@/components/ui/toast";
 import { fileToBase64 } from "@/lib/client-file";
 
@@ -13,28 +13,33 @@ const MAX_COVER_BYTES = 5 * 1024 * 1024;
 
 export function AddBookDialog({
   book,
+  newEditionOf,
   onClose,
   onSaved,
 }: {
   book?: { id: string; title: string; author: string | null; edition: string | null; theme?: string | null };
+  /** New edition of this book (item 6 of the backlog) — mutually exclusive with `book`: creates a fresh book chained to this one instead of editing it. */
+  newEditionOf?: { id: string; title: string; author: string | null; edition: string | null; theme: string | null };
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
-  const [title, setTitle] = useState(book?.title ?? "");
-  const [author, setAuthor] = useState(book?.author ?? "");
-  const [edition, setEdition] = useState(book?.edition ?? "");
-  const [theme, setTheme] = useState(book?.theme ?? "");
+  const [title, setTitle] = useState(book?.title ?? newEditionOf?.title ?? "");
+  const [author, setAuthor] = useState(book?.author ?? newEditionOf?.author ?? "");
+  const [edition, setEdition] = useState(book?.edition ?? newEditionOf?.edition ?? "");
+  const [theme, setTheme] = useState(book?.theme ?? newEditionOf?.theme ?? "");
   const [uploadingCover, setUploadingCover] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   function handleSave() {
     if (!title.trim()) return;
     startTransition(async () => {
-      const result = book
-        ? await updateBook(book.id, { title, author, edition, theme })
-        : await createBook({ title, author, edition, theme });
+      const result = newEditionOf
+        ? await createNewEditionOfBook(newEditionOf.id, { title, author, edition, theme })
+        : book
+          ? await updateBook(book.id, { title, author, edition, theme })
+          : await createBook({ title, author, edition, theme });
       if (result.error) toast(result.error, { variant: "error" });
       else onSaved();
     });
@@ -62,7 +67,12 @@ export function AddBookDialog({
   }
 
   return (
-    <Modal title={book ? "Modifier le livre" : "Ajouter un livre"} onClose={onClose} size="sm">
+    <Modal
+      title={newEditionOf ? `Nouvelle édition de « ${newEditionOf.title} »` : book ? "Modifier le livre" : "Ajouter un livre"}
+      description={newEditionOf ? "L'ancienne édition sera archivée (réversible) — ses chapitres restent tels quels, à réimporter ici si besoin." : undefined}
+      onClose={onClose}
+      size="sm"
+    >
       <div className="space-y-3">
         <div className="space-y-1.5">
           <Label htmlFor="book-title">Titre</Label>
@@ -106,7 +116,7 @@ export function AddBookDialog({
           Annuler
         </Button>
         <Button onClick={handleSave} disabled={isPending || !title.trim()}>
-          {book ? "Enregistrer" : "Créer"}
+          {newEditionOf ? "Créer la nouvelle édition" : book ? "Enregistrer" : "Créer"}
         </Button>
       </div>
     </Modal>
