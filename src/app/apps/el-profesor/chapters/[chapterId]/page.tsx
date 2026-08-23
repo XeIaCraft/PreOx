@@ -44,6 +44,7 @@ export default async function ChapterPage({
         sourceKind={chapter.source_kind}
         sourceText={chapter.source_text}
         blockReviewStates={blockReviewStates}
+        isAdmin={profile.role === "admin"}
       />
     </ToastProvider>
   );

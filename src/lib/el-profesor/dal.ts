@@ -33,6 +33,8 @@ import type {
   CrossBookDuplicateFlashcards,
   SupersededFicheEntry,
   ChapterStatus,
+  FicheQuestion,
+  FicheAnswer,
 } from "./types";
 import type {
   ElProfesorBookRow,
@@ -1956,4 +1958,45 @@ export async function getContradictions(status?: ContradictionStatus): Promise<C
       } satisfies Contradiction;
     })
     .filter((c): c is Contradiction => Boolean(c));
+}
+
+// -- Questions/réponses sous une fiche, visibles par tous -------------------
+
+/** All questions + their answers for a fiche, oldest first — item 28 of the backlog. */
+export async function getFicheQuestions(ficheId: string, userId: string): Promise<FicheQuestion[]> {
+  const supabase = await createClient();
+
+  const { data: questionRows } = await supabase
+    .from("el_profesor_fiche_questions")
+    .select("*")
+    .eq("fiche_id", ficheId)
+    .order("created_at", { ascending: true });
+  const questions = questionRows ?? [];
+  if (questions.length === 0) return [];
+
+  const { data: answerRows } = await supabase
+    .from("el_profesor_fiche_answers")
+    .select("*")
+    .in(
+      "question_id",
+      questions.map((q) => q.id)
+    )
+    .order("created_at", { ascending: true });
+
+  const answersByQuestion = new Map<string, FicheAnswer[]>();
+  for (const row of answerRows ?? []) {
+    const answer: FicheAnswer = { id: row.id, questionId: row.question_id, body: row.body, createdAt: row.created_at, isMine: row.author_id === userId, flagged: row.flagged };
+    if (!answersByQuestion.has(row.question_id)) answersByQuestion.set(row.question_id, []);
+    answersByQuestion.get(row.question_id)!.push(answer);
+  }
+
+  return questions.map((q) => ({
+    id: q.id,
+    ficheId: q.fiche_id,
+    body: q.body,
+    createdAt: q.created_at,
+    isMine: q.author_id === userId,
+    flagged: q.flagged,
+    answers: answersByQuestion.get(q.id) ?? [],
+  }));
 }

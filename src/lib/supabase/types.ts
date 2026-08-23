@@ -358,6 +358,24 @@ export type ElProfesorFlagRow = {
   created_at: string;
 };
 
+export type ElProfesorFicheQuestionRow = {
+  id: string;
+  fiche_id: string;
+  author_id: string;
+  body: string;
+  flagged: boolean;
+  created_at: string;
+};
+
+export type ElProfesorFicheAnswerRow = {
+  id: string;
+  question_id: string;
+  author_id: string;
+  body: string;
+  flagged: boolean;
+  created_at: string;
+};
+
 export type ElProfesorGeminiUsageLogRow = {
   id: string;
   called_at: string;
@@ -686,6 +704,18 @@ export type Database = {
         Row: ElProfesorFlagRow;
         Insert: Partial<ElProfesorFlagRow> & { target_type: "block" | "flashcard"; target_id: string; flagged_by: string };
         Update: Partial<ElProfesorFlagRow>;
+        Relationships: [];
+      };
+      el_profesor_fiche_questions: {
+        Row: ElProfesorFicheQuestionRow;
+        Insert: Partial<ElProfesorFicheQuestionRow> & { fiche_id: string; author_id: string; body: string };
+        Update: Partial<ElProfesorFicheQuestionRow>;
+        Relationships: [];
+      };
+      el_profesor_fiche_answers: {
+        Row: ElProfesorFicheAnswerRow;
+        Insert: Partial<ElProfesorFicheAnswerRow> & { question_id: string; author_id: string; body: string };
+        Update: Partial<ElProfesorFicheAnswerRow>;
         Relationships: [];
       };
       el_profesor_gemini_usage_log: {

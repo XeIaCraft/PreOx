@@ -119,6 +119,25 @@ export type Flag = {
   status: "open" | "resolved";
 };
 
+export type FicheAnswer = {
+  id: string;
+  questionId: string;
+  body: string;
+  createdAt: string;
+  isMine: boolean;
+  flagged: boolean;
+};
+
+export type FicheQuestion = {
+  id: string;
+  ficheId: string;
+  body: string;
+  createdAt: string;
+  isMine: boolean;
+  flagged: boolean;
+  answers: FicheAnswer[];
+};
+
 export type Notion = {
   id: string;
   name: string;

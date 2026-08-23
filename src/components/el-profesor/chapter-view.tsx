@@ -14,6 +14,7 @@ import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { RelatedFiches } from "@/components/el-profesor/related-fiches";
+import { FicheQA } from "@/components/el-profesor/fiche-qa";
 import { StudyToolsButtons } from "@/components/el-profesor/study-tools-buttons";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
@@ -57,6 +58,7 @@ export function ChapterView({
   sourceKind = "pdf",
   sourceText = null,
   blockReviewStates,
+  isAdmin = false,
 }: {
   chapterId: string;
   chapterTitle: string;
@@ -66,6 +68,7 @@ export function ChapterView({
   sourceKind?: ChapterSourceKind;
   sourceText?: string | null;
   blockReviewStates?: Record<string, BlockReviewState>;
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -522,6 +525,7 @@ export function ChapterView({
                   />
                   <NoteEditor key={selected.id} subEntityId={selected.id} />
                   <RelatedFiches key={selected.fiche.id} ficheId={selected.fiche.id} />
+                  <FicheQA key={selected.fiche.id} ficheId={selected.fiche.id} isAdmin={isAdmin} />
                 </>
               ) : (
                 <p className="text-sm text-foreground-subtle">Sélectionnez une entrée.</p>
