@@ -104,6 +104,9 @@ export type Flashcard = {
   citations: Citation[];
   status: ContentStatus;
   needsReview: boolean;
+  /** Image/schéma associé (item 23) — capturé depuis le PDF source ou envoyé manuellement, montré avec le recto pendant la révision. */
+  imageUrl: string | null;
+  imageAlt: string | null;
 };
 
 export type FlagTargetType = "block" | "flashcard";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, ZoomIn, ZoomOut, Layers, Maximize, Minimize, Highlighter } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, ZoomIn, ZoomOut, Layers, Maximize, Minimize, Highlighter, Crop } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getPdfZoom, setPdfZoom } from "@/lib/el-profesor/local-prefs";
 
@@ -76,11 +76,14 @@ export function PdfViewer({
   highlight,
   coverage,
   onSelection,
+  onCapture,
 }: {
   url: string;
   highlight?: PdfHighlight;
   coverage?: CoverageEntry[];
   onSelection?: (selection: PdfSelection) => void;
+  /** Item 23 of the backlog: lets an admin drag-select a rectangle on the currently rendered page and get it back as a PNG data URL, cropped straight from the canvas pdfjs already rendered — no server-side PDF rendering needed. */
+  onCapture?: (dataUrl: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -111,6 +114,13 @@ export function PdfViewer({
   // layer is unreliable: tap one word to anchor, tap another to extend.
   const [tapMode, setTapMode] = useState(false);
   const [tapRange, setTapRange] = useState<{ start: number; end: number } | null>(null);
+  // Image-capture mode (item 23) — a drag-selected rectangle over the
+  // canvas, cropped to a PNG once released. Kept entirely separate from
+  // the text-selection state above: the two interactions are mutually
+  // exclusive (this one has its own toolbar toggle).
+  const [captureMode, setCaptureMode] = useState(false);
+  const [captureStart, setCaptureStart] = useState<{ x: number; y: number } | null>(null);
+  const [captureRect, setCaptureRect] = useState<Rect | null>(null);
 
   // Adjust the current page when a new highlight target arrives, computed
   // during render (React's recommended pattern for "state depends on a
@@ -338,6 +348,58 @@ export function PdfViewer({
         .map((s) => ({ left: s.left, top: s.top, width: s.width, height: s.height }))
     : [];
 
+  function toggleCaptureMode() {
+    setCaptureMode((v) => !v);
+    setCaptureStart(null);
+    setCaptureRect(null);
+  }
+
+  function capturePoint(e: React.PointerEvent) {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const box = canvas.getBoundingClientRect();
+    return { x: e.clientX - box.left, y: e.clientY - box.top };
+  }
+
+  function handleCapturePointerDown(e: React.PointerEvent) {
+    if (!captureMode) return;
+    const point = capturePoint(e);
+    if (!point) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setCaptureStart(point);
+    setCaptureRect({ left: point.x, top: point.y, width: 0, height: 0 });
+  }
+
+  function handleCapturePointerMove(e: React.PointerEvent) {
+    if (!captureMode || !captureStart) return;
+    const point = capturePoint(e);
+    if (!point) return;
+    setCaptureRect({
+      left: Math.min(captureStart.x, point.x),
+      top: Math.min(captureStart.y, point.y),
+      width: Math.abs(point.x - captureStart.x),
+      height: Math.abs(point.y - captureStart.y),
+    });
+  }
+
+  function handleCapturePointerUp() {
+    setCaptureStart(null);
+  }
+
+  function handleUseCaptureRect() {
+    const canvas = canvasRef.current;
+    if (!canvas || !captureRect || captureRect.width < 4 || captureRect.height < 4) return;
+    const offscreen = document.createElement("canvas");
+    offscreen.width = captureRect.width;
+    offscreen.height = captureRect.height;
+    const ctx = offscreen.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(canvas, captureRect.left, captureRect.top, captureRect.width, captureRect.height, 0, 0, captureRect.width, captureRect.height);
+    onCapture?.(offscreen.toDataURL("image/png"));
+    setCaptureRect(null);
+    setCaptureMode(false);
+  }
+
   return (
     <div ref={containerRef} className="flex h-full flex-col bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
@@ -374,6 +436,18 @@ export function PdfViewer({
               title="Sélectionner en touchant les mots — utile si la sélection tactile classique ne fonctionne pas"
             >
               <Highlighter className="h-3.5 w-3.5" /> Sélection tactile
+            </button>
+          )}
+          {onCapture && (
+            <button
+              type="button"
+              onClick={toggleCaptureMode}
+              className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ${
+                captureMode ? "bg-primary-tint text-primary-strong" : "text-foreground-subtle hover:bg-surface-muted"
+              }`}
+              title="Capturer une zone de la page en image, pour l'associer à une flashcard"
+            >
+              <Crop className="h-3.5 w-3.5" /> Capturer une image
             </button>
           )}
           {coverage && coverage.length > 0 && (
@@ -413,6 +487,12 @@ export function PdfViewer({
           {tapRange
             ? "Touchez un autre mot pour étendre la sélection, puis « Utiliser cette sélection » ci-dessous."
             : "Touchez un mot pour commencer la sélection, puis un second mot pour la terminer."}
+        </div>
+      )}
+
+      {captureMode && (
+        <div className="border-b border-border bg-surface-muted px-3 py-1.5 text-[11px] text-foreground-subtle">
+          Faites glisser un rectangle sur la zone à capturer.
         </div>
       )}
 
@@ -497,6 +577,21 @@ export function PdfViewer({
               style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
             />
           ))}
+          {captureMode && (
+            <div
+              className="absolute inset-0 cursor-crosshair"
+              style={{ touchAction: "none" }}
+              onPointerDown={handleCapturePointerDown}
+              onPointerMove={handleCapturePointerMove}
+              onPointerUp={handleCapturePointerUp}
+            />
+          )}
+          {captureRect && (
+            <div
+              className="pointer-events-none absolute rounded-sm border-2 border-primary bg-primary/15"
+              style={{ left: captureRect.left, top: captureRect.top, width: captureRect.width, height: captureRect.height }}
+            />
+          )}
         </div>
         {!loading && !error && highlight && highlight.page === pageNum && rects.length === 0 && (
           <p className="mt-2 text-center text-xs text-foreground-subtle">
@@ -514,6 +609,20 @@ export function PdfViewer({
             </Button>
             <Button size="sm" onClick={handleUseSelection}>
               Utiliser cette sélection
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {captureMode && captureRect && captureRect.width >= 4 && captureRect.height >= 4 && (
+        <div className="flex items-center justify-between gap-3 border-t border-border bg-surface px-3 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2">
+          <p className="text-xs text-foreground-muted">Zone sélectionnée</p>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button variant="ghost" size="sm" onClick={() => setCaptureRect(null)}>
+              Annuler
+            </Button>
+            <Button size="sm" onClick={handleUseCaptureRect}>
+              Utiliser cette zone
             </Button>
           </div>
         </div>

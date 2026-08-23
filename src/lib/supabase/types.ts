@@ -287,6 +287,8 @@ export type ElProfesorFlashcardRow = {
   citations: Json;
   status: ElProfesorContentStatus;
   needs_review: boolean;
+  image_url: string | null;
+  image_alt: string | null;
   created_at: string;
   updated_at: string;
 };

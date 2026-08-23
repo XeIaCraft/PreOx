@@ -14,7 +14,7 @@ import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { BlockEditor } from "@/components/el-profesor/block-editor";
 import { FlashcardEditor } from "@/components/el-profesor/flashcard-editor";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
-import { publishFiche, finalizeChapterPublication, moveSubEntity } from "@/app/apps/el-profesor/actions/extraction";
+import { publishFiche, finalizeChapterPublication, moveSubEntity, uploadFlashcardImage } from "@/app/apps/el-profesor/actions/extraction";
 import { resolveFlags } from "@/app/apps/el-profesor/actions/flags";
 import { useToast } from "@/components/ui/toast";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
@@ -116,6 +116,25 @@ export function ExtractionReviewView({
 
   function refresh() {
     startTransition(() => router.refresh());
+  }
+
+  // Image capture from the PDF (item 23): the crop comes back as a data
+  // URL from PdfViewer's own canvas — held here until the admin picks which
+  // of the current fiche's flashcards it belongs to.
+  const [pendingCapture, setPendingCapture] = useState<string | null>(null);
+
+  function handleAttachCapture(flashcardId: string) {
+    if (!pendingCapture) return;
+    const base64 = pendingCapture.split(",")[1] ?? "";
+    startTransition(async () => {
+      const result = await uploadFlashcardImage(flashcardId, base64, "image/png");
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Image ajoutée.", { variant: "success" });
+        router.refresh();
+      }
+      setPendingCapture(null);
+    });
   }
 
   function handleMoveSubEntity(subEntityId: string, direction: "up" | "down") {
@@ -322,7 +341,7 @@ export function ExtractionReviewView({
             {sourceKind !== "pdf" ? (
               <SourceTextPanel text={sourceText} />
             ) : pdfUrl ? (
-              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />
+              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} onCapture={setPendingCapture} />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
             )}
@@ -336,7 +355,7 @@ export function ExtractionReviewView({
             {sourceKind !== "pdf" ? (
               <SourceTextPanel text={sourceText} />
             ) : pdfUrl ? (
-              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />
+              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} onCapture={setPendingCapture} />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
             )}
@@ -362,6 +381,27 @@ export function ExtractionReviewView({
             refresh();
           }}
         />
+      )}
+
+      {pendingCapture && (
+        <Modal title="Associer l'image capturée" description="À quelle flashcard de cette fiche l'attacher ?" onClose={() => setPendingCapture(null)} size="sm">
+          {/* eslint-disable-next-line @next/next/no-img-element -- transient client-side crop preview, not a persisted asset */}
+          <img src={pendingCapture} alt="" className="mb-3 max-h-40 w-full rounded-[var(--radius-sm)] border border-border object-contain" />
+          <div className="max-h-64 space-y-1.5 overflow-y-auto">
+            {(selected?.fiche?.flashcards ?? []).map((card) => (
+              <button
+                key={card.id}
+                type="button"
+                onClick={() => handleAttachCapture(card.id)}
+                disabled={isPending}
+                className="block w-full truncate rounded-[var(--radius-sm)] border border-border p-2 text-left text-sm text-foreground hover:bg-surface-muted disabled:opacity-50"
+              >
+                {card.front.text}
+              </button>
+            ))}
+            {(selected?.fiche?.flashcards.length ?? 0) === 0 && <p className="text-sm text-foreground-subtle">Aucune flashcard sur cette fiche.</p>}
+          </div>
+        </Modal>
       )}
     </div>
   );

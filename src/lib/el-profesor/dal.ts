@@ -134,6 +134,8 @@ function toFlashcard(row: ElProfesorFlashcardRow): Flashcard {
     citations: (row.citations as unknown as Citation[]) ?? [],
     status: row.status,
     needsReview: row.needs_review,
+    imageUrl: row.image_url,
+    imageAlt: row.image_alt,
   };
 }
 

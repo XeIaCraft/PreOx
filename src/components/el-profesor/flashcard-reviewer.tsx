@@ -474,6 +474,10 @@ export function FlashcardReviewer({
             }`}
           >
             <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-border bg-surface p-8 text-center shadow-sm [backface-visibility:hidden]">
+              {current.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a local asset
+                <img src={current.imageUrl} alt={current.imageAlt ?? ""} className="mb-3 max-h-[40%] max-w-full rounded-[var(--radius-sm)] object-contain" />
+              )}
               <p className="text-lg text-foreground">{current.front.text}</p>
             </div>
             <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-primary/30 bg-surface p-8 text-center shadow-sm [backface-visibility:hidden] [transform:rotateY(180deg)]">

@@ -670,6 +670,43 @@ export async function updateFlashcard(
   return { success: "Flashcard mise à jour." };
 }
 
+const MAX_FLASHCARD_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Attaches an image/schema to a flashcard (item 23 of the backlog) — either
+ * a manual upload or a crop captured client-side from the PDF viewer's own
+ * canvas (see PdfViewer's captureMode). Shown alongside the front side
+ * during review; plain image-based recall, not a clickable-hotspot diagram.
+ */
+export async function uploadFlashcardImage(flashcardId: string, imageBase64: string, mimeType: string, alt?: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const bytes = Buffer.from(imageBase64, "base64");
+  if (bytes.byteLength > MAX_FLASHCARD_IMAGE_BYTES) return { error: "Image trop lourde (5 Mo maximum)." };
+
+  const ext = mimeType.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "png";
+  const path = `${flashcardId}-${Date.now()}.${ext}`;
+
+  const supabase = await createClient();
+  const { error: uploadError } = await supabase.storage.from("el-profesor-flashcard-images").upload(path, bytes, { contentType: mimeType, upsert: true });
+  if (uploadError) return { error: "Échec de l'envoi de l'image." };
+
+  const { data: pub } = supabase.storage.from("el-profesor-flashcard-images").getPublicUrl(path);
+  const { error } = await supabase.from("el_profesor_flashcards").update({ image_url: pub.publicUrl, image_alt: alt?.trim() || null }).eq("id", flashcardId);
+  if (error) return { error: "Image envoyée, mais impossible de l'enregistrer." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Image ajoutée à la flashcard." };
+}
+
+export async function removeFlashcardImage(flashcardId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_flashcards").update({ image_url: null, image_alt: null }).eq("id", flashcardId);
+  if (error) return { error: "Impossible de retirer l'image." };
+  revalidatePath("/apps/el-profesor");
+  return { success: "Image retirée." };
+}
+
 /** Proposes a mnemonic as a new draft block on the same fiche, for a block that isn't itself a mnemonic. Never overwrites the source block. */
 export async function suggestMnemonicForBlock(blockId: string): Promise<ActionState> {
   const profile = await requireElProfesorAdmin();
