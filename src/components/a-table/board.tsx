@@ -2,7 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus, Sparkles, CookingPot, ImageDown, LayoutTemplate, Users2 } from "lucide-react";
+import Link from "next/link";
+import { ShoppingBasket, BookOpen, FolderHeart, History as HistoryIcon, Settings, RefreshCw, Plus, GlassWater, HelpCircle, Printer, CalendarPlus, Sparkles, CookingPot, ImageDown, LayoutTemplate, Users2, Rows2 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
 import { A_TABLE_ONBOARDING_STEPS } from "@/components/a-table/onboarding-steps";
@@ -391,6 +392,12 @@ export function ATableBoard({ initialData }: { initialData: ATableData }) {
           <Button variant="secondary" size="sm" onClick={() => setModal({ type: "discover" })}>
             <Users2 className="h-4 w-4" /> Découvrir
           </Button>
+          <Link
+            href="/apps/a-table/simple"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-sm font-medium text-foreground-muted transition-colors hover:bg-surface-muted"
+          >
+            <Rows2 className="h-4 w-4" /> Vue épurée
+          </Link>
           <Button variant="secondary" size="sm" onClick={() => setModal({ type: "batch_cook" })}>
             <CookingPot className="h-4 w-4" /> Cuisiner en lot
           </Button>

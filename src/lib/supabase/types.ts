@@ -179,6 +179,8 @@ export type ATableHouseholdMemberRow = {
   name: string;
   allergies: string[];
   diet: string;
+  access_token: string | null;
+  display_prefs: Json;
   created_at: string;
 };
 

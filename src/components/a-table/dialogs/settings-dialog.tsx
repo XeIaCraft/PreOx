@@ -27,7 +27,7 @@ import {
   regenerateApiToken,
   revokeApiToken,
 } from "@/app/apps/a-table/actions/settings";
-import { addHouseholdMember, removeHouseholdMember } from "@/app/apps/a-table/actions/household";
+import { addHouseholdMember, removeHouseholdMember, toggleMemberAccess } from "@/app/apps/a-table/actions/household";
 import { useToast } from "@/components/ui/toast";
 import type { ATableSettings, Preferences, GenerationRules, HouseholdMember } from "@/lib/a-table/types";
 
@@ -91,6 +91,24 @@ export function SettingsDialog({ settings, householdMembers, onClose, onSaved }:
       const result = await removeHouseholdMember(id);
       if (result.error) toast(result.error, { variant: "error" });
       else onSaved();
+    });
+  }
+
+  function handleToggleMemberAccess(memberId: string, enable: boolean) {
+    startTransition(async () => {
+      const result = await toggleMemberAccess(memberId, enable);
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      onSaved();
+      if (result.token) {
+        const url = `${window.location.origin}/share/member/${result.token}`;
+        navigator.clipboard.writeText(url).catch(() => {});
+        toast("Lien personnel copié — chaque membre peut y régler son propre affichage.", { variant: "success" });
+      } else {
+        toast("Lien personnel désactivé.", { variant: "success" });
+      }
     });
   }
 
@@ -393,9 +411,20 @@ export function SettingsDialog({ settings, householdMembers, onClose, onSaved }:
                         </span>
                       )}
                     </span>
-                    <button type="button" onClick={() => handleRemoveMember(member.id)} disabled={isPending} className="text-xs text-danger underline">
-                      Retirer
-                    </button>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleMemberAccess(member.id, !member.access_token)}
+                        disabled={isPending}
+                        title="Lien personnel pour régler son propre affichage (thème, densité)"
+                        className={`text-xs underline ${member.access_token ? "text-primary-strong" : "text-foreground-subtle"}`}
+                      >
+                        {member.access_token ? "Lien actif (copier)" : "Créer un lien"}
+                      </button>
+                      <button type="button" onClick={() => handleRemoveMember(member.id)} disabled={isPending} className="text-xs text-danger underline">
+                        Retirer
+                      </button>
+                    </span>
                   </li>
                 ))}
               </ul>

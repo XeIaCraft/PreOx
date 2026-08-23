@@ -287,13 +287,37 @@ export interface WeekTemplate {
   created_at: string;
 }
 
+export type MemberDisplayPrefs = {
+  theme?: "light" | "dark" | "system";
+  density?: "cozy" | "compact";
+};
+
 export interface HouseholdMember {
   id: string;
   user_id: string;
   name: string;
   allergies: string[];
   diet: string;
+  /** Opaque token gating this member's personal read-only page — null until the owner generates it. */
+  access_token: string | null;
+  display_prefs: MemberDisplayPrefs;
   created_at: string;
+}
+
+export interface SimpleBoardMealSlot {
+  placement: Placement;
+  label: string;
+  isToday: boolean;
+  recipeTitle: string | null;
+  recipeImageUrl: string | null;
+  servings: number | null;
+  cardId: string | null;
+}
+
+export interface SimpleBoardData {
+  today: SimpleBoardMealSlot | null;
+  week: SimpleBoardMealSlot[];
+  shoppingItems: import("./shopping").ShoppingItem[];
 }
 
 export interface ATableData {
