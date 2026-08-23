@@ -23,6 +23,13 @@ interface LastAction {
 const POMODORO_FOCUS_MS = 25 * 60_000;
 const POMODORO_BREAK_MS = 5 * 60_000;
 
+/** Randomly picks one wording to show for this session (item 47) — null variantId means the card's original front. Re-rolled fresh each session so repeated reviews of the same card accumulate data across wordings over time. */
+function pickShownVariant(card: Flashcard): { variantId: string | null; text: string } {
+  if (card.variants.length === 0) return { variantId: null, text: card.front.text };
+  const pool = [{ variantId: null as string | null, text: card.front.text }, ...card.variants.map((v) => ({ variantId: v.id as string | null, text: v.text }))];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 /** Self-contained focus timer for review sessions — 25 min focus, 5 min break, repeating until stopped. Purely a client-side nudge, no persistence. */
 function PomodoroTimer({ toast }: { toast: (message: string, opts?: { variant?: "success" | "error" }) => void }) {
   const [phase, setPhase] = useState<"idle" | "focus" | "break">("idle");
@@ -122,6 +129,11 @@ export function FlashcardReviewer({
   const [dragging, setDragging] = useState(false);
 
   const current = cards[index];
+  // Computed once per mount (one session = one wording per card, re-rolled
+  // on the next session) rather than per-render, same one-time-impure-read
+  // pattern as `completionMessage` above.
+  const [variantByCardId] = useState(() => new Map(cards.map((c) => [c.id, pickShownVariant(c)])));
+  const shownVariant = current ? (variantByCardId.get(current.id) ?? { variantId: null, text: current.front.text }) : null;
 
   function handleRate(rating: "again" | "good") {
     if (!current) return;
@@ -129,7 +141,7 @@ export function FlashcardReviewer({
     const durationMs = revealedAtRef.current != null ? Date.now() - revealedAtRef.current : undefined;
     revealedAtRef.current = null;
     startTransition(async () => {
-      const result = await submitReview(current.id, rating, source, durationMs);
+      const result = await submitReview(current.id, rating, source, durationMs, shownVariant?.variantId ?? null);
       if (result.error || !result.logId) {
         toast(result.error ?? "Impossible d'enregistrer cette révision.", { variant: "error" });
         return;
@@ -478,7 +490,7 @@ export function FlashcardReviewer({
                 // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a local asset
                 <img src={current.imageUrl} alt={current.imageAlt ?? ""} className="mb-3 max-h-[40%] max-w-full rounded-[var(--radius-sm)] object-contain" />
               )}
-              <p className="text-lg text-foreground">{current.front.text}</p>
+              <p className="text-lg text-foreground">{shownVariant?.text ?? current.front.text}</p>
             </div>
             <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-primary/30 bg-surface p-8 text-center shadow-sm [backface-visibility:hidden] [transform:rotateY(180deg)]">
               {revealed && (

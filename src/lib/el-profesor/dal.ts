@@ -35,6 +35,7 @@ import type {
   ChapterStatus,
   FicheQuestion,
   FicheAnswer,
+  FlashcardVariant,
 } from "./types";
 import type {
   ElProfesorBookRow,
@@ -138,6 +139,7 @@ function toFlashcard(row: ElProfesorFlashcardRow): Flashcard {
     needsReview: row.needs_review,
     imageUrl: row.image_url,
     imageAlt: row.image_alt,
+    variants: (row.variants as unknown as FlashcardVariant[]) ?? [],
   };
 }
 
@@ -1958,6 +1960,38 @@ export async function getContradictions(status?: ContradictionStatus): Promise<C
       } satisfies Contradiction;
     })
     .filter((c): c is Contradiction => Boolean(c));
+}
+
+// -- Test de formulations de flashcards --------------------------------------
+
+export interface FlashcardVariantStat {
+  /** null = the flashcard's original front wording. */
+  variantId: string | null;
+  text: string;
+  attempts: number;
+  successRate: number;
+}
+
+/** Per-wording success rate from the review log — item 47 of the backlog. Every logged review (scheduled or free) counts: both reflect a genuine recall attempt against whatever wording was shown. */
+export async function getFlashcardVariantStats(flashcardId: string, originalText: string, variants: FlashcardVariant[]): Promise<FlashcardVariantStat[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_review_log").select("rating, variant_id").eq("flashcard_id", flashcardId);
+  const rows = data ?? [];
+
+  const textById = new Map<string | null, string>([[null, originalText], ...variants.map((v) => [v.id, v.text] as const)]);
+  const grouped = new Map<string | null, { attempts: number; good: number }>();
+  for (const row of rows) {
+    const key = row.variant_id;
+    if (!grouped.has(key)) grouped.set(key, { attempts: 0, good: 0 });
+    const entry = grouped.get(key)!;
+    entry.attempts++;
+    if (row.rating === "good") entry.good++;
+  }
+
+  return [...textById.entries()].map(([variantId, text]) => {
+    const entry = grouped.get(variantId) ?? { attempts: 0, good: 0 };
+    return { variantId, text, attempts: entry.attempts, successRate: entry.attempts > 0 ? entry.good / entry.attempts : 0 };
+  });
 }
 
 // -- Questions/réponses sous une fiche, visibles par tous -------------------

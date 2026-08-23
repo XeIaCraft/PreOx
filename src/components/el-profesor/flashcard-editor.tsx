@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { Trash2, Image as ImageIcon, X } from "lucide-react";
+import { Trash2, Image as ImageIcon, X, Plus, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -10,15 +10,110 @@ import {
   getFlashcardHistory,
   uploadFlashcardImage,
   removeFlashcardImage,
+  updateFlashcardVariants,
+  getFlashcardVariantStatsAction,
 } from "@/app/apps/el-profesor/actions/extraction";
 import { FlagsList } from "@/components/el-profesor/flags-list";
 import { EditableCitations } from "@/components/el-profesor/editable-citations";
 import { EditHistory } from "@/components/el-profesor/block-editor";
 import { useToast } from "@/components/ui/toast";
 import { fileToBase64 } from "@/lib/client-file";
-import type { Citation, Flag, Flashcard } from "@/lib/el-profesor/types";
+import type { FlashcardVariantStat } from "@/lib/el-profesor/dal";
+import type { Citation, Flag, Flashcard, FlashcardVariant } from "@/lib/el-profesor/types";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** Test de formulations (item 47) — alternate front wordings + their aggregate success rate from the review log. */
+function VariantTester({ flashcard, onChanged }: { flashcard: Flashcard; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [variants, setVariants] = useState<FlashcardVariant[]>(flashcard.variants);
+  const [stats, setStats] = useState<FlashcardVariantStat[] | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  function addVariant() {
+    setVariants((prev) => [...prev, { id: crypto.randomUUID(), text: "" }]);
+  }
+
+  function updateVariantText(id: string, text: string) {
+    setVariants((prev) => prev.map((v) => (v.id === id ? { ...v, text } : v)));
+  }
+
+  function removeVariant(id: string) {
+    setVariants((prev) => prev.filter((v) => v.id !== id));
+  }
+
+  function handleSaveVariants() {
+    const cleaned = variants.map((v) => ({ id: v.id, text: v.text.trim() })).filter((v) => v.text);
+    startTransition(async () => {
+      const result = await updateFlashcardVariants(flashcard.id, cleaned);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        setVariants(cleaned);
+        onChanged();
+      }
+    });
+  }
+
+  function handleLoadStats() {
+    setLoadingStats(true);
+    getFlashcardVariantStatsAction(flashcard.id, flashcard.front.text, variants)
+      .then(setStats)
+      .finally(() => setLoadingStats(false));
+  }
+
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+        <FlaskConical className="h-3.5 w-3.5" /> Formulations alternatives
+      </p>
+      <div className="mt-1.5 space-y-1.5">
+        {variants.map((v) => (
+          <div key={v.id} className="flex items-center gap-1.5">
+            <input
+              value={v.text}
+              onChange={(e) => updateVariantText(v.id, e.target.value)}
+              placeholder="Autre façon de poser la question"
+              className="w-full rounded-[var(--radius-sm)] border border-border bg-surface p-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+            />
+            <button type="button" onClick={() => removeVariant(v.id)} className="text-foreground-subtle hover:text-danger" aria-label="Retirer cette formulation">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={addVariant}>
+            <Plus className="h-3.5 w-3.5" /> Ajouter une formulation
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleSaveVariants} disabled={isPending}>
+            Enregistrer les formulations
+          </Button>
+          {flashcard.variants.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={handleLoadStats} disabled={loadingStats}>
+              {loadingStats ? "Chargement…" : "Voir les statistiques"}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {stats && (
+        <div className="mt-2 space-y-1">
+          {stats
+            .slice()
+            .sort((a, b) => b.successRate - a.successRate)
+            .map((s) => (
+              <div key={s.variantId ?? "original"} className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate text-foreground-muted">{s.variantId ? s.text : `${s.text} (originale)`}</span>
+                <span className="shrink-0 text-foreground-subtle">
+                  {s.attempts > 0 ? `${Math.round(s.successRate * 100)}% sur ${s.attempts}` : "aucune donnée"}
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function FlashcardEditor({
   flashcard,
@@ -137,6 +232,8 @@ export function FlashcardEditor({
           )}
         </div>
       </div>
+
+      <VariantTester flashcard={flashcard} onChanged={onChanged} />
 
       <FlagsList flags={flags} onResolved={onChanged} />
 

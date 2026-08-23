@@ -31,7 +31,8 @@ export async function submitReview(
   flashcardId: string,
   rating: ReviewRating,
   source: ReviewSource,
-  durationMs?: number
+  durationMs?: number,
+  variantId?: string | null
 ): Promise<SubmitReviewResult> {
   const profile = await requireElProfesorAccess();
   const supabase = await createClient();
@@ -40,9 +41,11 @@ export async function submitReview(
   // locked mid-review) would otherwise wildly skew the aggregate time stats.
   const cleanDuration = durationMs != null && durationMs > 0 && durationMs < 5 * 60_000 ? Math.round(durationMs) : null;
 
+  // Which front-wording was shown (item 47) — null means the flashcard's
+  // original wording, not "no data", so the variant comparison can tally it.
   const { data: logRow, error: logError } = await supabase
     .from("el_profesor_review_log")
-    .insert({ user_id: profile.id, flashcard_id: flashcardId, rating, source, duration_ms: cleanDuration })
+    .insert({ user_id: profile.id, flashcard_id: flashcardId, rating, source, duration_ms: cleanDuration, variant_id: variantId ?? null })
     .select("id")
     .single();
   if (logError || !logRow) return { error: "Impossible d'enregistrer cette révision." };

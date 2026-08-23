@@ -15,7 +15,7 @@ import {
 } from "@/lib/el-profesor/gemini";
 import { extractChapterContentClaude, extractComplementaryContentClaude, type ClaudeConfig } from "@/lib/el-profesor/anthropic";
 import { GeminiError } from "@/lib/gemini-shared";
-import { getChapterContent } from "@/lib/el-profesor/dal";
+import { getChapterContent, getFlashcardVariantStats, type FlashcardVariantStat } from "@/lib/el-profesor/dal";
 import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-profesor/content-log";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { extractPdfPageTexts, correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
@@ -696,6 +696,25 @@ export async function uploadFlashcardImage(flashcardId: string, imageBase64: str
 
   revalidatePath("/apps/el-profesor");
   return { success: "Image ajoutée à la flashcard." };
+}
+
+/** Alternate front-wordings to test against each other (item 47) — the back never changes, only how the question is asked. */
+export async function updateFlashcardVariants(flashcardId: string, variants: { id: string; text: string }[]): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_flashcards").update({ variants: variants as never }).eq("id", flashcardId);
+  if (error) return { error: "Impossible d'enregistrer les formulations." };
+  revalidatePath("/apps/el-profesor");
+  return { success: "Formulations mises à jour." };
+}
+
+export async function getFlashcardVariantStatsAction(
+  flashcardId: string,
+  originalText: string,
+  variants: { id: string; text: string }[]
+): Promise<FlashcardVariantStat[]> {
+  await requireElProfesorAdmin();
+  return getFlashcardVariantStats(flashcardId, originalText, variants);
 }
 
 export async function removeFlashcardImage(flashcardId: string): Promise<ActionState> {

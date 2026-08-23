@@ -289,6 +289,7 @@ export type ElProfesorFlashcardRow = {
   needs_review: boolean;
   image_url: string | null;
   image_alt: string | null;
+  variants: Json;
   created_at: string;
   updated_at: string;
 };
@@ -326,6 +327,7 @@ export type ElProfesorReviewLogRow = {
   rating: ElProfesorReviewRating;
   source: ElProfesorReviewSource;
   duration_ms: number | null;
+  variant_id: string | null;
 };
 
 export type ElProfesorContentLogRow = {

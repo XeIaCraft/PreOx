@@ -96,6 +96,9 @@ export type FicheBlock = {
   status: ContentStatus;
 };
 
+/** Alternate phrasing of a flashcard's front (item 47) — the back never varies, only how the question is asked. */
+export type FlashcardVariant = { id: string; text: string };
+
 export type Flashcard = {
   id: string;
   ficheId: string;
@@ -107,6 +110,7 @@ export type Flashcard = {
   /** Image/schéma associé (item 23) — capturé depuis le PDF source ou envoyé manuellement, montré avec le recto pendant la révision. */
   imageUrl: string | null;
   imageAlt: string | null;
+  variants: FlashcardVariant[];
 };
 
 export type FlagTargetType = "block" | "flashcard";
