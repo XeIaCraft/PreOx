@@ -10,6 +10,7 @@ export async function getChapterPdfUrl(chapterId: string): Promise<{ url?: strin
 
   const { data: chapter } = await supabase.from("el_profesor_chapters").select("pdf_storage_path").eq("id", chapterId).single();
   if (!chapter) return { error: "Chapitre introuvable." };
+  if (!chapter.pdf_storage_path) return { error: "Ce chapitre n'a pas de PDF source (importé depuis Word/PowerPoint)." };
 
   try {
     const url = await getChapterPdfSignedUrl(chapter.pdf_storage_path);

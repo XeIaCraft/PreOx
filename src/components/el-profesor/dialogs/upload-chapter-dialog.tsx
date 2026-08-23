@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/toast";
 
 function titleFromFilename(name: string): string {
   return name
-    .replace(/\.pdf$/i, "")
+    .replace(/\.(pdf|docx|pptx)$/i, "")
     .replace(/[_-]+/g, " ")
     .trim();
 }
@@ -86,17 +86,17 @@ export function UploadChapterDialog({
   return (
     <Modal
       title={multi ? `Importer ${files.length} chapitres` : "Importer un chapitre"}
-      description="Un chapitre = un PDF — sélectionnez plusieurs fichiers pour un import en masse."
+      description="Un chapitre = un fichier (PDF, Word ou PowerPoint) — sélectionnez plusieurs fichiers pour un import en masse. Un chapitre Word/PowerPoint n'a pas de citations pointant vers une page précise (pas de PDF source) et tout son contenu est marqué « à vérifier »."
       onClose={onClose}
       size={multi ? "md" : "sm"}
     >
       <div className="space-y-3">
         <div className="space-y-1.5">
-          <Label htmlFor="chapter-pdf">Fichier(s) PDF</Label>
+          <Label htmlFor="chapter-pdf">Fichier(s) (PDF, .docx, .pptx)</Label>
           <input
             id="chapter-pdf"
             type="file"
-            accept="application/pdf"
+            accept="application/pdf,.docx,.pptx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation"
             multiple
             onChange={(e) => handleFilesChange(e.target.files)}
             className="block w-full text-sm text-foreground-muted file:mr-3 file:rounded-[var(--radius-sm)] file:border-0 file:bg-primary-tint file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary-strong"

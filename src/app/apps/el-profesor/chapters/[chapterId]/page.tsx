@@ -38,6 +38,8 @@ export default async function ChapterPage({
         subEntities={subEntities}
         initialEntityId={entity ?? resumeEntityId}
         bookmarkedIds={[...bookmarkedIds]}
+        sourceKind={chapter.source_kind}
+        sourceText={chapter.source_text}
       />
     </ToastProvider>
   );

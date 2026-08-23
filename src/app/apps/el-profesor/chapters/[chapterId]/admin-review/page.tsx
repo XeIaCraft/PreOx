@@ -21,7 +21,14 @@ export default async function AdminReviewPage({ params }: { params: Promise<{ ch
 
   return (
     <ToastProvider>
-      <ExtractionReviewView chapterId={chapterId} chapterTitle={chapter.title} subEntities={subEntities} flagsByTarget={flagsByTarget} />
+      <ExtractionReviewView
+        chapterId={chapterId}
+        chapterTitle={chapter.title}
+        subEntities={subEntities}
+        flagsByTarget={flagsByTarget}
+        sourceKind={chapter.source_kind}
+        sourceText={chapter.source_text}
+      />
     </ToastProvider>
   );
 }

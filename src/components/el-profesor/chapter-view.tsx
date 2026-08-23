@@ -34,7 +34,19 @@ import {
   type FontScale,
 } from "@/lib/el-profesor/local-prefs";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
-import type { Citation } from "@/lib/el-profesor/types";
+import type { Citation, ChapterSourceKind } from "@/lib/el-profesor/types";
+
+/** Read-only fallback for a chapter sourced from Word/PowerPoint (item 5 of the backlog) — no PDF to render, so citations only ever show as plain quoted text and there's no page to jump to. */
+function SourceTextPanel({ text }: { text: string | null }) {
+  return (
+    <div className="h-full overflow-y-auto p-4">
+      <p className="mb-3 text-xs text-foreground-subtle">
+        Document source (Word/PowerPoint) — pas de PDF ni de citations liées à une page précise pour ce chapitre.
+      </p>
+      <pre className="whitespace-pre-wrap font-sans text-sm text-foreground-muted">{text || "Aucun texte source."}</pre>
+    </div>
+  );
+}
 
 export function ChapterView({
   chapterId,
@@ -42,12 +54,16 @@ export function ChapterView({
   subEntities,
   initialEntityId,
   bookmarkedIds,
+  sourceKind = "pdf",
+  sourceText = null,
 }: {
   chapterId: string;
   chapterTitle: string;
   subEntities: SubEntityWithFiche[];
   initialEntityId?: string;
   bookmarkedIds?: string[];
+  sourceKind?: ChapterSourceKind;
+  sourceText?: string | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -90,8 +106,9 @@ export function ChapterView({
   }
 
   useEffect(() => {
+    if (sourceKind !== "pdf") return;
     getChapterPdfUrl(chapterId).then((result) => setPdfUrl(result.url ?? null));
-  }, [chapterId]);
+  }, [chapterId, sourceKind]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -512,7 +529,9 @@ export function ChapterView({
           <div
             className={`min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface print:hidden ${focusMode ? "hidden" : "hidden md:block"}`}
           >
-            {pdfUrl ? (
+            {sourceKind !== "pdf" ? (
+              <SourceTextPanel text={sourceText} />
+            ) : pdfUrl ? (
               <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
@@ -546,7 +565,9 @@ export function ChapterView({
           }
         >
           <div className="-m-4 h-[75vh]">
-            {pdfUrl ? (
+            {sourceKind !== "pdf" ? (
+              <SourceTextPanel text={sourceText} />
+            ) : pdfUrl ? (
               <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>

@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { requireElProfesorAdmin } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { uploadChapterPdf as uploadPdfBytes, deleteChapterPdf } from "@/lib/el-profesor/storage";
+import { extractDocxText, extractPptxText } from "@/lib/el-profesor/office-text";
+import { GeminiError } from "@/lib/gemini-shared";
 
 export interface ActionState {
   error?: string;
@@ -114,7 +116,7 @@ export async function deleteBook(bookId: string): Promise<ActionState> {
   const supabase = await createClient();
 
   const { data: chapters } = await supabase.from("el_profesor_chapters").select("pdf_storage_path").eq("book_id", bookId);
-  await Promise.all((chapters ?? []).map((c) => deleteChapterPdf(c.pdf_storage_path)));
+  await Promise.all((chapters ?? []).filter((c) => c.pdf_storage_path).map((c) => deleteChapterPdf(c.pdf_storage_path!)));
 
   const { error } = await supabase.from("el_profesor_books").delete().eq("id", bookId);
   if (error) return { error: "Impossible de supprimer le livre." };
@@ -123,6 +125,16 @@ export async function deleteBook(bookId: string): Promise<ActionState> {
   return { success: "Livre supprimé." };
 }
 
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+/**
+ * Accepts a PDF (the normal, fully-featured path: real pages, citation
+ * ground-truth, PDF viewer) or a Word/PowerPoint file (item 5 of the
+ * backlog: plain text extracted up front and stored on the chapter row
+ * itself — there's no binary to keep, no page position to cite, and no
+ * verification pass against a source document later).
+ */
 export async function uploadChapter(
   bookId: string,
   title: string,
@@ -132,31 +144,54 @@ export async function uploadChapter(
   await requireElProfesorAdmin();
 
   if (!title.trim()) return { error: "Le titre du chapitre est obligatoire." };
-  if (file.type !== "application/pdf") return { error: "Le fichier doit être un PDF." };
 
   const chapterId = randomUUID();
   const bytes = new Uint8Array(await file.arrayBuffer());
-
-  let storagePath: string;
-  try {
-    storagePath = await uploadPdfBytes(bookId, chapterId, bytes);
-  } catch {
-    return { error: "Échec de l'envoi du PDF." };
-  }
-
   const supabase = await createClient();
-  const { error } = await supabase.from("el_profesor_chapters").insert({
-    id: chapterId,
-    book_id: bookId,
-    title: title.trim(),
-    order_index: orderIndex,
-    pdf_storage_path: storagePath,
-    status: "pending",
-  });
 
-  if (error) {
-    await deleteChapterPdf(storagePath);
-    return { error: "Impossible d'enregistrer le chapitre." };
+  if (file.type === "application/pdf") {
+    let storagePath: string;
+    try {
+      storagePath = await uploadPdfBytes(bookId, chapterId, bytes);
+    } catch {
+      return { error: "Échec de l'envoi du PDF." };
+    }
+
+    const { error } = await supabase.from("el_profesor_chapters").insert({
+      id: chapterId,
+      book_id: bookId,
+      title: title.trim(),
+      order_index: orderIndex,
+      pdf_storage_path: storagePath,
+      source_kind: "pdf",
+      status: "pending",
+    });
+    if (error) {
+      await deleteChapterPdf(storagePath);
+      return { error: "Impossible d'enregistrer le chapitre." };
+    }
+  } else if (file.type === DOCX_MIME || file.type === PPTX_MIME) {
+    const sourceKind = file.type === DOCX_MIME ? "docx" : "pptx";
+    let sourceText: string;
+    try {
+      sourceText = sourceKind === "docx" ? await extractDocxText(bytes) : await extractPptxText(bytes);
+    } catch (err) {
+      return { error: err instanceof GeminiError ? err.message : "Échec de la lecture du fichier." };
+    }
+
+    const { error } = await supabase.from("el_profesor_chapters").insert({
+      id: chapterId,
+      book_id: bookId,
+      title: title.trim(),
+      order_index: orderIndex,
+      pdf_storage_path: null,
+      source_kind: sourceKind,
+      source_text: sourceText,
+      status: "pending",
+    });
+    if (error) return { error: "Impossible d'enregistrer le chapitre." };
+  } else {
+    return { error: "Le fichier doit être un PDF, un .docx ou un .pptx." };
   }
 
   revalidatePath("/apps/el-profesor");
@@ -168,7 +203,7 @@ export async function deleteChapter(chapterId: string): Promise<ActionState> {
   const supabase = await createClient();
 
   const { data: chapter } = await supabase.from("el_profesor_chapters").select("pdf_storage_path").eq("id", chapterId).single();
-  if (chapter) await deleteChapterPdf(chapter.pdf_storage_path);
+  if (chapter?.pdf_storage_path) await deleteChapterPdf(chapter.pdf_storage_path);
 
   const { error } = await supabase.from("el_profesor_chapters").delete().eq("id", chapterId);
   if (error) return { error: "Impossible de supprimer le chapitre." };

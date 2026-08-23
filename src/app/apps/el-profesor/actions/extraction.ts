@@ -7,6 +7,7 @@ import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import {
   deleteGeminiFile,
   extractChapterContentWithRotation,
+  extractChapterContentFromTextWithRotation,
   extractComplementaryContentWithRotation,
   verifyExtraction,
   generateMnemonic,
@@ -84,12 +85,36 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
   let apiKey = "";
 
   try {
-    const provider = await getElProfesorAiProvider();
-    const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
-
     let extraction: ExtractionResult;
     let flags: VerificationFlag[];
     let verificationFailed = false;
+    let providerNote = "";
+
+    if (chapter.source_kind !== "pdf") {
+      // Word/PowerPoint source (item 5 of the backlog): no file to attach,
+      // no page ground-truth to verify against, so this always goes through
+      // Gemini's text-only path regardless of the configured provider —
+      // Claude's own extraction function is PDF-bytes-only, and adding a
+      // second text-only provider path isn't worth it for this source kind.
+      const config = await getElProfesorGeminiConfig();
+      const { extraction: textExtraction } = await extractChapterContentFromTextWithRotation(config, chapter.title, chapter.source_text ?? "");
+      extraction = textExtraction;
+      flags = allNeedReviewFlags(extraction);
+      providerNote = " Chaque élément est marqué « à vérifier » (pas de document source à vérifier automatiquement pour un import Word/PowerPoint).";
+
+      await persistExtraction(chapterId, extraction, flags);
+      await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "succeeded", raw_output: extraction as unknown as never });
+      await supabase
+        .from("el_profesor_chapters")
+        .update({ status: "draft_ready", estimated_remaining_passes: extraction.estimated_remaining_passes })
+        .eq("id", chapterId);
+
+      revalidatePath("/apps/el-profesor");
+      return { success: "Extraction terminée. Relisez le contenu généré avant publication." + providerNote };
+    }
+
+    const provider = await getElProfesorAiProvider();
+    const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
 
     if (provider === "claude") {
       const claudeConfig = await getElProfesorClaudeConfig();
@@ -254,9 +279,14 @@ export async function importChapterContent(chapterId: string, rawJson: string): 
   await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
 
   try {
-    const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
-    const pageTexts = await extractPdfPageTexts(bytes).catch(() => null);
-    if (pageTexts) correctExtractionCitations(extraction, pageTexts);
+    if (chapter.source_kind === "pdf") {
+      const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
+      const pageTexts = await extractPdfPageTexts(bytes).catch(() => null);
+      if (pageTexts) correctExtractionCitations(extraction, pageTexts);
+    }
+    // Word/PowerPoint chapters have no PDF to ground-truth-correct citations
+    // against — the pasted JSON's citations (page: 0, verbatim quote) are
+    // kept exactly as provided.
 
     await persistExtraction(chapterId, extraction, allNeedReviewFlags(extraction));
 
@@ -508,6 +538,9 @@ export async function extractChapterComplementary(chapterId: string, options?: {
   if (chapter.status === "pending" || chapter.status === "failed") {
     return { error: "Lancez d'abord une extraction initiale avant de chercher des compléments." };
   }
+  if (chapter.source_kind !== "pdf") {
+    return { error: "Pas de passe de complément pour un chapitre Word/PowerPoint (pas de fichier source à relire) — le texte a déjà été extrait en une seule fois." };
+  }
 
   const originalStatus = chapter.status;
   await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
@@ -516,7 +549,7 @@ export async function extractChapterComplementary(chapterId: string, options?: {
     const provider = await getElProfesorAiProvider();
     const providerConfig: ProviderConfig =
       provider === "claude" ? { provider: "claude", config: await getElProfesorClaudeConfig() } : { provider: "gemini", config: await getElProfesorGeminiConfig() };
-    const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
+    const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
     // Extracted once and reused across every auto-run pass (see below) rather than per pass.
     const pageTexts = await extractPdfPageTexts(bytes).catch(() => null);
 

@@ -89,6 +89,8 @@ function toChapter(row: ElProfesorChapterRow): Chapter {
     status: row.status,
     extractionError: row.extraction_error,
     estimatedRemainingPasses: row.estimated_remaining_passes,
+    sourceKind: row.source_kind,
+    sourceText: row.source_text,
   };
 }
 

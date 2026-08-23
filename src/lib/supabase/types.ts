@@ -224,16 +224,20 @@ export type ElProfesorBookRow = {
   archived_at: string | null;
 };
 
+export type ElProfesorChapterSourceKind = "pdf" | "docx" | "pptx";
+
 export type ElProfesorChapterRow = {
   id: string;
   book_id: string;
   title: string;
   order_index: number;
-  pdf_storage_path: string;
+  pdf_storage_path: string | null;
   pdf_page_count: number | null;
   status: ElProfesorChapterStatus;
   extraction_error: string | null;
   estimated_remaining_passes: number | null;
+  source_kind: ElProfesorChapterSourceKind;
+  source_text: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -602,7 +606,7 @@ export type Database = {
       };
       el_profesor_chapters: {
         Row: ElProfesorChapterRow;
-        Insert: Partial<ElProfesorChapterRow> & { book_id: string; title: string; pdf_storage_path: string };
+        Insert: Partial<ElProfesorChapterRow> & { book_id: string; title: string };
         Update: Partial<ElProfesorChapterRow>;
         Relationships: [];
       };

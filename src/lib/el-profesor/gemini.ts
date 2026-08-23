@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { GeminiError, parseGeminiJson } from "@/lib/gemini-shared";
 import {
   buildExtractionPrompt,
+  buildTextExtractionPrompt,
   buildVerificationPrompt,
   buildComplementaryPrompt,
   buildSelectionPrompt,
@@ -539,6 +540,33 @@ export async function extractComplementaryContentWithRotation(
     extractComplementaryContent(key, m, file, chapterTitle, coverageSummaryJson)
   );
   return { complementary: result, apiKey, model, file };
+}
+
+/**
+ * Text-only counterpart to extractChapterContentWithRotation for a chapter
+ * sourced from Word/PowerPoint (item 5 of the backlog): no file upload, the
+ * already-extracted plain text goes straight into the prompt. No
+ * verification pass either (there is no PDF to double-check citations
+ * against) — the caller marks every element needs_review, same as the
+ * Claude provider path.
+ */
+export async function extractChapterContentFromTextWithRotation(
+  config: GeminiRotationConfig,
+  chapterTitle: string,
+  sourceText: string
+): Promise<{ extraction: ExtractionResult; apiKey: string; model: string }> {
+  const instructions = buildTextExtractionPrompt(chapterTitle, sourceText);
+  let lastError: unknown;
+  for (const { apiKey, model } of rotationCombos(config)) {
+    try {
+      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], EXTRACTION_RESPONSE_SCHEMA);
+      return { extraction: result as ExtractionResult, apiKey, model };
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaOrCapacityError(err)) throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
 }
 
 /**

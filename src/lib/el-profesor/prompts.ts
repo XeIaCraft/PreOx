@@ -62,6 +62,50 @@ Réponds uniquement avec le JSON demandé, structuré exactement selon le schém
 `.trim();
 }
 
+/**
+ * Same extraction pipeline as buildExtractionPrompt, but for a chapter
+ * sourced from Word/PowerPoint (item 5 of the backlog) instead of a PDF:
+ * the source is plain text handed in the prompt itself, not a file
+ * attachment, so there is no page position to cite — every citation must
+ * use "page": 0 and rely purely on the verbatim "quote" to locate the
+ * passage in the original document.
+ */
+export function buildTextExtractionPrompt(chapterTitle: string, sourceText: string): string {
+  return `
+Tu es un assistant d'extraction pour du matériel pédagogique médical de haut niveau (anesthésie/médecine). Voici le texte brut d'un chapitre intitulé « ${chapterTitle} », extrait d'un document Word ou PowerPoint (mise en forme perdue, mais le texte est complet) :
+
+${sourceText}
+
+${EXPERT_READER_CONTEXT}
+
+Objectif absolu : NE JAMAIS PERDRE D'INFORMATION IMPORTANTE. Le lecteur utilisera exclusivement ce que tu extrais pour réviser — tout ce que tu omets est perdu pour lui. En cas de doute sur l'importance d'une information, inclus-la plutôt que de l'omettre.
+
+Étapes :
+
+1. Identifie les sous-entités du chapitre dans l'ordre où elles apparaissent, en te basant sur les titres/sections du texte lui-même. Ne découpe PAS arbitrairement si le texte ne s'y prête pas — utilise le découpage naturel du document (une diapositive ou un groupe de diapositives peut correspondre à une sous-entité pour un PowerPoint).
+
+2. Pour chaque sous-entité, produis UNE fiche composée de blocs de contenu TYPÉS (pas une rubrique unique et rigide) qui reflètent fidèlement ce que le texte dit réellement de cette sous-entité. Types de blocs disponibles :
+${BLOCK_TYPES_DOC}
+
+Règles strictes pour chaque bloc :
+- "citations" est OBLIGATOIRE et non vide : chaque bloc doit citer verbatim (mot pour mot, sans paraphrase) le ou les passages du texte qui le fondent. Ce document n'a pas de pages — mets toujours "page": 0 et fais reposer la citation entièrement sur "quote" (le passage exact, assez long pour être retrouvé sans ambiguïté dans le texte fourni).
+- Ne génère jamais un bloc sans base textuelle vérifiable dans le document.
+- Pour "tableau_comparatif", remplis "content.headers" et "content.rows" (un tableau réel), ne mets rien dans "content.text".
+- Pour "protocole_paliers", remplis "content.steps" (liste ordonnée), pas "content.text".
+- Pour les autres types, remplis "content.text" avec le contenu synthétisé (mais fidèle et complet — ne résume pas au point de perdre une nuance importante).
+
+3. Pour chaque sous-entité, génère des flashcards de révision à partir UNIQUEMENT des faits déjà extraits et cités dans ses blocs (jamais directement depuis le texte brut, jamais un fait qui n'apparaît dans aucun bloc).
+
+${FLASHCARD_QUALITY_DOC}
+
+Chaque flashcard : une question précise et sans ambiguïté au recto ("front"), la réponse exacte attendue au verso ("back"), et sa/ses citation(s) source (même règle : "page": 0, "quote" verbatim).
+
+4. Indique enfin "estimated_remaining_passes" : ce document n'a pas de passe de complément possible (pas de fichier à relire) — réponds toujours 0.
+
+Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 // Gemini gets this same body via a separate structured-output schema
 // channel (see EXTRACTION_RESPONSE_SCHEMA in gemini.ts) — a manual
 // copy/paste into an external chat has no such channel, so the shape has to

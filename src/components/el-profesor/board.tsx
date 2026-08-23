@@ -804,6 +804,11 @@ export function ElProfesorBoard({
                     <div className="flex items-start justify-between gap-2">
                       <p className="font-medium text-foreground">{chapter.title}</p>
                       <div className="flex shrink-0 gap-1.5">
+                        {chapter.sourceKind !== "pdf" && (
+                          <Badge variant="neutral" title="Importé depuis Word/PowerPoint — pas de PDF source ni de citations par page">
+                            {chapter.sourceKind === "docx" ? "Word" : "PowerPoint"}
+                          </Badge>
+                        )}
                         {isAdmin && needsReview > 0 && <Badge variant="accent">{needsReview} à vérifier</Badge>}
                         <Badge variant={STATUS_VARIANT[chapter.status]}>{STATUS_LABEL[chapter.status]}</Badge>
                       </div>
@@ -895,7 +900,7 @@ export function ElProfesorBoard({
                           Export Anki
                         </Button>
                       )}
-                      {isAdmin && (chapter.status === "draft_ready" || chapter.status === "published") && (
+                      {isAdmin && chapter.sourceKind === "pdf" && (chapter.status === "draft_ready" || chapter.status === "published") && (
                         <>
                           <Button
                             variant="secondary"

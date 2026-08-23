@@ -46,16 +46,20 @@ export type Book = {
   archivedAt: string | null;
 };
 
+export type ChapterSourceKind = "pdf" | "docx" | "pptx";
+
 export type Chapter = {
   id: string;
   bookId: string;
   title: string;
   orderIndex: number;
-  pdfStoragePath: string;
+  pdfStoragePath: string | null;
   pdfPageCount: number | null;
   status: ChapterStatus;
   extractionError: string | null;
   estimatedRemainingPasses: number | null;
+  sourceKind: ChapterSourceKind;
+  sourceText: string | null;
 };
 
 export type SubEntity = {
