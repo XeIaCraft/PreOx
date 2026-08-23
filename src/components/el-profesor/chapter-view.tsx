@@ -99,6 +99,26 @@ export function ChapterView({
   const [quizOpen, setQuizOpen] = useState(false);
   const [mindMapOpen, setMindMapOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  // Item 37 of the backlog: this page (already visited) is served from the
+  // service worker's offline cache when the network is down — this banner
+  // just tells the reader why interactive/AI features won't respond, not
+  // that the page itself failed to load.
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine);
+
+  useEffect(() => {
+    function handleOnline() {
+      setIsOffline(false);
+    }
+    function handleOffline() {
+      setIsOffline(true);
+    }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   function handlePrintChapter() {
     setPrintTarget("chapter");
@@ -289,6 +309,11 @@ export function ChapterView({
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col px-4 py-4 sm:px-6 md:h-[calc(100vh-4rem)]">
+      {isOffline && (
+        <div className="mb-2 rounded-[var(--radius-sm)] border border-accent/40 bg-accent-tint px-3 py-1.5 text-center text-xs text-accent print:hidden">
+          Hors ligne — vous consultez une version déjà enregistrée de ce chapitre. Les fonctionnalités nécessitant une connexion (IA, révision, PDF) peuvent ne pas répondre.
+        </div>
+      )}
       <div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-3 bg-background py-1 print:hidden">
         <div className="flex min-w-0 items-center gap-3">
           <Link href="/apps/el-profesor">
