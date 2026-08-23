@@ -27,6 +27,7 @@ import {
   Gauge,
   BellOff,
   Archive,
+  ListTree,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -701,6 +702,14 @@ export function ElProfesorBoard({
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <Link
+                  href={`/apps/el-profesor/books/${book.id}`}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] text-foreground-subtle hover:bg-surface-muted hover:text-foreground"
+                  aria-label={`Table des matières de ${book.title}`}
+                  title="Table des matières"
+                >
+                  <ListTree className="h-4 w-4" />
+                </Link>
                 <Button
                   variant="ghost"
                   size="icon"

@@ -32,6 +32,7 @@ import type {
   ContradictionStatus,
   CrossBookDuplicateFlashcards,
   SupersededFicheEntry,
+  ChapterStatus,
 } from "./types";
 import type {
   ElProfesorBookRow,
@@ -1535,6 +1536,52 @@ export async function getChapterMindMapInputs(chapterId: string): Promise<{ chap
     }));
 
   return { chapterTitle: chapter.title, subEntities };
+}
+
+// -- Per-book interactive table of contents ----------------------------------
+
+export interface BookTocChapter {
+  chapterId: string;
+  chapterTitle: string;
+  status: ChapterStatus;
+  subEntities: { id: string; name: string; hasFiche: boolean }[];
+  mastery: { total: number; new: number; learning: number; acquired: number };
+}
+
+export interface BookTableOfContents {
+  book: Book;
+  chapters: BookTocChapter[];
+}
+
+/**
+ * Every chapter of a book with its sub-entities and the user's own mastery
+ * coverage — a dedicated visual overview distinct from the full-library
+ * board (which only lists chapters inline). Item 7 of the backlog.
+ * `includeUnpublished` is admin-only, mirroring the main dashboard's
+ * pipeline visibility rule.
+ */
+export async function getBookTableOfContents(bookId: string, userId: string, includeUnpublished: boolean): Promise<BookTableOfContents | null> {
+  const supabase = await createClient();
+  const { data: bookRow } = await supabase.from("el_profesor_books").select("*").eq("id", bookId).maybeSingle();
+  if (!bookRow) return null;
+
+  const { data: chapterRows } = await supabase.from("el_profesor_chapters").select("*").eq("book_id", bookId).order("order_index", { ascending: true });
+  const chapters = (chapterRows ?? []).map(toChapter).filter((c) => includeUnpublished || c.status === "published");
+
+  const [contentByChapter, mastery] = await Promise.all([
+    Promise.all(chapters.map((c) => getChapterContent(c.id, includeUnpublished))),
+    getMasteryCountsByChapter(userId, chapters),
+  ]);
+
+  const tocChapters: BookTocChapter[] = chapters.map((chapter, i) => ({
+    chapterId: chapter.id,
+    chapterTitle: chapter.title,
+    status: chapter.status,
+    subEntities: contentByChapter[i].map((s) => ({ id: s.id, name: s.name, hasFiche: Boolean(s.fiche) })),
+    mastery: mastery[chapter.id] ?? { total: 0, new: 0, learning: 0, acquired: 0 },
+  }));
+
+  return { book: toBook(bookRow), chapters: tocChapters };
 }
 
 export async function getAllNotionNames(): Promise<string[]> {
