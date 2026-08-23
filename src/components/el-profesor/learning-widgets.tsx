@@ -8,10 +8,37 @@ import { Modal } from "@/components/ui/modal";
 import { getDailyGoal, setDailyGoal, getWeeklyGoal, setWeeklyGoal } from "@/lib/el-profesor/local-prefs";
 import { setBookmarkTags } from "@/app/apps/el-profesor/actions/bookmarks";
 import { getWeaknessSynthesis } from "@/app/apps/el-profesor/actions/synthesis";
-import type { ReviewActivitySummary, UpcomingForecastDay, BookmarkedEntity, OnThisDayNote, BookRecommendation } from "@/lib/el-profesor/dal";
+import type { ReviewActivitySummary, UpcomingForecastDay, BookmarkedEntity, OnThisDayNote, BookRecommendation, DueBlockEntry } from "@/lib/el-profesor/dal";
 import type { Flashcard } from "@/lib/el-profesor/types";
 
 /** Quick-access list of the user's bookmarked fiches, filterable by personal tag (item 35 of the backlog). */
+/** "Blocs à relire" — the dashboard-level view of the per-block spaced repetition tracked separately from flashcards (item 16 of the backlog). */
+export function DueBlocksWidget({ blocks }: { blocks: DueBlockEntry[] }) {
+  if (blocks.length === 0) return null;
+
+  return (
+    <div className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
+      <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+        <BookOpen className="h-3.5 w-3.5" /> Blocs à relire ({blocks.length})
+      </p>
+      <div className="mt-2 space-y-1">
+        {blocks.map((b) => (
+          <Link
+            key={b.blockId}
+            href={`/apps/el-profesor/chapters/${b.chapterId}?entity=${b.subEntityId}#fiche-block-${b.blockId}`}
+            className="block rounded-[var(--radius-sm)] px-2 py-1.5 hover:bg-surface-muted"
+          >
+            <p className="truncate text-sm text-foreground">{b.subEntityName}</p>
+            <p className="truncate text-xs text-foreground-subtle">
+              {b.chapterTitle} — {b.excerpt}
+            </p>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function BookmarksList({ bookmarks }: { bookmarks: BookmarkedEntity[] }) {
   const [tagsBySubEntity, setTagsBySubEntity] = useState(() => new Map(bookmarks.map((b) => [b.subEntityId, b.tags])));
   const [activeTag, setActiveTag] = useState<string | null>(null);

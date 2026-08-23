@@ -43,7 +43,7 @@ import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog"
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
-import { LearningWidgets, DailyCard, LibraryStats, BookmarksList, OnThisDayNoteCard, BookRecommendationCard } from "@/components/el-profesor/learning-widgets";
+import { LearningWidgets, DailyCard, LibraryStats, BookmarksList, OnThisDayNoteCard, BookRecommendationCard, DueBlocksWidget } from "@/components/el-profesor/learning-widgets";
 import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
@@ -66,6 +66,7 @@ import type {
   ElProfesorAiProvider,
   OnThisDayNote,
   BookRecommendation,
+  DueBlockEntry,
 } from "@/lib/el-profesor/dal";
 import type { ChapterStatus, Flashcard, BlockType } from "@/lib/el-profesor/types";
 
@@ -211,6 +212,7 @@ export function ElProfesorBoard({
   serverResumeChapterId,
   onThisDayNote,
   bookRecommendation,
+  dueBlocks,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -241,6 +243,7 @@ export function ElProfesorBoard({
   serverResumeChapterId: string | null;
   onThisDayNote: OnThisDayNote | null;
   bookRecommendation: BookRecommendation | null;
+  dueBlocks: DueBlockEntry[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -532,6 +535,7 @@ export function ElProfesorBoard({
       {bookRecommendation && <BookRecommendationCard recommendation={bookRecommendation} />}
 
       <BookmarksList bookmarks={bookmarks} />
+      <DueBlocksWidget blocks={dueBlocks} />
 
       {books.length > 0 && (
         <LearningWidgets

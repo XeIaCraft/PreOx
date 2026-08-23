@@ -27,6 +27,7 @@ import {
   getReadingPosition,
   getOnThisDayNote,
   getRecommendedNextBook,
+  getDueBlocksForUser,
 } from "@/lib/el-profesor/dal";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { ToastProvider } from "@/components/ui/toast";
@@ -68,6 +69,7 @@ export default async function ElProfesorPage() {
     readingPosition,
     onThisDayNote,
     bookRecommendation,
+    dueBlocks,
   ] = await Promise.all([
     getDueCountsByChapter(profile.id, allChapters),
     isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
@@ -95,6 +97,7 @@ export default async function ElProfesorPage() {
     getReadingPosition(profile.id),
     getOnThisDayNote(profile.id),
     getRecommendedNextBook(profile.id, books),
+    getDueBlocksForUser(profile.id),
   ]);
 
   return (
@@ -128,6 +131,7 @@ export default async function ElProfesorPage() {
         serverResumeChapterId={readingPosition?.chapterId ?? null}
         onThisDayNote={onThisDayNote}
         bookRecommendation={bookRecommendation}
+        dueBlocks={dueBlocks}
       />
     </ToastProvider>
   );

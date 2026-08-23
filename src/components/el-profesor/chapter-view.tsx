@@ -33,7 +33,7 @@ import {
   setDyslexicFont,
   type FontScale,
 } from "@/lib/el-profesor/local-prefs";
-import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
+import type { SubEntityWithFiche, BlockReviewState } from "@/lib/el-profesor/dal";
 import type { Citation, ChapterSourceKind } from "@/lib/el-profesor/types";
 
 /** Read-only fallback for a chapter sourced from Word/PowerPoint (item 5 of the backlog) — no PDF to render, so citations only ever show as plain quoted text and there's no page to jump to. */
@@ -56,6 +56,7 @@ export function ChapterView({
   bookmarkedIds,
   sourceKind = "pdf",
   sourceText = null,
+  blockReviewStates,
 }: {
   chapterId: string;
   chapterTitle: string;
@@ -64,6 +65,7 @@ export function ChapterView({
   bookmarkedIds?: string[];
   sourceKind?: ChapterSourceKind;
   sourceText?: string | null;
+  blockReviewStates?: Record<string, BlockReviewState>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -511,6 +513,7 @@ export function ChapterView({
                     blocks={selected.fiche.blocks}
                     onCitationClick={handleCitationClick}
                     fontScale={fontScale}
+                    blockReviewStates={blockReviewStates}
                     superseded={
                       selected.fiche.supersededByFicheId
                         ? { reason: selected.fiche.supersededReason ?? "outdated", note: selected.fiche.supersededNote }

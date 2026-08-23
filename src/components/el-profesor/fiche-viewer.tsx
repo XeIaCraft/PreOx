@@ -15,10 +15,65 @@ import {
   Check,
   Volume2,
   VolumeX,
+  ThumbsUp,
+  RotateCcw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { FlagButton } from "@/components/el-profesor/flag-button";
+import { markBlockReviewed } from "@/app/apps/el-profesor/actions/block-review";
+import type { BlockReviewState } from "@/lib/el-profesor/dal";
 import type { BlockType, Citation, FicheBlock, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
+
+/**
+ * Spaced repetition per block (item 16 of the backlog) — a self-contained
+ * "still remember it" / "need to revisit" pair, separate from the
+ * flashcard FSRS engine. Optimistically updates its own local state after
+ * the server action resolves rather than round-tripping through the
+ * parent, since nothing else on the page depends on this block's schedule.
+ */
+function BlockRereadControl({ blockId, initialState }: { blockId: string; initialState?: BlockReviewState }) {
+  const [state, setState] = useState(initialState ?? null);
+  const [pending, setPending] = useState(false);
+
+  function handleRate(remembered: boolean) {
+    setPending(true);
+    markBlockReviewed(blockId, remembered)
+      .then((result) => {
+        if (result.nextDueAt && result.intervalDays !== undefined) setState({ nextDueAt: result.nextDueAt, intervalDays: result.intervalDays });
+      })
+      .finally(() => setPending(false));
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {state && (
+        <span className="text-[11px] text-foreground-subtle">
+          Prochaine relecture dans {state.intervalDays} j{state.intervalDays > 1 ? "ours" : "our"}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={() => handleRate(false)}
+        disabled={pending}
+        title="À revoir bientôt"
+        aria-label="À revoir bientôt"
+        className="rounded-full p-1 text-foreground-subtle hover:bg-danger-tint hover:text-danger disabled:opacity-50"
+      >
+        <RotateCcw className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => handleRate(true)}
+        disabled={pending}
+        title="Je m'en souviens encore"
+        aria-label="Je m'en souviens encore"
+        className="rounded-full p-1 text-foreground-subtle hover:bg-success-tint hover:text-success disabled:opacity-50"
+      >
+        <ThumbsUp className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
 
 const BLOCK_META: Record<BlockType, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
   definition_mecanisme: { label: "Définition / mécanisme", icon: BookMarked },
@@ -291,6 +346,7 @@ export function FicheViewer({
   onCitationClick,
   fontScale = "md",
   superseded,
+  blockReviewStates,
 }: {
   title: string;
   summary?: string;
@@ -299,6 +355,8 @@ export function FicheViewer({
   fontScale?: FontScale;
   /** Set when this fiche was merged/replaced (items 52/56) — shows a warning banner instead of hiding the content outright. */
   superseded?: { reason: "duplicate" | "outdated"; note: string };
+  /** Per-block spaced-repetition state (item 16) — omitted in read-only contexts (print, share links, admin review) where there's no signed-in reader to track. */
+  blockReviewStates?: Record<string, BlockReviewState>;
 }) {
   return (
     <div>
@@ -339,6 +397,11 @@ export function FicheViewer({
                 <BlockBody block={block} fontScale={fontScale} />
               </div>
               <CitationChips citations={block.citations} onClick={onCitationClick} />
+              {blockReviewStates && (
+                <div className="mt-2 flex justify-end border-t border-border pt-2">
+                  <BlockRereadControl blockId={block.id} initialState={blockReviewStates[block.id]} />
+                </div>
+              )}
             </div>
           );
         })}

@@ -306,6 +306,16 @@ export type ElProfesorReviewStateRow = {
   last_review: string | null;
 };
 
+export type ElProfesorBlockReviewStateRow = {
+  id: string;
+  user_id: string;
+  block_id: string;
+  interval_days: number;
+  last_reviewed_at: string;
+  next_due_at: string;
+  created_at: string;
+};
+
 export type ElProfesorReviewLogRow = {
   id: string;
   user_id: string;
@@ -639,6 +649,12 @@ export type Database = {
         Row: ElProfesorReviewStateRow;
         Insert: Partial<ElProfesorReviewStateRow> & { user_id: string; flashcard_id: string };
         Update: Partial<ElProfesorReviewStateRow>;
+        Relationships: [];
+      };
+      el_profesor_block_review_state: {
+        Row: ElProfesorBlockReviewStateRow;
+        Insert: Partial<ElProfesorBlockReviewStateRow> & { user_id: string; block_id: string };
+        Update: Partial<ElProfesorBlockReviewStateRow>;
         Relationships: [];
       };
       el_profesor_review_log: {

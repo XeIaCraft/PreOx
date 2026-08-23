@@ -1602,6 +1602,95 @@ export async function getBookTableOfContents(bookId: string, userId: string, inc
   return { book: toBook(bookRow), chapters: tocChapters };
 }
 
+// -- Spaced repetition per content block (parallel to the flashcard FSRS engine) --
+
+export type BlockReviewState = { intervalDays: number; nextDueAt: string };
+
+/** Per-block spaced-repetition state for a set of blocks, for the fiche viewer's "je m'en souviens" controls. Item 16 of the backlog. */
+export async function getBlockReviewStates(userId: string, blockIds: string[]): Promise<Record<string, BlockReviewState>> {
+  if (blockIds.length === 0) return {};
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("el_profesor_block_review_state")
+    .select("block_id, interval_days, next_due_at")
+    .eq("user_id", userId)
+    .in("block_id", blockIds);
+
+  const result: Record<string, BlockReviewState> = {};
+  for (const row of data ?? []) result[row.block_id] = { intervalDays: row.interval_days, nextDueAt: row.next_due_at };
+  return result;
+}
+
+export interface DueBlockEntry {
+  blockId: string;
+  chapterId: string;
+  chapterTitle: string;
+  subEntityId: string;
+  subEntityName: string;
+  blockType: BlockType;
+  excerpt: string;
+  nextDueAt: string;
+}
+
+/** Blocks due for a re-read (not a flashcard review) — feeds the dashboard's "blocs à relire" widget. Item 16 of the backlog. */
+export async function getDueBlocksForUser(userId: string, limit = 20): Promise<DueBlockEntry[]> {
+  const supabase = await createClient();
+  const { data: dueStates } = await supabase
+    .from("el_profesor_block_review_state")
+    .select("block_id, next_due_at")
+    .eq("user_id", userId)
+    .lte("next_due_at", new Date().toISOString())
+    .order("next_due_at", { ascending: true })
+    .limit(limit);
+  if (!dueStates || dueStates.length === 0) return [];
+
+  const dueAtByBlock = new Map(dueStates.map((s) => [s.block_id, s.next_due_at]));
+  const { data: blocks } = await supabase
+    .from("el_profesor_fiche_blocks")
+    .select("id, fiche_id, block_type, content")
+    .in(
+      "id",
+      dueStates.map((s) => s.block_id)
+    )
+    .eq("status", "published");
+  if (!blocks || blocks.length === 0) return [];
+
+  const ficheIds = [...new Set(blocks.map((b) => b.fiche_id))];
+  const { data: fiches } = await supabase.from("el_profesor_fiches").select("id, sub_entity_id, superseded_by_fiche_id").in("id", ficheIds).eq("status", "published");
+  const activeFicheById = new Map((fiches ?? []).filter((f) => !f.superseded_by_fiche_id).map((f) => [f.id, f]));
+
+  const subEntityIds = [...new Set([...activeFicheById.values()].map((f) => f.sub_entity_id))];
+  if (subEntityIds.length === 0) return [];
+  const { data: subEntities } = await supabase.from("el_profesor_sub_entities").select("id, name, chapter_id").in("id", subEntityIds);
+  const subEntityById = new Map((subEntities ?? []).map((s) => [s.id, s]));
+
+  const chapterIds = [...new Set((subEntities ?? []).map((s) => s.chapter_id))];
+  const { data: chapters } = await supabase.from("el_profesor_chapters").select("id, title").in("id", chapterIds).eq("status", "published");
+  const chapterById = new Map((chapters ?? []).map((c) => [c.id, c]));
+
+  const entries: DueBlockEntry[] = [];
+  for (const block of blocks) {
+    const fiche = activeFicheById.get(block.fiche_id);
+    if (!fiche) continue;
+    const subEntity = subEntityById.get(fiche.sub_entity_id);
+    if (!subEntity) continue;
+    const chapter = chapterById.get(subEntity.chapter_id);
+    if (!chapter) continue;
+    entries.push({
+      blockId: block.id,
+      chapterId: chapter.id,
+      chapterTitle: chapter.title,
+      subEntityId: subEntity.id,
+      subEntityName: subEntity.name,
+      blockType: block.block_type as BlockType,
+      excerpt: blockToPlainText(block.block_type, block.content as BlockContent).slice(0, 140),
+      nextDueAt: dueAtByBlock.get(block.id) ?? new Date().toISOString(),
+    });
+  }
+  entries.sort((a, b) => new Date(a.nextDueAt).getTime() - new Date(b.nextDueAt).getTime());
+  return entries;
+}
+
 export async function getAllNotionNames(): Promise<string[]> {
   const supabase = await createClient();
   const { data } = await supabase.from("el_profesor_notions").select("name").order("name", { ascending: true });

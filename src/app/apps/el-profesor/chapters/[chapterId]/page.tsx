@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireElProfesorAccess, getChapterContent, getBookmarkedSubEntityIds, getReadingPosition } from "@/lib/el-profesor/dal";
+import { requireElProfesorAccess, getChapterContent, getBookmarkedSubEntityIds, getReadingPosition, getBlockReviewStates } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { ChapterView } from "@/components/el-profesor/chapter-view";
 import { ToastProvider } from "@/components/ui/toast";
@@ -25,6 +25,9 @@ export default async function ChapterPage({
     entity ? Promise.resolve(null) : getReadingPosition(profile.id),
   ]);
 
+  const blockIds = subEntities.flatMap((s) => s.fiche?.blocks.map((b) => b.id) ?? []);
+  const blockReviewStates = await getBlockReviewStates(profile.id, blockIds);
+
   // Server-side cross-device resume: only applies when there's no explicit
   // deep link and the saved position was in this same chapter — the client
   // still falls back to its own localStorage cache before this value loads.
@@ -40,6 +43,7 @@ export default async function ChapterPage({
         bookmarkedIds={[...bookmarkedIds]}
         sourceKind={chapter.source_kind}
         sourceText={chapter.source_text}
+        blockReviewStates={blockReviewStates}
       />
     </ToastProvider>
   );
