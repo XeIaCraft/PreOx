@@ -1,7 +1,7 @@
 "use server";
 
-import { requireElProfesorAccess, getElProfesorGeminiConfig } from "@/lib/el-profesor/dal";
-import { translateFicheText, generateClinicalCase, generateExamQuestions } from "@/lib/el-profesor/gemini";
+import { requireElProfesorAccess, getElProfesorGeminiConfig, getChapterMindMapInputs } from "@/lib/el-profesor/dal";
+import { translateFicheText, generateClinicalCase, generateExamQuestions, generateMindMap, type MindMap } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
 
 /**
@@ -44,5 +44,21 @@ export async function getExamQuestions(subEntityName: string, ficheText: string)
     return await generateExamQuestions(config, subEntityName, ficheText);
   } catch (err) {
     return { error: err instanceof GeminiError ? err.message : "Échec de la génération des questions." };
+  }
+}
+
+/** On-demand chapter mind map — ephemeral, never persisted. Item 2 of the backlog. */
+export async function getChapterMindMap(chapterId: string): Promise<{ mindMap: MindMap } | { error: string }> {
+  await requireElProfesorAccess();
+
+  const inputs = await getChapterMindMapInputs(chapterId);
+  if (!inputs || inputs.subEntities.length === 0) return { error: "Ce chapitre n'a pas encore assez de contenu pour une carte mentale." };
+
+  try {
+    const config = await getElProfesorGeminiConfig();
+    const mindMap = await generateMindMap(config, inputs.chapterTitle, inputs.subEntities);
+    return { mindMap };
+  } catch (err) {
+    return { error: err instanceof GeminiError ? err.message : "Échec de la génération de la carte mentale." };
   }
 }

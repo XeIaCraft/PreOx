@@ -1520,6 +1520,23 @@ export async function getFicheTextForAI(ficheId: string): Promise<{ title: strin
   return { title: fiche.title, text };
 }
 
+/** Chapter title + one text summary per sub-entity (published blocks only) — input for the on-demand mind map (item 2). */
+export async function getChapterMindMapInputs(chapterId: string): Promise<{ chapterTitle: string; subEntities: { name: string; text: string }[] } | null> {
+  const supabase = await createClient();
+  const { data: chapter } = await supabase.from("el_profesor_chapters").select("title").eq("id", chapterId).maybeSingle();
+  if (!chapter) return null;
+
+  const content = await getChapterContent(chapterId, false);
+  const subEntities = content
+    .filter((s) => s.fiche && s.fiche.blocks.length > 0)
+    .map((s) => ({
+      name: s.name,
+      text: s.fiche!.blocks.map((b) => blockToPlainText(b.blockType, b.content)).join("\n\n"),
+    }));
+
+  return { chapterTitle: chapter.title, subEntities };
+}
+
 export async function getAllNotionNames(): Promise<string[]> {
   const supabase = await createClient();
   const { data } = await supabase.from("el_profesor_notions").select("name").order("name", { ascending: true });

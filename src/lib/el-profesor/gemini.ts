@@ -14,6 +14,7 @@ import {
   buildFicheTranslationPrompt,
   buildClinicalCasePrompt,
   buildExamQuestionsPrompt,
+  buildMindMapPrompt,
 } from "@/lib/el-profesor/prompts";
 import type {
   ComplementaryResult,
@@ -179,6 +180,27 @@ const SYNTHESIS_RESPONSE_SCHEMA = {
     text: { type: "STRING" },
   },
   required: ["text"],
+};
+
+// Fixed two-level tree (not open recursion — Gemini's structured output
+// doesn't support self-referencing schemas) — item 2 of the backlog.
+const MIND_MAP_RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    central: { type: "STRING" },
+    branches: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          label: { type: "STRING" },
+          children: { type: "ARRAY", items: { type: "STRING" } },
+        },
+        required: ["label", "children"],
+      },
+    },
+  },
+  required: ["central", "branches"],
 };
 
 const VERIFICATION_RESPONSE_SCHEMA = {
@@ -622,6 +644,31 @@ export async function generateExamQuestions(config: GeminiRotationConfig, subEnt
     try {
       const result = await callGeminiJson(apiKey, model, [{ text: instructions }], SYNTHESIS_RESPONSE_SCHEMA);
       return result as { text: string };
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaOrCapacityError(err)) throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+}
+
+export interface MindMap {
+  central: string;
+  branches: { label: string; children: string[] }[];
+}
+
+/** On-demand chapter mind map — ephemeral, never persisted. Rotates on quota/capacity errors. Item 2 of the backlog. */
+export async function generateMindMap(
+  config: GeminiRotationConfig,
+  chapterTitle: string,
+  subEntitySummaries: { name: string; text: string }[]
+): Promise<MindMap> {
+  const instructions = buildMindMapPrompt(chapterTitle, subEntitySummaries);
+  let lastError: unknown;
+  for (const { apiKey, model } of rotationCombos(config)) {
+    try {
+      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], MIND_MAP_RESPONSE_SCHEMA);
+      return result as MindMap;
     } catch (err) {
       lastError = err;
       if (!isQuotaOrCapacityError(err)) throw err;

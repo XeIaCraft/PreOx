@@ -250,6 +250,24 @@ Réponds uniquement avec le JSON demandé (un champ "text"), structuré exacteme
 `.trim();
 }
 
+/** On-demand mind map from a chapter's already-written content — ephemeral, never persisted. Item 2 of the backlog. Fixed two-level tree (central topic → branches → leaf points), not open recursion, to keep the Gemini response schema simple and the rendering predictable. */
+export function buildMindMapPrompt(chapterTitle: string, subEntitySummaries: { name: string; text: string }[]): string {
+  const content = subEntitySummaries.map((s) => `### ${s.name}\n${s.text}`).join("\n\n");
+  return `
+${EXPERT_READER_CONTEXT}
+
+Voici le contenu déjà rédigé pour le chapitre « ${chapterTitle} » :
+
+${content}
+
+Ta tâche : construis une carte mentale de ce chapitre pour aider à en mémoriser la structure d'ensemble.
+- "central" : le thème central du chapitre, en 2-5 mots.
+- "branches" : 4 à 8 branches principales (les grands axes/notions du chapitre), chacune avec un "label" court et 2-6 "children" (des points clés courts, une idée par point — pas des phrases longues).
+
+Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildNotionCategorizationPrompt(ficheTitle: string, ficheText: string, existingNotionNames: string[]): string {
   return `
 Tu catégorises le contenu médical d'une fiche de révision par "notions" transversales — des concepts qui peuvent apparaître dans plusieurs chapitres ou plusieurs livres différents (ex: "Hyperkaliémie", "Choc anaphylactique", "Anticoagulants et chirurgie", "Ventilation protectrice"). Le but : pouvoir un jour comparer entre eux tous les passages de la bibliothèque qui parlent de la même notion, même extraits de livres différents.

@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain } from "lucide-react";
 import { QuizMode } from "@/components/el-profesor/quiz-mode";
+import { MindMapDialog } from "@/components/el-profesor/mind-map-dialog";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -75,6 +76,7 @@ export function ChapterView({
   const [focusMode, setFocusMode] = useState(false);
   const [printTarget, setPrintTarget] = useState<"single" | "chapter">("single");
   const [quizOpen, setQuizOpen] = useState(false);
+  const [mindMapOpen, setMindMapOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   function handlePrintChapter() {
@@ -387,6 +389,16 @@ export function ChapterView({
             variant="ghost"
             size="icon"
             className="hidden sm:inline-flex"
+            onClick={() => setMindMapOpen(true)}
+            aria-label="Carte mentale du chapitre"
+            title="Carte mentale du chapitre (générée par IA)"
+          >
+            <Brain className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden sm:inline-flex"
             onClick={() => setShortcutsOpen(true)}
             aria-label="Raccourcis clavier"
             title="Raccourcis clavier (?)"
@@ -552,6 +564,7 @@ export function ChapterView({
       {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
 
       {quizOpen && <QuizMode cards={publishedFlashcards} onClose={() => setQuizOpen(false)} />}
+      {mindMapOpen && <MindMapDialog chapterId={chapterId} onClose={() => setMindMapOpen(false)} />}
 
       {pendingSelection && (
         <ProposeFromSelectionDialog
