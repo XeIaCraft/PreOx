@@ -31,6 +31,7 @@ import {
   GitBranch,
   Scissors,
   BookText,
+  Timer,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -192,7 +193,15 @@ type ModalState =
   | { type: "import_content"; chapterId: string; chapterTitle: string }
   | { type: "archive_book"; bookId: string; title: string }
   | { type: "new_edition"; book: { id: string; title: string; author: string | null; edition: string | null; theme: string | null } }
+  | { type: "exam_start"; chapterId: string; chapterTitle: string }
   | null;
+
+const EXAM_DURATION_PRESETS = [
+  { label: "10 min", seconds: 10 * 60 },
+  { label: "20 min", seconds: 20 * 60 },
+  { label: "30 min", seconds: 30 * 60 },
+  { label: "45 min", seconds: 45 * 60 },
+];
 
 export function ElProfesorBoard({
   books,
@@ -1068,6 +1077,13 @@ export function ElProfesorBoard({
                               Révision libre
                             </Button>
                           </Link>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setModal({ type: "exam_start", chapterId: chapter.id, chapterTitle: chapter.title })}
+                          >
+                            <Timer className="h-3.5 w-3.5" /> Examen blanc
+                          </Button>
                         </>
                       )}
 
@@ -1303,6 +1319,27 @@ export function ElProfesorBoard({
             <Button onClick={() => handleArchiveBook(modal.bookId, modal.title)} disabled={isPending}>
               {isPending ? "…" : "Exporter et archiver"}
             </Button>
+          </div>
+        </Modal>
+      )}
+      {modal?.type === "exam_start" && (
+        <Modal title="Examen blanc" description={modal.chapterTitle} onClose={() => setModal(null)} size="sm">
+          <p className="text-sm text-foreground-muted">
+            Toutes les flashcards publiées du chapitre, mélangées, sous un compte à rebours — la session s&apos;arrête
+            automatiquement au temps écoulé. Comme la révision libre, jamais pris en compte dans la planification.
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {EXAM_DURATION_PRESETS.map((preset) => (
+              <Link
+                key={preset.seconds}
+                href={`/apps/el-profesor/chapters/${modal.chapterId}/review?mode=exam&duration=${preset.seconds}`}
+                onClick={() => setModal(null)}
+              >
+                <Button variant="secondary" className="w-full">
+                  {preset.label}
+                </Button>
+              </Link>
+            ))}
           </div>
         </Modal>
       )}

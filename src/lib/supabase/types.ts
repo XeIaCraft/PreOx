@@ -258,7 +258,7 @@ export type ElProfesorNotionUpdateProposalRow = {
 };
 export type ElProfesorContentStatus = "draft" | "published";
 export type ElProfesorReviewRating = "again" | "good";
-export type ElProfesorReviewSource = "scheduled" | "free";
+export type ElProfesorReviewSource = "scheduled" | "free" | "exam";
 
 export type ElProfesorBookRow = {
   id: string;

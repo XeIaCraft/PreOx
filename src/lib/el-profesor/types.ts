@@ -32,7 +32,7 @@ export type FlashcardSide = { text: string };
 export type ChapterStatus = "pending" | "queued" | "extracting" | "draft_ready" | "published" | "failed";
 export type ContentStatus = "draft" | "published";
 export type ReviewRating = "again" | "good";
-export type ReviewSource = "scheduled" | "free";
+export type ReviewSource = "scheduled" | "free" | "exam";
 
 export type Book = {
   id: string;

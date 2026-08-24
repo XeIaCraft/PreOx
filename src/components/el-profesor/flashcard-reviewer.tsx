@@ -137,6 +137,13 @@ function PomodoroTimer({ toast }: { toast: (message: string, opts?: { variant?: 
   );
 }
 
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
 const COMPLETION_MESSAGES = [
   "Session terminée",
   "Bravo, encore une session de faite",
@@ -152,6 +159,7 @@ export function FlashcardReviewer({
   cappedFrom,
   badgeLabel,
   emptyMessage,
+  examDurationMs,
 }: {
   chapterId?: string;
   source: ReviewSource;
@@ -161,6 +169,16 @@ export function FlashcardReviewer({
   badgeLabel?: string;
   /** Overrides the default "nothing to review" copy. */
   emptyMessage?: string;
+  /**
+   * Piste 2026-08-24 ("examens blancs chronométrés") — when set, the
+   * session runs under a visible countdown and force-ends (same results
+   * screen as running out of cards) the instant it hits zero, whatever
+   * card is showing. `source` is expected to be "exam" alongside this,
+   * which behaves like "free" for FSRS (never touches the schedule — a
+   * timed simulation shouldn't distort real scheduling) while staying
+   * distinguishable in the review log.
+   */
+  examDurationMs?: number;
 }) {
   const backHref = chapterId ? `/apps/el-profesor/chapters/${chapterId}` : "/apps/el-profesor";
   const { toast } = useToast();
@@ -190,6 +208,8 @@ export function FlashcardReviewer({
   // Reading the card aloud already covers the main use case (reviewing
   // without looking at the screen); rating still needs a tap/key/swipe.
   const [audioMode, setAudioMode] = useState(false);
+  const [examRemainingMs, setExamRemainingMs] = useState(examDurationMs ?? 0);
+  const [examExpired, setExamExpired] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const revealedAtRef = useRef<number | null>(null);
   // Picked once per session mount so it stays stable across re-renders but varies session to session.
@@ -295,6 +315,22 @@ export function FlashcardReviewer({
     };
   }, []);
 
+  // Exam countdown — ticks once a second and force-ends the session at
+  // zero, independent of how many cards are left.
+  useEffect(() => {
+    if (!examDurationMs || examExpired) return;
+    const interval = setInterval(() => {
+      setExamRemainingMs((ms) => {
+        if (ms <= 1000) {
+          setExamExpired(true);
+          return 0;
+        }
+        return ms - 1000;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [examDurationMs, examExpired]);
+
   // Reads the question aloud on card show, then the answer once revealed —
   // the only two moments audio mode speaks (the confidence step and rating
   // stay silent, tap/key/swipe as usual).
@@ -327,6 +363,10 @@ export function FlashcardReviewer({
     setTally({ again: 0, good: 0 });
     setStruggled([]);
     setLastAction(null);
+    if (examDurationMs) {
+      setExamRemainingMs(examDurationMs);
+      setExamExpired(false);
+    }
   }
 
   function handleUndo() {
@@ -367,7 +407,7 @@ export function FlashcardReviewer({
         setShortcutsOpen(true);
         return;
       }
-      if (!current || isPending) return;
+      if (!current || isPending || examExpired) return;
       if (!revealed && !awaitingConfidence && e.key === " ") {
         e.preventDefault();
         requestReveal();
@@ -388,7 +428,7 @@ export function FlashcardReviewer({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current, revealed, awaitingConfidence, isPending, lastAction]);
+  }, [current, revealed, awaitingConfidence, isPending, lastAction, examExpired]);
 
   function handleCardPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.pointerType !== "touch" || !revealed || isPending) return;
@@ -446,12 +486,20 @@ export function FlashcardReviewer({
     );
   }
 
-  if (!current) {
+  if (!current || examExpired) {
     return (
       <div className="mx-auto max-w-md px-4 py-16 text-center">
         <PartyPopper className="mx-auto h-8 w-8 animate-bounce text-primary-strong" />
-        <p className="mt-3 text-lg font-medium text-foreground">{completionMessage}</p>
-        <p className="mt-1 text-sm text-foreground-muted">{done} carte(s) révisée(s).</p>
+        <p className="mt-3 text-lg font-medium text-foreground">{examDurationMs ? "Examen terminé" : completionMessage}</p>
+        {examDurationMs ? (
+          <p className="mt-1 text-sm text-foreground-muted">
+            {examExpired ? "Temps écoulé — " : ""}
+            {done} carte{done > 1 ? "s" : ""} traitée{done > 1 ? "s" : ""} sur {cards.length} en{" "}
+            {formatDuration(examDurationMs - examRemainingMs)}.
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-foreground-muted">{done} carte(s) révisée(s).</p>
+        )}
         {done > 0 && (
           <p className="mt-1 text-xs text-foreground-subtle">
             <span className="text-success">{tally.good} correcte{tally.good > 1 ? "s" : ""}</span>
@@ -482,12 +530,12 @@ export function FlashcardReviewer({
           <Link href="/apps/el-profesor">
             <Button>Retour à la bibliothèque</Button>
           </Link>
-          {done > 0 && (
+          {(done > 0 || examDurationMs) && (
             <Button variant="secondary" onClick={handleRestart}>
               Recommencer
             </Button>
           )}
-          {undoButton}
+          {!examExpired && undoButton}
         </div>
       </div>
     );
@@ -508,7 +556,7 @@ export function FlashcardReviewer({
             <>
               {undoButton}
               <Badge variant={source === "scheduled" ? "primary" : "neutral"}>
-                {badgeLabel ?? (source === "scheduled" ? "Planifiée" : "Libre")}
+                {badgeLabel ?? (source === "scheduled" ? "Planifiée" : source === "exam" ? "Examen" : "Libre")}
               </Badge>
               {source === "scheduled" && (
                 <button
@@ -522,12 +570,25 @@ export function FlashcardReviewer({
               )}
             </>
           )}
+          {examDurationMs != null && (
+            <span
+              className={`flex items-center gap-1 text-xs font-medium tabular-nums ${examRemainingMs <= 60_000 ? "text-danger" : "text-foreground-subtle"}`}
+              title="Temps restant pour cet examen blanc"
+            >
+              <Timer className="h-3.5 w-3.5" /> {formatDuration(examRemainingMs)}
+            </span>
+          )}
           <span className="text-xs text-foreground-subtle">
             {index + 1} / {cards.length}
           </span>
+          {examDurationMs != null && !focusMode && (
+            <Button variant="ghost" size="sm" onClick={() => setExamExpired(true)} className="h-8 px-2 text-xs">
+              Terminer l&apos;examen
+            </Button>
+          )}
           {!focusMode && (
             <>
-              <PomodoroTimer toast={toast} />
+              {!examDurationMs && <PomodoroTimer toast={toast} />}
               <Button
                 variant={dictationMode ? "secondary" : "ghost"}
                 size="icon"
