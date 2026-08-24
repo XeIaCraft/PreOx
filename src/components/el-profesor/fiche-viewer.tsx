@@ -147,16 +147,31 @@ function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?
   if (citations.length === 0) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
-      {citations.map((c, i) => (
-        <button
-          key={i}
-          type="button"
-          onClick={() => onClick?.(c)}
-          className="rounded-full border border-border-strong px-2.5 py-1 text-xs text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
-        >
-          p. {c.page}
-        </button>
-      ))}
+      {citations.map((c, i) =>
+        // page 0 is the sentinel for citations imported from a source with
+        // no PDF to ground-truth against (Word/PowerPoint chapter, or a
+        // hand-pasted external extraction) — see importChapterContent.
+        // Surfaced as its own pastille rather than a misleading "p. 0",
+        // and not clickable since there's no PDF page to jump to.
+        c.page === 0 ? (
+          <span
+            key={i}
+            title="Cette citation vient d'une source sans PDF (import Word/PowerPoint ou externe) — pas de page à afficher."
+            className="rounded-full border border-border-strong bg-surface-muted px-2.5 py-1 text-xs text-foreground-subtle"
+          >
+            Source externe
+          </span>
+        ) : (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onClick?.(c)}
+            className="rounded-full border border-border-strong px-2.5 py-1 text-xs text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
+          >
+            p. {c.page}
+          </button>
+        )
+      )}
     </div>
   );
 }

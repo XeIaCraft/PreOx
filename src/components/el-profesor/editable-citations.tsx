@@ -50,14 +50,26 @@ export function EditableCitations({
           />
         ) : (
           <span key={i} className="flex items-center overflow-hidden rounded-full border border-border-strong text-[11px] text-foreground-subtle">
-            <button
-              type="button"
-              onClick={() => onCitationClick?.(c)}
-              className="px-2 py-0.5 hover:text-primary-strong"
-              title="Aller à cette page dans le PDF"
-            >
-              p. {c.page}
-            </button>
+            {c.page === 0 ? (
+              // Sentinel for a citation imported from a source with no PDF
+              // to ground-truth against (Word/PowerPoint chapter, or a
+              // hand-pasted external extraction) — see importChapterContent.
+              <span
+                className="bg-surface-muted px-2 py-0.5"
+                title="Cette citation vient d'une source sans PDF (import Word/PowerPoint ou externe) — pas de page à afficher."
+              >
+                Source externe
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onCitationClick?.(c)}
+                className="px-2 py-0.5 hover:text-primary-strong"
+                title="Aller à cette page dans le PDF"
+              >
+                p. {c.page}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setEditingIndex(i)}
