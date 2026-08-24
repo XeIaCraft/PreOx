@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, X, PartyPopper, Undo2, Info, Keyboard, Timer, Square, PenLine, Maximize2, Minimize2, BellOff } from "lucide-react";
+import { ArrowLeft, Check, X, PartyPopper, Undo2, Info, Keyboard, Timer, Square, PenLine, Maximize2, Minimize2, BellOff, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { submitReview, undoReview, excludeFlashcardFromReviews, type ReviewConfidence } from "@/app/apps/el-profesor/actions/review";
@@ -181,6 +181,15 @@ export function FlashcardReviewer({
   const [dictationMode, setDictationMode] = useState(false);
   const [dictationInput, setDictationInput] = useState("");
   const [focusMode, setFocusMode] = useState(false);
+  // Mode audio mains libres (piste 2026-08-24) — narrowed to automatic
+  // text-to-speech of the question/réponse via the Web Speech API's
+  // SpeechSynthesis, deliberately without voice-command grading:
+  // SpeechRecognition's browser support and accuracy are far less
+  // consistent, and a mis-heard "correct"/"incorrect" would silently
+  // corrupt the FSRS schedule — too risky to ship without live testing.
+  // Reading the card aloud already covers the main use case (reviewing
+  // without looking at the screen); rating still needs a tap/key/swipe.
+  const [audioMode, setAudioMode] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const revealedAtRef = useRef<number | null>(null);
   // Picked once per session mount so it stays stable across re-renders but varies session to session.
@@ -279,6 +288,33 @@ export function FlashcardReviewer({
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    };
+  }, []);
+
+  // Reads the question aloud on card show, then the answer once revealed —
+  // the only two moments audio mode speaks (the confidence step and rating
+  // stay silent, tap/key/swipe as usual).
+  useEffect(() => {
+    if (!audioMode || !current || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const text = revealed
+      ? current.clozeRanges.length > 0
+        ? current.back.text
+          ? `${current.front.text}. ${current.back.text}`
+          : current.front.text
+        : current.back.text
+      : current.clozeRanges.length > 0
+        ? maskClozeText(current.front.text, current.clozeRanges, "trou")
+        : (shownVariant?.text ?? current.front.text);
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "fr-FR";
+    window.speechSynthesis.speak(utterance);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioMode, current?.id, revealed]);
 
   function handleRestart() {
     setIndex(0);
@@ -517,6 +553,21 @@ export function FlashcardReviewer({
               </Button>
             </>
           )}
+          <Button
+            variant={audioMode ? "secondary" : "ghost"}
+            size="icon"
+            onClick={() => {
+              if (!audioMode && !(typeof window !== "undefined" && "speechSynthesis" in window)) {
+                toast("Lecture vocale non prise en charge par ce navigateur.", { variant: "error" });
+                return;
+              }
+              setAudioMode((m) => !m);
+            }}
+            aria-label={audioMode ? "Désactiver le mode audio" : "Activer le mode audio"}
+            title="Mode audio : la question puis la réponse sont lues à voix haute automatiquement — évaluer reste tactile/clavier"
+          >
+            {audioMode ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+          </Button>
           <Button
             variant="ghost"
             size="icon"
