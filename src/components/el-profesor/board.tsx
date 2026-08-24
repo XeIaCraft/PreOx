@@ -30,6 +30,7 @@ import {
   ListTree,
   GitBranch,
   Scissors,
+  BookText,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -533,6 +534,11 @@ export function ElProfesorBoard({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/apps/el-profesor/guide">
+            <Button variant="ghost" size="icon" aria-label="Guide d'utilisation" title="Guide d'utilisation">
+              <BookText className="h-4 w-4" />
+            </Button>
+          </Link>
           <Button variant="ghost" size="icon" onClick={() => setTourOpen(true)} aria-label="Revoir le tutoriel" title="Revoir le tutoriel">
             <HelpCircle className="h-4 w-4" />
           </Button>
