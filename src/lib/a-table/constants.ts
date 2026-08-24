@@ -24,17 +24,6 @@ export const DAY_LABELS: Record<Placement, string> = {
   sunday: "Dimanche",
 };
 
-export const WEEKDAY_INDEX: Record<Placement, number> = {
-  monday: 0,
-  tuesday: 1,
-  wednesday: 2,
-  thursday: 3,
-  friday: 4,
-  saturday: 5,
-  sunday: 6,
-  backlog: -1,
-};
-
 export const APPETITE_MULTIPLIERS: Record<Appetite, number> = {
   low: 0.8,
   normal: 1.0,
