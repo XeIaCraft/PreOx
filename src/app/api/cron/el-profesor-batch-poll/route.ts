@@ -211,6 +211,8 @@ export async function GET(request: Request) {
 
     let succeeded = 0;
     let errored = 0;
+    let promptTokens = 0;
+    let candidatesTokens = 0;
     let anyFinished = false; // false if every item was just an intermediate "until complete" pass — see applyBatchResult's doc comment
     for (const result of results) {
       const item = itemByCustomId.get(result.customId);
@@ -218,8 +220,11 @@ export async function GET(request: Request) {
       try {
         const { continued } = await applyBatchResult(admin, item.target as unknown as BatchItemTarget, result, job.created_by);
         if (!continued) anyFinished = true;
-        if (result.outcome === "succeeded") succeeded++;
-        else errored++;
+        if (result.outcome === "succeeded") {
+          succeeded++;
+          promptTokens += result.usage.inputTokens;
+          candidatesTokens += result.usage.outputTokens;
+        } else errored++;
         await admin
           .from("el_profesor_batch_items")
           .update({ status: result.outcome, processed_at: new Date().toISOString(), error: result.outcome === "errored" ? result.message : null })
@@ -233,9 +238,21 @@ export async function GET(request: Request) {
       if (job.kind === "notion_categorization" || job.kind === "contradiction_check" || job.kind === "notion_update_check") touchedNotions = true;
     }
 
+    // Token sums accumulate across every poll of this job — if some items
+    // are still mid-"until complete"-chain (anyFinished false for them) the
+    // job stays "completed" with whatever succeeded on this poll; the chain
+    // continuation is tracked by the newly-spawned job it triggered, not
+    // this one, so no double-counting here.
     await admin
       .from("el_profesor_batch_jobs")
-      .update({ status: "completed", succeeded_count: succeeded, errored_count: errored, completed_at: new Date().toISOString() })
+      .update({
+        status: "completed",
+        succeeded_count: succeeded,
+        errored_count: errored,
+        prompt_tokens: promptTokens,
+        candidates_tokens: candidatesTokens,
+        completed_at: new Date().toISOString(),
+      })
       .eq("id", job.id);
     completedCount++;
 

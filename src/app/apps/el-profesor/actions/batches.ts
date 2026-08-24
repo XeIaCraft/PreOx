@@ -71,7 +71,7 @@ export async function submitExtractionBatch(chapterIds: string[]): Promise<Actio
     return { error: err instanceof GeminiError ? err.message : "Échec de la soumission du lot." };
   }
 
-  const batchJobId = await insertBatchJob(supabase, "extraction", anthropicBatchId, requests.length, profile.id);
+  const batchJobId = await insertBatchJob(supabase, "extraction", anthropicBatchId, requests.length, profile.id, config.model);
   await insertBatchItems(supabase, batchJobId, requests);
   await supabase.from("el_profesor_chapters").update({ status: "queued", extraction_error: null }).in(
     "id",
@@ -187,7 +187,7 @@ export async function submitNotionCategorizationBatch(chapterId: string): Promis
     return { error: err instanceof GeminiError ? err.message : "Échec de la soumission du lot." };
   }
 
-  const batchJobId = await insertBatchJob(supabase, "notion_categorization", anthropicBatchId, requests.length, profile.id);
+  const batchJobId = await insertBatchJob(supabase, "notion_categorization", anthropicBatchId, requests.length, profile.id, config.model);
   await insertBatchItems(supabase, batchJobId, requests);
 
   revalidatePath("/apps/el-profesor/notions");
@@ -247,7 +247,7 @@ export async function submitContradictionCheckBatch(notionId: string): Promise<A
     return { error: err instanceof GeminiError ? err.message : "Échec de la soumission du lot." };
   }
 
-  const batchJobId = await insertBatchJob(supabase, "contradiction_check", anthropicBatchId, requests.length, profile.id);
+  const batchJobId = await insertBatchJob(supabase, "contradiction_check", anthropicBatchId, requests.length, profile.id, config.model);
   await insertBatchItems(supabase, batchJobId, requests);
 
   revalidatePath("/apps/el-profesor/notions");
@@ -319,7 +319,7 @@ export async function submitNotionUpdateCheckBatch(
     return { error: err instanceof GeminiError ? err.message : "Échec de la soumission du lot." };
   }
 
-  const batchJobId = await insertBatchJob(supabase, "notion_update_check", anthropicBatchId, requests.length, profile.id);
+  const batchJobId = await insertBatchJob(supabase, "notion_update_check", anthropicBatchId, requests.length, profile.id, config.model);
   await insertBatchItems(supabase, batchJobId, requests);
 
   revalidatePath("/apps/el-profesor/notions");

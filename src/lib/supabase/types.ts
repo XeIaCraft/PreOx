@@ -223,6 +223,10 @@ export type ElProfesorBatchJobRow = {
   created_by: string | null;
   created_at: string;
   completed_at: string | null;
+  /** Bare Claude model id (no "claude:" prefix) — set at submission time, used to estimate this job's cost once completed_at is set. Null on jobs submitted before this column existed. */
+  model: string | null;
+  prompt_tokens: number | null;
+  candidates_tokens: number | null;
 };
 
 export type ElProfesorBatchItemRow = {

@@ -55,11 +55,12 @@ export async function insertBatchJob(
   kind: ClaudeBatchKind,
   anthropicBatchId: string,
   requestCount: number,
-  createdBy: string | null
+  createdBy: string | null,
+  model: string
 ): Promise<string> {
   const { data, error } = await supabase
     .from("el_profesor_batch_jobs")
-    .insert({ kind, anthropic_batch_id: anthropicBatchId, request_count: requestCount, created_by: createdBy })
+    .insert({ kind, anthropic_batch_id: anthropicBatchId, request_count: requestCount, created_by: createdBy, model })
     .select("id")
     .single();
   if (error || !data) throw new GeminiError("Lot Claude soumis, mais son suivi n'a pas pu être enregistré.");
@@ -122,7 +123,7 @@ export async function submitComplementaryBatchCore(
   if (requests.length === 0) throw new GeminiError("Aucun chapitre éligible.");
 
   const anthropicBatchId = await submitClaudeBatch(config, "complementary", requests);
-  const batchJobId = await insertBatchJob(supabase, "complementary", anthropicBatchId, requests.length, createdBy);
+  const batchJobId = await insertBatchJob(supabase, "complementary", anthropicBatchId, requests.length, createdBy, config.model);
   await insertBatchItems(supabase, batchJobId, requests);
   await supabase
     .from("el_profesor_chapters")

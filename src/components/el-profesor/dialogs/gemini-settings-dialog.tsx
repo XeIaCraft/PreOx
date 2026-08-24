@@ -19,6 +19,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import type { GeminiUsageStats, ElProfesorAiProvider } from "@/lib/el-profesor/dal";
 import type { ElProfesorBatchJobRow, ElProfesorBatchJobKind } from "@/lib/supabase/types";
+import { estimateCostUsd } from "@/lib/el-profesor/ai-pricing";
 
 const BATCH_KIND_LABEL: Record<ElProfesorBatchJobKind, string> = {
   extraction: "Extraction",
@@ -382,6 +383,16 @@ export function GeminiSettingsDialog({
                     {new Date(job.created_at).toLocaleString("fr-FR")} · {job.request_count} requête{job.request_count > 1 ? "s" : ""}
                     {job.status === "completed" ? ` · ${job.succeeded_count} réussite(s), ${job.errored_count} échec(s)` : ""}
                   </p>
+                  {job.status === "completed" &&
+                    job.model &&
+                    job.prompt_tokens !== null &&
+                    job.candidates_tokens !== null &&
+                    (() => {
+                      const cost = estimateCostUsd(`claude:${job.model}`, job.prompt_tokens, job.candidates_tokens);
+                      return (
+                        <p className="text-foreground-subtle">{cost === null ? "Coût non estimable pour ce modèle." : `≈ ${formatUsd(cost)}`}</p>
+                      );
+                    })()}
                   {job.status === "failed" && job.error && <p className="text-danger">{job.error}</p>}
                 </div>
                 <span
