@@ -1,10 +1,10 @@
 import "server-only";
 
+import Anthropic from "@anthropic-ai/sdk";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { GeminiError, unescapeHtmlEntities } from "@/lib/gemini-shared";
-import { buildExtractionPrompt, buildComplementaryPrompt } from "@/lib/el-profesor/prompts";
+import { buildExtractionPrompt, buildComplementaryPrompt, buildNotionCategorizationPrompt, buildContradictionCheckPrompt } from "@/lib/el-profesor/prompts";
 import { BLOCK_TYPES } from "./gemini";
-import type { ComplementaryResult, ExtractionResult } from "@/lib/el-profesor/types";
 
 // Claude as an alternate extraction provider to Gemini — another lever
 // against quota exhaustion, chosen from the "Réglages IA" panel. Kept as a
@@ -16,15 +16,24 @@ import type { ComplementaryResult, ExtractionResult } from "@/lib/el-profesor/ty
 // call site already catches `err instanceof GeminiError` generically ("the
 // AI call failed"), and duplicating that plumbing for a second class isn't
 // worth it.
-
-const MESSAGES_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_VERSION = "2023-06-01";
+//
+// Bulk work (chapter extraction/gap-fill, cross-book notion categorization,
+// contradiction detection) goes through the Message Batches API instead of
+// one synchronous call per item: 50% cheaper, and the admin doesn't have to
+// keep a tab open — a submitted batch is picked up later by the cron poller
+// (see /api/cron/el-profesor-batch-poll) whenever Anthropic finishes it.
+// Small on-demand Claude calls (there currently are none — every ephemeral
+// study tool is Gemini-only) would stay synchronous if that ever changes.
 
 export const EL_PROFESOR_CLAUDE_MODEL_DEFAULT = "claude-sonnet-5";
 
 export interface ClaudeConfig {
   apiKey: string;
   model: string;
+}
+
+function claudeClient(apiKey: string): Anthropic {
+  return new Anthropic({ apiKey });
 }
 
 // Same logical shape as Gemini's schemas in gemini.ts, kept as a separate
@@ -77,6 +86,8 @@ const FLASHCARD_ITEM_SCHEMA = {
     front: { type: "string" },
     back: { type: "string" },
     citations: { type: "array", items: CITATION_SCHEMA },
+    suggested_image_page: { type: "integer" },
+    suggested_image_hint: { type: "string" },
   },
   required: ["front", "back", "citations"],
 };
@@ -105,7 +116,7 @@ const EXTRACTION_TOOL = {
   name: "submit_extraction",
   description: "Soumet le résultat structuré de l'extraction du chapitre.",
   input_schema: {
-    type: "object",
+    type: "object" as const,
     properties: {
       sub_entities: { type: "array", items: SUB_ENTITY_ITEM_SCHEMA },
       estimated_remaining_passes: ESTIMATED_REMAINING_PASSES_SCHEMA,
@@ -118,7 +129,7 @@ const COMPLEMENTARY_TOOL = {
   name: "submit_complementary",
   description: "Soumet le résultat structuré de la passe complémentaire.",
   input_schema: {
-    type: "object",
+    type: "object" as const,
     properties: {
       additions_for_existing: {
         type: "array",
@@ -136,6 +147,31 @@ const COMPLEMENTARY_TOOL = {
       estimated_remaining_passes: ESTIMATED_REMAINING_PASSES_SCHEMA,
     },
     required: ["additions_for_existing", "new_sub_entities", "estimated_remaining_passes"],
+  },
+};
+
+const NOTION_CATEGORIZATION_TOOL = {
+  name: "submit_notions",
+  description: "Soumet les notions transversales identifiées pour cette fiche.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      notions: { type: "array", items: { type: "string" } },
+    },
+    required: ["notions"],
+  },
+};
+
+const CONTRADICTION_CHECK_TOOL = {
+  name: "submit_contradiction_check",
+  description: "Soumet le résultat de la comparaison entre les deux fiches.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      contradictory: { type: "boolean" },
+      explanation: { type: "string" },
+    },
+    required: ["contradictory", "explanation"],
   },
 };
 
@@ -165,67 +201,10 @@ async function logClaudeUsage(entry: {
   }
 }
 
-// 429 = rate limit, 529 = Anthropic's "overloaded" status — both transient
-// and worth a couple of retries with backoff, mirroring gemini.ts.
-const RETRYABLE_STATUS = new Set([429, 529]);
-const RETRY_DELAYS_MS = [2000, 5000];
+type ClaudeTool = Anthropic.Messages.Tool;
+type ClaudeContentBlock = Anthropic.Messages.ContentBlockParam;
 
-async function callClaudeTool(
-  apiKey: string,
-  model: string,
-  content: Array<Record<string, unknown>>,
-  tool: { name: string; description: string; input_schema: Record<string, unknown> },
-  attempt = 0
-): Promise<unknown> {
-  const response = await fetch(MESSAGES_URL, {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": ANTHROPIC_VERSION,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 8192,
-      messages: [{ role: "user", content }],
-      tools: [tool],
-      tool_choice: { type: "tool", name: tool.name },
-    }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    await logClaudeUsage({ model, success: false, statusCode: response.status, errorMessage: body.slice(0, 300) });
-    if (RETRYABLE_STATUS.has(response.status) && attempt < RETRY_DELAYS_MS.length) {
-      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
-      return callClaudeTool(apiKey, model, content, tool, attempt + 1);
-    }
-    throw new GeminiError(`Appel Claude échoué (${response.status}) : ${body.slice(0, 300) || "erreur inconnue"}.`);
-  }
-
-  const payload = await response.json();
-  const usage = payload?.usage as { input_tokens?: number; output_tokens?: number } | undefined;
-  const blocks = payload?.content as Array<Record<string, unknown>> | undefined;
-  const toolUse = blocks?.find((b) => b.type === "tool_use");
-
-  if (!toolUse || !toolUse.input) {
-    await logClaudeUsage({ model, success: false, statusCode: response.status, errorMessage: "Réponse Claude sans résultat structuré." });
-    throw new GeminiError("Réponse Claude vide ou inattendue.");
-  }
-
-  await logClaudeUsage({
-    model,
-    success: true,
-    statusCode: response.status,
-    promptTokens: usage?.input_tokens,
-    candidatesTokens: usage?.output_tokens,
-    totalTokens: usage?.input_tokens != null && usage?.output_tokens != null ? usage.input_tokens + usage.output_tokens : undefined,
-  });
-
-  return unescapeHtmlEntities(toolUse.input);
-}
-
-function pdfDocumentBlock(bytes: Uint8Array): Record<string, unknown> {
+function pdfDocumentBlock(bytes: Uint8Array): ClaudeContentBlock {
   return {
     type: "document",
     source: {
@@ -233,23 +212,144 @@ function pdfDocumentBlock(bytes: Uint8Array): Record<string, unknown> {
       media_type: "application/pdf",
       data: Buffer.from(bytes).toString("base64"),
     },
+  } as ClaudeContentBlock;
+}
+
+// -- Message Batches API (50% cheaper, asynchronous — no admin babysitting) --
+//
+// Every Claude call in this module goes through the batch path below —
+// extraction, the gap-fill pass, notion categorization, and contradiction
+// detection all submit here rather than calling client.messages.create
+// synchronously (see actions/batches.ts for the submission side and
+// /api/cron/el-profesor-batch-poll for the async result poller). There is
+// deliberately no synchronous single-request Claude entry point left in
+// this module: every one of these operations is either bulk by nature
+// (notion categorization, contradiction checking) or benefits from the same
+// flat 50% discount even for a single chapter, so routing everything
+// through one path avoids maintaining two versions of each call.
+
+export type ClaudeBatchKind = "extraction" | "complementary" | "notion_categorization" | "contradiction_check";
+
+export interface ClaudeBatchRequestSpec {
+  customId: string;
+  content: ClaudeContentBlock[];
+  tool: ClaudeTool;
+}
+
+const BATCH_TOOL_BY_KIND: Record<ClaudeBatchKind, ClaudeTool> = {
+  extraction: EXTRACTION_TOOL,
+  complementary: COMPLEMENTARY_TOOL,
+  notion_categorization: NOTION_CATEGORIZATION_TOOL,
+  contradiction_check: CONTRADICTION_CHECK_TOOL,
+};
+
+export function claudeBatchTool(kind: ClaudeBatchKind): ClaudeTool {
+  return BATCH_TOOL_BY_KIND[kind];
+}
+
+export function buildExtractionBatchContent(chapterTitle: string, bytes: Uint8Array): ClaudeContentBlock[] {
+  return [pdfDocumentBlock(bytes), { type: "text", text: buildExtractionPrompt(chapterTitle) } as ClaudeContentBlock];
+}
+
+export function buildComplementaryBatchContent(chapterTitle: string, bytes: Uint8Array, coverageSummaryJson: string): ClaudeContentBlock[] {
+  return [pdfDocumentBlock(bytes), { type: "text", text: buildComplementaryPrompt(chapterTitle, coverageSummaryJson) } as ClaudeContentBlock];
+}
+
+export function buildNotionCategorizationBatchContent(ficheTitle: string, ficheText: string, existingNotionNames: string[]): ClaudeContentBlock[] {
+  return [{ type: "text", text: buildNotionCategorizationPrompt(ficheTitle, ficheText, existingNotionNames) } as ClaudeContentBlock];
+}
+
+export function buildContradictionCheckBatchContent(
+  notionName: string,
+  ficheATitle: string,
+  ficheAText: string,
+  ficheBTitle: string,
+  ficheBText: string
+): ClaudeContentBlock[] {
+  return [{ type: "text", text: buildContradictionCheckPrompt(notionName, ficheATitle, ficheAText, ficheBTitle, ficheBText) } as ClaudeContentBlock];
+}
+
+/** Submits one batch covering every request at once — returns Anthropic's own batch id to poll later. */
+export async function submitClaudeBatch(config: ClaudeConfig, kind: ClaudeBatchKind, requests: ClaudeBatchRequestSpec[]): Promise<string> {
+  if (requests.length === 0) throw new GeminiError("Aucune requête à soumettre.");
+  const client = claudeClient(config.apiKey);
+  try {
+    const batch = await client.messages.batches.create({
+      requests: requests.map((r) => ({
+        custom_id: r.customId,
+        params: {
+          model: config.model,
+          max_tokens: 32000,
+          messages: [{ role: "user", content: r.content }],
+          tools: [r.tool],
+          tool_choice: { type: "tool", name: r.tool.name },
+        },
+      })),
+    });
+    return batch.id;
+  } catch (err) {
+    throw new GeminiError(`Échec de la soumission du lot Claude : ${err instanceof Error ? err.message : "erreur inconnue"}.`);
+  }
+}
+
+export interface ClaudeBatchStatus {
+  ended: boolean;
+  succeeded: number;
+  errored: number;
+  processing: number;
+  canceled: number;
+  expired: number;
+}
+
+export async function retrieveClaudeBatch(apiKey: string, anthropicBatchId: string): Promise<ClaudeBatchStatus> {
+  const client = claudeClient(apiKey);
+  const batch = await client.messages.batches.retrieve(anthropicBatchId);
+  return {
+    ended: batch.processing_status === "ended",
+    succeeded: batch.request_counts.succeeded,
+    errored: batch.request_counts.errored,
+    processing: batch.request_counts.processing,
+    canceled: batch.request_counts.canceled,
+    expired: batch.request_counts.expired,
   };
 }
 
-export async function extractChapterContentClaude(config: ClaudeConfig, bytes: Uint8Array, chapterTitle: string): Promise<ExtractionResult> {
-  const content = [pdfDocumentBlock(bytes), { type: "text", text: buildExtractionPrompt(chapterTitle) }];
-  const result = await callClaudeTool(config.apiKey, config.model, content, EXTRACTION_TOOL);
-  return result as ExtractionResult;
-}
+export type ClaudeBatchResult =
+  | { customId: string; outcome: "succeeded"; output: unknown; usage: { inputTokens: number; outputTokens: number } }
+  | { customId: string; outcome: "errored"; message: string }
+  | { customId: string; outcome: "expired" | "canceled" };
 
-/** Gap-fill pass via Claude — mirrors extractComplementaryContent in gemini.ts. */
-export async function extractComplementaryContentClaude(
-  config: ClaudeConfig,
-  bytes: Uint8Array,
-  chapterTitle: string,
-  coverageSummaryJson: string
-): Promise<ComplementaryResult> {
-  const content = [pdfDocumentBlock(bytes), { type: "text", text: buildComplementaryPrompt(chapterTitle, coverageSummaryJson) }];
-  const result = await callClaudeTool(config.apiKey, config.model, content, COMPLEMENTARY_TOOL);
-  return result as ComplementaryResult;
+/** Streams every result for an ended batch, normalized to a plain shape (structured tool output already unescaped, same as the sync path). */
+export async function getClaudeBatchResults(apiKey: string, anthropicBatchId: string, model: string): Promise<ClaudeBatchResult[]> {
+  const client = claudeClient(apiKey);
+  const results: ClaudeBatchResult[] = [];
+  for await (const entry of await client.messages.batches.results(anthropicBatchId)) {
+    if (entry.result.type === "succeeded") {
+      const toolUse = entry.result.message.content.find((b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use");
+      if (!toolUse || !toolUse.input) {
+        results.push({ customId: entry.custom_id, outcome: "errored", message: "Résultat Claude sans sortie structurée." });
+        continue;
+      }
+      await logClaudeUsage({
+        model,
+        success: true,
+        promptTokens: entry.result.message.usage.input_tokens,
+        candidatesTokens: entry.result.message.usage.output_tokens,
+        totalTokens: entry.result.message.usage.input_tokens + entry.result.message.usage.output_tokens,
+      });
+      results.push({
+        customId: entry.custom_id,
+        outcome: "succeeded",
+        output: unescapeHtmlEntities(toolUse.input),
+        usage: { inputTokens: entry.result.message.usage.input_tokens, outputTokens: entry.result.message.usage.output_tokens },
+      });
+    } else if (entry.result.type === "errored") {
+      const message = entry.result.error.error.message || "Erreur inconnue.";
+      await logClaudeUsage({ model, success: false, errorMessage: message.slice(0, 300) });
+      results.push({ customId: entry.custom_id, outcome: "errored", message: message.slice(0, 300) });
+    } else {
+      results.push({ customId: entry.custom_id, outcome: entry.result.type });
+    }
+  }
+  return results;
 }

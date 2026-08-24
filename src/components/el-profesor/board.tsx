@@ -69,6 +69,7 @@ import type {
   DueBlockEntry,
 } from "@/lib/el-profesor/dal";
 import type { ChapterStatus, Flashcard, BlockType } from "@/lib/el-profesor/types";
+import type { ElProfesorBatchJobRow } from "@/lib/supabase/types";
 
 const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   definition_mecanisme: "Définition / mécanisme",
@@ -155,6 +156,7 @@ function ElapsedTime({ startedAt }: { startedAt: number }) {
 
 const STATUS_LABEL: Record<ChapterStatus, string> = {
   pending: "PDF importé",
+  queued: "En file (lot Claude)",
   extracting: "Extraction en cours…",
   draft_ready: "Brouillon à relire",
   published: "Publié",
@@ -163,6 +165,7 @@ const STATUS_LABEL: Record<ChapterStatus, string> = {
 
 const STATUS_VARIANT: Record<ChapterStatus, "neutral" | "accent" | "success" | "danger"> = {
   pending: "neutral",
+  queued: "accent",
   extracting: "accent",
   draft_ready: "accent",
   published: "success",
@@ -213,6 +216,7 @@ export function ElProfesorBoard({
   onThisDayNote,
   bookRecommendation,
   dueBlocks,
+  batchJobs,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -244,6 +248,7 @@ export function ElProfesorBoard({
   onThisDayNote: OnThisDayNote | null;
   bookRecommendation: BookRecommendation | null;
   dueBlocks: DueBlockEntry[];
+  batchJobs: ElProfesorBatchJobRow[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -1105,6 +1110,7 @@ export function ElProfesorBoard({
           aiProvider={aiProvider}
           hasClaudeKey={hasClaudeKey}
           claudeModel={claudeModel || "claude-sonnet-5"}
+          batchJobs={batchJobs}
           onClose={() => {
             setModal(null);
             refresh();

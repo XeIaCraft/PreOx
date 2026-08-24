@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireElProfesorAdmin, getElProfesorGeminiConfig, getElProfesorAiProvider, getElProfesorClaudeConfig } from "@/lib/el-profesor/dal";
+import { requireElProfesorAdmin, getElProfesorGeminiConfig, getElProfesorAiProvider } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { downloadChapterPdfBytes, uploadPublicImage } from "@/lib/el-profesor/storage";
 import {
@@ -13,15 +13,15 @@ import {
   generateMnemonic,
   BLOCK_TYPES,
 } from "@/lib/el-profesor/gemini";
-import { extractChapterContentClaude, extractComplementaryContentClaude, type ClaudeConfig } from "@/lib/el-profesor/anthropic";
 import { GeminiError } from "@/lib/gemini-shared";
 import { getChapterContent, getFlashcardVariantStats, type FlashcardVariantStat } from "@/lib/el-profesor/dal";
 import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-profesor/content-log";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { extractPdfPageTexts, correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
+import { allNeedReviewFlags, persistExtraction, persistComplementaryAdditions, buildCoverageSummary } from "@/lib/el-profesor/extraction-persist";
+import { submitExtractionBatch, submitComplementaryBatch } from "./batches";
 import type {
   ExtractionResult,
-  ComplementaryResult,
   ExtractedSubEntity,
   ExtractedFicheBlock,
   ExtractedFlashcard,
@@ -29,34 +29,11 @@ import type {
   Citation,
   BlockContent,
   FlashcardSide,
-  TableBlockContent,
-  ProtocolBlockContent,
 } from "@/lib/el-profesor/types";
 
 export interface ActionState {
   error?: string;
   success?: string;
-}
-
-function needsReview(flags: VerificationFlag[], subEntityIndex: number, blockIndex: number | null, flashcardIndex: number | null) {
-  return flags.some(
-    (f) =>
-      f.sub_entity_index === subEntityIndex &&
-      (blockIndex !== null ? f.block_index === blockIndex : f.flashcard_index === flashcardIndex)
-  );
-}
-
-function allNeedReviewFlags(extraction: ExtractionResult): VerificationFlag[] {
-  const flags: VerificationFlag[] = [];
-  extraction.sub_entities.forEach((sub, subIndex) => {
-    sub.fiche.blocks.forEach((_, blockIndex) =>
-      flags.push({ sub_entity_index: subIndex, block_index: blockIndex, flashcard_index: null, needs_review: true, reason: "Non vérifié automatiquement." })
-    );
-    sub.fiche.flashcards.forEach((_, flashcardIndex) =>
-      flags.push({ sub_entity_index: subIndex, block_index: null, flashcard_index: flashcardIndex, needs_review: true, reason: "Non vérifié automatiquement." })
-    );
-  });
-  return flags;
 }
 
 /**
@@ -65,11 +42,13 @@ function allNeedReviewFlags(extraction: ExtractionResult): VerificationFlag[] {
  * nothing here is visible to non-admins until reviewed and published via
  * `publishFiche`/`finalizeChapterPublication`.
  *
- * With Gemini (the default), a verification pass double-checks each
- * block/flashcard against the source PDF and only flags the ones it doubts.
- * With Claude — an alternative provider for when Gemini's quota runs out,
- * chosen from "Réglages IA" — there's no equivalent verification call yet,
- * so every element is conservatively marked needs_review instead.
+ * With Gemini (the default), this runs synchronously with a verification
+ * pass that double-checks each block/flashcard against the source PDF and
+ * only flags the ones it doubts. With Claude — chosen from "Réglages IA" —
+ * every PDF chapter instead goes through the (cheaper, asynchronous)
+ * Message Batches API: see submitExtractionBatch in actions/batches.ts and
+ * the cron poller at /api/cron/el-profesor-batch-poll. There's no Claude
+ * verification pass, so every element lands needs_review regardless.
  */
 export async function extractChapter(chapterId: string): Promise<ActionState> {
   await requireElProfesorAdmin();
@@ -77,7 +56,16 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
 
   const { data: chapter } = await supabase.from("el_profesor_chapters").select("*").eq("id", chapterId).single();
   if (!chapter) return { error: "Chapitre introuvable." };
-  if (chapter.status === "extracting") return { error: "Une extraction est déjà en cours pour ce chapitre." };
+  if (chapter.status === "extracting" || chapter.status === "queued") {
+    return { error: "Une extraction est déjà en cours ou en file pour ce chapitre." };
+  }
+
+  if (chapter.source_kind === "pdf") {
+    const provider = await getElProfesorAiProvider();
+    if (provider === "claude") {
+      return submitExtractionBatch([chapterId]);
+    }
+  }
 
   await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
 
@@ -88,21 +76,18 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
     let extraction: ExtractionResult;
     let flags: VerificationFlag[];
     let verificationFailed = false;
-    let providerNote = "";
 
     if (chapter.source_kind !== "pdf") {
       // Word/PowerPoint source (item 5 of the backlog): no file to attach,
       // no page ground-truth to verify against, so this always goes through
-      // Gemini's text-only path regardless of the configured provider —
-      // Claude's own extraction function is PDF-bytes-only, and adding a
-      // second text-only provider path isn't worth it for this source kind.
+      // Gemini's text-only path regardless of the configured provider — no
+      // Claude batch path exists for a source with no PDF to attach.
       const config = await getElProfesorGeminiConfig();
       const { extraction: textExtraction } = await extractChapterContentFromTextWithRotation(config, chapter.title, chapter.source_text ?? "");
       extraction = textExtraction;
       flags = allNeedReviewFlags(extraction);
-      providerNote = " Chaque élément est marqué « à vérifier » (pas de document source à vérifier automatiquement pour un import Word/PowerPoint).";
 
-      await persistExtraction(chapterId, extraction, flags);
+      await persistExtraction(supabase, chapterId, extraction, flags);
       await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "succeeded", raw_output: extraction as unknown as never });
       await supabase
         .from("el_profesor_chapters")
@@ -110,44 +95,35 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
         .eq("id", chapterId);
 
       revalidatePath("/apps/el-profesor");
-      return { success: "Extraction terminée. Relisez le contenu généré avant publication." + providerNote };
+      return {
+        success:
+          "Extraction terminée. Relisez le contenu généré avant publication. Chaque élément est marqué « à vérifier » (pas de document source à vérifier automatiquement pour un import Word/PowerPoint).",
+      };
     }
 
-    const provider = await getElProfesorAiProvider();
+    // PDF chapter, Gemini provider (Claude was already routed to the batch path above).
+    const config = await getElProfesorGeminiConfig();
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
+    const [{ extraction: geminiExtraction, apiKey: winningKey, model, file }, pageTexts] = await Promise.all([
+      extractChapterContentWithRotation(config, bytes, chapter.title, chapter.title),
+      extractPdfPageTexts(bytes).catch(() => null),
+    ]);
+    extraction = geminiExtraction;
+    apiKey = winningKey;
+    geminiFileName = file.name;
 
-    if (provider === "claude") {
-      const claudeConfig = await getElProfesorClaudeConfig();
-      const [claudeExtraction, pageTexts] = await Promise.all([
-        extractChapterContentClaude(claudeConfig, bytes, chapter.title),
-        extractPdfPageTexts(bytes).catch(() => null),
-      ]);
-      extraction = claudeExtraction;
-      if (pageTexts) correctExtractionCitations(extraction, pageTexts);
-      flags = allNeedReviewFlags(extraction);
-    } else {
-      const config = await getElProfesorGeminiConfig();
-      const [{ extraction: geminiExtraction, apiKey: winningKey, model, file }, pageTexts] = await Promise.all([
-        extractChapterContentWithRotation(config, bytes, chapter.title, chapter.title),
-        extractPdfPageTexts(bytes).catch(() => null),
-      ]);
-      extraction = geminiExtraction;
-      apiKey = winningKey;
-      geminiFileName = file.name;
+    // Ground-truth-corrects citation pages against the PDF's actual text
+    // when possible (best-effort — null on a malformed/unparseable file, in
+    // which case citations are left exactly as the model produced them).
+    if (pageTexts) correctExtractionCitations(extraction, pageTexts);
 
-      // Ground-truth-corrects citation pages against the PDF's actual text
-      // when possible (best-effort — null on a malformed/unparseable file,
-      // in which case citations are left exactly as the model produced them).
-      if (pageTexts) correctExtractionCitations(extraction, pageTexts);
+    const verification = await verifyExtraction(apiKey, model, file, extraction).catch(() => {
+      verificationFailed = true;
+      return { flags: [] as VerificationFlag[] };
+    });
+    flags = verification.flags;
 
-      const verification = await verifyExtraction(apiKey, model, file, extraction).catch(() => {
-        verificationFailed = true;
-        return { flags: [] as VerificationFlag[] };
-      });
-      flags = verification.flags;
-    }
-
-    await persistExtraction(chapterId, extraction, flags);
+    await persistExtraction(supabase, chapterId, extraction, flags);
 
     await supabase
       .from("el_profesor_extraction_jobs")
@@ -163,8 +139,7 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
         "Extraction terminée. Relisez le contenu généré avant publication." +
         (verificationFailed
           ? " Attention : la passe de vérification des citations a échoué et n'a pas pu tourner — relecture manuelle recommandée."
-          : "") +
-        (provider === "claude" ? " Chaque élément est marqué « à vérifier » (pas de passe de vérification automatique avec Claude)." : ""),
+          : ""),
     };
   } catch (err) {
     const message = err instanceof GeminiError ? err.message : "Échec de l'extraction du chapitre.";
@@ -294,7 +269,7 @@ export async function importChapterContent(chapterId: string, rawJson: string): 
     // against — the pasted JSON's citations (page: 0, verbatim quote) are
     // kept exactly as provided.
 
-    await persistExtraction(chapterId, extraction, allNeedReviewFlags(extraction));
+    await persistExtraction(supabase, chapterId, extraction, allNeedReviewFlags(extraction));
 
     await supabase
       .from("el_profesor_extraction_jobs")
@@ -314,209 +289,40 @@ export async function importChapterContent(chapterId: string, rawJson: string): 
   }
 }
 
-/** Inserts one sub-entity + its fiche + blocks + flashcards. Shared by the initial and complementary extraction pipelines. */
-async function insertNewSubEntity(
-  chapterId: string,
-  sub: ExtractedSubEntity,
-  orderIndex: number,
-  blockNeedsReview: (blockIndex: number) => boolean,
-  cardNeedsReview: (cardIndex: number) => boolean
-): Promise<{ blockCount: number; cardCount: number }> {
-  const supabase = await createClient();
-
-  const { data: subEntity, error: subError } = await supabase
-    .from("el_profesor_sub_entities")
-    .insert({ chapter_id: chapterId, name: sub.name, order_index: orderIndex, summary: sub.summary })
-    .select("id")
-    .single();
-  if (subError || !subEntity) throw new GeminiError(`Échec de l'enregistrement de « ${sub.name} ».`);
-
-  const { data: fiche, error: ficheError } = await supabase
-    .from("el_profesor_fiches")
-    .insert({ sub_entity_id: subEntity.id, title: sub.fiche.title, status: "draft" })
-    .select("id")
-    .single();
-  if (ficheError || !fiche) throw new GeminiError(`Échec de l'enregistrement de la fiche « ${sub.fiche.title} ».`);
-
-  if (sub.fiche.blocks.length > 0) {
-    const { error } = await supabase.from("el_profesor_fiche_blocks").insert(
-      sub.fiche.blocks.map((block, blockIndex) => ({
-        fiche_id: fiche.id,
-        order_index: blockIndex,
-        block_type: block.block_type,
-        content: block.content as unknown as BlockContent as never,
-        citations: block.citations as unknown as Citation[] as never,
-        needs_review: blockNeedsReview(blockIndex),
-        status: "draft",
-      }))
-    );
-    if (error) throw new GeminiError("Échec de l'enregistrement des blocs de contenu.");
-  }
-
-  if (sub.fiche.flashcards.length > 0) {
-    const { error } = await supabase.from("el_profesor_flashcards").insert(
-      sub.fiche.flashcards.map((card, cardIndex) => ({
-        fiche_id: fiche.id,
-        front: { text: card.front } as FlashcardSide as never,
-        back: { text: card.back } as FlashcardSide as never,
-        citations: card.citations as unknown as Citation[] as never,
-        status: "draft",
-        needs_review: cardNeedsReview(cardIndex),
-        suggested_image_page: card.suggested_image_page ?? null,
-        suggested_image_hint: card.suggested_image_hint ?? null,
-      }))
-    );
-    if (error) throw new GeminiError("Échec de l'enregistrement des flashcards.");
-  }
-
-  return { blockCount: sub.fiche.blocks.length, cardCount: sub.fiche.flashcards.length };
-}
-
-async function persistExtraction(chapterId: string, extraction: ExtractionResult, flags: VerificationFlag[]) {
-  for (let subIndex = 0; subIndex < extraction.sub_entities.length; subIndex++) {
-    const sub = extraction.sub_entities[subIndex];
-    await insertNewSubEntity(
-      chapterId,
-      sub,
-      subIndex,
-      (blockIndex) => needsReview(flags, subIndex, blockIndex, null),
-      (cardIndex) => needsReview(flags, subIndex, null, cardIndex)
-    );
-  }
-}
-
-function blockExcerpt(blockType: string, content: BlockContent): string {
-  if (blockType === "tableau_comparatif") {
-    const c = content as TableBlockContent;
-    return `Tableau : ${(c.headers ?? []).join(" | ")}`;
-  }
-  if (blockType === "protocole_paliers") {
-    const c = content as ProtocolBlockContent;
-    return (c.steps ?? []).map((s) => s.label).join(" -> ");
-  }
-  return ((content as { text?: string }).text ?? "").slice(0, 200);
-}
-
-/** Concise summary of what a chapter already covers, sent to Gemini so the gap-fill pass knows what NOT to repeat. */
-function buildCoverageSummary(subEntities: Awaited<ReturnType<typeof getChapterContent>>): string {
-  const summary = subEntities
-    .filter((s) => s.fiche)
-    .map((s) => ({
-      sub_entity_name: s.name,
-      blocks: s.fiche!.blocks.map((b) => ({ block_type: b.blockType, excerpt: blockExcerpt(b.blockType, b.content) })),
-      flashcard_fronts: s.fiche!.flashcards.map((c) => c.front.text),
-    }));
-  return JSON.stringify(summary);
-}
-
-async function persistComplementaryAdditions(
-  chapterId: string,
-  result: ComplementaryResult,
-  existingContent: Awaited<ReturnType<typeof getChapterContent>>
-): Promise<number> {
-  const supabase = await createClient();
-  let added = 0;
-
-  const subEntityByName = new Map(existingContent.filter((s) => s.fiche).map((s) => [s.name.trim().toLowerCase(), s]));
-  let nextOrder = existingContent.reduce((max, s) => Math.max(max, s.orderIndex), -1) + 1;
-
-  for (const addition of result.additions_for_existing) {
-    const match = subEntityByName.get(addition.sub_entity_name.trim().toLowerCase());
-    const ficheId = match?.fiche?.id;
-    // No confident name match — skip rather than guess where this content belongs;
-    // Gemini should have proposed a new sub-entity instead in that case.
-    if (!ficheId) continue;
-
-    const blockOffset = match!.fiche!.blocks.length;
-
-    if (addition.blocks.length > 0) {
-      const { error } = await supabase.from("el_profesor_fiche_blocks").insert(
-        addition.blocks.map((block, i) => ({
-          fiche_id: ficheId,
-          order_index: blockOffset + i,
-          block_type: block.block_type,
-          content: block.content as unknown as BlockContent as never,
-          citations: block.citations as unknown as Citation[] as never,
-          needs_review: true,
-          status: "draft",
-        }))
-      );
-      if (error) throw new GeminiError(`Échec de l'enregistrement des blocs complémentaires pour « ${addition.sub_entity_name} ».`);
-      added += addition.blocks.length;
-    }
-
-    if (addition.flashcards.length > 0) {
-      const { error } = await supabase.from("el_profesor_flashcards").insert(
-        addition.flashcards.map((card) => ({
-          fiche_id: ficheId,
-          front: { text: card.front } as FlashcardSide as never,
-          back: { text: card.back } as FlashcardSide as never,
-          citations: card.citations as unknown as Citation[] as never,
-          status: "draft",
-          needs_review: true,
-          suggested_image_page: card.suggested_image_page ?? null,
-          suggested_image_hint: card.suggested_image_hint ?? null,
-        }))
-      );
-      if (error) throw new GeminiError(`Échec de l'enregistrement des flashcards complémentaires pour « ${addition.sub_entity_name} ».`);
-      added += addition.flashcards.length;
-    }
-  }
-
-  for (const sub of result.new_sub_entities) {
-    const counts = await insertNewSubEntity(
-      chapterId,
-      sub,
-      nextOrder++,
-      () => true,
-      () => true
-    );
-    added += counts.blockCount + counts.cardCount + 1;
-  }
-
-  return added;
-}
-
-type ProviderConfig =
-  | { provider: "gemini"; config: Awaited<ReturnType<typeof getElProfesorGeminiConfig>> }
-  | { provider: "claude"; config: ClaudeConfig };
-
 /**
  * Gap-fill pass: re-reads the chapter's PDF alongside a summary of what's
- * already extracted, and asks the configured provider (Gemini by default,
- * or Claude — see "Réglages IA") to generate only what's missing — never a
- * duplicate of already-covered content. New content lands as
+ * already extracted, and asks Gemini to generate only what's missing —
+ * never a duplicate of already-covered content. New content lands as
  * `draft`/`needs_review` under the existing sub-entities (or as new
  * sub-entities), and goes through the same admin review before publication.
+ * Gemini-only: with Claude, extractChapterComplementary below routes to the
+ * batch path instead (see submitComplementaryBatch in actions/batches.ts) —
+ * there's no way to know how many more passes are needed until an async
+ * batch's results come back, so the untilComplete auto-loop doesn't apply.
  */
 /** Runs exactly one complementary pass. Throws on API/persist failure — caller handles status/job bookkeeping. */
 async function runOneComplementaryPass(
   chapterId: string,
   chapter: { title: string },
-  providerConfig: ProviderConfig,
+  config: Awaited<ReturnType<typeof getElProfesorGeminiConfig>>,
   bytes: Uint8Array,
   existingContent: Awaited<ReturnType<typeof getChapterContent>>,
   pageTexts: string[] | null
 ): Promise<{ addedCount: number; estimatedRemainingPasses: number | null }> {
   const coverageSummary = buildCoverageSummary(existingContent);
+  const supabase = await createClient();
   let geminiFileName: string | null = null;
   let apiKey = "";
   try {
-    let complementary: ComplementaryResult;
-    if (providerConfig.provider === "claude") {
-      complementary = await extractComplementaryContentClaude(providerConfig.config, bytes, chapter.title, coverageSummary);
-    } else {
-      const result = await extractComplementaryContentWithRotation(providerConfig.config, bytes, chapter.title, chapter.title, coverageSummary);
-      complementary = result.complementary;
-      apiKey = result.apiKey;
-      geminiFileName = result.file.name;
-    }
-    if (pageTexts) correctComplementaryCitations(complementary, pageTexts);
-    // Already conservative regardless of provider — persistComplementaryAdditions
-    // marks every gap-fill addition needs_review unconditionally (see below).
-    const addedCount = await persistComplementaryAdditions(chapterId, complementary, existingContent);
+    const result = await extractComplementaryContentWithRotation(config, bytes, chapter.title, chapter.title, coverageSummary);
+    const complementary = result.complementary;
+    apiKey = result.apiKey;
+    geminiFileName = result.file.name;
 
-    const supabase = await createClient();
+    if (pageTexts) correctComplementaryCitations(complementary, pageTexts);
+    // persistComplementaryAdditions marks every gap-fill addition needs_review unconditionally.
+    const addedCount = await persistComplementaryAdditions(supabase, chapterId, complementary, existingContent);
+
     await supabase
       .from("el_profesor_extraction_jobs")
       .insert({ chapter_id: chapterId, status: "succeeded", raw_output: complementary as unknown as never });
@@ -533,10 +339,12 @@ async function runOneComplementaryPass(
 const MAX_AUTO_COMPLEMENTARY_PASSES = 6;
 
 /**
- * Gap-fill pass(es). By default runs a single pass (unchanged behavior). With
- * `untilComplete: true`, loops automatically — re-downloading the latest
+ * Gap-fill pass(es). With Gemini, runs a single pass by default, or loops
+ * automatically with `untilComplete: true` — re-downloading the latest
  * persisted content between passes — until the model reports no remaining
- * gaps, a pass adds nothing new, or the safety cap is hit.
+ * gaps, a pass adds nothing new, or the safety cap is hit. With Claude,
+ * delegates to the batch path instead (see the doc comment above
+ * runOneComplementaryPass) — `untilComplete` is ignored in that case.
  */
 export async function extractChapterComplementary(chapterId: string, options?: { untilComplete?: boolean }): Promise<ActionState> {
   await requireElProfesorAdmin();
@@ -544,7 +352,9 @@ export async function extractChapterComplementary(chapterId: string, options?: {
 
   const { data: chapter } = await supabase.from("el_profesor_chapters").select("*").eq("id", chapterId).single();
   if (!chapter) return { error: "Chapitre introuvable." };
-  if (chapter.status === "extracting") return { error: "Une extraction est déjà en cours pour ce chapitre." };
+  if (chapter.status === "extracting" || chapter.status === "queued") {
+    return { error: "Une extraction est déjà en cours ou en file pour ce chapitre." };
+  }
   if (chapter.status === "pending" || chapter.status === "failed") {
     return { error: "Lancez d'abord une extraction initiale avant de chercher des compléments." };
   }
@@ -552,13 +362,16 @@ export async function extractChapterComplementary(chapterId: string, options?: {
     return { error: "Pas de passe de complément pour un chapitre Word/PowerPoint (pas de fichier source à relire) — le texte a déjà été extrait en une seule fois." };
   }
 
+  const provider = await getElProfesorAiProvider();
+  if (provider === "claude") {
+    return submitComplementaryBatch([chapterId]);
+  }
+
   const originalStatus = chapter.status;
   await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
 
   try {
-    const provider = await getElProfesorAiProvider();
-    const providerConfig: ProviderConfig =
-      provider === "claude" ? { provider: "claude", config: await getElProfesorClaudeConfig() } : { provider: "gemini", config: await getElProfesorGeminiConfig() };
+    const config = await getElProfesorGeminiConfig();
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
     // Extracted once and reused across every auto-run pass (see below) rather than per pass.
     const pageTexts = await extractPdfPageTexts(bytes).catch(() => null);
@@ -570,7 +383,7 @@ export async function extractChapterComplementary(chapterId: string, options?: {
 
     do {
       const existingContent = await getChapterContent(chapterId, true);
-      const pass = await runOneComplementaryPass(chapterId, chapter, providerConfig, bytes, existingContent, pageTexts);
+      const pass = await runOneComplementaryPass(chapterId, chapter, config, bytes, existingContent, pageTexts);
       totalAdded += pass.addedCount;
       passesRun += 1;
       estimatedRemainingPasses = pass.estimatedRemainingPasses;

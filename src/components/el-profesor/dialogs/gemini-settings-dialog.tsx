@@ -18,6 +18,14 @@ import {
 } from "@/app/apps/el-profesor/actions/settings";
 import { useToast } from "@/components/ui/toast";
 import type { GeminiUsageStats, ElProfesorAiProvider } from "@/lib/el-profesor/dal";
+import type { ElProfesorBatchJobRow, ElProfesorBatchJobKind } from "@/lib/supabase/types";
+
+const BATCH_KIND_LABEL: Record<ElProfesorBatchJobKind, string> = {
+  extraction: "Extraction",
+  complementary: "Complément",
+  notion_categorization: "Catégorisation par notion",
+  contradiction_check: "Détection de contradictions",
+};
 
 // Kept in sync with EL_PROFESOR_GEMINI_MODEL_DEFAULT in src/lib/el-profesor/gemini.ts
 // (that module is server-only and can't be imported from a client component).
@@ -34,6 +42,7 @@ export function GeminiSettingsDialog({
   aiProvider,
   hasClaudeKey,
   claudeModel,
+  batchJobs,
   onClose,
 }: {
   currentModel: string;
@@ -44,6 +53,7 @@ export function GeminiSettingsDialog({
   aiProvider: ElProfesorAiProvider;
   hasClaudeKey: boolean;
   claudeModel: string;
+  batchJobs: ElProfesorBatchJobRow[];
   onClose: () => void;
 }) {
   const { toast } = useToast();
@@ -206,8 +216,8 @@ export function GeminiSettingsDialog({
         </div>
         <p className="text-xs text-foreground-subtle">
           {provider === "claude"
-            ? "Claude actif — sans passe de vérification automatique des citations pour l'instant : tout élément généré est marqué « à vérifier »."
-            : "Gemini actif. Basculer sur Claude quand le quota Gemini est épuisé, ou pour varier les modèles."}
+            ? "Claude actif — extraction, complément, catégorisation par notion et détection de contradictions passent par un lot Claude (Message Batches API, moitié prix, jusqu'à 1 h), appliqué automatiquement par le serveur dès qu'il est prêt. Pas de passe de vérification automatique des citations : tout élément généré est marqué « à vérifier »."
+            : "Gemini actif. Basculer sur Claude quand le quota Gemini est épuisé, pour varier les modèles, ou pour profiter du traitement en lot moins cher sur les grosses opérations."}
         </p>
       </div>
 
@@ -348,6 +358,41 @@ export function GeminiSettingsDialog({
           </button>
         )}
       </div>
+
+      {batchJobs.length > 0 && (
+        <div className="mt-5 space-y-2 border-t border-border pt-4">
+          <p className="text-sm font-medium text-foreground">Lots Claude récents</p>
+          <p className="text-xs text-foreground-subtle">
+            Soumis par le serveur, récupérés automatiquement par une tâche planifiée toutes les 15 minutes — inutile de garder cet
+            onglet ouvert.
+          </p>
+          <ul className="max-h-56 space-y-1.5 overflow-y-auto text-xs">
+            {batchJobs.map((job) => (
+              <li key={job.id} className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-muted/50 p-2">
+                <div>
+                  <p className="font-medium text-foreground">{BATCH_KIND_LABEL[job.kind]}</p>
+                  <p className="text-foreground-subtle">
+                    {new Date(job.created_at).toLocaleString("fr-FR")} · {job.request_count} requête{job.request_count > 1 ? "s" : ""}
+                    {job.status === "completed" ? ` · ${job.succeeded_count} réussite(s), ${job.errored_count} échec(s)` : ""}
+                  </p>
+                  {job.status === "failed" && job.error && <p className="text-danger">{job.error}</p>}
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    job.status === "completed"
+                      ? "bg-success/15 text-success"
+                      : job.status === "failed"
+                        ? "bg-danger/15 text-danger"
+                        : "bg-accent/15 text-accent"
+                  }`}
+                >
+                  {job.status === "completed" ? "Terminé" : job.status === "failed" ? "Échec" : "En cours"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {usageStats && (
         <div className="mt-5 space-y-2 border-t border-border pt-4">

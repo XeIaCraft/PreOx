@@ -29,6 +29,7 @@ import {
   getRecommendedNextBook,
   getDueBlocksForUser,
 } from "@/lib/el-profesor/dal";
+import { getBatchJobs } from "@/app/apps/el-profesor/actions/batches";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { ToastProvider } from "@/components/ui/toast";
 import { recordAppVisit } from "@/app/actions/discovery";
@@ -70,6 +71,7 @@ export default async function ElProfesorPage() {
     onThisDayNote,
     bookRecommendation,
     dueBlocks,
+    batchJobs,
   ] = await Promise.all([
     getDueCountsByChapter(profile.id, allChapters),
     isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
@@ -98,6 +100,7 @@ export default async function ElProfesorPage() {
     getOnThisDayNote(profile.id),
     getRecommendedNextBook(profile.id, books),
     getDueBlocksForUser(profile.id),
+    isAdmin ? getBatchJobs() : Promise.resolve([]),
   ]);
 
   return (
@@ -132,6 +135,7 @@ export default async function ElProfesorPage() {
         onThisDayNote={onThisDayNote}
         bookRecommendation={bookRecommendation}
         dueBlocks={dueBlocks}
+        batchJobs={batchJobs}
       />
     </ToastProvider>
   );

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   requireElProfesorAdmin,
   getElProfesorGeminiConfig,
+  getElProfesorAiProvider,
   getChapterContent,
   getFicheTextForAI,
   getAllNotionNames,
@@ -13,6 +14,7 @@ import {
   getNotionSummaries,
 } from "@/lib/el-profesor/dal";
 import { categorizeFicheNotions, checkContradiction } from "@/lib/el-profesor/gemini";
+import { submitNotionCategorizationBatch, submitContradictionCheckBatch } from "./batches";
 import { GeminiError } from "@/lib/gemini-shared";
 
 export interface ActionState {
@@ -23,11 +25,18 @@ export interface ActionState {
 /**
  * Tags every published fiche of a chapter with 1-3 cross-book "notions"
  * (reusing existing ones when they fit — see buildNotionCategorizationPrompt).
- * Admin-triggered per chapter rather than automatic on publish, to keep
- * Gemini calls (and their cost) predictable.
+ * Admin-triggered per chapter rather than automatic on publish, to keep AI
+ * calls (and their cost) predictable. With Claude selected in "Réglages IA"
+ * this is exactly the kind of bulk, non-urgent "réunification" work the
+ * cheaper async Message Batches API is for — see submitNotionCategorizationBatch.
  */
 export async function categorizeChapterNotions(chapterId: string): Promise<ActionState> {
   await requireElProfesorAdmin();
+
+  const provider = await getElProfesorAiProvider();
+  if (provider === "claude") {
+    return submitNotionCategorizationBatch(chapterId);
+  }
 
   const subEntities = await getChapterContent(chapterId, false);
   const fiches = subEntities.filter((s) => s.fiche).map((s) => s.fiche!);
@@ -75,6 +84,11 @@ const MAX_CONTRADICTION_PAIRS_PER_RUN = 15;
  */
 export async function detectContradictionsForNotion(notionId: string): Promise<ActionState> {
   await requireElProfesorAdmin();
+
+  const provider = await getElProfesorAiProvider();
+  if (provider === "claude") {
+    return submitContradictionCheckBatch(notionId);
+  }
 
   const summaries = await getNotionSummaries();
   const summary = summaries.find((s) => s.notion.id === notionId);

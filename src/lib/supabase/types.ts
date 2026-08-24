@@ -205,7 +205,36 @@ export type ATableSettingsRow = {
 // domain shapes (block content, citations, front/back) live in
 // src/lib/el-profesor/types.ts.
 
-export type ElProfesorChapterStatus = "pending" | "extracting" | "draft_ready" | "published" | "failed";
+export type ElProfesorChapterStatus = "pending" | "queued" | "extracting" | "draft_ready" | "published" | "failed";
+
+export type ElProfesorBatchJobKind = "extraction" | "complementary" | "notion_categorization" | "contradiction_check";
+export type ElProfesorBatchJobStatus = "submitted" | "completed" | "failed";
+export type ElProfesorBatchItemStatus = "pending" | "succeeded" | "errored" | "expired" | "canceled";
+
+export type ElProfesorBatchJobRow = {
+  id: string;
+  anthropic_batch_id: string;
+  kind: ElProfesorBatchJobKind;
+  status: ElProfesorBatchJobStatus;
+  request_count: number;
+  succeeded_count: number;
+  errored_count: number;
+  error: string | null;
+  created_by: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export type ElProfesorBatchItemRow = {
+  id: string;
+  batch_job_id: string;
+  custom_id: string;
+  target: Json;
+  status: ElProfesorBatchItemStatus;
+  error: string | null;
+  processed_at: string | null;
+  created_at: string;
+};
 export type ElProfesorContentStatus = "draft" | "published";
 export type ElProfesorReviewRating = "again" | "good";
 export type ElProfesorReviewSource = "scheduled" | "free";
@@ -703,6 +732,18 @@ export type Database = {
         Row: ElProfesorExtractionJobRow;
         Insert: Partial<ElProfesorExtractionJobRow> & { chapter_id: string };
         Update: Partial<ElProfesorExtractionJobRow>;
+        Relationships: [];
+      };
+      el_profesor_batch_jobs: {
+        Row: ElProfesorBatchJobRow;
+        Insert: Partial<ElProfesorBatchJobRow> & { anthropic_batch_id: string; kind: ElProfesorBatchJobKind };
+        Update: Partial<ElProfesorBatchJobRow>;
+        Relationships: [];
+      };
+      el_profesor_batch_items: {
+        Row: ElProfesorBatchItemRow;
+        Insert: Partial<ElProfesorBatchItemRow> & { batch_job_id: string; custom_id: string; target: Json };
+        Update: Partial<ElProfesorBatchItemRow>;
         Relationships: [];
       };
       el_profesor_flags: {

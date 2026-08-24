@@ -10,6 +10,7 @@ import type { ChapterStatus } from "@/lib/el-profesor/types";
 
 const STATUS_LABEL: Record<ChapterStatus, string> = {
   pending: "En attente",
+  queued: "En file (lot Claude)",
   extracting: "Extraction…",
   draft_ready: "Brouillon prêt",
   published: "Publié",
@@ -18,6 +19,7 @@ const STATUS_LABEL: Record<ChapterStatus, string> = {
 
 const STATUS_VARIANT: Record<ChapterStatus, "neutral" | "accent" | "success" | "danger"> = {
   pending: "neutral",
+  queued: "accent",
   extracting: "accent",
   draft_ready: "accent",
   published: "success",
