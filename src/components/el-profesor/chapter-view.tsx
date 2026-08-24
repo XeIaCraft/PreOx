@@ -12,6 +12,8 @@ import { useToast } from "@/components/ui/toast";
 import { FicheViewer } from "@/components/el-profesor/fiche-viewer";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
+import { CoverageInfoPanel, type CoverageInfoTarget } from "@/components/el-profesor/coverage-info-panel";
+import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { RelatedFiches } from "@/components/el-profesor/related-fiches";
 import { FicheQA } from "@/components/el-profesor/fiche-qa";
@@ -183,14 +185,62 @@ export function ChapterView({
     const entries: CoverageEntry[] = [];
     for (const sub of withFiche) {
       for (const block of sub.fiche!.blocks) {
-        for (const c of block.citations) entries.push({ page: c.page, quote: c.quote, kind: "block" });
+        for (const c of block.citations) entries.push({ page: c.page, quote: c.quote, kind: "block", id: block.id });
       }
       for (const card of sub.fiche!.flashcards) {
-        for (const c of card.citations) entries.push({ page: c.page, quote: c.quote, kind: "flashcard" });
+        for (const c of card.citations) entries.push({ page: c.page, quote: c.quote, kind: "flashcard", id: card.id });
       }
     }
     return entries;
   }, [withFiche]);
+
+  // Item 26 follow-up (requested 2026-08-24): clicking a coverage rectangle
+  // on the PDF shows which fiche block/flashcard it came from. Blocks can
+  // be scrolled to directly (they're rendered inline in the left pane, see
+  // `id="fiche-block-${id}"` in fiche-viewer.tsx) — switching sub-entity
+  // first if the block belongs to one not currently selected. Flashcards
+  // aren't listed inline in this read-only view (they're studied via
+  // /review), so their front/back are shown directly in the panel instead.
+  const [coverageInfo, setCoverageInfo] = useState<CoverageInfoTarget | null>(null);
+  const coverageNavTarget = useRef<{ subEntityId: string; blockId: string } | null>(null);
+  const pendingScrollBlockId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!pendingScrollBlockId.current) return;
+    const id = pendingScrollBlockId.current;
+    pendingScrollBlockId.current = null;
+    requestAnimationFrame(() => {
+      document.getElementById(`fiche-block-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [selectedId]);
+
+  function handleCoverageClick(entry: CoverageEntry) {
+    const sub = withFiche.find((s) =>
+      entry.kind === "block" ? s.fiche!.blocks.some((b) => b.id === entry.id) : s.fiche!.flashcards.some((c) => c.id === entry.id)
+    );
+    if (!sub) return;
+    if (entry.kind === "block") {
+      const block = sub.fiche!.blocks.find((b) => b.id === entry.id)!;
+      setCoverageInfo({ kind: "block", subEntityName: sub.name, blockType: block.blockType, excerpt: blockToPlainText(block.blockType, block.content).slice(0, 400) });
+      coverageNavTarget.current = { subEntityId: sub.id, blockId: block.id };
+    } else {
+      const card = sub.fiche!.flashcards.find((c) => c.id === entry.id)!;
+      setCoverageInfo({ kind: "flashcard", subEntityName: sub.name, front: card.front.text, back: card.back.text });
+      coverageNavTarget.current = null;
+    }
+  }
+
+  function handleCoverageNavigate() {
+    const nav = coverageNavTarget.current;
+    if (!nav) return;
+    setCoverageInfo(null);
+    if (nav.subEntityId !== selectedId) {
+      pendingScrollBlockId.current = nav.blockId;
+      setSelectedId(nav.subEntityId);
+    } else {
+      document.getElementById(`fiche-block-${nav.blockId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
 
   const publishedFlashcards = useMemo(
     () => withFiche.flatMap((sub) => sub.fiche!.flashcards.filter((c) => c.status === "published")),
@@ -559,14 +609,21 @@ export function ChapterView({
           </div>
 
           <div
-            className={`min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface print:hidden ${focusMode ? "hidden" : "hidden md:block"}`}
+            className={`relative min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface print:hidden ${focusMode ? "hidden" : "hidden md:block"}`}
           >
             {sourceKind !== "pdf" ? (
               <SourceTextPanel text={sourceText} />
             ) : pdfUrl ? (
-              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />
+              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} onCoverageClick={handleCoverageClick} />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
+            )}
+            {coverageInfo && (
+              <CoverageInfoPanel
+                target={coverageInfo}
+                onClose={() => setCoverageInfo(null)}
+                onNavigate={coverageInfo.kind === "block" ? handleCoverageNavigate : undefined}
+              />
             )}
           </div>
         </div>
@@ -596,13 +653,27 @@ export function ChapterView({
             )
           }
         >
-          <div className="-m-4 h-[75vh]">
+          <div className="relative -m-4 h-[75vh]">
             {sourceKind !== "pdf" ? (
               <SourceTextPanel text={sourceText} />
             ) : pdfUrl ? (
-              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} />
+              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} onCoverageClick={handleCoverageClick} />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
+            )}
+            {coverageInfo && (
+              <CoverageInfoPanel
+                target={coverageInfo}
+                onClose={() => setCoverageInfo(null)}
+                onNavigate={
+                  coverageInfo.kind === "block"
+                    ? () => {
+                        handleCoverageNavigate();
+                        setPdfModalOpen(false);
+                      }
+                    : undefined
+                }
+              />
             )}
           </div>
         </Modal>

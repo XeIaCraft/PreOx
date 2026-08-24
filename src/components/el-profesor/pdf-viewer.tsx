@@ -7,7 +7,8 @@ import { getPdfZoom, setPdfZoom } from "@/lib/el-profesor/local-prefs";
 
 export type PdfHighlight = { page: number; quote: string } | null;
 export type CoverageKind = "block" | "flashcard";
-export type CoverageEntry = { page: number; quote: string; kind: CoverageKind };
+/** `id` is the source block/flashcard id — lets a click on the coverage overlay report back exactly which one covers that passage (see onCoverageClick). */
+export type CoverageEntry = { page: number; quote: string; kind: CoverageKind; id: string };
 export type PdfSelection = { page: number; quote: string };
 
 interface Rect {
@@ -78,6 +79,7 @@ export function PdfViewer({
   onSelection,
   onCapture,
   captureRequest,
+  onCoverageClick,
 }: {
   url: string;
   highlight?: PdfHighlight;
@@ -87,6 +89,8 @@ export function PdfViewer({
   onCapture?: (dataUrl: string) => void;
   /** Remotely jumps to `page` and arms capture mode — bump `token` to re-trigger even for the same page. Follow-up to item 23: jumping straight to a Gemini-suggested image location. */
   captureRequest?: { page: number; token: number } | null;
+  /** Clicking a coverage rectangle reports back which block/flashcard covers that passage — lets the parent show/scroll to it. */
+  onCoverageClick?: (entry: CoverageEntry) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -106,7 +110,7 @@ export function PdfViewer({
   });
   const [containerWidth, setContainerWidth] = useState(0);
   const [rects, setRects] = useState<Rect[]>([]);
-  const [coverageRects, setCoverageRects] = useState<{ rect: Rect; kind: CoverageKind }[]>([]);
+  const [coverageRects, setCoverageRects] = useState<{ rect: Rect; entry: CoverageEntry }[]>([]);
   const [textSpans, setTextSpans] = useState<TextSpan[]>([]);
   const [showCoverage, setShowCoverage] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -267,7 +271,7 @@ export function PdfViewer({
 
       if (showCoverage && coverage) {
         const onPage = coverage.filter((c) => c.page === pageNum);
-        setCoverageRects(onPage.flatMap((c) => rectsForQuote(c.quote).map((rect) => ({ rect, kind: c.kind }))));
+        setCoverageRects(onPage.flatMap((c) => rectsForQuote(c.quote).map((rect) => ({ rect, entry: c }))));
       } else {
         setCoverageRects([]);
       }
@@ -575,13 +579,26 @@ export function PdfViewer({
                 </span>
               ))}
           </div>
-          {coverageRects.map((c, i) => (
-            <div
-              key={i}
-              className={`pointer-events-none absolute rounded-sm ${c.kind === "block" ? "bg-success/30 ring-1 ring-success/60" : "bg-primary/25 ring-1 ring-primary/60"}`}
-              style={{ left: c.rect.left, top: c.rect.top, width: c.rect.width, height: c.rect.height }}
-            />
-          ))}
+          {coverageRects.map((c, i) =>
+            onCoverageClick ? (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onCoverageClick(c.entry)}
+                className={`absolute cursor-pointer rounded-sm transition-colors hover:brightness-90 ${
+                  c.entry.kind === "block" ? "bg-success/30 ring-1 ring-success/60" : "bg-primary/25 ring-1 ring-primary/60"
+                }`}
+                style={{ left: c.rect.left, top: c.rect.top, width: c.rect.width, height: c.rect.height }}
+                title={c.entry.kind === "block" ? "Voir la fiche correspondante" : "Voir la flashcard correspondante"}
+              />
+            ) : (
+              <div
+                key={i}
+                className={`pointer-events-none absolute rounded-sm ${c.entry.kind === "block" ? "bg-success/30 ring-1 ring-success/60" : "bg-primary/25 ring-1 ring-primary/60"}`}
+                style={{ left: c.rect.left, top: c.rect.top, width: c.rect.width, height: c.rect.height }}
+              />
+            )
+          )}
           {rects.map((r, i) => (
             <div
               key={i}

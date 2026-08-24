@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Modal } from "@/components/ui/modal";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
+import { CoverageInfoPanel, type CoverageInfoTarget } from "@/components/el-profesor/coverage-info-panel";
+import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { BlockEditor } from "@/components/el-profesor/block-editor";
@@ -88,14 +90,61 @@ export function ExtractionReviewView({
     const entries: CoverageEntry[] = [];
     for (const sub of withFiche) {
       for (const block of sub.fiche!.blocks) {
-        for (const c of block.citations) entries.push({ page: c.page, quote: c.quote, kind: "block" });
+        for (const c of block.citations) entries.push({ page: c.page, quote: c.quote, kind: "block", id: block.id });
       }
       for (const card of sub.fiche!.flashcards) {
-        for (const c of card.citations) entries.push({ page: c.page, quote: c.quote, kind: "flashcard" });
+        for (const c of card.citations) entries.push({ page: c.page, quote: c.quote, kind: "flashcard", id: card.id });
       }
     }
     return entries;
   }, [withFiche]);
+
+  // Item 26 follow-up (requested 2026-08-24): clicking a coverage rectangle
+  // on the PDF shows which block/flashcard it came from, with a jump-to
+  // button — switching sub-entity and/or clearing the "à vérifier
+  // seulement" filter first if either would otherwise hide the target.
+  const [coverageInfo, setCoverageInfo] = useState<CoverageInfoTarget | null>(null);
+  const coverageNavTarget = useRef<{ subEntityId: string; id: string; kind: "block" | "flashcard"; needsReview: boolean } | null>(null);
+  // Bumped on every "Voir dans la fiche" click so the effect below re-runs
+  // even when neither selectedId nor onlyFlagged actually needs to change
+  // (target already visible) — always waits for the post-navigation commit
+  // before scrolling, rather than racing a synchronous DOM lookup against a
+  // tab switch and/or the "à vérifier seulement" filter being cleared.
+  const [navSeq, setNavSeq] = useState(0);
+
+  useEffect(() => {
+    if (navSeq === 0) return;
+    const nav = coverageNavTarget.current;
+    if (!nav) return;
+    requestAnimationFrame(() => {
+      document.getElementById(`review-${nav.kind}-${nav.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [navSeq]);
+
+  function handleCoverageClick(entry: CoverageEntry) {
+    const sub = withFiche.find((s) =>
+      entry.kind === "block" ? s.fiche!.blocks.some((b) => b.id === entry.id) : s.fiche!.flashcards.some((c) => c.id === entry.id)
+    );
+    if (!sub) return;
+    if (entry.kind === "block") {
+      const block = sub.fiche!.blocks.find((b) => b.id === entry.id)!;
+      setCoverageInfo({ kind: "block", subEntityName: sub.name, blockType: block.blockType, excerpt: blockToPlainText(block.blockType, block.content).slice(0, 400) });
+      coverageNavTarget.current = { subEntityId: sub.id, id: block.id, kind: "block", needsReview: block.needsReview };
+    } else {
+      const card = sub.fiche!.flashcards.find((c) => c.id === entry.id)!;
+      setCoverageInfo({ kind: "flashcard", subEntityName: sub.name, front: card.front.text, back: card.back.text });
+      coverageNavTarget.current = { subEntityId: sub.id, id: card.id, kind: "flashcard", needsReview: card.needsReview };
+    }
+  }
+
+  function handleCoverageNavigate() {
+    const nav = coverageNavTarget.current;
+    if (!nav) return;
+    setCoverageInfo(null);
+    if (onlyFlagged && !nav.needsReview) setOnlyFlagged(false);
+    if (nav.subEntityId !== selectedId) setSelectedId(nav.subEntityId);
+    setNavSeq((n) => n + 1);
+  }
 
   // Falls back to the list's first item when the current selection drops out
   // of view (e.g. toggling the filter on while a now-hidden entry is selected).
@@ -331,28 +380,30 @@ export function ExtractionReviewView({
                   <>
                     <div className="mt-3 space-y-3">
                       {visibleBlocks.map((block, i) => (
-                        <BlockEditor
-                          key={block.id}
-                          block={block}
-                          onChanged={refresh}
-                          onCitationClick={handleCitationClick}
-                          reorder={onlyFlagged ? undefined : { isFirst: i === 0, isLast: i === visibleBlocks.length - 1 }}
-                          flags={flagsByTarget[block.id]}
-                        />
+                        <div key={block.id} id={`review-block-${block.id}`} className="scroll-mt-4">
+                          <BlockEditor
+                            block={block}
+                            onChanged={refresh}
+                            onCitationClick={handleCitationClick}
+                            reorder={onlyFlagged ? undefined : { isFirst: i === 0, isLast: i === visibleBlocks.length - 1 }}
+                            flags={flagsByTarget[block.id]}
+                          />
+                        </div>
                       ))}
                     </div>
 
                     <h3 className="mt-5 text-sm font-medium text-foreground">Flashcards</h3>
                     <div className="mt-2 space-y-3">
                       {visibleFlashcards.map((card) => (
-                        <FlashcardEditor
-                          key={card.id}
-                          flashcard={card}
-                          onChanged={refresh}
-                          onCitationClick={handleCitationClick}
-                          flags={flagsByTarget[card.id]}
-                          onRequestImageCapture={(page) => handleCaptureHint(card.id, page)}
-                        />
+                        <div key={card.id} id={`review-flashcard-${card.id}`} className="scroll-mt-4">
+                          <FlashcardEditor
+                            flashcard={card}
+                            onChanged={refresh}
+                            onCitationClick={handleCitationClick}
+                            flags={flagsByTarget[card.id]}
+                            onRequestImageCapture={(page) => handleCaptureHint(card.id, page)}
+                          />
+                        </div>
                       ))}
                       {visibleFlashcards.length === 0 && (
                         <p className="text-sm text-foreground-subtle">Aucune flashcard générée pour cette fiche.</p>
@@ -366,7 +417,7 @@ export function ExtractionReviewView({
             )}
           </div>
 
-          <div className="hidden min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface md:block">
+          <div className="relative hidden min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface md:block">
             {sourceKind !== "pdf" ? (
               <SourceTextPanel text={sourceText} />
             ) : pdfUrl ? (
@@ -377,17 +428,19 @@ export function ExtractionReviewView({
                 onSelection={setPendingSelection}
                 onCapture={handlePdfCapture}
                 captureRequest={captureRequest}
+                onCoverageClick={handleCoverageClick}
               />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
             )}
+            {coverageInfo && <CoverageInfoPanel target={coverageInfo} onClose={() => setCoverageInfo(null)} onNavigate={handleCoverageNavigate} />}
           </div>
         </div>
       </div>
 
       {pdfModalOpen && (
         <Modal title="Document source" onClose={() => setPdfModalOpen(false)} size="xl">
-          <div className="-m-4 h-[75vh]">
+          <div className="relative -m-4 h-[75vh]">
             {sourceKind !== "pdf" ? (
               <SourceTextPanel text={sourceText} />
             ) : pdfUrl ? (
@@ -398,9 +451,20 @@ export function ExtractionReviewView({
                 onSelection={setPendingSelection}
                 onCapture={handlePdfCapture}
                 captureRequest={captureRequest}
+                onCoverageClick={handleCoverageClick}
               />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
+            )}
+            {coverageInfo && (
+              <CoverageInfoPanel
+                target={coverageInfo}
+                onClose={() => setCoverageInfo(null)}
+                onNavigate={() => {
+                  handleCoverageNavigate();
+                  setPdfModalOpen(false);
+                }}
+              />
             )}
           </div>
         </Modal>
