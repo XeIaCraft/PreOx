@@ -37,8 +37,8 @@ import { recordAppVisit } from "@/app/actions/discovery";
 export default async function ElProfesorPage() {
   const profile = (await getCurrentProfile())!;
   const isAdmin = profile.role === "admin";
-  await recordAppVisit("el-profesor");
-  const libraryBooks = (await getLibrary()).filter((b) => !b.archivedAt);
+  const [, allLibraryBooks] = await Promise.all([recordAppVisit("el-profesor"), getLibrary()]);
+  const libraryBooks = allLibraryBooks.filter((b) => !b.archivedAt);
   // Non-admins never see a chapter still being imported/reviewed — only
   // admins need visibility into the pipeline's in-progress state.
   const books = isAdmin ? libraryBooks : libraryBooks.map((b) => ({ ...b, chapters: b.chapters.filter((c) => c.status === "published") }));

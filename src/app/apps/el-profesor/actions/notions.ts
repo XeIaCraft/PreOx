@@ -51,15 +51,21 @@ export async function categorizeChapterNotions(chapterId: string): Promise<Actio
 
   let taggedCount = 0;
   try {
+    // Fetched once rather than re-reading the whole notions table on every
+    // fiche — a notion created earlier in this same loop is appended below
+    // so later fiches can still reuse it, without a fresh full-table read
+    // per iteration (this ran once per fiche before, an easy N+1 for a
+    // chapter with many fiches).
+    const existingNames = await getAllNotionNames();
     for (const fiche of fiches) {
       const content = await getFicheTextForAI(fiche.id);
       if (!content || !content.text.trim()) continue;
 
-      const existingNames = await getAllNotionNames();
       const result = await categorizeFicheNotions(config, content.title, content.text, existingNames);
 
       for (const notionName of result.notions.slice(0, 3)) {
         const notionId = await findOrCreateNotion(notionName);
+        if (notionId && !existingNames.some((n) => n.toLowerCase() === notionName.trim().toLowerCase())) existingNames.push(notionName.trim());
         if (notionId) await linkFicheToNotion(notionId, fiche.id);
       }
       taggedCount += 1;

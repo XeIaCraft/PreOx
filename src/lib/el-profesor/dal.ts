@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
@@ -465,8 +466,17 @@ export type SubEntityWithFiche = SubEntity & { fiche: (Fiche & { blocks: FicheBl
  * user session (e.g. the Claude batch-result cron poller), since the
  * select policies on these tables are `to authenticated` only and silently
  * return zero rows for an unauthenticated request rather than erroring.
+ *
+ * Wrapped in React's `cache()`: the dashboard page loads ~9 independent
+ * stats (due counts, mastery, forecast, daily card...) in parallel, each of
+ * which calls this per chapter with the exact same (chapterId, false,
+ * undefined) arguments — without memoization that's ~9x the DB round trips
+ * for identical data on every dashboard load. `cache()` collapses those
+ * into one fetch per chapter per request; safe because it's request-scoped
+ * (no cross-request staleness) and every dashboard-facing caller already
+ * passes identical arguments for the same chapter.
  */
-export async function getChapterContent(
+export const getChapterContent = cache(async function getChapterContent(
   chapterId: string,
   includeDrafts = false,
   client?: SupabaseClient<Database>
@@ -519,7 +529,7 @@ export async function getChapterContent(
       },
     };
   });
-}
+});
 
 /**
  * Flashcards from every fiche in this content set, excluding ones whose
