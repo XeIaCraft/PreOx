@@ -481,6 +481,13 @@ export type ElProfesorReadingPositionRow = {
   updated_at: string;
 };
 
+export type ElProfesorUserFsrsParamsRow = {
+  user_id: string;
+  request_retention: number;
+  reviews_at_last_update: number;
+  updated_at: string;
+};
+
 export type ElProfesorNoteRow = {
   id: string;
   user_id: string;
@@ -844,6 +851,12 @@ export type Database = {
         Row: ElProfesorReadingPositionRow;
         Insert: Partial<ElProfesorReadingPositionRow> & { user_id: string; chapter_id: string };
         Update: Partial<ElProfesorReadingPositionRow>;
+        Relationships: [];
+      };
+      el_profesor_user_fsrs_params: {
+        Row: ElProfesorUserFsrsParamsRow;
+        Insert: Partial<ElProfesorUserFsrsParamsRow> & { user_id: string };
+        Update: Partial<ElProfesorUserFsrsParamsRow>;
         Relationships: [];
       };
       el_profesor_bookmarks: {

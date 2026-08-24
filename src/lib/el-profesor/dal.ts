@@ -9,6 +9,7 @@ import { requireProfile } from "@/lib/auth/dal";
 import { getAppBySlugForProfile } from "@/lib/apps";
 import { EL_PROFESOR_GEMINI_MODEL_DEFAULT } from "./gemini";
 import { EL_PROFESOR_CLAUDE_MODEL_DEFAULT } from "./anthropic";
+import { computeAdjustedRetention } from "./fsrs";
 import { decryptSecret } from "@/lib/crypto";
 import { GeminiError } from "@/lib/gemini-shared";
 import { blockToPlainText } from "./block-text";
@@ -896,6 +897,54 @@ export async function getReviewState(userId: string, flashcardId: string): Promi
     .eq("flashcard_id", flashcardId)
     .maybeSingle();
   return data ? toReviewState(data as ElProfesorReviewStateRow) : null;
+}
+
+/** Personalized FSRS retention target for this user — see maybeRecomputeUserFsrsRetention. Defaults to FSRS's own 0.9 until there's enough history to tune it. */
+export async function getUserFsrsRetention(userId: string): Promise<number> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_user_fsrs_params").select("request_retention").eq("user_id", userId).maybeSingle();
+  return data?.request_retention ?? 0.9;
+}
+
+// Requires a real sample before tuning away from the default, and only
+// re-evaluates every N new scheduled reviews so one bad day doesn't
+// whipsaw the schedule. The adjustment formula itself lives in fsrs.ts
+// (computeAdjustedRetention) so it can be unit-tested as pure logic.
+const FSRS_RETENTION_MIN_REVIEWS = 50;
+const FSRS_RETENTION_RECOMPUTE_EVERY = 20;
+
+/**
+ * Piste d'amélioration 2026-08-24 ("paramètres FSRS ajustés par
+ * utilisateur") — see computeAdjustedRetention in fsrs.ts for the
+ * adjustment itself and why it's deliberately narrower/safer than fitting
+ * FSRS's full weight vector. Called opportunistically after a scheduled
+ * review is recorded (submitReview) — cheap no-op until
+ * FSRS_RETENTION_MIN_REVIEWS is reached and only actually recomputes every
+ * FSRS_RETENTION_RECOMPUTE_EVERY new reviews.
+ */
+export async function maybeRecomputeUserFsrsRetention(userId: string): Promise<void> {
+  const supabase = await createClient();
+  const [{ data: params }, { count: totalReviews }] = await Promise.all([
+    supabase.from("el_profesor_user_fsrs_params").select("reviews_at_last_update").eq("user_id", userId).maybeSingle(),
+    supabase.from("el_profesor_review_log").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("source", "scheduled"),
+  ]);
+  const total = totalReviews ?? 0;
+  if (total < FSRS_RETENTION_MIN_REVIEWS) return;
+  const lastUpdateCount = params?.reviews_at_last_update ?? 0;
+  if (total - lastUpdateCount < FSRS_RETENTION_RECOMPUTE_EVERY) return;
+
+  const { data: ratings } = await supabase.from("el_profesor_review_log").select("rating").eq("user_id", userId).eq("source", "scheduled");
+  const rows = ratings ?? [];
+  if (rows.length === 0) return;
+  const successRate = rows.filter((r) => r.rating === "good").length / rows.length;
+  const clamped = computeAdjustedRetention(successRate);
+
+  await supabase
+    .from("el_profesor_user_fsrs_params")
+    .upsert(
+      { user_id: userId, request_retention: clamped, reviews_at_last_update: total, updated_at: new Date().toISOString() },
+      { onConflict: "user_id" }
+    );
 }
 
 export type ChapterDueCounts = Record<string, number>;

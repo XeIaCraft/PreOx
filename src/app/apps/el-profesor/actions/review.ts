@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireElProfesorAccess } from "@/lib/el-profesor/dal";
-import { getReviewState, suspendFlashcard, unsuspendFlashcard } from "@/lib/el-profesor/dal";
+import { getReviewState, suspendFlashcard, unsuspendFlashcard, getUserFsrsRetention, maybeRecomputeUserFsrsRetention } from "@/lib/el-profesor/dal";
 import { scheduleReview } from "@/lib/el-profesor/fsrs";
 import { createClient } from "@/lib/supabase/server";
 import type { ReviewRating, ReviewSource, ReviewState } from "@/lib/el-profesor/types";
@@ -52,8 +52,9 @@ export async function submitReview(
 
   let previousState: ReviewState | null = null;
   if (source === "scheduled") {
-    previousState = await getReviewState(profile.id, flashcardId);
-    const next = scheduleReview(previousState, rating);
+    const [state, retention] = await Promise.all([getReviewState(profile.id, flashcardId), getUserFsrsRetention(profile.id)]);
+    previousState = state;
+    const next = scheduleReview(previousState, rating, new Date(), retention);
 
     const { error: upsertError } = await supabase.from("el_profesor_review_state").upsert(
       {
@@ -72,6 +73,9 @@ export async function submitReview(
       { onConflict: "user_id,flashcard_id" }
     );
     if (upsertError) return { error: "Impossible de mettre à jour la planification." };
+    // Cheap no-op most of the time (see maybeRecomputeUserFsrsRetention) —
+    // best-effort, never blocks the review itself if it fails.
+    await maybeRecomputeUserFsrsRetention(profile.id).catch(() => {});
   }
 
   revalidatePath("/apps/el-profesor");

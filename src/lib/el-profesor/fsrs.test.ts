@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scheduleReview } from "./fsrs";
+import { scheduleReview, computeAdjustedRetention, FSRS_RETENTION_TARGET, FSRS_RETENTION_MIN, FSRS_RETENTION_MAX } from "./fsrs";
 import type { ReviewState } from "@/lib/el-profesor/types";
 
 const NOW = new Date("2026-01-01T12:00:00.000Z");
@@ -75,6 +75,38 @@ describe("scheduleReview", () => {
       // still one of the four valid labels (not undefined from a missed enum case).
       const result = scheduleReview(fakeState, "good", NOW);
       expect(states).toContain(result.state);
+    }
+  });
+});
+
+describe("computeAdjustedRetention", () => {
+  it("returns the target unchanged when the observed success rate exactly matches it", () => {
+    expect(computeAdjustedRetention(FSRS_RETENTION_TARGET)).toBeCloseTo(FSRS_RETENTION_TARGET);
+  });
+
+  it("lowers the retention target (fewer, longer-spaced reviews) when the user succeeds more than the target implies", () => {
+    expect(computeAdjustedRetention(0.98)).toBeLessThan(FSRS_RETENTION_TARGET);
+  });
+
+  it("raises the retention target (more frequent review) when the user succeeds less than the target implies", () => {
+    expect(computeAdjustedRetention(0.75)).toBeGreaterThan(FSRS_RETENTION_TARGET);
+  });
+
+  it("clamps to FSRS_RETENTION_MAX for a very low success rate (pushed for more frequent review)", () => {
+    expect(computeAdjustedRetention(0)).toBe(FSRS_RETENTION_MAX);
+  });
+
+  it("stays within bounds for a perfect success rate (the formula itself doesn't reach FSRS_RETENTION_MIN at this gain, by design — a defensive floor, not a target)", () => {
+    const result = computeAdjustedRetention(1);
+    expect(result).toBeLessThan(FSRS_RETENTION_TARGET);
+    expect(result).toBeGreaterThanOrEqual(FSRS_RETENTION_MIN);
+  });
+
+  it("stays within bounds across the whole [0, 1] range of possible success rates", () => {
+    for (let rate = 0; rate <= 1; rate += 0.05) {
+      const result = computeAdjustedRetention(rate);
+      expect(result).toBeGreaterThanOrEqual(FSRS_RETENTION_MIN);
+      expect(result).toBeLessThanOrEqual(FSRS_RETENTION_MAX);
     }
   });
 });
