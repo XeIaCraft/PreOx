@@ -1377,6 +1377,67 @@ export async function getStaleChaptersForAdmin(
   return alerts;
 }
 
+export interface KnowledgeExpiryAlert {
+  chapterId: string;
+  chapterTitle: string;
+  bookTitle: string;
+  expiredCount: number;
+  oldestOverdueDays: number;
+}
+
+const KNOWLEDGE_EXPIRY_OVERDUE_DAYS = 60;
+
+/**
+ * Piste d'amélioration 2026-08-24 ("alerte de péremption des
+ * connaissances") — personal signal distinct from the everyday FSRS due
+ * count (getDueCountsByChapter): a card a day or two overdue is routine
+ * and already surfaced there. A card that's graduated to "review" state
+ * (once actually mastered) and then sat unreviewed 60+ days past its due
+ * date has had real time to decay — worth flagging as a dedicated
+ * refresher rather than blending into the ordinary review queue.
+ */
+export async function getKnowledgeExpiryAlerts(userId: string, chapters: Chapter[], books: Book[]): Promise<KnowledgeExpiryAlert[]> {
+  const supabase = await createClient();
+  const bookTitleById = new Map(books.map((b) => [b.id, b.title]));
+  const cutoff = Date.now() - KNOWLEDGE_EXPIRY_OVERDUE_DAYS * 24 * 60 * 60 * 1000;
+  const alerts: KnowledgeExpiryAlert[] = [];
+
+  await Promise.all(
+    chapters
+      .filter((c) => c.status === "published")
+      .map(async (chapter) => {
+        const content = await getChapterContent(chapter.id, false);
+        const flashcards = activeFlashcards(content);
+        if (flashcards.length === 0) return;
+
+        const { data: states } = await supabase
+          .from("el_profesor_review_state")
+          .select("due")
+          .eq("user_id", userId)
+          .eq("state", "review")
+          .in(
+            "flashcard_id",
+            flashcards.map((f) => f.id)
+          );
+
+        const overdue = (states ?? []).filter((s) => new Date(s.due).getTime() < cutoff);
+        if (overdue.length === 0) return;
+
+        const oldestDueMs = Math.min(...overdue.map((s) => new Date(s.due).getTime()));
+        const oldestOverdueDays = Math.floor((Date.now() - oldestDueMs) / (24 * 60 * 60 * 1000));
+        alerts.push({
+          chapterId: chapter.id,
+          chapterTitle: chapter.title,
+          bookTitle: bookTitleById.get(chapter.bookId) ?? "",
+          expiredCount: overdue.length,
+          oldestOverdueDays,
+        });
+      })
+  );
+
+  return alerts.sort((a, b) => b.oldestOverdueDays - a.oldestOverdueDays);
+}
+
 export interface ChapterMasteryPercentile {
   masteredPct: number;
   engagedUsers: number;

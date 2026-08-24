@@ -17,6 +17,7 @@ import {
   getBookmarkedEntities,
   getGlobalChapterMasteryPercentages,
   getStaleChaptersForAdmin,
+  getKnowledgeExpiryAlerts,
   getReviewTimeStats,
   getFlagStatsByBlockType,
   hasElProfesorGeminiKey,
@@ -64,6 +65,7 @@ export default async function ElProfesorPage() {
     bookmarks,
     globalMastery,
     staleChapters,
+    knowledgeExpiryAlerts,
     reviewTimeStats,
     flagStatsByBlockType,
     hasGeminiKey,
@@ -97,6 +99,7 @@ export default async function ElProfesorPage() {
     getBookmarkedEntities(profile.id),
     getGlobalChapterMasteryPercentages(allChapters),
     isAdmin ? getStaleChaptersForAdmin(allChapters, libraryBooks) : Promise.resolve([]),
+    getKnowledgeExpiryAlerts(profile.id, allChapters, libraryBooks),
     getReviewTimeStats(profile.id),
     isAdmin ? getFlagStatsByBlockType() : Promise.resolve([]),
     isAdmin ? hasElProfesorGeminiKey() : Promise.resolve(false),
@@ -136,6 +139,7 @@ export default async function ElProfesorPage() {
         bookmarks={bookmarks}
         globalMastery={globalMastery}
         staleChapters={staleChapters}
+        knowledgeExpiryAlerts={knowledgeExpiryAlerts}
         reviewTimeStats={reviewTimeStats}
         flagStatsByBlockType={flagStatsByBlockType}
         hasGeminiKey={hasGeminiKey}

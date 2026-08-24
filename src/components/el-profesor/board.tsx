@@ -32,6 +32,7 @@ import {
   Scissors,
   BookText,
   Timer,
+  AlertTriangle,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -69,6 +70,7 @@ import type {
   BookmarkedEntity,
   ChapterMasteryPercentile,
   StaleChapterAlert,
+  KnowledgeExpiryAlert,
   BlockTypeFlagStat,
   GeminiUsageStats,
   ElProfesorAiProvider,
@@ -222,6 +224,7 @@ export function ElProfesorBoard({
   bookmarks,
   globalMastery,
   staleChapters,
+  knowledgeExpiryAlerts,
   reviewTimeStats,
   flagStatsByBlockType,
   hasGeminiKey,
@@ -257,6 +260,7 @@ export function ElProfesorBoard({
   bookmarks: BookmarkedEntity[];
   globalMastery: Record<string, ChapterMasteryPercentile>;
   staleChapters: StaleChapterAlert[];
+  knowledgeExpiryAlerts: KnowledgeExpiryAlert[];
   reviewTimeStats: { totalMs: number; last7DaysMs: number };
   flagStatsByBlockType: BlockTypeFlagStat[];
   hasGeminiKey: boolean;
@@ -669,6 +673,36 @@ export function ElProfesorBoard({
               Rattraper
             </Button>
           </Link>
+        </div>
+      )}
+
+      {knowledgeExpiryAlerts.length > 0 && (
+        <div className="mt-6 rounded-[var(--radius-lg)] border border-danger/30 bg-danger-tint px-4 py-3">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-danger">
+            <AlertTriangle className="h-4 w-4" /> Connaissances probablement périmées
+          </p>
+          <p className="mt-0.5 text-xs text-danger/80">
+            Ces chapitres étaient maîtrisés mais n&apos;ont pas été revus depuis longtemps après leur échéance — le risque d&apos;oubli
+            y est élevé, une révision dédiée vaut mieux qu&apos;une simple mise à jour.
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {knowledgeExpiryAlerts.slice(0, 5).map((alert) => (
+              <li key={alert.chapterId} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="text-foreground-muted">
+                  <span className="font-medium text-foreground">{alert.chapterTitle}</span> — {alert.bookTitle} · {alert.expiredCount} carte
+                  {alert.expiredCount > 1 ? "s" : ""} en retard de {alert.oldestOverdueDays}+ jours
+                </span>
+                <Link href={`/apps/el-profesor/chapters/${alert.chapterId}/review?mode=due`}>
+                  <Button size="sm" variant="secondary">
+                    Rafraîchir
+                  </Button>
+                </Link>
+              </li>
+            ))}
+            {knowledgeExpiryAlerts.length > 5 && (
+              <li className="text-xs text-danger/80">+ {knowledgeExpiryAlerts.length - 5} autre(s) chapitre(s)</li>
+            )}
+          </ul>
         </div>
       )}
 
