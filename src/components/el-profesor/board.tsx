@@ -33,6 +33,7 @@ import {
   BookText,
   Timer,
   AlertTriangle,
+  Siren,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -572,6 +573,13 @@ export function ElProfesorBoard({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/apps/el-profesor/emergency"
+            className="flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger-tint px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger-tint/70"
+            title="Références d'urgence marquées par un administrateur — consultation rapide"
+          >
+            <Siren className="h-3.5 w-3.5" /> Mode urgence
+          </Link>
           <Link href="/apps/el-profesor/guide">
             <Button variant="ghost" size="icon" aria-label="Guide d'utilisation" title="Guide d'utilisation">
               <BookText className="h-4 w-4" />

@@ -325,6 +325,7 @@ export type ElProfesorFicheBlockRow = {
   citations: Json;
   needs_review: boolean;
   status: ElProfesorContentStatus;
+  is_emergency: boolean;
   created_at: string;
   updated_at: string;
 };

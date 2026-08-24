@@ -176,7 +176,7 @@ function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?
   );
 }
 
-function BlockBody({ block, fontScale }: { block: FicheBlock; fontScale: FontScale }) {
+export function BlockBody({ block, fontScale }: { block: FicheBlock; fontScale: FontScale }) {
   if (block.blockType === "tableau_comparatif") {
     const content = block.content as TableBlockContent;
     const headers = content.headers ?? [];

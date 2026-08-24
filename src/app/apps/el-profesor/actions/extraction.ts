@@ -476,6 +476,24 @@ export async function updateFicheBlock(
   return { success: "Bloc mis à jour." };
 }
 
+/**
+ * Piste d'amélioration 2026-08-24 ("mode urgence / bloc") — flags an
+ * already-published, already-reviewed block as an emergency quick-reference
+ * entry. Pure labeling, no content change, never touched by any AI call.
+ */
+export async function setBlockEmergency(blockId: string, isEmergency: boolean): Promise<ActionState> {
+  const profile = await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("el_profesor_fiche_blocks").update({ is_emergency: isEmergency }).eq("id", blockId);
+  if (error) return { error: "Impossible de mettre à jour ce bloc." };
+
+  await logContentChange(profile.id, "block", blockId, isEmergency ? "mark_emergency" : "unmark_emergency");
+  revalidatePath("/apps/el-profesor");
+  revalidatePath("/apps/el-profesor/emergency");
+  return { success: isEmergency ? "Marqué comme référence d'urgence." : "Retiré du mode urgence." };
+}
+
 export async function updateFlashcard(
   flashcardId: string,
   input: { front: FlashcardSide; back: FlashcardSide; citations: Citation[] }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus, Trash2, ChevronUp, ChevronDown, History, Lightbulb } from "lucide-react";
+import { Plus, Trash2, ChevronUp, ChevronDown, History, Lightbulb, Siren } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import {
   moveFicheBlock,
   getFicheBlockHistory,
   suggestMnemonicForBlock,
+  setBlockEmergency,
 } from "@/app/apps/el-profesor/actions/extraction";
 import { FlagsList } from "@/components/el-profesor/flags-list";
 import { EditableCitations } from "@/components/el-profesor/editable-citations";
@@ -259,6 +260,14 @@ export function BlockEditor({
     });
   }
 
+  function handleToggleEmergency() {
+    startTransition(async () => {
+      const result = await setBlockEmergency(block.id, !block.isEmergency);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
   async function handleSuggestFlagFix(flag: Flag) {
     const result = await suggestFlagFix(flag.id);
     if (result.error) {
@@ -308,9 +317,20 @@ export function BlockEditor({
           )}
           <span className="text-xs font-medium uppercase tracking-wide text-foreground-subtle">{block.blockType}</span>
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex items-center gap-1.5">
           {block.status === "draft" && <Badge variant="neutral">Brouillon</Badge>}
           {block.needsReview && <Badge variant="accent">À vérifier</Badge>}
+          <button
+            type="button"
+            onClick={handleToggleEmergency}
+            disabled={isPending}
+            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+              block.isEmergency ? "border-danger/40 bg-danger-tint text-danger" : "border-border text-foreground-subtle hover:text-danger"
+            }`}
+            title={block.isEmergency ? "Retirer du mode urgence" : "Marquer comme référence d'urgence (mode urgence)"}
+          >
+            <Siren className="h-3 w-3" /> {block.isEmergency ? "Urgence" : "Marquer urgence"}
+          </button>
         </div>
       </div>
 

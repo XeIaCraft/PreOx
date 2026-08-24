@@ -42,6 +42,7 @@ export default async function SharedFichePage({ params }: { params: Promise<{ to
     citations: (b.citations as unknown as Citation[]) ?? [],
     needsReview: b.needs_review,
     status: b.status,
+    isEmergency: b.is_emergency,
   }));
 
   const bookRow = book as ElProfesorBookRow | null;

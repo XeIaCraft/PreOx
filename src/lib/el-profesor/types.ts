@@ -94,6 +94,8 @@ export type FicheBlock = {
   citations: Citation[];
   needsReview: boolean;
   status: ContentStatus;
+  /** Piste 2026-08-24 ("mode urgence / bloc") — hand-flagged by an admin on already-published content, never AI-set. Surfaces the block in the emergency quick-reference view. */
+  isEmergency: boolean;
 };
 
 /** Alternate phrasing of a flashcard's front (item 47) — the back never varies, only how the question is asked. */

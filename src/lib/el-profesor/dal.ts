@@ -137,6 +137,7 @@ function toFicheBlock(row: ElProfesorFicheBlockRow): FicheBlock {
     citations: (row.citations as unknown as Citation[]) ?? [],
     needsReview: row.needs_review,
     status: row.status,
+    isEmergency: row.is_emergency,
   };
 }
 
@@ -2043,6 +2044,45 @@ async function resolveFicheContexts(ficheIds: string[]): Promise<Map<string, Not
     });
   }
   return result;
+}
+
+export interface EmergencyBlockEntry {
+  block: FicheBlock;
+  ficheId: string;
+  ficheTitle: string;
+  chapterId: string;
+  chapterTitle: string;
+  bookId: string;
+  bookTitle: string;
+}
+
+/**
+ * Piste d'amélioration 2026-08-24 ("mode urgence / bloc") — every
+ * published, admin-flagged emergency block across the whole library, for
+ * the user-facing quick-reference view. Reads only already-published,
+ * already-reviewed content — this function never generates or selects
+ * anything an admin hasn't explicitly hand-flagged.
+ */
+export async function getEmergencyBlocks(): Promise<EmergencyBlockEntry[]> {
+  const supabase = await createClient();
+  const { data: blockRows } = await supabase
+    .from("el_profesor_fiche_blocks")
+    .select("*")
+    .eq("is_emergency", true)
+    .eq("status", "published");
+  const rows = blockRows ?? [];
+  if (rows.length === 0) return [];
+
+  const ficheIds = [...new Set(rows.map((r) => r.fiche_id))];
+  const contexts = await resolveFicheContexts(ficheIds);
+
+  return rows
+    .map((row) => {
+      const ctx = contexts.get(row.fiche_id);
+      if (!ctx) return null;
+      return { block: toFicheBlock(row), ...ctx };
+    })
+    .filter((e): e is EmergencyBlockEntry => Boolean(e));
 }
 
 /** Every notion with only its *published* linked fiches (cross-book context included) — the user-facing transversal glossary. Notions left with no published fiche after filtering are omitted. */
