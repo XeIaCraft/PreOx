@@ -552,6 +552,16 @@ export type ElProfesorDoseCalculatorRow = {
   created_at: string;
 };
 
+export type ElProfesorCaseJournalEntryRow = {
+  id: string;
+  user_id: string;
+  notion_id: string | null;
+  title: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type UserLoginLogRow = {
   id: string;
   user_id: string;
@@ -867,6 +877,12 @@ export type Database = {
         Row: ElProfesorDoseCalculatorRow;
         Insert: Partial<ElProfesorDoseCalculatorRow> & { notion_id: string; label: string; dose_per_kg: number };
         Update: Partial<ElProfesorDoseCalculatorRow>;
+        Relationships: [];
+      };
+      el_profesor_case_journal_entries: {
+        Row: ElProfesorCaseJournalEntryRow;
+        Insert: Partial<ElProfesorCaseJournalEntryRow> & { user_id: string; title: string };
+        Update: Partial<ElProfesorCaseJournalEntryRow>;
         Relationships: [];
       };
       el_profesor_contradictions: {

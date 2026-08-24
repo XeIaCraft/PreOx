@@ -205,6 +205,21 @@ export type DoseCalculator = {
   createdAt: string;
 };
 
+/**
+ * Piste 2026-08-24 ("journal de cas relié aux notions") — a personal,
+ * private clinical-case note, optionally tagged to a cross-book notion.
+ * Entirely user-authored, never AI-generated, never visible to anyone but
+ * its author (same RLS as el_profesor_notes).
+ */
+export type CaseJournalEntry = {
+  id: string;
+  notionId: string | null;
+  title: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ContradictionStatus = "pending" | "dismissed" | "resolved";
 
 export type Contradiction = {

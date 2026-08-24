@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, Search, GraduationCap, ExternalLink, Landmark, Calculator, TriangleAlert } from "lucide-react";
+import { ArrowLeft, BookOpen, Search, GraduationCap, ExternalLink, Landmark, Calculator, TriangleAlert, NotebookPen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { NotionSummary, NotionRecommendation, DoseCalculator as DoseCalculatorEntry } from "@/lib/el-profesor/types";
 import type { NotionReadiness } from "@/lib/el-profesor/dal";
@@ -85,11 +85,13 @@ export function GlossaryView({
   readiness,
   recommendations,
   doseCalculators,
+  caseCounts,
 }: {
   notions: NotionSummary[];
   readiness: Record<string, NotionReadiness>;
   recommendations: Record<string, NotionRecommendation[]>;
   doseCalculators: Record<string, DoseCalculatorEntry[]>;
+  caseCounts: Record<string, number>;
 }) {
   const [query, setQuery] = useState("");
 
@@ -156,6 +158,13 @@ export function GlossaryView({
                       className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary-tint px-2.5 py-1 text-xs font-medium text-primary-strong hover:bg-primary-tint/70"
                     >
                       <GraduationCap className="h-3.5 w-3.5" /> Réviser ce thème
+                    </Link>
+                    <Link
+                      href={`/apps/el-profesor/journal?notionId=${notion.id}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-foreground-subtle hover:text-foreground"
+                      title="Mon journal de cas pour cette notion"
+                    >
+                      <NotebookPen className="h-3.5 w-3.5" /> {caseCounts[notion.id] ? `${caseCounts[notion.id]} cas` : "Cas"}
                     </Link>
                   </div>
                 </div>

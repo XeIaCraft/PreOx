@@ -34,6 +34,7 @@ import type {
   NotionSummary,
   NotionRecommendation,
   DoseCalculator,
+  CaseJournalEntry,
   Contradiction,
   ContradictionStatus,
   CrossBookDuplicateFlashcards,
@@ -2203,6 +2204,60 @@ export async function getDoseCalculators(notionIds: string[]): Promise<Record<st
       createdAt: row.created_at,
     });
     result[row.notion_id] = list;
+  }
+  return result;
+}
+
+export interface CaseJournalEntryWithNotion extends CaseJournalEntry {
+  notionName: string | null;
+}
+
+/**
+ * Piste d'amélioration 2026-08-24 ("journal de cas relié aux notions") —
+ * this user's own private case-journal entries, newest first, with the
+ * tagged notion's name resolved for display. RLS already scopes this to
+ * the caller's own rows — userId is only used for the notion-count
+ * sibling function below, not as a filter here.
+ */
+export async function getCaseJournalEntries(): Promise<CaseJournalEntryWithNotion[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("el_profesor_case_journal_entries")
+    .select("id, notion_id, title, body, created_at, updated_at")
+    .order("created_at", { ascending: false });
+  const rows = data ?? [];
+  if (rows.length === 0) return [];
+
+  const notionIds = [...new Set(rows.map((r) => r.notion_id).filter((id): id is string => Boolean(id)))];
+  const { data: notions } = notionIds.length > 0 ? await supabase.from("el_profesor_notions").select("id, name").in("id", notionIds) : { data: [] };
+  const nameById = new Map((notions ?? []).map((n) => [n.id, n.name]));
+
+  return rows.map((r) => ({
+    id: r.id,
+    notionId: r.notion_id,
+    notionName: r.notion_id ? (nameById.get(r.notion_id) ?? null) : null,
+    title: r.title,
+    body: r.body,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+/** Case count per notion for this user — the glossary's "X cas liés" badge. */
+export async function getCaseJournalCountsByNotion(userId: string, notionIds: string[]): Promise<Record<string, number>> {
+  const result: Record<string, number> = {};
+  if (notionIds.length === 0) return result;
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("el_profesor_case_journal_entries")
+    .select("notion_id")
+    .eq("user_id", userId)
+    .in("notion_id", notionIds);
+
+  for (const row of data ?? []) {
+    if (!row.notion_id) continue;
+    result[row.notion_id] = (result[row.notion_id] ?? 0) + 1;
   }
   return result;
 }

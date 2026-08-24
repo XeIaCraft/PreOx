@@ -34,6 +34,7 @@ import {
   Timer,
   AlertTriangle,
   Siren,
+  NotebookPen,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -591,6 +592,11 @@ export function ElProfesorBoard({
           <Link href="/apps/el-profesor/glossary">
             <Button variant="ghost" size="icon" aria-label="Glossaire des notions" title="Glossaire des notions">
               <BookOpen className="h-4 w-4" />
+            </Button>
+          </Link>
+          <Link href="/apps/el-profesor/journal">
+            <Button variant="ghost" size="icon" aria-label="Mon journal de cas" title="Mon journal de cas">
+              <NotebookPen className="h-4 w-4" />
             </Button>
           </Link>
           <Link href="/apps/el-profesor/suspended">
