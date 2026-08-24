@@ -16,6 +16,7 @@ import {
   updateFlashcardCloze,
 } from "@/app/apps/el-profesor/actions/extraction";
 import { FlagsList } from "@/components/el-profesor/flags-list";
+import { suggestFlagFix } from "@/app/apps/el-profesor/actions/flags";
 import { EditableCitations } from "@/components/el-profesor/editable-citations";
 import { EditHistory } from "@/components/el-profesor/block-editor";
 import { useToast } from "@/components/ui/toast";
@@ -336,6 +337,17 @@ export function FlashcardEditor({
     });
   }
 
+  async function handleSuggestFlagFix(flag: Flag) {
+    const result = await suggestFlagFix(flag.id);
+    if (result.error) {
+      toast(result.error, { variant: "error" });
+      return;
+    }
+    if (result.front != null) setFront(result.front);
+    if (result.back != null) setBack(result.back);
+    toast(result.note || "Suggestion pré-remplie — relisez avant d'enregistrer.", { variant: "success" });
+  }
+
   function handleImageSelected(file: File | undefined) {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
@@ -439,7 +451,7 @@ export function FlashcardEditor({
 
       <VariantTester flashcard={flashcard} onChanged={onChanged} />
 
-      <FlagsList flags={flags} onResolved={onChanged} />
+      <FlagsList flags={flags} onResolved={onChanged} onSuggestFix={handleSuggestFlagFix} />
 
       <EditableCitations citations={citations} onChange={setCitations} onCitationClick={onCitationClick} />
 

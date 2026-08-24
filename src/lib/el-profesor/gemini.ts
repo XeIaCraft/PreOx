@@ -21,6 +21,8 @@ import {
   buildChapterSplitPrompt,
   buildPageOcrPrompt,
   buildLeechRewordingPrompt,
+  buildFlashcardFlagFixPrompt,
+  buildBlockFlagFixPrompt,
 } from "@/lib/el-profesor/prompts";
 import type {
   ComplementaryResult,
@@ -186,6 +188,25 @@ const MNEMONIC_RESPONSE_SCHEMA = {
 };
 
 const LEECH_REWORDING_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    text: { type: "STRING" },
+    note: { type: "STRING" },
+  },
+  required: ["text", "note"],
+};
+
+const FLASHCARD_FLAG_FIX_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    front: { type: "STRING" },
+    back: { type: "STRING" },
+    note: { type: "STRING" },
+  },
+  required: ["front", "back", "note"],
+};
+
+const BLOCK_FLAG_FIX_SCHEMA = {
   type: "OBJECT",
   properties: {
     text: { type: "STRING" },
@@ -723,6 +744,37 @@ export async function suggestLeechRewording(
 ): Promise<{ text: string; note: string }> {
   const instructions = buildLeechRewordingPrompt(subEntityName, front, back, againRate);
   const { result } = await textRotation<{ text: string; note: string }>(config, instructions, LEECH_REWORDING_SCHEMA);
+  return result;
+}
+
+/**
+ * Piste 2026-08-24 ("boucler les signalements vers la régénération") : a
+ * suggested fix for a flagged flashcard, from its own reported reason.
+ * Always a suggestion the admin reviews and edits through the normal save
+ * flow — never applied automatically.
+ */
+export async function suggestFlashcardFlagFix(
+  config: GeminiRotationConfig,
+  subEntityName: string,
+  front: string,
+  back: string,
+  flagReason: string
+): Promise<{ front: string; back: string; note: string }> {
+  const instructions = buildFlashcardFlagFixPrompt(subEntityName, front, back, flagReason);
+  const { result } = await textRotation<{ front: string; back: string; note: string }>(config, instructions, FLASHCARD_FLAG_FIX_SCHEMA);
+  return result;
+}
+
+/** Same as suggestFlashcardFlagFix, for a fiche block's free-text content. */
+export async function suggestBlockFlagFix(
+  config: GeminiRotationConfig,
+  subEntityName: string,
+  blockType: string,
+  currentText: string,
+  flagReason: string
+): Promise<{ text: string; note: string }> {
+  const instructions = buildBlockFlagFixPrompt(subEntityName, blockType, currentText, flagReason);
+  const { result } = await textRotation<{ text: string; note: string }>(config, instructions, BLOCK_FLAG_FIX_SCHEMA);
   return result;
 }
 

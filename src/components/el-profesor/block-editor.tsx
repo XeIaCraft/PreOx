@@ -14,6 +14,7 @@ import {
 } from "@/app/apps/el-profesor/actions/extraction";
 import { FlagsList } from "@/components/el-profesor/flags-list";
 import { EditableCitations } from "@/components/el-profesor/editable-citations";
+import { suggestFlagFix } from "@/app/apps/el-profesor/actions/flags";
 import { useToast } from "@/components/ui/toast";
 import type { Citation, FicheBlock, Flag, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
 import type { ContentLogEntry } from "@/lib/el-profesor/content-log";
@@ -258,6 +259,16 @@ export function BlockEditor({
     });
   }
 
+  async function handleSuggestFlagFix(flag: Flag) {
+    const result = await suggestFlagFix(flag.id);
+    if (result.error) {
+      toast(result.error, { variant: "error" });
+      return;
+    }
+    if (result.text != null) setContent({ text: result.text });
+    toast(result.note || "Suggestion pré-remplie — relisez avant d'enregistrer.", { variant: "success" });
+  }
+
   function handleSuggestMnemonic() {
     startTransition(async () => {
       const result = await suggestMnemonicForBlock(block.id);
@@ -320,7 +331,7 @@ export function BlockEditor({
         )}
       </div>
 
-      <FlagsList flags={flags} onResolved={onChanged} />
+      <FlagsList flags={flags} onResolved={onChanged} onSuggestFix={handleSuggestFlagFix} />
 
       <EditableCitations citations={citations} onChange={setCitations} onCitationClick={onCitationClick} />
 

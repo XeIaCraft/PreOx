@@ -451,6 +451,47 @@ Réponds uniquement avec le JSON demandé (un champ "text" pour la question refo
 `.trim();
 }
 
+/**
+ * Piste d'amélioration 2026-08-24 ("boucler les signalements vers la
+ * régénération") : propose une correction de flashcard à partir du motif
+ * de signalement d'un utilisateur, plutôt que de laisser l'admin retaper
+ * le contenu à la main. Suggestion uniquement — jamais appliquée sans
+ * relecture, comme tout le reste du contenu généré par IA dans ce module.
+ */
+export function buildFlashcardFlagFixPrompt(subEntityName: string, front: string, back: string, flagReason: string): string {
+  return `
+${EXPERT_READER_CONTEXT}
+
+Cette flashcard, rattachée à la sous-entité « ${subEntityName} », a été signalée comme incorrecte par un utilisateur.
+
+Question actuelle : « ${front} »
+Réponse actuelle : « ${back} »
+
+Motif du signalement : « ${flagReason || "Aucun motif précisé."} »
+
+Ta tâche : propose une version corrigée de la question ET de la réponse qui règle le problème signalé, en conservant tout ce qui n'est pas concerné par le signalement. Si le motif est trop vague pour identifier une correction fiable, renvoie la question et la réponse originales inchangées et explique pourquoi dans "note" plutôt que d'inventer une correction non fondée.
+
+Réponds uniquement avec le JSON demandé (les champs "front" et "back" pour la question/réponse corrigées, et "note" — chaîne vide si tu n'as rien à signaler), structuré exactement selon le schéma fourni.
+`.trim();
+}
+
+/** Same as buildFlashcardFlagFixPrompt, for a fiche block's free-text content (definition, mnémotechnique, perle clinique, etc.) — not applicable to tableau_comparatif/protocole_paliers blocks, whose structured content isn't a single text field. */
+export function buildBlockFlagFixPrompt(subEntityName: string, blockType: string, currentText: string, flagReason: string): string {
+  return `
+${EXPERT_READER_CONTEXT}
+
+Ce bloc de fiche (type « ${blockType} »), rattaché à la sous-entité « ${subEntityName} », a été signalé comme incorrect par un utilisateur.
+
+Contenu actuel : « ${currentText} »
+
+Motif du signalement : « ${flagReason || "Aucun motif précisé."} »
+
+Ta tâche : propose une version corrigée de ce contenu qui règle le problème signalé, en conservant le style et tout ce qui n'est pas concerné par le signalement. Si le motif est trop vague pour identifier une correction fiable, renvoie le contenu original inchangé et explique pourquoi dans "note" plutôt que d'inventer une correction non fondée.
+
+Réponds uniquement avec le JSON demandé (un champ "text" pour le contenu corrigé, et un champ "note" — chaîne vide si tu n'as rien à signaler), structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildVerificationPrompt(extractionJson: string): string {
   return `
 Tu reçois le document source (chapitre PDF) et, ci-dessous, un JSON d'extraction déjà produit à partir de ce document (sous-entités, fiches, blocs avec citations, flashcards). Ta seule tâche : vérifier la fidélité de chaque bloc et chaque flashcard à sa citation et au document source.
