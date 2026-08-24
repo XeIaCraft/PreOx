@@ -29,6 +29,7 @@ import {
   Archive,
   ListTree,
   GitBranch,
+  Scissors,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -41,6 +42,7 @@ import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { NotesSearchDialog } from "@/components/el-profesor/notes-search-dialog";
 import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog";
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
+import { SplitBookDialog } from "@/components/el-profesor/dialogs/split-book-dialog";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
 import { LearningWidgets, DailyCard, LibraryStats, BookmarksList, OnThisDayNoteCard, BookRecommendationCard, DueBlocksWidget } from "@/components/el-profesor/learning-widgets";
@@ -52,6 +54,7 @@ import { exportBookArchive, archiveBook } from "@/app/apps/el-profesor/actions/a
 import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/export";
 import { exportBookNotes } from "@/app/apps/el-profesor/actions/notes";
 import { getLastChapter } from "@/lib/el-profesor/local-prefs";
+import { formatUsd } from "@/lib/el-profesor/ai-pricing";
 import type {
   BookWithChapters,
   ChapterDueCounts,
@@ -177,6 +180,7 @@ type ModalState =
   | { type: "add_book" }
   | { type: "edit_book"; book: { id: string; title: string; author: string | null; edition: string | null; theme: string | null } }
   | { type: "upload_chapter"; bookId: string; nextOrder: number }
+  | { type: "split_book"; bookId: string; nextOrder: number }
   | { type: "delete_book"; bookId: string; title: string; chapterCount: number }
   | { type: "delete_chapter"; chapterId: string; title: string; flashcardCount: number }
   | { type: "gemini_settings" }
@@ -287,6 +291,25 @@ export function ElProfesorBoard({
   const totalFlashcards = masteryValues.reduce((sum, m) => sum + m.total, 0);
   const themes = [...new Set(books.map((b) => b.theme).filter((t): t is string => Boolean(t)))].sort();
   const visibleBooks = themeFilter ? books.filter((b) => b.theme === themeFilter) : books;
+
+  // Every chapter a Claude batch could apply to, regardless of current status —
+  // "Tout sélectionner" below and the cost estimate in the sticky bar both use
+  // this same set (see bulkSelectable below, computed identically per-chapter).
+  const bulkSelectableChapterIds =
+    isAdmin && aiProvider === "claude" ? books.flatMap((b) => b.chapters.filter((c) => c.sourceKind === "pdf").map((c) => c.id)) : [];
+
+  // Demandé le 2026-08-24 : prix estimé AVANT de lancer une génération, pas
+  // seulement après coup (item 80/81 ne couvraient que l'historique déjà
+  // consommé). Faute de suivi du nombre de pages par appel dans le journal
+  // d'usage, on approxime par le coût moyen des appels Claude déjà loggés
+  // sur 7 jours (mélange extraction/complément/etc., mais ce sont l'immense
+  // majorité des appels Claude du module) — mieux qu'aucun chiffre, mais
+  // annoncé comme approximatif dans l'infobulle plutôt que présenté comme
+  // exact. `null` tant qu'aucun appel Claude n'a encore été journalisé.
+  const claudeModelKey = `claude:${claudeModel || "claude-sonnet-5"}`;
+  const claudeUsage = geminiUsageStats?.byModel.find((m) => m.model === claudeModelKey);
+  const avgCostPerCallUsd = claudeUsage && claudeUsage.calls > 0 && !claudeUsage.hasUnpricedCalls ? claudeUsage.estimatedCostUsd / claudeUsage.calls : null;
+  const estimatedBulkCostUsd = avgCostPerCallUsd !== null ? avgCostPerCallUsd * selectedChapterIds.size : null;
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -715,11 +738,33 @@ export function ElProfesorBoard({
         </div>
       )}
 
+      {isAdmin && aiProvider === "claude" && bulkSelectableChapterIds.length > 0 && selectedChapterIds.size === 0 && (
+        <button
+          type="button"
+          onClick={() => setSelectedChapterIds(new Set(bulkSelectableChapterIds))}
+          className="mt-4 text-xs text-foreground-subtle underline hover:text-foreground"
+        >
+          Sélectionner tous les chapitres PDF ({bulkSelectableChapterIds.length}) pour estimer le coût de tout générer
+        </button>
+      )}
+
       {selectedChapterIds.size > 0 && (
         <div className="sticky top-2 z-10 mt-6 flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] border border-primary bg-surface p-3 shadow-md">
           <span className="text-sm font-medium text-foreground">
             {selectedChapterIds.size} chapitre{selectedChapterIds.size > 1 ? "s" : ""} sélectionné{selectedChapterIds.size > 1 ? "s" : ""}
           </span>
+          {estimatedBulkCostUsd !== null ? (
+            <span
+              className="text-xs text-foreground-subtle"
+              title="Estimation basée sur le coût moyen des appels Claude déjà journalisés sur 7 jours (extraction + complément + autres usages confondus) — une passe par chapitre ; un complément « jusqu'à couverture » peut en enchaîner plusieurs si le contenu est dense."
+            >
+              ≈ {formatUsd(estimatedBulkCostUsd)} estimé
+            </span>
+          ) : (
+            <span className="text-xs text-foreground-subtle" title="Pas encore assez d'appels Claude journalisés pour estimer un coût moyen.">
+              coût estimé indisponible
+            </span>
+          )}
           <Button size="sm" onClick={handleBulkExtract} disabled={isBulkPending}>
             <Sparkles className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Extraire via un lot Claude"}
           </Button>
@@ -844,6 +889,14 @@ export function ElProfesorBoard({
                     onClick={() => setModal({ type: "upload_chapter", bookId: book.id, nextOrder: book.chapters.length })}
                   >
                     <Plus className="h-3.5 w-3.5" /> Chapitre
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    title="Uploader le PDF complet du livre et le diviser en plusieurs chapitres (manuellement ou via une suggestion IA)"
+                    onClick={() => setModal({ type: "split_book", bookId: book.id, nextOrder: book.chapters.length })}
+                  >
+                    <Scissors className="h-3.5 w-3.5" /> Diviser un PDF
                   </Button>
                   <Button
                     variant="ghost"
@@ -1106,6 +1159,17 @@ export function ElProfesorBoard({
       )}
       {modal?.type === "upload_chapter" && (
         <UploadChapterDialog
+          bookId={modal.bookId}
+          nextOrder={modal.nextOrder}
+          onClose={() => setModal(null)}
+          onSaved={() => {
+            setModal(null);
+            refresh();
+          }}
+        />
+      )}
+      {modal?.type === "split_book" && (
+        <SplitBookDialog
           bookId={modal.bookId}
           nextOrder={modal.nextOrder}
           onClose={() => setModal(null)}

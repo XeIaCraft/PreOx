@@ -17,6 +17,7 @@ import {
   buildClinicalCasePrompt,
   buildExamQuestionsPrompt,
   buildMindMapPrompt,
+  buildChapterSplitPrompt,
 } from "@/lib/el-profesor/prompts";
 import type {
   ComplementaryResult,
@@ -257,6 +258,24 @@ const NOTION_UPDATE_CHECK_SCHEMA = {
     flashcards: { type: "ARRAY", items: FLASHCARD_ITEM_SCHEMA },
   },
   required: ["needs_update", "explanation", "blocks", "flashcards"],
+};
+
+const CHAPTER_SPLIT_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    chapters: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          title: { type: "STRING" },
+          start_page: { type: "INTEGER" },
+        },
+        required: ["title", "start_page"],
+      },
+    },
+  },
+  required: ["chapters"],
 };
 
 export type UploadedGeminiFile = {
@@ -673,6 +692,21 @@ export async function generateMindMap(
   const instructions = buildMindMapPrompt(chapterTitle, subEntitySummaries);
   const { result } = await textRotation<MindMap>(config, instructions, MIND_MAP_RESPONSE_SCHEMA);
   return result;
+}
+
+/**
+ * AI-assisted first pass for the "diviser un PDF en chapitres" admin tool
+ * (item added 2026-08-24) — suggests chapter titles + start pages from
+ * short per-page text excerpts; always Gemini regardless of the module's
+ * active provider setting, since this is a one-shot interactive helper and
+ * the Claude path in this module is batch-only by design (see the module
+ * doc comment in anthropic.ts) — a synchronous single-call Claude path
+ * doesn't exist here. Rotates on quota/capacity errors.
+ */
+export async function detectChapterBoundaries(config: GeminiRotationConfig, pageTexts: string[]): Promise<{ title: string; startPage: number }[]> {
+  const instructions = buildChapterSplitPrompt(pageTexts);
+  const { result } = await textRotation<{ chapters: { title: string; start_page: number }[] }>(config, instructions, CHAPTER_SPLIT_SCHEMA);
+  return result.chapters.map((c) => ({ title: c.title, startPage: c.start_page }));
 }
 
 /** Assigns 1-3 cross-book "notion" tags to a fiche's content, reusing existing notion names when they fit. Rotates on quota/capacity errors. */

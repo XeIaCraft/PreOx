@@ -57,3 +57,10 @@ export function estimateCostUsd(model: string, promptTokens: number, candidatesT
   const discount = isClaude ? CLAUDE_BATCH_DISCOUNT : 1;
   return (promptTokens / 1_000_000) * entry.pricing.inputPerM * discount + (candidatesTokens / 1_000_000) * entry.pricing.outputPerM * discount;
 }
+
+/** Shared with every panel that shows a $ estimate (Réglages IA, tableau de bord) — kept in one place so the rounding rule stays consistent. */
+export function formatUsd(amount: number): string {
+  if (amount === 0) return "0 $";
+  if (amount < 0.01) return "< 0,01 $";
+  return `${amount.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+}

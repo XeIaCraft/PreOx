@@ -19,7 +19,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import type { GeminiUsageStats, ElProfesorAiProvider } from "@/lib/el-profesor/dal";
 import type { ElProfesorBatchJobRow, ElProfesorBatchJobKind } from "@/lib/supabase/types";
-import { estimateCostUsd } from "@/lib/el-profesor/ai-pricing";
+import { estimateCostUsd, formatUsd } from "@/lib/el-profesor/ai-pricing";
 
 const BATCH_KIND_LABEL: Record<ElProfesorBatchJobKind, string> = {
   extraction: "Extraction",
@@ -34,12 +34,6 @@ const BATCH_KIND_LABEL: Record<ElProfesorBatchJobKind, string> = {
 const DEFAULT_MODEL = "gemini-flash-latest";
 // Same for EL_PROFESOR_CLAUDE_MODEL_DEFAULT in src/lib/el-profesor/anthropic.ts.
 const DEFAULT_CLAUDE_MODEL = "claude-sonnet-5";
-
-function formatUsd(amount: number): string {
-  if (amount === 0) return "0 $";
-  if (amount < 0.01) return "< 0,01 $";
-  return `${amount.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
-}
 
 export function GeminiSettingsDialog({
   currentModel,

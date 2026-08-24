@@ -386,6 +386,32 @@ Réponds uniquement avec le JSON demandé, structuré exactement selon le schém
 `.trim();
 }
 
+/**
+ * AI-assisted first pass for the "diviser un PDF en chapitres" admin tool
+ * (requested 2026-08-24) — the admin uploads a whole book PDF once instead
+ * of pre-splitting it by hand, and this suggests where each chapter starts
+ * from short per-page excerpts; the admin reviews/edits every suggestion
+ * (title + page range) before anything is actually split and uploaded.
+ */
+export function buildChapterSplitPrompt(pageTexts: string[]): string {
+  const pages = pageTexts
+    .map((text, i) => `--- Page ${i + 1} ---\n${text.trim().slice(0, 300) || "(page vide ou image scannée)"}`)
+    .join("\n\n");
+  return `
+Voici le texte extrait de chaque page d'un livre médical au format PDF (un court extrait par page, pour repérer la structure du document) :
+
+${pages}
+
+Ta tâche : identifie les DÉBUTS de chapitre (ou grandes parties/sections numérotées) de ce livre, dans l'ordre, à partir des titres/en-têtes visibles dans les extraits — pas les sous-sections internes à un chapitre. Ignore les pages de sommaire/table des matières/index/couverture/remerciements en tant que « chapitre » (ce n'est pas du contenu à réviser), mais utilise-les si elles t'aident à repérer où chaque chapitre commence réellement dans le corps du livre.
+
+Pour chaque chapitre repéré, donne son titre exact (tel qu'il apparaît dans le livre, sans numérotation superflue type « Chapitre 3 — » si le titre seul suffit à l'identifier) et le numéro de la PREMIÈRE page (1-indexé, correspondant aux numéros « Page N » ci-dessus) où ce chapitre commence.
+
+Si tu n'es pas sûr de la structure (livre sans découpage clair, extraits illisibles car pages scannées...), fais de ton mieux avec les indices disponibles plutôt que de renvoyer une liste vide — un premier découpage approximatif que l'utilisateur pourra corriger à la main est plus utile qu'aucun découpage.
+
+Réponds uniquement avec le JSON demandé (un tableau "chapters", chaque élément avec "title" et "start_page"), structuré exactement selon le schéma fourni, trié par "start_page" croissant.
+`.trim();
+}
+
 export function buildVerificationPrompt(extractionJson: string): string {
   return `
 Tu reçois le document source (chapitre PDF) et, ci-dessous, un JSON d'extraction déjà produit à partir de ce document (sous-entités, fiches, blocs avec citations, flashcards). Ta seule tâche : vérifier la fidélité de chaque bloc et chaque flashcard à sa citation et au document source.
