@@ -875,6 +875,28 @@ export async function getReviewActivitySummary(userId: string): Promise<ReviewAc
   return { currentStreak, longestStreak, last12Weeks };
 }
 
+/**
+ * Number of reviews in the last `days` where the user marked themselves
+ * "sûr(e)" before revealing the answer and then answered "Incorrect" —
+ * the state the audit's "calibration de la confiance" piste calls the most
+ * dangerous in clinical practice (confidently wrong beats knowingly unsure).
+ */
+export async function getOverconfidentMissCount(userId: string, days = 30): Promise<number> {
+  const supabase = await createClient();
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - days);
+
+  const { count } = await supabase
+    .from("el_profesor_review_log")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("confidence", "sure")
+    .eq("rating", "again")
+    .gte("reviewed_at", since.toISOString());
+
+  return count ?? 0;
+}
+
 function shuffle<T>(items: T[]): T[] {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i--) {

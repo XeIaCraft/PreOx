@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Check, X, PartyPopper, Undo2, Info, Keyboard, Timer, Square, PenLine, Maximize2, Minimize2, BellOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { submitReview, undoReview, excludeFlashcardFromReviews } from "@/app/apps/el-profesor/actions/review";
+import { submitReview, undoReview, excludeFlashcardFromReviews, type ReviewConfidence } from "@/app/apps/el-profesor/actions/review";
 import { FlagButton } from "@/components/el-profesor/flag-button";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { useToast } from "@/components/ui/toast";
@@ -167,6 +167,12 @@ export function FlashcardReviewer({
   const [isPending, startTransition] = useTransition();
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
+  // Mandatory self-assessment step inserted before every reveal (piste
+  // 2026-08-24, "calibration de la confiance") — awaitingConfidence is true
+  // between the reveal request and the user picking Hésitant(e)/Sûr(e).
+  const [awaitingConfidence, setAwaitingConfidence] = useState(false);
+  const [confidence, setConfidence] = useState<ReviewConfidence | null>(null);
+  const [overconfidentMisses, setOverconfidentMisses] = useState(0);
   const [done, setDone] = useState(0);
   const [tally, setTally] = useState({ again: 0, good: 0 });
   const [struggled, setStruggled] = useState<string[]>([]);
@@ -190,13 +196,28 @@ export function FlashcardReviewer({
   const [variantByCardId] = useState(() => new Map(cards.map((c) => [c.id, pickShownVariant(c)])));
   const shownVariant = current ? (variantByCardId.get(current.id) ?? { variantId: null, text: current.front.text }) : null;
 
+  // Starts the mandatory confidence step rather than revealing directly —
+  // shared by every reveal trigger (keyboard, tap, dictation, button).
+  function requestReveal() {
+    if (isPending || revealed || awaitingConfidence) return;
+    setAwaitingConfidence(true);
+  }
+
+  function confirmReveal(c: ReviewConfidence) {
+    setConfidence(c);
+    setAwaitingConfidence(false);
+    setRevealed(true);
+    revealedAtRef.current = Date.now();
+  }
+
   function handleRate(rating: "again" | "good") {
     if (!current) return;
     const answeredIndex = index;
     const durationMs = revealedAtRef.current != null ? Date.now() - revealedAtRef.current : undefined;
     revealedAtRef.current = null;
+    const answeredConfidence = confidence;
     startTransition(async () => {
-      const result = await submitReview(current.id, rating, source, durationMs, shownVariant?.variantId ?? null);
+      const result = await submitReview(current.id, rating, source, durationMs, shownVariant?.variantId ?? null, answeredConfidence);
       if (result.error || !result.logId) {
         toast(result.error ?? "Impossible d'enregistrer cette révision.", { variant: "error" });
         return;
@@ -212,7 +233,9 @@ export function FlashcardReviewer({
       setDone((d) => d + 1);
       setTally((t) => (rating === "again" ? { ...t, again: t.again + 1 } : { ...t, good: t.good + 1 }));
       if (rating === "again") setStruggled((s) => [...s, current.front.text]);
+      if (rating === "again" && answeredConfidence === "sure") setOverconfidentMisses((n) => n + 1);
       setRevealed(false);
+      setConfidence(null);
       setDictationInput("");
       setIndex((i) => i + 1);
     });
@@ -231,6 +254,8 @@ export function FlashcardReviewer({
       }
       toast("Carte exclue de vos révisions.", { variant: "success" });
       setRevealed(false);
+      setAwaitingConfidence(false);
+      setConfidence(null);
       setDictationInput("");
       setIndex((i) => i + 1);
     });
@@ -258,6 +283,9 @@ export function FlashcardReviewer({
   function handleRestart() {
     setIndex(0);
     setRevealed(false);
+    setAwaitingConfidence(false);
+    setConfidence(null);
+    setOverconfidentMisses(0);
     setDictationInput("");
     setDone(0);
     setTally({ again: 0, good: 0 });
@@ -304,10 +332,15 @@ export function FlashcardReviewer({
         return;
       }
       if (!current || isPending) return;
-      if (!revealed && e.key === " ") {
+      if (!revealed && !awaitingConfidence && e.key === " ") {
         e.preventDefault();
-        setRevealed(true);
-        revealedAtRef.current = Date.now();
+        requestReveal();
+      } else if (awaitingConfidence && (e.key === "ArrowLeft" || e.key === "1")) {
+        e.preventDefault();
+        confirmReveal("unsure");
+      } else if (awaitingConfidence && (e.key === "ArrowRight" || e.key === "2")) {
+        e.preventDefault();
+        confirmReveal("sure");
       } else if (revealed && (e.key === "ArrowLeft" || e.key === "1")) {
         e.preventDefault();
         handleRate("again");
@@ -319,7 +352,7 @@ export function FlashcardReviewer({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current, revealed, isPending, lastAction]);
+  }, [current, revealed, awaitingConfidence, isPending, lastAction]);
 
   function handleCardPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.pointerType !== "touch" || !revealed || isPending) return;
@@ -353,9 +386,8 @@ export function FlashcardReviewer({
   // button so the card (the dominant element on mobile) is directly
   // actionable, rather than requiring a precise tap on the button below it.
   function handleCardClick() {
-    if (isPending || revealed) return;
-    setRevealed(true);
-    revealedAtRef.current = Date.now();
+    if (isPending || revealed || awaitingConfidence) return;
+    requestReveal();
   }
 
   const undoButton = lastAction && (
@@ -389,6 +421,12 @@ export function FlashcardReviewer({
             <span className="text-success">{tally.good} correcte{tally.good > 1 ? "s" : ""}</span>
             {" · "}
             <span className="text-danger">{tally.again} à revoir</span>
+          </p>
+        )}
+        {overconfidentMisses > 0 && (
+          <p className="mt-3 text-xs text-danger">
+            {overconfidentMisses} carte{overconfidentMisses > 1 ? "s" : ""} où vous étiez sûr(e) mais vous vous êtes trompé(e) — le signal le
+            plus important à corriger.
           </p>
         )}
         {struggled.length > 0 && (
@@ -599,12 +637,20 @@ export function FlashcardReviewer({
       </div>
 
       <div className="pb-[calc(1rem+env(safe-area-inset-bottom))]">
-        {!revealed && dictationMode ? (
+        {awaitingConfidence ? (
+          <div className="grid grid-cols-2 gap-3">
+            <Button variant="secondary" size="lg" onClick={() => confirmReveal("unsure")}>
+              Hésitant(e)
+            </Button>
+            <Button size="lg" onClick={() => confirmReveal("sure")}>
+              Sûr(e)
+            </Button>
+          </div>
+        ) : !revealed && dictationMode ? (
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              setRevealed(true);
-              revealedAtRef.current = Date.now();
+              requestReveal();
             }}
             className="space-y-2"
           >
@@ -620,14 +666,7 @@ export function FlashcardReviewer({
             </Button>
           </form>
         ) : !revealed ? (
-          <Button
-            className="w-full"
-            size="lg"
-            onClick={() => {
-              setRevealed(true);
-              revealedAtRef.current = Date.now();
-            }}
-          >
+          <Button className="w-full" size="lg" onClick={requestReveal}>
             Afficher la réponse
           </Button>
         ) : (
@@ -646,7 +685,7 @@ export function FlashcardReviewer({
           </div>
         )}
         <p className="mt-2 hidden text-center text-xs text-foreground-subtle sm:block">
-          Espace pour révéler · ← / → pour répondre · Ctrl+Z / ⌘Z pour annuler
+          Espace pour révéler · ← / → pour répondre (confiance, puis exactitude) · Ctrl+Z / ⌘Z pour annuler
         </p>
       </div>
     </div>

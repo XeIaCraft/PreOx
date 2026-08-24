@@ -9,6 +9,7 @@ import {
   getDifficultQueue,
   getDifficultCountsByChapter,
   getReviewActivitySummary,
+  getOverconfidentMissCount,
   getUpcomingReviewForecast,
   getMostDifficultFlashcardsGlobal,
   getLeechFlashcards,
@@ -53,6 +54,7 @@ export default async function ElProfesorPage() {
     difficult,
     difficultCounts,
     activity,
+    overconfidentMissCount,
     forecast,
     mostDifficultGlobal,
     leechFlashcards,
@@ -83,6 +85,7 @@ export default async function ElProfesorPage() {
     getDifficultQueue(profile.id, allChapters),
     getDifficultCountsByChapter(profile.id, allChapters),
     getReviewActivitySummary(profile.id),
+    getOverconfidentMissCount(profile.id),
     getUpcomingReviewForecast(profile.id, allChapters),
     isAdmin ? getMostDifficultFlashcardsGlobal() : Promise.resolve([]),
     isAdmin ? getLeechFlashcards() : Promise.resolve([]),
@@ -119,6 +122,7 @@ export default async function ElProfesorPage() {
         difficultCount={difficult.length}
         difficultCounts={difficultCounts}
         activity={activity}
+        overconfidentMissCount={overconfidentMissCount}
         forecast={forecast}
         mostDifficultGlobal={mostDifficultGlobal}
         leechFlashcards={leechFlashcards}

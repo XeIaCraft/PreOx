@@ -382,6 +382,7 @@ export type ElProfesorReviewLogRow = {
   source: ElProfesorReviewSource;
   duration_ms: number | null;
   variant_id: string | null;
+  confidence: "sure" | "unsure" | null;
 };
 
 export type ElProfesorContentLogRow = {

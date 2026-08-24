@@ -7,6 +7,8 @@ import { scheduleReview } from "@/lib/el-profesor/fsrs";
 import { createClient } from "@/lib/supabase/server";
 import type { ReviewRating, ReviewSource, ReviewState } from "@/lib/el-profesor/types";
 
+export type ReviewConfidence = "sure" | "unsure";
+
 export interface ActionState {
   error?: string;
   success?: string;
@@ -32,7 +34,8 @@ export async function submitReview(
   rating: ReviewRating,
   source: ReviewSource,
   durationMs?: number,
-  variantId?: string | null
+  variantId?: string | null,
+  confidence?: ReviewConfidence | null
 ): Promise<SubmitReviewResult> {
   const profile = await requireElProfesorAccess();
   const supabase = await createClient();
@@ -45,7 +48,15 @@ export async function submitReview(
   // original wording, not "no data", so the variant comparison can tally it.
   const { data: logRow, error: logError } = await supabase
     .from("el_profesor_review_log")
-    .insert({ user_id: profile.id, flashcard_id: flashcardId, rating, source, duration_ms: cleanDuration, variant_id: variantId ?? null })
+    .insert({
+      user_id: profile.id,
+      flashcard_id: flashcardId,
+      rating,
+      source,
+      duration_ms: cleanDuration,
+      variant_id: variantId ?? null,
+      confidence: confidence ?? null,
+    })
     .select("id")
     .single();
   if (logError || !logRow) return { error: "Impossible d'enregistrer cette révision." };

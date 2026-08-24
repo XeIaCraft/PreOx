@@ -205,6 +205,7 @@ export function ElProfesorBoard({
   difficultCount,
   difficultCounts,
   activity,
+  overconfidentMissCount,
   forecast,
   mostDifficultGlobal,
   leechFlashcards,
@@ -237,6 +238,7 @@ export function ElProfesorBoard({
   difficultCount: number;
   difficultCounts: ChapterDueCounts;
   activity: ReviewActivitySummary;
+  overconfidentMissCount: number;
   forecast: UpcomingForecastDay[];
   mostDifficultGlobal: DifficultFlashcardStat[];
   leechFlashcards: LeechFlashcardStat[];
@@ -634,6 +636,7 @@ export function ElProfesorBoard({
       {books.length > 0 && (
         <LearningWidgets
           activity={activity}
+          overconfidentMissCount={overconfidentMissCount}
           forecast={forecast}
           globalDueCount={globalDueCount}
           difficultCount={difficultCount}
