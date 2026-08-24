@@ -34,6 +34,12 @@ const DEFAULT_MODEL = "gemini-flash-latest";
 // Same for EL_PROFESOR_CLAUDE_MODEL_DEFAULT in src/lib/el-profesor/anthropic.ts.
 const DEFAULT_CLAUDE_MODEL = "claude-sonnet-5";
 
+function formatUsd(amount: number): string {
+  if (amount === 0) return "0 $";
+  if (amount < 0.01) return "< 0,01 $";
+  return `${amount.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+}
+
 export function GeminiSettingsDialog({
   currentModel,
   hasApiKey,
@@ -404,19 +410,34 @@ export function GeminiSettingsDialog({
               <p>
                 {usageStats.last24h.failures} échec(s) · {usageStats.last24h.totalTokens.toLocaleString("fr-FR")} tokens
               </p>
+              <p className="mt-0.5 font-medium text-foreground">
+                ≈ {formatUsd(usageStats.last24h.estimatedCostUsd)}
+                {usageStats.last24h.hasUnpricedCalls ? " +" : ""}
+              </p>
             </div>
             <div className="rounded-[var(--radius-sm)] border border-border bg-surface-muted/50 p-2.5">
               <p className="font-medium text-foreground">{usageStats.last7d.calls} appel(s) — 7 j</p>
               <p>
                 {usageStats.last7d.failures} échec(s) · {usageStats.last7d.totalTokens.toLocaleString("fr-FR")} tokens
               </p>
+              <p className="mt-0.5 font-medium text-foreground">
+                ≈ {formatUsd(usageStats.last7d.estimatedCostUsd)}
+                {usageStats.last7d.hasUnpricedCalls ? " +" : ""}
+              </p>
             </div>
           </div>
+          <p className="text-[11px] text-foreground-subtle">
+            Estimation indicative (tarifs publics approximatifs, remise de 50% déjà appliquée pour les lots Claude) — à vérifier
+            auprès du fournisseur, ne remplace pas la facturation réelle.
+            {(usageStats.last24h.hasUnpricedCalls || usageStats.last7d.hasUnpricedCalls) &&
+              " Le « + » signale des appels sur un modèle sans tarif connu, non comptés dans l'estimation."}
+          </p>
           {usageStats.byModel.length > 0 && (
             <ul className="text-xs text-foreground-subtle">
               {usageStats.byModel.map((m) => (
                 <li key={m.model}>
-                  {m.model} : {m.calls} appel(s){m.failures > 0 ? `, ${m.failures} échec(s)` : ""}
+                  {m.model} : {m.calls} appel(s){m.failures > 0 ? `, ${m.failures} échec(s)` : ""} · ≈ {formatUsd(m.estimatedCostUsd)}
+                  {m.hasUnpricedCalls ? " +" : ""}
                 </li>
               ))}
             </ul>
