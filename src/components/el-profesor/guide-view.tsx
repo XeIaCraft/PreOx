@@ -61,6 +61,14 @@ import {
   Merge,
   FileSearch,
   Upload,
+  Siren,
+  NotebookPen,
+  Volume2,
+  EyeOff,
+  Landmark,
+  Calculator,
+  PenSquare,
+  AlertTriangle,
 } from "lucide-react";
 
 function IconRow({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
@@ -133,8 +141,13 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
           </p>
           <p className="font-medium text-foreground">Barre du haut</p>
           <ul className="space-y-1.5">
+            <IconRow icon={Siren}>
+              Mode urgence — accès rapide, hors ligne une fois consulté, aux protocoles de crise marqués comme tels par un admin sur du
+              contenu déjà relu et publié (jamais généré à la volée).
+            </IconRow>
             <IconRow icon={HelpCircle}>Revoir le tutoriel de bienvenue.</IconRow>
             <IconRow icon={BookOpen}>Glossaire des notions (voir plus bas).</IconRow>
+            <IconRow icon={NotebookPen}>Votre journal de cas cliniques, strictement privé, relié librement aux notions du glossaire.</IconRow>
             <IconRow icon={BellOff}>Vos flashcards que vous avez exclues de la révision.</IconRow>
             {isAdmin && (
               <>
@@ -157,7 +170,14 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
             </IconRow>
             <IconRow icon={Star}>Vos livres et chapitres mis en favori (avec des thèmes personnalisés à éditer).</IconRow>
             <IconRow icon={Layers}>Révision globale — toutes les cartes dues, tous chapitres mélangés (plus efficace qu&apos;un seul chapitre à la fois).</IconRow>
-            <IconRow icon={ShieldAlert}>Carnet d&apos;erreurs — vos cartes les plus difficiles, et les fiches jamais révisées depuis longtemps (admin).</IconRow>
+            <IconRow icon={ShieldAlert}>
+              Carnet d&apos;erreurs — vos cartes les plus difficiles, les fiches jamais révisées depuis longtemps (admin), et les cartes
+              où vous étiez « sûr(e) » mais vous vous êtes trompé(e) — le signal le plus utile en clinique.
+            </IconRow>
+            <IconRow icon={AlertTriangle}>
+              Alerte de péremption — chapitres déjà maîtrisés dont des cartes sont en retard de plus de 60 jours sur leur échéance : le
+              risque d&apos;oubli y est le plus élevé.
+            </IconRow>
             <IconRow icon={Sparkles}>Synthèse IA à la demande de vos points faibles récurrents.</IconRow>
           </ul>
           {isAdmin && (
@@ -203,9 +223,20 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
             <ShieldAlert className="inline h-3.5 w-3.5 align-text-bottom" /> piège fréquent,{" "}
             <Sigma className="inline h-3.5 w-3.5 align-text-bottom" /> formule.
           </p>
+          <p>
+            Une pastille « Source externe » remplace le numéro de page sur une citation issue d&apos;un article ou d&apos;une source
+            importée plutôt que du PDF du chapitre — pas une citation muette, une limite structurelle rendue lisible.
+          </p>
           <ul className="space-y-1.5">
             <IconRow icon={Copy}>Copier le texte d&apos;un bloc, ou de la fiche entière.</IconRow>
-            <IconRow icon={Flag}>Signaler une erreur sur un bloc précis (relu par un admin).</IconRow>
+            <IconRow icon={Flag}>
+              Signaler une erreur sur un bloc précis (relu par un admin) — un signalement peut ensuite recevoir une correction
+              suggérée par IA, jamais publiée sans validation.
+            </IconRow>
+            <IconRow icon={PenSquare}>
+              Proposer une flashcard manuelle sur une notion, depuis la page du chapitre — rejoint la même file de relecture admin que
+              le contenu généré par IA, jamais publiée directement.
+            </IconRow>
             <IconRow icon={RotateCcw}>
               « À revoir bientôt »/<ThumbsUp className="inline h-3.5 w-3.5 align-text-bottom" /> « je m&apos;en souviens encore » — une
               répétition espacée à l&apos;échelle du bloc, indépendante des flashcards.
@@ -256,7 +287,8 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
           <p>
             Les flashcards utilisent l&apos;algorithme FSRS : plus vous répondez honnêtement, plus le rythme de révision de chaque
             carte s&apos;ajuste précisément à votre mémoire — inutile d&apos;essayer de « tricher » en répondant toujours correct,
-            l&apos;algorithme perd alors son intérêt.
+            l&apos;algorithme perd alors son intérêt. Ses paramètres sont réoptimisés périodiquement pour votre historique personnel
+            une fois assez de révisions accumulées, plutôt que de rester génériques.
           </p>
           <ul className="space-y-1.5">
             <IconRow icon={ThumbsUp}>
@@ -265,14 +297,26 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
             <IconRow icon={Undo2}>Annuler la dernière réponse si vous vous êtes trompé de bouton.</IconRow>
             <IconRow icon={Timer}>Minuteur Pomodoro optionnel (25 min / pause 5 min).</IconRow>
             <IconRow icon={PenLine}>Mode dictée — tapez la réponse avant de la révéler, pour vous tester plus sévèrement.</IconRow>
+            <IconRow icon={Volume2}>
+              Mode audio mains libres — question et réponse lues à voix haute, notation d&apos;un geste, pour réviser sans regarder
+              l&apos;écran (trajets, gardes).
+            </IconRow>
             <IconRow icon={BellOff}>Exclure une carte de vos révisions (réversible depuis l&apos;icône en haut du tableau de bord).</IconRow>
             <IconRow icon={Maximize2}>Mode plein écran sans distraction.</IconRow>
           </ul>
           <p>
+            Avant de révéler la réponse, la carte demande parfois « Hésitant(e) » ou « Sûr(e) » (1/2 ou ←/→ au clavier) : les réponses
+            fausses données avec assurance sont suivies séparément dans le carnet d&apos;erreurs — l&apos;état le plus dangereux en
+            clinique, que la notation correct/incorrect seule ne distingue pas. Certaines cartes sont à trous (cloze) plutôt que
+            recto/verso classique : le passage masqué se révèle avec le reste de la réponse.
+          </p>
+          <p>
             Plusieurs modes : révision du jour par chapitre (uniquement les cartes dues), révision libre (tout le chapitre, plafonnée
             par défaut pour rester raisonnable), révision globale (mélange tous les chapitres dus — la pratique entrelacée retient
-            mieux qu&apos;un chapitre isolé), carnet d&apos;erreurs (vos cartes les plus difficiles), et révision par thème depuis le
-            glossaire.
+            mieux qu&apos;un chapitre isolé), carnet d&apos;erreurs (vos cartes les plus difficiles), révision par thème depuis le
+            glossaire, et <Timer className="inline h-3.5 w-3.5 align-text-bottom" /> examen blanc chronométré (bouton sur chaque
+            chapitre) — toutes les flashcards publiées, mélangées, sous un compte à rebours ; comme la révision libre, jamais pris en
+            compte dans la planification.
           </p>
         </Section>
 
@@ -290,7 +334,16 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
           <p>
             Une « notion » regroupe les fiches de plusieurs livres qui traitent du même sujet (ex. « hyperkaliémie ») — utile pour
             réviser un thème d&apos;un coup plutôt que livre par livre. Le glossaire (accessible à tous) liste ces notions avec un
-            raccourci <GraduationCap className="inline h-3.5 w-3.5 align-text-bottom" /> pour réviser directement ce thème.
+            raccourci <GraduationCap className="inline h-3.5 w-3.5 align-text-bottom" /> pour réviser directement ce thème, un badge
+            « Prêt / À consolider / Fragile » qui estime votre préparation à partir des flashcards déjà maîtrisées, et un compteur{" "}
+            <NotebookPen className="inline h-3.5 w-3.5 align-text-bottom" /> vers vos cas cliniques personnels liés à cette notion.
+          </p>
+          <p>
+            Certaines notions affichent aussi des <Landmark className="inline h-3.5 w-3.5 align-text-bottom" /> recommandations
+            officielles (liens vers des documents de référence saisis manuellement par un admin, jamais résumés par IA) et un{" "}
+            <Calculator className="inline h-3.5 w-3.5 align-text-bottom" /> calculateur de dose — poids × dose/kg plafonné à la dose
+            max, toutes les valeurs saisies manuellement par un admin, jamais un moteur de formules ni de l&apos;IA ; un avertissement
+            reste affiché en permanence au-dessus de tout résultat.
           </p>
           {isAdmin && (
             <ul className="space-y-1.5">
@@ -303,6 +356,7 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
                 nécessaires sur chaque fiche liée.
               </IconRow>
               <IconRow icon={Copy}>Repérer les flashcards quasi-identiques entre plusieurs livres.</IconRow>
+              <IconRow icon={Landmark}>Ajouter une recommandation officielle, ou <Calculator className="inline h-3.5 w-3.5 align-text-bottom" /> un calculateur de dose, rattaché à cette notion.</IconRow>
             </ul>
           )}
         </Section>
@@ -311,17 +365,26 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
           <Section id="admin" title="Fonctions admin" icon={Settings}>
             <p>
               Réglages IA (icône <Settings className="inline h-3.5 w-3.5 align-text-bottom" /> du tableau de bord) : choix du
-              fournisseur (Gemini ou Claude), clés API, modèle utilisé, et un panneau de suivi — consommation des 24 dernières
-              heures/7 jours avec coût estimé, détail par modèle, et « Lots Claude récents » (statut et coût de chaque lot soumis).
-              Sur le tableau de bord, sélectionner des chapitres avant de lancer un lot affiche une estimation de coût avant même
-              de valider.
+              fournisseur (Gemini ou Claude), clés API, modèle utilisé, un plafond de dépense mensuel optionnel (bloque les nouvelles
+              soumissions et alerte à l&apos;approche), et un panneau de suivi — consommation des 24 dernières heures/7 jours avec
+              coût estimé, détail par modèle, et « Lots Claude récents » (statut et coût de chaque lot soumis). Sur le tableau de
+              bord, sélectionner des chapitres avant de lancer un lot affiche une estimation de coût avant même de valider.
             </p>
             <ul className="space-y-1.5">
-              <IconRow icon={Gauge}>Tableau de bord qualité — fiches incomplètes, doublons de flashcards, sous-entités à fusionner.</IconRow>
+              <IconRow icon={Gauge}>
+                Tableau de bord qualité — fiches incomplètes, doublons de flashcards, sous-entités à fusionner, et cartes
+                « sangsues » (échec fréquent, souvent mal formulées) avec reformulation suggérée par IA en un clic.
+              </IconRow>
               <IconRow icon={ClipboardCheck}>Relecture avant publication — mêmes outils que la lecture normale, plus l&apos;édition des blocs/flashcards et le filtre « à vérifier seulement ».</IconRow>
+              <IconRow icon={EyeOff}>Convertir une flashcard en texte à trous (cloze) directement depuis son éditeur.</IconRow>
+              <IconRow icon={Siren}>
+                Marquer un bloc comme référence d&apos;urgence — sur du contenu déjà relu et publié uniquement, aucune nouvelle
+                génération ; visible ensuite depuis le mode urgence par tous les utilisateurs.
+              </IconRow>
               <IconRow icon={Upload}>
                 Importer un contenu généré ailleurs (ex. Claude.ai) — copiez le prompt fourni, collez le JSON obtenu en retour ; les
-                citations sont revérifiées contre le PDF comme pour une génération automatique.
+                citations sont revérifiées contre le PDF comme pour une génération automatique. Les PDF scannés (sans couche texte)
+                passent désormais par un OCR automatique à l&apos;import.
               </IconRow>
               <IconRow icon={Archive}>
                 Archiver un livre (export JSON automatique, réversible) — la page « Livres archivés » permet de le réexporter ou de
