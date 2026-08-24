@@ -527,6 +527,17 @@ export type ElProfesorContradictionRow = {
   resolved_by: string | null;
 };
 
+export type ElProfesorNotionRecommendationRow = {
+  id: string;
+  notion_id: string;
+  title: string;
+  url: string;
+  source: string;
+  note: string;
+  created_by: string | null;
+  created_at: string;
+};
+
 export type UserLoginLogRow = {
   id: string;
   user_id: string;
@@ -830,6 +841,12 @@ export type Database = {
         Row: ElProfesorNotionLinkRow;
         Insert: Partial<ElProfesorNotionLinkRow> & { notion_id: string; fiche_id: string };
         Update: Partial<ElProfesorNotionLinkRow>;
+        Relationships: [];
+      };
+      el_profesor_notion_recommendations: {
+        Row: ElProfesorNotionRecommendationRow;
+        Insert: Partial<ElProfesorNotionRecommendationRow> & { notion_id: string; title: string; url: string };
+        Update: Partial<ElProfesorNotionRecommendationRow>;
         Relationships: [];
       };
       el_profesor_contradictions: {

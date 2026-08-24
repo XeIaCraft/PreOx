@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Tag, ShieldAlert, Sparkles, Check, X, Merge, Undo2, Copy, FileSearch, Upload } from "lucide-react";
+import { ArrowLeft, Tag, ShieldAlert, Sparkles, Check, X, Merge, Undo2, Copy, FileSearch, Upload, Landmark, ExternalLink, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/input";
@@ -16,6 +16,8 @@ import {
   markFicheSuperseded,
   clearFicheSuperseded,
   resolveContradictionAndSupersede,
+  addNotionRecommendation,
+  deleteNotionRecommendation,
 } from "@/app/apps/el-profesor/actions/notions";
 import {
   checkNotionForUpdatesFromText,
@@ -24,7 +26,14 @@ import {
   dismissNotionUpdateProposal,
 } from "@/app/apps/el-profesor/actions/notion-updates";
 import { useToast } from "@/components/ui/toast";
-import type { NotionSummary, Contradiction, CrossBookDuplicateFlashcards, SupersededFicheEntry, NotionUpdateProposal } from "@/lib/el-profesor/types";
+import type {
+  NotionSummary,
+  NotionRecommendation,
+  Contradiction,
+  CrossBookDuplicateFlashcards,
+  SupersededFicheEntry,
+  NotionUpdateProposal,
+} from "@/lib/el-profesor/types";
 
 function FicheRef({ fiche }: { fiche: { ficheTitle: string; chapterTitle: string; bookTitle: string; chapterId: string } }) {
   return (
@@ -128,6 +137,126 @@ function ContradictionCard({ contradiction, onChanged }: { contradiction: Contra
           {contradiction.status === "resolved" ? "Résolue" : "Ignorée"}
           {contradiction.resolutionNote && ` — ${contradiction.resolutionNote}`}
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Piste 2026-08-24 ("recommandations officielles rattachées aux notions")
+ * — manual link management, admin-only. Deliberately no AI assist here:
+ * the whole point is that these links are picked and typed by a human,
+ * never generated.
+ */
+function RecommendationsManager({
+  notionId,
+  recommendations,
+  onChanged,
+}: {
+  notionId: string;
+  recommendations: NotionRecommendation[];
+  onChanged: () => void;
+}) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [adding, setAdding] = useState(false);
+  const [title, setTitle] = useState("");
+  const [url, setUrl] = useState("");
+  const [source, setSource] = useState("");
+  const [note, setNote] = useState("");
+
+  function handleAdd() {
+    startTransition(async () => {
+      const result = await addNotionRecommendation(notionId, title, url, source, note);
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      setTitle("");
+      setUrl("");
+      setSource("");
+      setNote("");
+      setAdding(false);
+      onChanged();
+    });
+  }
+
+  function handleDelete(id: string) {
+    startTransition(async () => {
+      const result = await deleteNotionRecommendation(id);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <p className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">
+        <Landmark className="h-3 w-3" /> Recommandations officielles
+      </p>
+      {recommendations.length > 0 && (
+        <ul className="mt-1.5 space-y-1">
+          {recommendations.map((rec) => (
+            <li key={rec.id} className="flex items-start justify-between gap-2 text-xs">
+              <a href={rec.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-start gap-1 text-primary-strong hover:underline">
+                <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>
+                  {rec.title}
+                  {rec.source ? <span className="text-foreground-subtle"> — {rec.source}</span> : null}
+                </span>
+              </a>
+              <button
+                type="button"
+                onClick={() => handleDelete(rec.id)}
+                disabled={isPending}
+                className="shrink-0 text-foreground-subtle hover:text-danger"
+                aria-label="Supprimer cette recommandation"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {adding ? (
+        <div className="mt-2 space-y-1.5">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Titre (ex. Prise en charge de l'hyperkaliémie)"
+            className="w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          />
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://..."
+            className="w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          />
+          <input
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            placeholder="Organisme (ex. HAS 2023) — optionnel"
+            className="w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          />
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Note interne — optionnel"
+            className="w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={handleAdd} disabled={isPending || !title.trim() || !url.trim()}>
+              {isPending ? "…" : "Ajouter"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setAdding(false)} disabled={isPending}>
+              Annuler
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button variant="ghost" size="sm" onClick={() => setAdding(true)} className="mt-1.5 h-6 px-2 text-xs">
+          <Plus className="h-3 w-3" /> Ajouter un lien
+        </Button>
       )}
     </div>
   );
@@ -388,6 +517,7 @@ function NotionUpdateProposalCard({ proposal, onChanged }: { proposal: NotionUpd
 export function NotionsView({
   chapters,
   notionSummaries,
+  recommendations,
   contradictions,
   crossBookDuplicates,
   supersededFiches,
@@ -395,6 +525,7 @@ export function NotionsView({
 }: {
   chapters: { id: string; title: string; bookTitle: string }[];
   notionSummaries: NotionSummary[];
+  recommendations: Record<string, NotionRecommendation[]>;
   contradictions: Contradiction[];
   crossBookDuplicates: CrossBookDuplicateFlashcards[];
   supersededFiches: SupersededFicheEntry[];
@@ -544,6 +675,7 @@ export function NotionsView({
                     ))}
                   </ul>
                   {fiches.length >= 2 && <MergeFichesForm fiches={fiches} onChanged={refresh} />}
+                  <RecommendationsManager notionId={notion.id} recommendations={recommendations[notion.id] ?? []} onChanged={refresh} />
                 </div>
               );
             })}

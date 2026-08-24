@@ -2,6 +2,7 @@ import {
   requireElProfesorAdmin,
   getLibrary,
   getNotionSummaries,
+  getNotionRecommendations,
   getContradictions,
   getCrossBookFlashcardDuplicates,
   getSupersededFiches,
@@ -21,6 +22,7 @@ export default async function NotionsPage() {
     getSupersededFiches(),
     getNotionUpdateProposals(),
   ]);
+  const recommendations = await getNotionRecommendations(notionSummaries.map((s) => s.notion.id));
 
   const chapters = books.flatMap((book) =>
     book.chapters
@@ -33,6 +35,7 @@ export default async function NotionsPage() {
       <NotionsView
         chapters={chapters}
         notionSummaries={notionSummaries}
+        recommendations={recommendations}
         contradictions={contradictions}
         crossBookDuplicates={crossBookDuplicates}
         supersededFiches={supersededFiches}

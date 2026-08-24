@@ -251,3 +251,44 @@ export async function resolveContradictionAndSupersede(
   revalidatePath("/apps/el-profesor/notions");
   return { success: "Fiche remplacée et contradiction résolue." };
 }
+
+/**
+ * Piste d'amélioration 2026-08-24 ("recommandations officielles rattachées
+ * aux notions") — attaches a manual link to an official guideline source
+ * (HAS, SPILF, société savante...) to a notion. Deliberately no AI
+ * involvement whatsoever: an admin types the title/URL/source themselves,
+ * exactly like every other trust-sensitive link in this module.
+ */
+export async function addNotionRecommendation(notionId: string, title: string, url: string, source: string, note: string): Promise<ActionState> {
+  const profile = await requireElProfesorAdmin();
+  const trimmedTitle = title.trim();
+  const trimmedUrl = url.trim();
+  if (!trimmedTitle || !trimmedUrl) return { error: "Le titre et le lien sont obligatoires." };
+  if (!/^https?:\/\//i.test(trimmedUrl)) return { error: "Le lien doit commencer par http:// ou https://." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_notion_recommendations").insert({
+    notion_id: notionId,
+    title: trimmedTitle,
+    url: trimmedUrl,
+    source: source.trim(),
+    note: note.trim(),
+    created_by: profile.id,
+  });
+  if (error) return { error: "Impossible d'enregistrer cette recommandation." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  return { success: "Recommandation ajoutée." };
+}
+
+export async function deleteNotionRecommendation(id: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_notion_recommendations").delete().eq("id", id);
+  if (error) return { error: "Impossible de supprimer cette recommandation." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  return { success: "Recommandation supprimée." };
+}

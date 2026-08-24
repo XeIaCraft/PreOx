@@ -174,6 +174,17 @@ export type NotionSummary = {
   fiches: NotionLinkedFiche[];
 };
 
+/** Manual link to an official guideline source (HAS, SPILF, société savante...) attached to a notion — never AI-generated, see the migration comment. */
+export type NotionRecommendation = {
+  id: string;
+  notionId: string;
+  title: string;
+  url: string;
+  source: string;
+  note: string;
+  createdAt: string;
+};
+
 export type ContradictionStatus = "pending" | "dismissed" | "resolved";
 
 export type Contradiction = {

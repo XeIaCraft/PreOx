@@ -32,6 +32,7 @@ import type {
   Notion,
   NotionLinkedFiche,
   NotionSummary,
+  NotionRecommendation,
   Contradiction,
   ContradictionStatus,
   CrossBookDuplicateFlashcards,
@@ -2103,6 +2104,32 @@ export async function getRelatedFiches(ficheId: string): Promise<NotionLinkedFic
 
   const contexts = await resolveFicheContexts(publishedIds);
   return [...contexts.values()];
+}
+
+/**
+ * Piste d'amélioration 2026-08-24 ("recommandations officielles rattachées
+ * aux notions") — manual links to official guideline sources per notion,
+ * grouped for however many notion ids the caller already has in hand
+ * (glossary, admin notions screen). Never AI-generated: only an admin ever
+ * writes to this table (see the migration).
+ */
+export async function getNotionRecommendations(notionIds: string[]): Promise<Record<string, NotionRecommendation[]>> {
+  const result: Record<string, NotionRecommendation[]> = {};
+  if (notionIds.length === 0) return result;
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("el_profesor_notion_recommendations")
+    .select("id, notion_id, title, url, source, note, created_at")
+    .in("notion_id", notionIds)
+    .order("created_at", { ascending: true });
+
+  for (const row of data ?? []) {
+    const list = result[row.notion_id] ?? [];
+    list.push({ id: row.id, notionId: row.notion_id, title: row.title, url: row.url, source: row.source, note: row.note, createdAt: row.created_at });
+    result[row.notion_id] = list;
+  }
+  return result;
 }
 
 /** Every notion with the fiches linked to it (cross-book context included), for the admin notions/contradictions screen. */

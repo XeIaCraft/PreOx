@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, Search, GraduationCap } from "lucide-react";
+import { ArrowLeft, BookOpen, Search, GraduationCap, ExternalLink, Landmark } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import type { NotionSummary } from "@/lib/el-profesor/types";
+import type { NotionSummary, NotionRecommendation } from "@/lib/el-profesor/types";
 import type { NotionReadiness } from "@/lib/el-profesor/dal";
 
 /** Piste 2026-08-24 ("estimation de préparation par notion") — color + label for a readiness percentage, same three-tier read as the rest of the app's progress indicators. */
@@ -14,7 +14,15 @@ function readinessTier(pct: number): { badgeClassName: string; barClassName: str
   return { badgeClassName: "bg-danger/15 text-danger", barClassName: "bg-danger", label: "Fragile" };
 }
 
-export function GlossaryView({ notions, readiness }: { notions: NotionSummary[]; readiness: Record<string, NotionReadiness> }) {
+export function GlossaryView({
+  notions,
+  readiness,
+  recommendations,
+}: {
+  notions: NotionSummary[];
+  readiness: Record<string, NotionReadiness>;
+  recommendations: Record<string, NotionRecommendation[]>;
+}) {
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -56,6 +64,7 @@ export function GlossaryView({ notions, readiness }: { notions: NotionSummary[];
             const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
             const r = readiness[notion.id];
             const tier = r && r.total > 0 ? readinessTier(r.readinessPct) : null;
+            const notionRecommendations = recommendations[notion.id] ?? [];
             return (
               <div key={notion.id} id={`notion-${notion.id}`} className="rounded-[var(--radius-md)] border border-border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -99,6 +108,32 @@ export function GlossaryView({ notions, readiness }: { notions: NotionSummary[];
                     </li>
                   ))}
                 </ul>
+                {notionRecommendations.length > 0 && (
+                  <div className="mt-3 border-t border-border pt-2">
+                    <p className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">
+                      <Landmark className="h-3 w-3" /> Recommandations officielles
+                    </p>
+                    <ul className="mt-1 space-y-1">
+                      {notionRecommendations.map((rec) => (
+                        <li key={rec.id}>
+                          <a
+                            href={rec.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-start gap-1 text-xs text-primary-strong hover:underline"
+                          >
+                            <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
+                            <span>
+                              {rec.title}
+                              {rec.source ? <span className="text-foreground-subtle"> — {rec.source}</span> : null}
+                            </span>
+                          </a>
+                          {rec.note && <p className="ml-4 text-[11px] text-foreground-subtle">{rec.note}</p>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             );
           })}
