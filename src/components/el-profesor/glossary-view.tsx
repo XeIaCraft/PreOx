@@ -5,8 +5,16 @@ import Link from "next/link";
 import { ArrowLeft, BookOpen, Search, GraduationCap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { NotionSummary } from "@/lib/el-profesor/types";
+import type { NotionReadiness } from "@/lib/el-profesor/dal";
 
-export function GlossaryView({ notions }: { notions: NotionSummary[] }) {
+/** Piste 2026-08-24 ("estimation de préparation par notion") — color + label for a readiness percentage, same three-tier read as the rest of the app's progress indicators. */
+function readinessTier(pct: number): { badgeClassName: string; barClassName: string; label: string } {
+  if (pct >= 80) return { badgeClassName: "bg-success/15 text-success", barClassName: "bg-success", label: "Prêt" };
+  if (pct >= 40) return { badgeClassName: "bg-accent/15 text-accent", barClassName: "bg-accent", label: "À consolider" };
+  return { badgeClassName: "bg-danger/15 text-danger", barClassName: "bg-danger", label: "Fragile" };
+}
+
+export function GlossaryView({ notions, readiness }: { notions: NotionSummary[]; readiness: Record<string, NotionReadiness> }) {
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -46,6 +54,8 @@ export function GlossaryView({ notions }: { notions: NotionSummary[] }) {
         <div className="mt-6 space-y-3">
           {filtered.map(({ notion, fiches }) => {
             const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
+            const r = readiness[notion.id];
+            const tier = r && r.total > 0 ? readinessTier(r.readinessPct) : null;
             return (
               <div key={notion.id} id={`notion-${notion.id}`} className="rounded-[var(--radius-md)] border border-border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -55,6 +65,14 @@ export function GlossaryView({ notions }: { notions: NotionSummary[] }) {
                       {fiches.length} fiche{fiches.length > 1 ? "s" : ""}
                       {distinctBooks > 1 ? ` · ${distinctBooks} livres` : ""}
                     </Badge>
+                    {tier && (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tier.badgeClassName}`}
+                        title={`Préparation estimée : ${r.acquired}/${r.total} flashcards maîtrisées sur les fiches de cette notion.`}
+                      >
+                        {tier.label} · {r.readinessPct}%
+                      </span>
+                    )}
                     <Link
                       href={`/apps/el-profesor/review?mode=theme&notionId=${notion.id}&name=${encodeURIComponent(notion.name)}`}
                       className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary-tint px-2.5 py-1 text-xs font-medium text-primary-strong hover:bg-primary-tint/70"
@@ -63,6 +81,11 @@ export function GlossaryView({ notions }: { notions: NotionSummary[] }) {
                     </Link>
                   </div>
                 </div>
+                {r && r.total > 0 && tier && (
+                  <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-muted">
+                    <div className={`h-full rounded-full ${tier.barClassName}`} style={{ width: `${r.readinessPct}%` }} />
+                  </div>
+                )}
                 <ul className="mt-2 space-y-1 text-xs text-foreground-subtle">
                   {fiches.map((f) => (
                     <li key={f.ficheId}>

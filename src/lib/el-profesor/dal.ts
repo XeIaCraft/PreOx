@@ -2065,6 +2065,71 @@ export async function getNotionSummaries(): Promise<NotionSummary[]> {
   }));
 }
 
+export interface NotionReadiness {
+  total: number;
+  acquired: number;
+  learning: number;
+  /** 0 when the notion has no flashcards at all yet — distinct from "not started" in the UI, which reads acquired === 0 && total > 0. */
+  readinessPct: number;
+}
+
+/**
+ * Piste d'amélioration 2026-08-24 ("estimation de préparation par
+ * notion") — for each cross-book notion, what fraction of its linked
+ * fiches' published flashcards this user has actually mastered (FSRS
+ * "review" state, same definition as getMasteryCountsByChapter's
+ * "acquired"), live-computed from the same review state already used
+ * everywhere else rather than a separate tracked stat.
+ */
+export async function getNotionReadiness(userId: string, notionSummaries: NotionSummary[]): Promise<Record<string, NotionReadiness>> {
+  const result: Record<string, NotionReadiness> = {};
+  const allFicheIds = [...new Set(notionSummaries.flatMap((n) => n.fiches.map((f) => f.ficheId)))];
+  if (allFicheIds.length === 0) return result;
+
+  const supabase = await createClient();
+  const { data: cardRows } = await supabase
+    .from("el_profesor_flashcards")
+    .select("id, fiche_id")
+    .in("fiche_id", allFicheIds)
+    .eq("status", "published");
+  const cards = cardRows ?? [];
+
+  const cardsByFiche = new Map<string, string[]>();
+  for (const c of cards) {
+    const list = cardsByFiche.get(c.fiche_id) ?? [];
+    list.push(c.id);
+    cardsByFiche.set(c.fiche_id, list);
+  }
+
+  const { data: states } =
+    cards.length > 0
+      ? await supabase
+          .from("el_profesor_review_state")
+          .select("flashcard_id, state")
+          .eq("user_id", userId)
+          .in(
+            "flashcard_id",
+            cards.map((c) => c.id)
+          )
+      : { data: [] };
+  const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s.state]));
+
+  for (const { notion, fiches } of notionSummaries) {
+    const cardIds = fiches.flatMap((f) => cardsByFiche.get(f.ficheId) ?? []);
+    const total = cardIds.length;
+    let acquired = 0;
+    let learning = 0;
+    for (const id of cardIds) {
+      const state = stateByCard.get(id);
+      if (state === "review") acquired++;
+      else if (state === "learning" || state === "relearning") learning++;
+    }
+    result[notion.id] = { total, acquired, learning, readinessPct: total > 0 ? Math.round((acquired / total) * 100) : 0 };
+  }
+
+  return result;
+}
+
 /**
  * Near-duplicate flashcards across two different books' fiches, for every
  * notion that links fiches from more than one book — item 53 of the
