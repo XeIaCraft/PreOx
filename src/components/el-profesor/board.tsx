@@ -46,6 +46,7 @@ import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-se
 import { LearningWidgets, DailyCard, LibraryStats, BookmarksList, OnThisDayNoteCard, BookRecommendationCard, DueBlocksWidget } from "@/components/el-profesor/learning-widgets";
 import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
+import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
 import { exportBookArchive, archiveBook } from "@/app/apps/el-profesor/actions/archive";
 import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/export";
@@ -258,6 +259,11 @@ export function ElProfesorBoard({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingStartedAt, setPendingStartedAt] = useState<number | null>(null);
   const [exportingId, setExportingId] = useState<string | null>(null);
+  // Multi-chapter selection for bulk Claude batches (extraction/complément) — only
+  // meaningful when Claude is the active provider, since batching a single Gemini
+  // call by hand doesn't apply (Gemini stays synchronous, one chapter at a time).
+  const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
+  const [isBulkPending, startBulkTransition] = useTransition();
   // Lazy initializer (client-only read), same pattern used elsewhere for
   // one-time localStorage reads — null on the server, resolved on mount.
   const [resumeChapterId] = useState(() => serverResumeChapterId ?? getLastChapter());
@@ -311,6 +317,41 @@ export function ElProfesorBoard({
       if (result.error) toast(result.error, { variant: "error" });
       else {
         toast(result.success ?? "Terminé.", { variant: "success" });
+        refresh();
+      }
+    });
+  }
+
+  function toggleChapterSelection(chapterId: string) {
+    setSelectedChapterIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(chapterId)) next.delete(chapterId);
+      else next.add(chapterId);
+      return next;
+    });
+  }
+
+  function handleBulkExtract() {
+    const ids = [...selectedChapterIds];
+    startBulkTransition(async () => {
+      const result = await submitExtractionBatch(ids);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Lot soumis.", { variant: "success" });
+        setSelectedChapterIds(new Set());
+        refresh();
+      }
+    });
+  }
+
+  function handleBulkComplement() {
+    const ids = [...selectedChapterIds];
+    startBulkTransition(async () => {
+      const result = await submitComplementaryBatch(ids, { untilComplete: true });
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Lot soumis.", { variant: "success" });
+        setSelectedChapterIds(new Set());
         refresh();
       }
     });
@@ -674,6 +715,29 @@ export function ElProfesorBoard({
         </div>
       )}
 
+      {selectedChapterIds.size > 0 && (
+        <div className="sticky top-2 z-10 mt-6 flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] border border-primary bg-surface p-3 shadow-md">
+          <span className="text-sm font-medium text-foreground">
+            {selectedChapterIds.size} chapitre{selectedChapterIds.size > 1 ? "s" : ""} sélectionné{selectedChapterIds.size > 1 ? "s" : ""}
+          </span>
+          <Button size="sm" onClick={handleBulkExtract} disabled={isBulkPending}>
+            <Sparkles className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Extraire via un lot Claude"}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleBulkComplement}
+            disabled={isBulkPending}
+            title="Complète chaque chapitre sélectionné, en enchaînant automatiquement les passes jusqu'à couverture complète"
+          >
+            <Zap className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Compléter jusqu'à couverture"}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setSelectedChapterIds(new Set())} disabled={isBulkPending}>
+            Désélectionner tout
+          </Button>
+        </div>
+      )}
+
       <div className="mt-8 space-y-8">
         {visibleBooks.map((book) => {
           const bookIndex = books.findIndex((b) => b.id === book.id);
@@ -824,10 +888,26 @@ export function ElProfesorBoard({
                 const due = dueCounts[chapter.id] ?? 0;
                 const needsReview = needsReviewCounts[chapter.id] ?? 0;
                 const busy = isPending && pendingId === chapter.id;
+                const bulkSelectable = isAdmin && aiProvider === "claude" && chapter.sourceKind === "pdf";
+                const selected = selectedChapterIds.has(chapter.id);
                 return (
-                  <div key={chapter.id} className="rounded-[var(--radius-lg)] border border-border bg-surface p-4">
+                  <div
+                    key={chapter.id}
+                    className={`rounded-[var(--radius-lg)] border p-4 ${selected ? "border-primary bg-primary-tint/30" : "border-border bg-surface"}`}
+                  >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="font-medium text-foreground">{chapter.title}</p>
+                      <div className="flex items-start gap-2">
+                        {bulkSelectable && (
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleChapterSelection(chapter.id)}
+                            aria-label={`Sélectionner « ${chapter.title} » pour un lot Claude`}
+                            className="mt-1 h-4 w-4 shrink-0"
+                          />
+                        )}
+                        <p className="font-medium text-foreground">{chapter.title}</p>
+                      </div>
                       <div className="flex shrink-0 gap-1.5">
                         {chapter.sourceKind !== "pdf" && (
                           <Badge variant="neutral" title="Importé depuis Word/PowerPoint — pas de PDF source ni de citations par page">

@@ -18,7 +18,13 @@ import { getChapterContent, getFlashcardVariantStats, type FlashcardVariantStat 
 import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-profesor/content-log";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { extractPdfPageTexts, correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
-import { allNeedReviewFlags, persistExtraction, persistComplementaryAdditions, buildCoverageSummary } from "@/lib/el-profesor/extraction-persist";
+import {
+  allNeedReviewFlags,
+  persistExtraction,
+  persistComplementaryAdditions,
+  buildCoverageSummary,
+  MAX_AUTO_COMPLEMENTARY_PASSES,
+} from "@/lib/el-profesor/extraction-persist";
 import { submitExtractionBatch, submitComplementaryBatch } from "./batches";
 import type {
   ExtractionResult,
@@ -333,18 +339,16 @@ async function runOneComplementaryPass(
   }
 }
 
-// Safety cap on auto-run passes — each pass is a real (costly, slow) Gemini
-// call, so "until complete" still stops well short of runaway spend if the
-// model keeps reporting non-zero remaining passes indefinitely.
-const MAX_AUTO_COMPLEMENTARY_PASSES = 6;
-
 /**
  * Gap-fill pass(es). With Gemini, runs a single pass by default, or loops
  * automatically with `untilComplete: true` — re-downloading the latest
  * persisted content between passes — until the model reports no remaining
  * gaps, a pass adds nothing new, or the safety cap is hit. With Claude,
  * delegates to the batch path instead (see the doc comment above
- * runOneComplementaryPass) — `untilComplete` is ignored in that case.
+ * runOneComplementaryPass) — `untilComplete` is forwarded there too: the
+ * cron poller re-submits a fresh one-chapter batch after each result until
+ * the same cap is hit, so "jusqu'à couverture" keeps working end to end
+ * even though each pass is a separate async round-trip.
  */
 export async function extractChapterComplementary(chapterId: string, options?: { untilComplete?: boolean }): Promise<ActionState> {
   await requireElProfesorAdmin();
@@ -364,7 +368,7 @@ export async function extractChapterComplementary(chapterId: string, options?: {
 
   const provider = await getElProfesorAiProvider();
   if (provider === "claude") {
-    return submitComplementaryBatch([chapterId]);
+    return submitComplementaryBatch([chapterId], { untilComplete: options?.untilComplete });
   }
 
   const originalStatus = chapter.status;

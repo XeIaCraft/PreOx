@@ -26,6 +26,14 @@ import type {
 // actions/extraction.ts and actions/batches.ts can import from it without
 // creating a circular dependency between the two action files.
 
+// Safety cap on auto-run complementary passes, shared by both the Gemini
+// synchronous auto-loop (actions/extraction.ts) and the Claude async
+// auto-continuation (the cron poller re-submits a fresh one-chapter batch
+// after each result until this many passes have run) — each pass is a real
+// (costly) API call, so "until complete" still stops well short of runaway
+// spend if the model keeps reporting non-zero remaining passes indefinitely.
+export const MAX_AUTO_COMPLEMENTARY_PASSES = 6;
+
 function needsReview(flags: VerificationFlag[], subEntityIndex: number, blockIndex: number | null, flashcardIndex: number | null) {
   return flags.some(
     (f) =>

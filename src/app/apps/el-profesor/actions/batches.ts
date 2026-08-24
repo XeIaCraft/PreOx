@@ -16,49 +16,17 @@ import {
   submitClaudeBatch,
   claudeBatchTool,
   buildExtractionBatchContent,
-  buildComplementaryBatchContent,
   buildNotionCategorizationBatchContent,
   buildContradictionCheckBatchContent,
-  type ClaudeBatchKind,
   type ClaudeBatchRequestSpec,
 } from "@/lib/el-profesor/anthropic";
-import { buildCoverageSummary } from "@/lib/el-profesor/extraction-persist";
+import { insertBatchJob, insertBatchItems, submitComplementaryBatchCore, type BatchItemTarget } from "@/lib/el-profesor/batch-submit";
 import { GeminiError } from "@/lib/gemini-shared";
-import type { ElProfesorBatchJobRow, ElProfesorChapterStatus } from "@/lib/supabase/types";
+import type { ElProfesorBatchJobRow } from "@/lib/supabase/types";
 
 export interface ActionState {
   error?: string;
   success?: string;
-}
-
-// One request per pair/chapter/fiche, tracked in el_profesor_batch_items so the
-// poller (/api/cron/el-profesor-batch-poll) can find its way back to the DB
-// entity a result applies to — the custom_id itself carries no meaning, kept
-// as an opaque random ID to stay safely within Anthropic's custom_id charset
-// (letters/digits/-/_, 64 chars max) regardless of what it points to.
-type ChapterExtractionTarget = { type: "chapter"; chapterId: string; mode: "extraction" };
-type ChapterComplementaryTarget = { type: "chapter"; chapterId: string; mode: "complementary"; originalStatus: ElProfesorChapterStatus };
-type FicheNotionTarget = { type: "fiche"; ficheId: string };
-type ContradictionTarget = { type: "contradiction"; notionId: string; ficheIdA: string; ficheIdB: string };
-export type BatchItemTarget = ChapterExtractionTarget | ChapterComplementaryTarget | FicheNotionTarget | ContradictionTarget;
-
-async function insertBatchJob(kind: ClaudeBatchKind, anthropicBatchId: string, requestCount: number, createdBy: string) {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("el_profesor_batch_jobs")
-    .insert({ kind, anthropic_batch_id: anthropicBatchId, request_count: requestCount, created_by: createdBy })
-    .select("id")
-    .single();
-  if (error || !data) throw new GeminiError("Lot Claude soumis, mais son suivi n'a pas pu être enregistré.");
-  return data.id;
-}
-
-async function insertBatchItems(batchJobId: string, items: { customId: string; target: BatchItemTarget }[]) {
-  const supabase = await createClient();
-  const { error } = await supabase.from("el_profesor_batch_items").insert(
-    items.map((i) => ({ batch_job_id: batchJobId, custom_id: i.customId, target: i.target as never }))
-  );
-  if (error) throw new GeminiError("Lot Claude soumis, mais le détail des requêtes n'a pas pu être enregistré.");
 }
 
 /**
@@ -102,8 +70,8 @@ export async function submitExtractionBatch(chapterIds: string[]): Promise<Actio
     return { error: err instanceof GeminiError ? err.message : "Échec de la soumission du lot." };
   }
 
-  const batchJobId = await insertBatchJob("extraction", anthropicBatchId, requests.length, profile.id);
-  await insertBatchItems(batchJobId, requests);
+  const batchJobId = await insertBatchJob(supabase, "extraction", anthropicBatchId, requests.length, profile.id);
+  await insertBatchItems(supabase, batchJobId, requests);
   await supabase.from("el_profesor_chapters").update({ status: "queued", extraction_error: null }).in(
     "id",
     eligible.map((c) => c.id)
@@ -121,8 +89,13 @@ export async function submitExtractionBatch(chapterIds: string[]): Promise<Actio
 /**
  * Submits a gap-fill pass for every eligible chapter as one Claude batch.
  * Mirrors submitExtractionBatch — see there for the batching rationale.
+ * With `untilComplete: true`, each chapter's chain keeps going on its own
+ * after this first pass: the cron poller re-submits (via
+ * continueComplementaryBatch in batch-submit.ts) as long as a pass still
+ * made progress and coverage isn't complete, up to the same safety cap the
+ * synchronous Gemini "jusqu'à couverture" loop uses.
  */
-export async function submitComplementaryBatch(chapterIds: string[]): Promise<ActionState> {
+export async function submitComplementaryBatch(chapterIds: string[], options?: { untilComplete?: boolean }): Promise<ActionState> {
   const profile = await requireElProfesorAdmin();
   if (chapterIds.length === 0) return { error: "Aucun chapitre sélectionné." };
 
@@ -142,40 +115,26 @@ export async function submitComplementaryBatch(chapterIds: string[]): Promise<Ac
     return { error: "Configurez votre clé API Claude dans les réglages d'El Profesor." };
   }
 
-  const requests: (ClaudeBatchRequestSpec & { target: BatchItemTarget })[] = [];
-  for (const chapter of eligible) {
-    const [bytes, existingContent] = await Promise.all([
-      downloadChapterPdfBytes(chapter.pdf_storage_path!),
-      getChapterContent(chapter.id, true),
-    ]);
-    const coverageSummary = buildCoverageSummary(existingContent);
-    requests.push({
-      customId: randomUUID(),
-      content: buildComplementaryBatchContent(chapter.title, bytes, coverageSummary),
-      tool: claudeBatchTool("complementary"),
-      target: { type: "chapter", chapterId: chapter.id, mode: "complementary", originalStatus: chapter.status },
-    });
-  }
-
-  let anthropicBatchId: string;
+  let requestCount: number;
   try {
-    anthropicBatchId = await submitClaudeBatch(config, "complementary", requests);
+    const result = await submitComplementaryBatchCore(
+      supabase,
+      config,
+      eligible,
+      profile.id,
+      options?.untilComplete ?? false,
+      new Map(eligible.map((c) => [c.id, 0]))
+    );
+    requestCount = result.requestCount;
   } catch (err) {
     return { error: err instanceof GeminiError ? err.message : "Échec de la soumission du lot." };
   }
-
-  const batchJobId = await insertBatchJob("complementary", anthropicBatchId, requests.length, profile.id);
-  await insertBatchItems(batchJobId, requests);
-  await supabase.from("el_profesor_chapters").update({ status: "queued", extraction_error: null }).in(
-    "id",
-    eligible.map((c) => c.id)
-  );
 
   revalidatePath("/apps/el-profesor");
   const skipped = chapterIds.length - eligible.length;
   return {
     success:
-      `Lot Claude soumis pour ${eligible.length} chapitre(s) — récupération automatique dès que prêt.` +
+      `Lot Claude soumis pour ${requestCount} chapitre(s)${options?.untilComplete ? " — enchaînera automatiquement jusqu'à couverture" : ""} — récupération automatique dès que prêt.` +
       (skipped > 0 ? ` ${skipped} chapitre(s) ignoré(s).` : ""),
   };
 }
@@ -188,6 +147,7 @@ export async function submitComplementaryBatch(chapterIds: string[]): Promise<Ac
  */
 export async function submitNotionCategorizationBatch(chapterId: string): Promise<ActionState> {
   const profile = await requireElProfesorAdmin();
+  const supabase = await createClient();
 
   const subEntities = await getChapterContent(chapterId, false);
   const fiches = subEntities.filter((s) => s.fiche).map((s) => s.fiche!);
@@ -226,8 +186,8 @@ export async function submitNotionCategorizationBatch(chapterId: string): Promis
     return { error: err instanceof GeminiError ? err.message : "Échec de la soumission du lot." };
   }
 
-  const batchJobId = await insertBatchJob("notion_categorization", anthropicBatchId, requests.length, profile.id);
-  await insertBatchItems(batchJobId, requests);
+  const batchJobId = await insertBatchJob(supabase, "notion_categorization", anthropicBatchId, requests.length, profile.id);
+  await insertBatchItems(supabase, batchJobId, requests);
 
   revalidatePath("/apps/el-profesor/notions");
   return { success: `Lot Claude soumis pour ${requests.length} fiche(s) — les notions seront appliquées automatiquement dès que prêt.` };
@@ -244,6 +204,7 @@ const MAX_CONTRADICTION_PAIRS_PER_BATCH = 300;
  */
 export async function submitContradictionCheckBatch(notionId: string): Promise<ActionState> {
   const profile = await requireElProfesorAdmin();
+  const supabase = await createClient();
 
   const summaries = await getNotionSummaries();
   const summary = summaries.find((s) => s.notion.id === notionId);
@@ -285,8 +246,8 @@ export async function submitContradictionCheckBatch(notionId: string): Promise<A
     return { error: err instanceof GeminiError ? err.message : "Échec de la soumission du lot." };
   }
 
-  const batchJobId = await insertBatchJob("contradiction_check", anthropicBatchId, requests.length, profile.id);
-  await insertBatchItems(batchJobId, requests);
+  const batchJobId = await insertBatchJob(supabase, "contradiction_check", anthropicBatchId, requests.length, profile.id);
+  await insertBatchItems(supabase, batchJobId, requests);
 
   revalidatePath("/apps/el-profesor/notions");
   const truncated = (summary.fiches.length * (summary.fiches.length - 1)) / 2 > MAX_CONTRADICTION_PAIRS_PER_BATCH;

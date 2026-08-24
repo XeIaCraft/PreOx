@@ -1,6 +1,7 @@
 import "server-only";
 
 import { notFound } from "next/navigation";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireProfile } from "@/lib/auth/dal";
@@ -47,6 +48,7 @@ import type {
   ElProfesorFlashcardRow,
   ElProfesorReviewStateRow,
   ElProfesorFlagRow,
+  Database,
 } from "@/lib/supabase/types";
 
 /** Same access-check every other module page uses — gated by the hub's own RBAC. */
@@ -452,8 +454,19 @@ export type SubEntityWithFiche = SubEntity & { fiche: (Fiche & { blocks: FicheBl
  * the admin extraction-review screen — regular consultation must only ever
  * see published content, since unpublished drafts haven't passed human review.
  */
-export async function getChapterContent(chapterId: string, includeDrafts = false): Promise<SubEntityWithFiche[]> {
-  const supabase = await createClient();
+/**
+ * `client` defaults to the request-scoped (RLS-bound) client — pass the
+ * service-role admin client explicitly when calling from a context with no
+ * user session (e.g. the Claude batch-result cron poller), since the
+ * select policies on these tables are `to authenticated` only and silently
+ * return zero rows for an unauthenticated request rather than erroring.
+ */
+export async function getChapterContent(
+  chapterId: string,
+  includeDrafts = false,
+  client?: SupabaseClient<Database>
+): Promise<SubEntityWithFiche[]> {
+  const supabase = client ?? (await createClient());
 
   const { data: subEntities } = await supabase
     .from("el_profesor_sub_entities")
@@ -1707,11 +1720,17 @@ export async function getAllNotionNames(): Promise<string[]> {
   return (data ?? []).map((n) => n.name);
 }
 
-/** Reuses an existing notion by case-insensitive name match, or creates a new one. Race-safe enough for admin-only, low-frequency use. */
-export async function findOrCreateNotion(name: string): Promise<string | null> {
+/**
+ * Reuses an existing notion by case-insensitive name match, or creates a
+ * new one. Race-safe enough for admin-only, low-frequency use. `client`
+ * defaults to the request-scoped client — pass the service-role admin
+ * client when calling with no user session (writes here are admin-only via
+ * RLS, and an unauthenticated request is silently rejected, not errored).
+ */
+export async function findOrCreateNotion(name: string, client?: SupabaseClient<Database>): Promise<string | null> {
   const trimmed = name.trim();
   if (!trimmed) return null;
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
 
   const { data: all } = await supabase.from("el_profesor_notions").select("id, name");
   const existing = (all ?? []).find((n) => n.name.toLowerCase() === trimmed.toLowerCase());
@@ -1726,8 +1745,8 @@ export async function findOrCreateNotion(name: string): Promise<string | null> {
   return created.id;
 }
 
-export async function linkFicheToNotion(notionId: string, ficheId: string): Promise<void> {
-  const supabase = await createClient();
+export async function linkFicheToNotion(notionId: string, ficheId: string, client?: SupabaseClient<Database>): Promise<void> {
+  const supabase = client ?? (await createClient());
   await supabase.from("el_profesor_notion_links").upsert({ notion_id: notionId, fiche_id: ficheId }, { onConflict: "notion_id,fiche_id" });
 }
 
