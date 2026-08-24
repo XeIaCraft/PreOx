@@ -412,6 +412,24 @@ Réponds uniquement avec le JSON demandé (un tableau "chapters", chaque éléme
 `.trim();
 }
 
+/**
+ * OCR fallback for pages pdfjs's text layer couldn't extract (scanned or
+ * photographed pages) — item "OCR des PDF scannés" of the pistes
+ * d'amélioration 2026-08-24. Only asked for the specific pages that came
+ * back empty, never the whole document — this only feeds citation page
+ * correction, not extraction itself (which already reads the raw PDF
+ * directly and doesn't need a text layer).
+ */
+export function buildPageOcrPrompt(pageNumbers: number[]): string {
+  return `
+Ce document est un livre ou un chapitre au format PDF. Les pages suivantes n'ont aucune couche de texte extractible, probablement parce que ce sont des pages scannées ou photographiées : ${pageNumbers.join(", ")}.
+
+Pour CHACUNE de ces pages, et uniquement celles-ci, transcris fidèlement et intégralement le texte visible — verbatim, sans résumer, sans corriger l'orthographe ni la mise en forme, sans commentaire de ta part. Si une page listée est en réalité illisible ou ne contient pas de texte exploitable (image pure, page blanche), renvoie une chaîne vide pour cette page plutôt que d'inventer du contenu.
+
+Réponds uniquement avec le JSON demandé (un tableau "pages", un élément par page demandée avec "page_number" et "text"), structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildVerificationPrompt(extractionJson: string): string {
   return `
 Tu reçois le document source (chapitre PDF) et, ci-dessous, un JSON d'extraction déjà produit à partir de ce document (sous-entités, fiches, blocs avec citations, flashcards). Ta seule tâche : vérifier la fidélité de chaque bloc et chaque flashcard à sa citation et au document source.

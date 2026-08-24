@@ -17,7 +17,8 @@ import { GeminiError } from "@/lib/gemini-shared";
 import { getChapterContent, getFlashcardVariantStats, type FlashcardVariantStat } from "@/lib/el-profesor/dal";
 import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-profesor/content-log";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
-import { extractPdfPageTexts, correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
+import { correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
+import { extractPdfPageTextsWithOcr } from "@/lib/el-profesor/pdf-ocr";
 import {
   allNeedReviewFlags,
   persistExtraction,
@@ -112,7 +113,7 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
     const [{ extraction: geminiExtraction, apiKey: winningKey, model, file }, pageTexts] = await Promise.all([
       extractChapterContentWithRotation(config, bytes, chapter.title, chapter.title),
-      extractPdfPageTexts(bytes).catch(() => null),
+      extractPdfPageTextsWithOcr(bytes, chapter.title).catch(() => null),
     ]);
     extraction = geminiExtraction;
     apiKey = winningKey;
@@ -268,7 +269,7 @@ export async function importChapterContent(chapterId: string, rawJson: string): 
   try {
     if (chapter.source_kind === "pdf") {
       const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
-      const pageTexts = await extractPdfPageTexts(bytes).catch(() => null);
+      const pageTexts = await extractPdfPageTextsWithOcr(bytes, chapter.title).catch(() => null);
       if (pageTexts) correctExtractionCitations(extraction, pageTexts);
     }
     // Word/PowerPoint chapters have no PDF to ground-truth-correct citations
@@ -378,7 +379,7 @@ export async function extractChapterComplementary(chapterId: string, options?: {
     const config = await getElProfesorGeminiConfig();
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
     // Extracted once and reused across every auto-run pass (see below) rather than per pass.
-    const pageTexts = await extractPdfPageTexts(bytes).catch(() => null);
+    const pageTexts = await extractPdfPageTextsWithOcr(bytes, chapter.title).catch(() => null);
 
     let totalAdded = 0;
     let passesRun = 0;

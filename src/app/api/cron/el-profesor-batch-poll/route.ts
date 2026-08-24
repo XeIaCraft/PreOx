@@ -7,7 +7,8 @@ import { retrieveClaudeBatch, getClaudeBatchResults, type ClaudeBatchResult } fr
 import { persistExtraction, persistComplementaryAdditions, allNeedReviewFlags } from "@/lib/el-profesor/extraction-persist";
 import { continueComplementaryBatch, type BatchItemTarget } from "@/lib/el-profesor/batch-submit";
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
-import { extractPdfPageTexts, correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
+import { correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
+import { extractPdfPageTextsWithOcr } from "@/lib/el-profesor/pdf-ocr";
 import type { ExtractionResult, ComplementaryResult, NotionCategorizationResult, ContradictionCheckResult, NotionUpdateCheckResult } from "@/lib/el-profesor/types";
 
 export const maxDuration = 60;
@@ -32,10 +33,10 @@ async function correctCitationsIfPossible(
   mode: "extraction" | "complementary"
 ) {
   try {
-    const { data: chapter } = await admin.from("el_profesor_chapters").select("pdf_storage_path").eq("id", chapterId).maybeSingle();
+    const { data: chapter } = await admin.from("el_profesor_chapters").select("pdf_storage_path, title").eq("id", chapterId).maybeSingle();
     if (!chapter?.pdf_storage_path) return;
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path);
-    const pageTexts = await extractPdfPageTexts(bytes);
+    const pageTexts = await extractPdfPageTextsWithOcr(bytes, chapter.title);
     if (mode === "extraction") correctExtractionCitations(result as ExtractionResult, pageTexts);
     else correctComplementaryCitations(result as ComplementaryResult, pageTexts);
   } catch {

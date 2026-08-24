@@ -18,6 +18,7 @@ import {
   buildExamQuestionsPrompt,
   buildMindMapPrompt,
   buildChapterSplitPrompt,
+  buildPageOcrPrompt,
 } from "@/lib/el-profesor/prompts";
 import type {
   ComplementaryResult,
@@ -276,6 +277,24 @@ const CHAPTER_SPLIT_SCHEMA = {
     },
   },
   required: ["chapters"],
+};
+
+const PAGE_OCR_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    pages: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          page_number: { type: "INTEGER" },
+          text: { type: "STRING" },
+        },
+        required: ["page_number", "text"],
+      },
+    },
+  },
+  required: ["pages"],
 };
 
 export type UploadedGeminiFile = {
@@ -576,6 +595,37 @@ export async function extractComplementaryContentWithRotation(
     extractComplementaryContent(key, m, file, chapterTitle, coverageSummaryJson)
   );
   return { complementary: result, apiKey, model, file };
+}
+
+async function ocrPdfPagesRequest(
+  apiKey: string,
+  model: string,
+  file: UploadedGeminiFile,
+  pageNumbers: number[]
+): Promise<{ pages: { page_number: number; text: string }[] }> {
+  const result = await callGeminiWithFile(apiKey, model, file, buildPageOcrPrompt(pageNumbers), PAGE_OCR_SCHEMA);
+  return result as { pages: { page_number: number; text: string }[] };
+}
+
+/**
+ * OCRs specific pages of a PDF that pdfjs couldn't extract text from
+ * (scanned/photographed pages) — item "OCR des PDF scannés" of the pistes
+ * d'amélioration 2026-08-24, feeding citation page correction on chapters
+ * pdfjs can't read directly. One request covers every requested page, not
+ * one request per page. Always Gemini regardless of the module's active
+ * provider — same reasoning as detectChapterBoundaries (a one-shot helper;
+ * the Claude path here is batch-only by design). Rotates on quota/capacity
+ * errors like every other file-based call.
+ */
+export async function ocrScannedPages(
+  config: GeminiRotationConfig,
+  bytes: Uint8Array,
+  displayName: string,
+  pageNumbers: number[]
+): Promise<Map<number, string>> {
+  if (pageNumbers.length === 0) return new Map();
+  const { result } = await withFileRotation(config, bytes, displayName, (apiKey, model, file) => ocrPdfPagesRequest(apiKey, model, file, pageNumbers));
+  return new Map(result.pages.map((p) => [p.page_number, p.text]));
 }
 
 /**
