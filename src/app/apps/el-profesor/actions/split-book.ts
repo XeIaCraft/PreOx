@@ -104,13 +104,26 @@ export async function splitBookIntoChapters(bookId: string, startOrderIndex: num
   }
 
   const supabase = await createClient();
-  const createdChapterIds: string[] = [];
   const uploadedPaths: string[] = [];
 
-  async function rollback() {
-    if (createdChapterIds.length > 0) await supabase.from("el_profesor_chapters").delete().in("id", createdChapterIds);
+  async function rollbackUploads() {
     for (const p of uploadedPaths) await deleteChapterPdf(p).catch(() => {});
   }
+
+  // Storage uploads stay per-chapter (each is its own file), but the DB
+  // rows are collected and inserted in a single batched call after every
+  // upload succeeds — one round trip instead of one per chapter, and no
+  // partial DB state to roll back if that insert itself fails (all
+  // uploads either land together or not at all).
+  const chapterRows: {
+    id: string;
+    book_id: string;
+    title: string;
+    order_index: number;
+    pdf_storage_path: string;
+    source_kind: "pdf";
+    status: "pending";
+  }[] = [];
 
   for (let i = 0; i < chapters.length; i++) {
     const chapterId = randomUUID();
@@ -118,12 +131,11 @@ export async function splitBookIntoChapters(bookId: string, startOrderIndex: num
     try {
       storagePath = await uploadChapterPdf(bookId, chapterId, parts[i]);
     } catch {
-      await rollback();
+      await rollbackUploads();
       return { error: `Échec de l'envoi du chapitre « ${chapters[i].title} ».` };
     }
     uploadedPaths.push(storagePath);
-
-    const { error } = await supabase.from("el_profesor_chapters").insert({
+    chapterRows.push({
       id: chapterId,
       book_id: bookId,
       title: chapters[i].title.trim(),
@@ -132,11 +144,12 @@ export async function splitBookIntoChapters(bookId: string, startOrderIndex: num
       source_kind: "pdf",
       status: "pending",
     });
-    if (error) {
-      await rollback();
-      return { error: "Impossible d'enregistrer les chapitres." };
-    }
-    createdChapterIds.push(chapterId);
+  }
+
+  const { error } = await supabase.from("el_profesor_chapters").insert(chapterRows);
+  if (error) {
+    await rollbackUploads();
+    return { error: "Impossible d'enregistrer les chapitres." };
   }
 
   revalidatePath("/apps/el-profesor");

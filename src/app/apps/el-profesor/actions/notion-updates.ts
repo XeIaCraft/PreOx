@@ -59,7 +59,17 @@ async function runNotionUpdateCheck(notionId: string, sourceKind: NotionUpdateSo
   const supabase = await createClient();
 
   let checkedCount = 0;
-  let proposedCount = 0;
+  // AI calls stay sequential (one per fiche, each comparing it against the
+  // source) — only the resulting proposal rows are batched into a single
+  // insert after the loop instead of one round-trip per fiche.
+  const proposals: {
+    notion_id: string;
+    fiche_id: string;
+    source_kind: NotionUpdateSourceKind;
+    source_excerpt: string;
+    explanation: string;
+    additions: never;
+  }[] = [];
   try {
     for (const f of summary.fiches) {
       const content = await getFicheTextForAI(f.ficheId);
@@ -68,7 +78,7 @@ async function runNotionUpdateCheck(notionId: string, sourceKind: NotionUpdateSo
       checkedCount += 1;
       if (!result.needs_update || (!result.blocks.length && !result.flashcards.length)) continue;
 
-      const { error } = await supabase.from("el_profesor_notion_update_proposals").insert({
+      proposals.push({
         notion_id: notionId,
         fiche_id: f.ficheId,
         source_kind: sourceKind,
@@ -76,10 +86,15 @@ async function runNotionUpdateCheck(notionId: string, sourceKind: NotionUpdateSo
         explanation: result.explanation,
         additions: { blocks: result.blocks, flashcards: result.flashcards } as never,
       });
-      if (!error) proposedCount += 1;
     }
   } catch (err) {
     return { error: err instanceof GeminiError ? err.message : "Échec de la comparaison." };
+  }
+
+  let proposedCount = 0;
+  if (proposals.length > 0) {
+    const { error } = await supabase.from("el_profesor_notion_update_proposals").insert(proposals);
+    if (!error) proposedCount = proposals.length;
   }
 
   revalidatePath("/apps/el-profesor/notions");

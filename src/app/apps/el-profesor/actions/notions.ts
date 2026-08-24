@@ -118,8 +118,10 @@ export async function detectContradictionsForNotion(notionId: string): Promise<A
     if (pairs.length >= MAX_CONTRADICTION_PAIRS_PER_RUN) break;
   }
 
-  let foundCount = 0;
   let checkedCount = 0;
+  // AI calls stay sequential (one per pair) — only the resulting
+  // contradiction rows are batched into a single upsert after the loop.
+  const contradictions: { notion_id: string; fiche_id_a: string; fiche_id_b: string; explanation: string }[] = [];
   try {
     for (const [ficheIdA, ficheIdB] of pairs) {
       const [contentA, contentB] = await Promise.all([getFicheTextForAI(ficheIdA), getFicheTextForAI(ficheIdB)]);
@@ -129,17 +131,22 @@ export async function detectContradictionsForNotion(notionId: string): Promise<A
       checkedCount += 1;
       if (!result.contradictory || !result.explanation.trim()) continue;
 
-      const { error } = await supabase.from("el_profesor_contradictions").insert({
-        notion_id: notionId,
-        fiche_id_a: ficheIdA,
-        fiche_id_b: ficheIdB,
-        explanation: result.explanation,
-      });
-      // A unique-constraint conflict just means this pair was already flagged — not a failure.
-      if (!error) foundCount += 1;
+      contradictions.push({ notion_id: notionId, fiche_id_a: ficheIdA, fiche_id_b: ficheIdB, explanation: result.explanation });
     }
   } catch (err) {
     return { error: err instanceof GeminiError ? err.message : "Échec de la détection de contradictions." };
+  }
+
+  let foundCount = 0;
+  if (contradictions.length > 0) {
+    // ignoreDuplicates instead of a plain insert: a pair already flagged by
+    // an earlier run hits the (notion_id, fiche_id_a, fiche_id_b) unique
+    // constraint and should be silently skipped, not fail the whole batch.
+    const { data: inserted, error } = await supabase
+      .from("el_profesor_contradictions")
+      .upsert(contradictions, { onConflict: "notion_id,fiche_id_a,fiche_id_b", ignoreDuplicates: true })
+      .select("id");
+    if (!error) foundCount = inserted?.length ?? 0;
   }
 
   revalidatePath("/apps/el-profesor/notions");

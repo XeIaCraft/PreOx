@@ -154,27 +154,34 @@ export async function validateDraft(input: ValidateDraftInput): Promise<ActionSt
     .eq("user_id", profile.id);
 
   const usedTempIds = new Set<string>();
-  let position = await nextBacklogPosition(profile.id);
+  const startPosition = await nextBacklogPosition(profile.id);
+
+  // IDs generated client-side (instead of relying on the insert's returned
+  // row order to line recipes back up with their meal cards) so both
+  // tables can be written in one batched insert each, rather than one
+  // recipe + one meal card round-trip per accepted proposal.
+  const toCreate = indices
+    .filter((idx) => idx >= 0 && idx < proposals.length)
+    .map((idx) => {
+      const proposal = proposals[idx];
+      const mod = modifications[String(idx)] ?? {};
+      const merged = { ...proposal, ...mod };
+      const ingNames = new Set((merged.ingredients ?? []).map((i) => (i.name || "").toLowerCase()));
+      for (const t of tempIngredients ?? []) {
+        const name = (t.name || "").toLowerCase();
+        if (name && Array.from(ingNames).some((n) => n.includes(name))) usedTempIds.add(t.id);
+      }
+      return { recipeId: randomUUID(), merged };
+    });
+
   const createdRecipeIds: string[] = [];
-
-  for (const idx of indices) {
-    if (idx < 0 || idx >= proposals.length) continue;
-    const proposal = proposals[idx];
-    const mod = modifications[String(idx)] ?? {};
-    const merged = { ...proposal, ...mod };
-
-    const ingNames = new Set((merged.ingredients ?? []).map((i) => (i.name || "").toLowerCase()));
-    for (const t of tempIngredients ?? []) {
-      const name = (t.name || "").toLowerCase();
-      if (name && Array.from(ingNames).some((n) => n.includes(name))) usedTempIds.add(t.id);
-    }
-
-    const { data: recipe, error: recipeError } = await supabase
-      .from("a_table_recipes")
-      .insert({
+  if (toCreate.length > 0) {
+    const { error: recipesError } = await supabase.from("a_table_recipes").insert(
+      toCreate.map(({ recipeId, merged }) => ({
+        id: recipeId,
         user_id: profile.id,
         title: merged.title,
-        source_kind: "ai_generated",
+        source_kind: "ai_generated" as const,
         servings: merged.servings,
         cooking_minutes: merged.cooking_minutes,
         ingredients: merged.ingredients,
@@ -186,20 +193,21 @@ export async function validateDraft(input: ValidateDraftInput): Promise<ActionSt
         price_per_serving: merged.price_per_serving,
         image_url: merged.image_url ?? null,
         image_status: merged.image_status ?? "missing",
-      })
-      .select("id")
-      .single();
+      }))
+    );
 
-    if (recipeError || !recipe) continue;
-
-    createdRecipeIds.push(recipe.id);
-    await supabase.from("a_table_meal_cards").insert({
-      user_id: profile.id,
-      recipe_id: recipe.id,
-      placement: "backlog",
-      position: position++,
-      servings: merged.servings,
-    });
+    if (!recipesError) {
+      const { error: cardsError } = await supabase.from("a_table_meal_cards").insert(
+        toCreate.map(({ recipeId, merged }, i) => ({
+          user_id: profile.id,
+          recipe_id: recipeId,
+          placement: "backlog" as const,
+          position: startPosition + i,
+          servings: merged.servings,
+        }))
+      );
+      if (!cardsError) createdRecipeIds.push(...toCreate.map((t) => t.recipeId));
+    }
   }
 
   if (usedTempIds.size > 0) {

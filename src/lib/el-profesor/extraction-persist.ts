@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { GeminiError } from "@/lib/gemini-shared";
 import type { Database } from "@/lib/supabase/types";
@@ -58,75 +59,98 @@ export function allNeedReviewFlags(extraction: ExtractionResult): VerificationFl
   return flags;
 }
 
-/** Inserts one sub-entity + its fiche + blocks + flashcards. Shared by the initial and complementary extraction pipelines. */
-async function insertNewSubEntity(
+interface NewSubEntityItem {
+  sub: ExtractedSubEntity;
+  orderIndex: number;
+  blockNeedsReview: (blockIndex: number) => boolean;
+  cardNeedsReview: (cardIndex: number) => boolean;
+}
+
+/**
+ * Inserts N sub-entities + their fiches + blocks + flashcards in four
+ * batched calls total (one per table) instead of four round-trips per
+ * sub-entity — a chapter extraction typically produces several sub-entities
+ * at once. sub_entity/fiche ids are generated client-side (rather than
+ * read back via .select() after insert) specifically so the blocks and
+ * flashcards for every sub-entity can be flattened into one insert each,
+ * without depending on a multi-row insert returning rows in input order.
+ * Shared by the initial and complementary extraction pipelines.
+ */
+async function insertNewSubEntities(
   supabase: SupabaseClient<Database>,
   chapterId: string,
-  sub: ExtractedSubEntity,
-  orderIndex: number,
-  blockNeedsReview: (blockIndex: number) => boolean,
-  cardNeedsReview: (cardIndex: number) => boolean
+  items: NewSubEntityItem[]
 ): Promise<{ blockCount: number; cardCount: number }> {
-  const { data: subEntity, error: subError } = await supabase
-    .from("el_profesor_sub_entities")
-    .insert({ chapter_id: chapterId, name: sub.name, order_index: orderIndex, summary: sub.summary })
-    .select("id")
-    .single();
-  if (subError || !subEntity) throw new GeminiError(`Échec de l'enregistrement de « ${sub.name} ».`);
+  if (items.length === 0) return { blockCount: 0, cardCount: 0 };
 
-  const { data: fiche, error: ficheError } = await supabase
-    .from("el_profesor_fiches")
-    .insert({ sub_entity_id: subEntity.id, title: sub.fiche.title, status: "draft" })
-    .select("id")
-    .single();
-  if (ficheError || !fiche) throw new GeminiError(`Échec de l'enregistrement de la fiche « ${sub.fiche.title} ».`);
+  const withIds = items.map((item) => ({ ...item, subEntityId: randomUUID(), ficheId: randomUUID() }));
 
-  if (sub.fiche.blocks.length > 0) {
-    const { error } = await supabase.from("el_profesor_fiche_blocks").insert(
-      sub.fiche.blocks.map((block, blockIndex) => ({
-        fiche_id: fiche.id,
-        order_index: blockIndex,
-        block_type: block.block_type,
-        content: block.content as unknown as BlockContent as never,
-        citations: block.citations as unknown as Citation[] as never,
-        needs_review: blockNeedsReview(blockIndex),
-        status: "draft",
-      }))
-    );
+  const { error: subError } = await supabase.from("el_profesor_sub_entities").insert(
+    withIds.map(({ subEntityId, sub, orderIndex }) => ({
+      id: subEntityId,
+      chapter_id: chapterId,
+      name: sub.name,
+      order_index: orderIndex,
+      summary: sub.summary,
+    }))
+  );
+  if (subError) throw new GeminiError("Échec de l'enregistrement des sous-entités.");
+
+  const { error: ficheError } = await supabase.from("el_profesor_fiches").insert(
+    withIds.map(({ ficheId, subEntityId, sub }) => ({ id: ficheId, sub_entity_id: subEntityId, title: sub.fiche.title, status: "draft" as const }))
+  );
+  if (ficheError) throw new GeminiError("Échec de l'enregistrement des fiches.");
+
+  const blockRows = withIds.flatMap(({ ficheId, sub, blockNeedsReview }) =>
+    sub.fiche.blocks.map((block, blockIndex) => ({
+      fiche_id: ficheId,
+      order_index: blockIndex,
+      block_type: block.block_type,
+      content: block.content as unknown as BlockContent as never,
+      citations: block.citations as unknown as Citation[] as never,
+      needs_review: blockNeedsReview(blockIndex),
+      status: "draft" as const,
+    }))
+  );
+  if (blockRows.length > 0) {
+    const { error } = await supabase.from("el_profesor_fiche_blocks").insert(blockRows);
     if (error) throw new GeminiError("Échec de l'enregistrement des blocs de contenu.");
   }
 
-  if (sub.fiche.flashcards.length > 0) {
-    const { error } = await supabase.from("el_profesor_flashcards").insert(
-      sub.fiche.flashcards.map((card, cardIndex) => ({
-        fiche_id: fiche.id,
-        front: { text: card.front } as FlashcardSide as never,
-        back: { text: card.back } as FlashcardSide as never,
-        citations: card.citations as unknown as Citation[] as never,
-        status: "draft",
-        needs_review: cardNeedsReview(cardIndex),
-        suggested_image_page: card.suggested_image_page ?? null,
-        suggested_image_hint: card.suggested_image_hint ?? null,
-      }))
-    );
+  const cardRows = withIds.flatMap(({ ficheId, sub, cardNeedsReview }) =>
+    sub.fiche.flashcards.map((card, cardIndex) => ({
+      fiche_id: ficheId,
+      front: { text: card.front } as FlashcardSide as never,
+      back: { text: card.back } as FlashcardSide as never,
+      citations: card.citations as unknown as Citation[] as never,
+      status: "draft" as const,
+      needs_review: cardNeedsReview(cardIndex),
+      suggested_image_page: card.suggested_image_page ?? null,
+      suggested_image_hint: card.suggested_image_hint ?? null,
+    }))
+  );
+  if (cardRows.length > 0) {
+    const { error } = await supabase.from("el_profesor_flashcards").insert(cardRows);
     if (error) throw new GeminiError("Échec de l'enregistrement des flashcards.");
   }
 
-  return { blockCount: sub.fiche.blocks.length, cardCount: sub.fiche.flashcards.length };
+  return {
+    blockCount: items.reduce((sum, i) => sum + i.sub.fiche.blocks.length, 0),
+    cardCount: items.reduce((sum, i) => sum + i.sub.fiche.flashcards.length, 0),
+  };
 }
 
 export async function persistExtraction(supabase: SupabaseClient<Database>, chapterId: string, extraction: ExtractionResult, flags: VerificationFlag[]) {
-  for (let subIndex = 0; subIndex < extraction.sub_entities.length; subIndex++) {
-    const sub = extraction.sub_entities[subIndex];
-    await insertNewSubEntity(
-      supabase,
-      chapterId,
+  await insertNewSubEntities(
+    supabase,
+    chapterId,
+    extraction.sub_entities.map((sub, subIndex) => ({
       sub,
-      subIndex,
-      (blockIndex) => needsReview(flags, subIndex, blockIndex, null),
-      (cardIndex) => needsReview(flags, subIndex, null, cardIndex)
-    );
-  }
+      orderIndex: subIndex,
+      blockNeedsReview: (blockIndex: number) => needsReview(flags, subIndex, blockIndex, null),
+      cardNeedsReview: (cardIndex: number) => needsReview(flags, subIndex, null, cardIndex),
+    }))
+  );
 }
 
 function blockExcerpt(blockType: string, content: BlockContent): string {
@@ -162,7 +186,7 @@ export async function persistComplementaryAdditions(
   let added = 0;
 
   const subEntityByName = new Map(existingContent.filter((s) => s.fiche).map((s) => [s.name.trim().toLowerCase(), s]));
-  let nextOrder = existingContent.reduce((max, s) => Math.max(max, s.orderIndex), -1) + 1;
+  const nextOrder = existingContent.reduce((max, s) => Math.max(max, s.orderIndex), -1) + 1;
 
   for (const addition of result.additions_for_existing) {
     const match = subEntityByName.get(addition.sub_entity_name.trim().toLowerCase());
@@ -207,16 +231,18 @@ export async function persistComplementaryAdditions(
     }
   }
 
-  for (const sub of result.new_sub_entities) {
-    const counts = await insertNewSubEntity(
+  if (result.new_sub_entities.length > 0) {
+    const counts = await insertNewSubEntities(
       supabase,
       chapterId,
-      sub,
-      nextOrder++,
-      () => true,
-      () => true
+      result.new_sub_entities.map((sub, i) => ({
+        sub,
+        orderIndex: nextOrder + i,
+        blockNeedsReview: () => true,
+        cardNeedsReview: () => true,
+      }))
     );
-    added += counts.blockCount + counts.cardCount + 1;
+    added += counts.blockCount + counts.cardCount + result.new_sub_entities.length;
   }
 
   return added;

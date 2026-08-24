@@ -5,7 +5,7 @@ import { requireATableAccess } from "@/lib/a-table/dal";
 import { createClient } from "@/lib/supabase/server";
 import { PLACEMENTS, WEEKDAY_PLACEMENTS } from "@/lib/a-table/constants";
 import { uploadHistoryPhoto } from "@/lib/a-table/storage";
-import type { HistoryEntry, Placement } from "@/lib/a-table/types";
+import type { HistoryEntry, MealCardStatus, Placement } from "@/lib/a-table/types";
 
 export interface ActionState {
   error?: string;
@@ -132,6 +132,9 @@ export interface ClearedCardPlacement {
   placement: Placement;
   position: number;
   week_start: string | null;
+  recipe_id: string;
+  status: MealCardStatus;
+  servings: number;
 }
 
 export async function clearWeek(weekStart: string): Promise<ActionState & { cleared?: ClearedCardPlacement[] }> {
@@ -140,7 +143,7 @@ export async function clearWeek(weekStart: string): Promise<ActionState & { clea
 
   const { data: toClear } = await supabase
     .from("a_table_meal_cards")
-    .select("id, placement, position, week_start")
+    .select("id, placement, position, week_start, recipe_id, status, servings")
     .eq("user_id", profile.id)
     .eq("status", "active")
     .eq("locked", false)
@@ -166,17 +169,29 @@ export async function clearWeek(weekStart: string): Promise<ActionState & { clea
 }
 
 export async function restoreWeekPlacements(cleared: ClearedCardPlacement[]): Promise<ActionState> {
+  if (cleared.length === 0) return { success: "Semaine restaurée." };
   const profile = await requireATableAccess();
   const supabase = await createClient();
 
-  for (const entry of cleared) {
-    await supabase
-      .from("a_table_meal_cards")
-      .update({ placement: entry.placement, position: entry.position, week_start: entry.week_start })
-      .eq("id", entry.id)
-      .eq("user_id", profile.id)
-      .eq("status", "active");
-  }
+  // Single upsert instead of one UPDATE per card — id is the primary key,
+  // so this targets exactly the rows already read back by clearWeek. The
+  // full row shape (not just the changed columns) is carried through so an
+  // upsert never risks an incomplete INSERT if a row were concurrently
+  // removed between the clear and the undo.
+  const { error } = await supabase.from("a_table_meal_cards").upsert(
+    cleared.map((entry) => ({
+      id: entry.id,
+      user_id: profile.id,
+      recipe_id: entry.recipe_id,
+      status: entry.status,
+      placement: entry.placement,
+      position: entry.position,
+      week_start: entry.week_start,
+      servings: entry.servings,
+    }))
+  );
+
+  if (error) return { error: "Impossible de restaurer la semaine." };
 
   revalidatePath("/apps/a-table");
   return { success: "Semaine restaurée." };
