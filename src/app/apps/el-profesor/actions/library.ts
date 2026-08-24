@@ -6,6 +6,7 @@ import { requireElProfesorAdmin } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { uploadChapterPdf as uploadPdfBytes, deleteChapterPdf, uploadPublicImage } from "@/lib/el-profesor/storage";
 import { extractDocxText, extractPptxText } from "@/lib/el-profesor/office-text";
+import { getPdfPageCount } from "@/lib/el-profesor/pdf-split";
 import { GeminiError } from "@/lib/gemini-shared";
 
 export interface ActionState {
@@ -202,6 +203,9 @@ export async function uploadChapter(
     } catch {
       return { error: "Échec de l'envoi du PDF." };
     }
+    // Best-effort — a page count read failure shouldn't block the upload,
+    // it just leaves per-page cost estimation unavailable for this chapter.
+    const pageCount = await getPdfPageCount(bytes).catch(() => null);
 
     const { error } = await supabase.from("el_profesor_chapters").insert({
       id: chapterId,
@@ -209,6 +213,7 @@ export async function uploadChapter(
       title: title.trim(),
       order_index: orderIndex,
       pdf_storage_path: storagePath,
+      pdf_page_count: pageCount,
       source_kind: "pdf",
       status: "pending",
     });

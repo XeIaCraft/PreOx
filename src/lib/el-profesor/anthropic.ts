@@ -206,6 +206,8 @@ async function logClaudeUsage(entry: {
   candidatesTokens?: number;
   totalTokens?: number;
   errorMessage?: string;
+  /** PDF page count for a chapter-bound call (extraction/complementary) — lets the cost estimate scale per chapter instead of a flat average. Null for calls with no single source PDF (notion categorization, contradiction check, notion update). */
+  pdfPageCount?: number | null;
 }) {
   try {
     const admin = createAdminClient();
@@ -217,6 +219,7 @@ async function logClaudeUsage(entry: {
       candidates_tokens: entry.candidatesTokens ?? null,
       total_tokens: entry.totalTokens ?? null,
       error_message: entry.errorMessage ?? null,
+      pdf_page_count: entry.pdfPageCount ?? null,
     });
   } catch {
     // best-effort — never block the actual Claude call on logging
@@ -353,11 +356,24 @@ export type ClaudeBatchResult =
   | { customId: string; outcome: "errored"; message: string }
   | { customId: string; outcome: "expired" | "canceled" };
 
-/** Streams every result for an ended batch, normalized to a plain shape (structured tool output already unescaped, same as the sync path). */
-export async function getClaudeBatchResults(apiKey: string, anthropicBatchId: string, model: string): Promise<ClaudeBatchResult[]> {
+/**
+ * Streams every result for an ended batch, normalized to a plain shape
+ * (structured tool output already unescaped, same as the sync path).
+ * `pageCountByCustomId` (chapter-bound items only — extraction/complementary)
+ * lets each logged row carry the source PDF's page count, so the cost
+ * estimate can later scale per chapter instead of averaging across every
+ * call regardless of size.
+ */
+export async function getClaudeBatchResults(
+  apiKey: string,
+  anthropicBatchId: string,
+  model: string,
+  pageCountByCustomId?: Map<string, number>
+): Promise<ClaudeBatchResult[]> {
   const client = claudeClient(apiKey);
   const results: ClaudeBatchResult[] = [];
   for await (const entry of await client.messages.batches.results(anthropicBatchId)) {
+    const pdfPageCount = pageCountByCustomId?.get(entry.custom_id) ?? null;
     if (entry.result.type === "succeeded") {
       const toolUse = entry.result.message.content.find((b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use");
       if (!toolUse || !toolUse.input) {
@@ -370,6 +386,7 @@ export async function getClaudeBatchResults(apiKey: string, anthropicBatchId: st
         promptTokens: entry.result.message.usage.input_tokens,
         candidatesTokens: entry.result.message.usage.output_tokens,
         totalTokens: entry.result.message.usage.input_tokens + entry.result.message.usage.output_tokens,
+        pdfPageCount,
       });
       results.push({
         customId: entry.custom_id,
@@ -379,7 +396,7 @@ export async function getClaudeBatchResults(apiKey: string, anthropicBatchId: st
       });
     } else if (entry.result.type === "errored") {
       const message = entry.result.error.error.message || "Erreur inconnue.";
-      await logClaudeUsage({ model, success: false, errorMessage: message.slice(0, 300) });
+      await logClaudeUsage({ model, success: false, errorMessage: message.slice(0, 300), pdfPageCount });
       results.push({ customId: entry.custom_id, outcome: "errored", message: message.slice(0, 300) });
     } else {
       results.push({ customId: entry.custom_id, outcome: entry.result.type });

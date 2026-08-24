@@ -444,6 +444,7 @@ export type ElProfesorGeminiUsageLogRow = {
   candidates_tokens: number | null;
   total_tokens: number | null;
   error_message: string | null;
+  pdf_page_count: number | null;
 };
 
 export type ElProfesorSuspendedFlashcardRow = {

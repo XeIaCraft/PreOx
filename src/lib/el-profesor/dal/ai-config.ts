@@ -126,6 +126,14 @@ export interface GeminiUsageWindowStats {
   estimatedCostUsd: number;
   /** True if at least one call in this window used a model with no known pricing tier — estimatedCostUsd then understates the real total. */
   hasUnpricedCalls: boolean;
+  /**
+   * Cost per PDF page, computed as (cost summed over calls with both a
+   * known price and a logged page count) ÷ (their page counts summed) —
+   * null until at least one such call exists. Lets a future chapter's cost
+   * be estimated from its own page count instead of a flat per-call
+   * average that ignores how big the chapter actually is.
+   */
+  costPerPageUsd: number | null;
 }
 
 export interface GeminiUsageStats {
@@ -142,7 +150,7 @@ export async function getGeminiUsageStats(): Promise<GeminiUsageStats> {
 
   const { data: rows } = await supabase
     .from("el_profesor_gemini_usage_log")
-    .select("called_at, model, success, status_code, prompt_tokens, candidates_tokens, total_tokens, error_message")
+    .select("called_at, model, success, status_code, prompt_tokens, candidates_tokens, total_tokens, error_message, pdf_page_count")
     .gte("called_at", since7d)
     .order("called_at", { ascending: false });
 
@@ -153,10 +161,19 @@ export async function getGeminiUsageStats(): Promise<GeminiUsageStats> {
   function summarize(list: typeof all): GeminiUsageWindowStats {
     let estimatedCostUsd = 0;
     let hasUnpricedCalls = false;
+    let pagedCostUsd = 0;
+    let pagedPageCount = 0;
     for (const r of list) {
       const cost = estimateCostUsd(r.model, r.prompt_tokens ?? 0, r.candidates_tokens ?? 0);
-      if (cost === null) hasUnpricedCalls = true;
-      else estimatedCostUsd += cost;
+      if (cost === null) {
+        hasUnpricedCalls = true;
+        continue;
+      }
+      estimatedCostUsd += cost;
+      if (r.pdf_page_count != null && r.pdf_page_count > 0) {
+        pagedCostUsd += cost;
+        pagedPageCount += r.pdf_page_count;
+      }
     }
     return {
       calls: list.length,
@@ -164,6 +181,7 @@ export async function getGeminiUsageStats(): Promise<GeminiUsageStats> {
       totalTokens: list.reduce((sum, r) => sum + (r.total_tokens ?? 0), 0),
       estimatedCostUsd,
       hasUnpricedCalls,
+      costPerPageUsd: pagedPageCount > 0 ? pagedCostUsd / pagedPageCount : null,
     };
   }
 

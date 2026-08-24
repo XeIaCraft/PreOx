@@ -183,16 +183,48 @@ const EXAM_DURATION_PRESETS = [
  * streamed separately from the rest of the dashboard rather than blocking
  * initial paint. See the comment on estimatedBulkCostUsd this replaced.
  */
-function BulkCostEstimate({ aiConfigPromise, selectedCount }: { aiConfigPromise: Promise<DashboardAiConfigData | null>; selectedCount: number }) {
+function BulkCostEstimate({
+  aiConfigPromise,
+  selectedChapters,
+}: {
+  aiConfigPromise: Promise<DashboardAiConfigData | null>;
+  selectedChapters: { id: string; pdfPageCount: number | null }[];
+}) {
   const config = use(aiConfigPromise);
   const claudeModelKey = `claude:${config?.claudeModel || "claude-sonnet-5"}`;
   const claudeUsage = config?.geminiUsageStats?.byModel.find((m) => m.model === claudeModelKey);
+  const costPerPageUsd = claudeUsage?.costPerPageUsd ?? null;
   const avgCostPerCallUsd = claudeUsage && claudeUsage.calls > 0 && !claudeUsage.hasUnpricedCalls ? claudeUsage.estimatedCostUsd / claudeUsage.calls : null;
-  const estimatedBulkCostUsd = avgCostPerCallUsd !== null ? avgCostPerCallUsd * selectedCount : null;
+
+  // Per-chapter when its page count is known (scales with actual size);
+  // falls back to the flat per-call average for a chapter that has none
+  // (older upload, page count not yet tracked at the time it was added).
+  let estimatedBulkCostUsd: number | null = null;
+  let anyPerPage = false;
+  if (costPerPageUsd !== null || avgCostPerCallUsd !== null) {
+    let total = 0;
+    for (const c of selectedChapters) {
+      if (c.pdfPageCount != null && costPerPageUsd !== null) {
+        total += c.pdfPageCount * costPerPageUsd;
+        anyPerPage = true;
+      } else if (avgCostPerCallUsd !== null) {
+        total += avgCostPerCallUsd;
+      } else {
+        // No page count for this chapter and no per-call average either — skip it, the total would understate rather than estimate falsely.
+        continue;
+      }
+    }
+    estimatedBulkCostUsd = total;
+  }
+
   return estimatedBulkCostUsd !== null ? (
     <span
       className="text-xs text-foreground-subtle"
-      title="Estimation basée sur le coût moyen des appels Claude déjà journalisés sur 7 jours (extraction + complément + autres usages confondus) — une passe par chapitre ; un complément « jusqu'à couverture » peut en enchaîner plusieurs si le contenu est dense."
+      title={
+        anyPerPage
+          ? "Estimation basée sur le coût moyen par page des appels Claude déjà journalisés sur 7 jours, appliqué au nombre de pages de chaque chapitre sélectionné (moyenne par appel en repli pour un chapitre sans nombre de pages connu) — une passe ; un complément « jusqu'à couverture » peut en enchaîner plusieurs si le contenu est dense."
+          : "Estimation basée sur le coût moyen des appels Claude déjà journalisés sur 7 jours (extraction + complément + autres usages confondus) — une passe par chapitre ; un complément « jusqu'à couverture » peut en enchaîner plusieurs si le contenu est dense."
+      }
     >
       ≈ {formatUsd(estimatedBulkCostUsd)} estimé
     </span>
@@ -320,6 +352,11 @@ export function ElProfesorBoard({
   // this same set (see bulkSelectable below, computed identically per-chapter).
   const bulkSelectableChapterIds =
     isAdmin && aiProvider === "claude" ? books.flatMap((b) => b.chapters.filter((c) => c.sourceKind === "pdf").map((c) => c.id)) : [];
+
+  const selectedChapters = books
+    .flatMap((b) => b.chapters)
+    .filter((c) => selectedChapterIds.has(c.id))
+    .map((c) => ({ id: c.id, pdfPageCount: c.pdfPageCount }));
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -698,7 +735,7 @@ export function ElProfesorBoard({
             {selectedChapterIds.size} chapitre{selectedChapterIds.size > 1 ? "s" : ""} sélectionné{selectedChapterIds.size > 1 ? "s" : ""}
           </span>
           <Suspense fallback={<span className="text-xs text-foreground-subtle">calcul du coût…</span>}>
-            <BulkCostEstimate aiConfigPromise={aiConfigPromise} selectedCount={selectedChapterIds.size} />
+            <BulkCostEstimate aiConfigPromise={aiConfigPromise} selectedChapters={selectedChapters} />
           </Suspense>
           <Button size="sm" onClick={handleBulkExtract} disabled={isBulkPending}>
             <Sparkles className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Extraire via un lot Claude"}

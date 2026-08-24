@@ -121,6 +121,7 @@ export async function splitBookIntoChapters(bookId: string, startOrderIndex: num
     title: string;
     order_index: number;
     pdf_storage_path: string;
+    pdf_page_count: number;
     source_kind: "pdf";
     status: "pending";
   }[] = [];
@@ -141,6 +142,7 @@ export async function splitBookIntoChapters(bookId: string, startOrderIndex: num
       title: chapters[i].title.trim(),
       order_index: startOrderIndex + i,
       pdf_storage_path: storagePath,
+      pdf_page_count: chapters[i].endPage - chapters[i].startPage + 1,
       source_kind: "pdf",
       status: "pending",
     });

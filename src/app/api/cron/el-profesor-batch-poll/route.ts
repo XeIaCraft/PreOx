@@ -196,9 +196,31 @@ export async function GET(request: Request) {
     }
     if (!status.ended) continue; // still processing — picked up again next run
 
+    // Fetched before reading results (rather than after, as before) so the
+    // chapter-bound items' PDF page counts can be looked up in one batched
+    // query and passed into getClaudeBatchResults — it logs usage inline as
+    // results stream in, so it needs this map up front to log per-page data.
+    const { data: items } = await admin.from("el_profesor_batch_items").select("*").eq("batch_job_id", job.id);
+    const itemByCustomId = new Map((items ?? []).map((i) => [i.custom_id, i]));
+
+    const chapterIds = [...new Set((items ?? []).map((i) => i.target as unknown as BatchItemTarget).filter((t) => t.type === "chapter").map((t) => t.chapterId))];
+    const pageCountByChapterId = new Map<string, number>();
+    if (chapterIds.length > 0) {
+      const { data: chapterRows } = await admin.from("el_profesor_chapters").select("id, pdf_page_count").in("id", chapterIds);
+      for (const c of chapterRows ?? []) if (c.pdf_page_count != null) pageCountByChapterId.set(c.id, c.pdf_page_count);
+    }
+    const pageCountByCustomId = new Map<string, number>();
+    for (const i of items ?? []) {
+      const target = i.target as unknown as BatchItemTarget;
+      if (target.type === "chapter") {
+        const pageCount = pageCountByChapterId.get(target.chapterId);
+        if (pageCount != null) pageCountByCustomId.set(i.custom_id, pageCount);
+      }
+    }
+
     let results: ClaudeBatchResult[];
     try {
-      results = await getClaudeBatchResults(claudeConfig.apiKey, job.anthropic_batch_id, claudeConfig.model);
+      results = await getClaudeBatchResults(claudeConfig.apiKey, job.anthropic_batch_id, claudeConfig.model, pageCountByCustomId);
     } catch (err) {
       await admin
         .from("el_profesor_batch_jobs")
@@ -206,9 +228,6 @@ export async function GET(request: Request) {
         .eq("id", job.id);
       continue;
     }
-
-    const { data: items } = await admin.from("el_profesor_batch_items").select("*").eq("batch_job_id", job.id);
-    const itemByCustomId = new Map((items ?? []).map((i) => [i.custom_id, i]));
 
     let succeeded = 0;
     let errored = 0;
