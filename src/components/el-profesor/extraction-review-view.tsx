@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Modal } from "@/components/ui/modal";
 import { PdfViewer, type PdfHighlight, type CoverageEntry, type PdfSelection } from "@/components/el-profesor/pdf-viewer";
 import { CoverageInfoPanel, type CoverageInfoTarget } from "@/components/el-profesor/coverage-info-panel";
+import { buildCoverageEntries } from "@/lib/el-profesor/coverage-entries";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
@@ -86,18 +87,7 @@ export function ExtractionReviewView({
     0
   );
 
-  const coverage = useMemo<CoverageEntry[]>(() => {
-    const entries: CoverageEntry[] = [];
-    for (const sub of withFiche) {
-      for (const block of sub.fiche!.blocks) {
-        for (const c of block.citations) entries.push({ page: c.page, quote: c.quote, kind: "block", id: block.id });
-      }
-      for (const card of sub.fiche!.flashcards) {
-        for (const c of card.citations) entries.push({ page: c.page, quote: c.quote, kind: "flashcard", id: card.id });
-      }
-    }
-    return entries;
-  }, [withFiche]);
+  const coverage = useMemo<CoverageEntry[]>(() => buildCoverageEntries(withFiche), [withFiche]);
 
   // Item 26 follow-up (requested 2026-08-24): clicking a coverage rectangle
   // on the PDF shows which block/flashcard it came from, with a jump-to
