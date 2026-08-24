@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare } from "lucide-react";
 import { QuizMode } from "@/components/el-profesor/quiz-mode";
 import { MindMapDialog } from "@/components/el-profesor/mind-map-dialog";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { CoverageInfoPanel, type CoverageInfoTarget } from "@/components/el-prof
 import { buildCoverageEntries } from "@/lib/el-profesor/coverage-entries";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
+import { ProposeFlashcardDialog } from "@/components/el-profesor/propose-flashcard-dialog";
 import { RelatedFiches } from "@/components/el-profesor/related-fiches";
 import { FicheQA } from "@/components/el-profesor/fiche-qa";
 import { StudyToolsButtons } from "@/components/el-profesor/study-tools-buttons";
@@ -101,6 +102,7 @@ export function ChapterView({
   const [printTarget, setPrintTarget] = useState<"single" | "chapter">("single");
   const [quizOpen, setQuizOpen] = useState(false);
   const [mindMapOpen, setMindMapOpen] = useState(false);
+  const [contributingFlashcard, setContributingFlashcard] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   // Item 37 of the backlog: this page (already visited) is served from the
   // service worker's offline cache when the network is down — this banner
@@ -591,6 +593,13 @@ export function ChapterView({
                   <NoteEditor key={selected.id} subEntityId={selected.id} />
                   <RelatedFiches key={selected.fiche.id} ficheId={selected.fiche.id} />
                   <FicheQA key={selected.fiche.id} ficheId={selected.fiche.id} isAdmin={isAdmin} />
+                  <button
+                    type="button"
+                    onClick={() => setContributingFlashcard(true)}
+                    className="mt-4 flex items-center gap-1.5 text-xs text-foreground-subtle hover:text-primary-strong print:hidden"
+                  >
+                    <PenSquare className="h-3.5 w-3.5" /> Proposer une flashcard sur cette notion
+                  </button>
                 </>
               ) : (
                 <p className="text-sm text-foreground-subtle">Sélectionnez une entrée.</p>
@@ -679,6 +688,18 @@ export function ChapterView({
 
       {quizOpen && <QuizMode cards={publishedFlashcards} onClose={() => setQuizOpen(false)} />}
       {mindMapOpen && <MindMapDialog chapterId={chapterId} onClose={() => setMindMapOpen(false)} />}
+
+      {contributingFlashcard && selected && (
+        <ProposeFlashcardDialog
+          subEntityId={selected.id}
+          subEntityName={selected.name}
+          onClose={() => setContributingFlashcard(false)}
+          onSubmitted={() => {
+            setContributingFlashcard(false);
+            router.refresh();
+          }}
+        />
+      )}
 
       {pendingSelection && (
         <ProposeFromSelectionDialog

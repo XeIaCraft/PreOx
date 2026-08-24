@@ -5,6 +5,7 @@ import { requireElProfesorAccess, getElProfesorGeminiConfig } from "@/lib/el-pro
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateFromSelection } from "@/lib/el-profesor/gemini";
+import { logContentChange } from "@/lib/el-profesor/content-log";
 import { GeminiError } from "@/lib/gemini-shared";
 import type { BlockContent, Citation, FlashcardSide } from "@/lib/el-profesor/types";
 
@@ -88,4 +89,50 @@ export async function proposeFromSelection(
   } catch (err) {
     return { error: err instanceof GeminiError ? err.message : "Échec de la génération à partir du passage sélectionné." };
   }
+}
+
+const MAX_CONTRIBUTION_LENGTH = 1000;
+
+/**
+ * Piste d'amélioration 2026-08-24 ("contributions des utilisateurs") — a
+ * third, simplest path alongside signalement (report a problem) and
+ * proposeFromSelection (AI-assisted, needs a PDF passage): any user with
+ * module access can hand-write a flashcard for an existing sub-entity, no
+ * AI and no source text required — their own mnemonic, clarification, or
+ * exam-style question. Lands as draft/needs_review, exactly like every
+ * other non-admin-authored content, and is never auto-published.
+ */
+export async function proposeManualFlashcard(subEntityId: string, front: string, back: string): Promise<ActionState> {
+  const profile = await requireElProfesorAccess();
+  const supabase = await createClient();
+
+  const trimmedFront = front.trim().slice(0, MAX_CONTRIBUTION_LENGTH);
+  const trimmedBack = back.trim().slice(0, MAX_CONTRIBUTION_LENGTH);
+  if (trimmedFront.length < 5 || trimmedBack.length < 1) return { error: "La question et la réponse sont obligatoires." };
+
+  const { data: subEntity } = await supabase.from("el_profesor_sub_entities").select("id").eq("id", subEntityId).maybeSingle();
+  if (!subEntity) return { error: "Sous-entité introuvable." };
+
+  const { data: fiche } = await supabase.from("el_profesor_fiches").select("id").eq("sub_entity_id", subEntityId).maybeSingle();
+  if (!fiche) return { error: "Fiche introuvable pour cette sous-entité." };
+
+  const admin = createAdminClient();
+  const { data: card, error } = await admin
+    .from("el_profesor_flashcards")
+    .insert({
+      fiche_id: fiche.id,
+      front: { text: trimmedFront } as FlashcardSide as never,
+      back: { text: trimmedBack } as FlashcardSide as never,
+      citations: [] as unknown as Citation[] as never,
+      status: "draft",
+      needs_review: true,
+    })
+    .select("id")
+    .single();
+  if (error || !card) return { error: "Impossible d'enregistrer cette contribution." };
+
+  await logContentChange(profile.id, "flashcard", card.id, "user_contribution");
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Merci ! Votre flashcard est en attente de relecture par un administrateur." };
 }
