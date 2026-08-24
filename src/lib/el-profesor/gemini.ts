@@ -19,6 +19,7 @@ import {
   buildMindMapPrompt,
   buildChapterSplitPrompt,
   buildPageOcrPrompt,
+  buildLeechRewordingPrompt,
 } from "@/lib/el-profesor/prompts";
 import type {
   ComplementaryResult,
@@ -181,6 +182,15 @@ const MNEMONIC_RESPONSE_SCHEMA = {
     text: { type: "STRING" },
   },
   required: ["text"],
+};
+
+const LEECH_REWORDING_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    text: { type: "STRING" },
+    note: { type: "STRING" },
+  },
+  required: ["text", "note"],
 };
 
 const SYNTHESIS_RESPONSE_SCHEMA = {
@@ -694,6 +704,19 @@ export async function generateFromSelection(
 export async function generateMnemonic(config: GeminiRotationConfig, subEntityName: string, sourceText: string): Promise<{ text: string }> {
   const instructions = buildMnemonicPrompt(subEntityName, sourceText);
   const { result } = await textRotation<{ text: string }>(config, instructions, MNEMONIC_RESPONSE_SCHEMA);
+  return result;
+}
+
+/** Suggests a clearer question wording for a "leech" flashcard (item "traitement des cartes sangsues", 2026-08-24). Rotates on quota/capacity errors. */
+export async function suggestLeechRewording(
+  config: GeminiRotationConfig,
+  subEntityName: string,
+  front: string,
+  back: string,
+  againRate: number
+): Promise<{ text: string; note: string }> {
+  const instructions = buildLeechRewordingPrompt(subEntityName, front, back, againRate);
+  const { result } = await textRotation<{ text: string; note: string }>(config, instructions, LEECH_REWORDING_SCHEMA);
   return result;
 }
 

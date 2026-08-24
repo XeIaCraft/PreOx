@@ -11,6 +11,7 @@ import {
   getReviewActivitySummary,
   getUpcomingReviewForecast,
   getMostDifficultFlashcardsGlobal,
+  getLeechFlashcards,
   getDailyCard,
   getBookmarkedEntities,
   getGlobalChapterMasteryPercentages,
@@ -54,6 +55,7 @@ export default async function ElProfesorPage() {
     activity,
     forecast,
     mostDifficultGlobal,
+    leechFlashcards,
     dailyCard,
     bookmarks,
     globalMastery,
@@ -83,6 +85,7 @@ export default async function ElProfesorPage() {
     getReviewActivitySummary(profile.id),
     getUpcomingReviewForecast(profile.id, allChapters),
     isAdmin ? getMostDifficultFlashcardsGlobal() : Promise.resolve([]),
+    isAdmin ? getLeechFlashcards() : Promise.resolve([]),
     getDailyCard(profile.id, allChapters),
     getBookmarkedEntities(profile.id),
     getGlobalChapterMasteryPercentages(allChapters),
@@ -118,6 +121,7 @@ export default async function ElProfesorPage() {
         activity={activity}
         forecast={forecast}
         mostDifficultGlobal={mostDifficultGlobal}
+        leechFlashcards={leechFlashcards}
         dailyCard={dailyCard}
         bookmarks={bookmarks}
         globalMastery={globalMastery}

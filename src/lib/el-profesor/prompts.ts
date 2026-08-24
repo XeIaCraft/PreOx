@@ -430,6 +430,27 @@ Réponds uniquement avec le JSON demandé (un tableau "pages", un élément par 
 `.trim();
 }
 
+/**
+ * Piste d'amélioration 2026-08-24 ("traitement des cartes sangsues") : une
+ * reformulation ciblée pour une flashcard qu'un nombre inhabituel
+ * d'utilisateurs rate de façon persistante — signe fréquent d'une
+ * question mal posée plutôt que d'une vraie difficulté de la notion.
+ */
+export function buildLeechRewordingPrompt(subEntityName: string, front: string, back: string, againRate: number): string {
+  return `
+${EXPERT_READER_CONTEXT}
+
+Cette flashcard, rattachée à la sous-entité « ${subEntityName} », est actuellement ratée par une proportion inhabituellement élevée d'utilisateurs (environ ${Math.round(againRate * 100)} % des réponses) — ce qui indique souvent un problème de formulation de la question plutôt qu'une vraie difficulté de la notion : question ambiguë, deux informations demandées à la fois, réponse attendue trop vague pour être auto-évaluée fiablement.
+
+Question actuelle : « ${front} »
+Réponse attendue : « ${back} »
+
+Ta tâche : propose UNE seule reformulation de la QUESTION (pas de la réponse) qui cible plus précisément ce qui est attendu, sans changer le fond de ce qui est testé — l'objectif est de réduire les erreurs dues à une question mal comprise, pas de rendre la carte plus facile sur le fond. Si le problème semble plutôt venir de la réponse attendue elle-même (trop vague, deux faits mélangés, à scinder en deux cartes), dis-le dans "note" en plus de ta reformulation de la question.
+
+Réponds uniquement avec le JSON demandé (un champ "text" pour la question reformulée, et un champ "note" — chaîne vide si tu n'as rien à signaler), structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildVerificationPrompt(extractionJson: string): string {
   return `
 Tu reçois le document source (chapitre PDF) et, ci-dessous, un JSON d'extraction déjà produit à partir de ce document (sous-entités, fiches, blocs avec citations, flashcards). Ta seule tâche : vérifier la fidélité de chaque bloc et chaque flashcard à sa citation et au document source.

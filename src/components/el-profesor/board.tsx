@@ -56,6 +56,7 @@ import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/ex
 import { exportBookNotes } from "@/app/apps/el-profesor/actions/notes";
 import { getLastChapter } from "@/lib/el-profesor/local-prefs";
 import { formatUsd } from "@/lib/el-profesor/ai-pricing";
+import { suggestLeechVariant } from "@/app/apps/el-profesor/actions/leech";
 import type {
   BookWithChapters,
   ChapterDueCounts,
@@ -63,6 +64,7 @@ import type {
   ReviewActivitySummary,
   UpcomingForecastDay,
   DifficultFlashcardStat,
+  LeechFlashcardStat,
   BookmarkedEntity,
   ChapterMasteryPercentile,
   StaleChapterAlert,
@@ -205,6 +207,7 @@ export function ElProfesorBoard({
   activity,
   forecast,
   mostDifficultGlobal,
+  leechFlashcards,
   dailyCard,
   bookmarks,
   globalMastery,
@@ -236,6 +239,7 @@ export function ElProfesorBoard({
   activity: ReviewActivitySummary;
   forecast: UpcomingForecastDay[];
   mostDifficultGlobal: DifficultFlashcardStat[];
+  leechFlashcards: LeechFlashcardStat[];
   dailyCard: Flashcard | null;
   bookmarks: BookmarkedEntity[];
   globalMastery: Record<string, ChapterMasteryPercentile>;
@@ -269,6 +273,8 @@ export function ElProfesorBoard({
   // call by hand doesn't apply (Gemini stays synchronous, one chapter at a time).
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [isBulkPending, startBulkTransition] = useTransition();
+  const [pendingLeechId, setPendingLeechId] = useState<string | null>(null);
+  const [isLeechPending, startLeechTransition] = useTransition();
   // Lazy initializer (client-only read), same pattern used elsewhere for
   // one-time localStorage reads — null on the server, resolved on mount.
   const [resumeChapterId] = useState(() => serverResumeChapterId ?? getLastChapter());
@@ -376,6 +382,19 @@ export function ElProfesorBoard({
       else {
         toast(result.success ?? "Lot soumis.", { variant: "success" });
         setSelectedChapterIds(new Set());
+        refresh();
+      }
+    });
+  }
+
+  function handleSuggestLeechVariant(stat: LeechFlashcardStat) {
+    setPendingLeechId(stat.flashcardId);
+    startLeechTransition(async () => {
+      const result = await suggestLeechVariant(stat.flashcardId, stat.subEntityName, stat.againRate);
+      setPendingLeechId(null);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.suggestion ? `Variante ajoutée : « ${result.suggestion} »` : (result.success ?? "Variante ajoutée."), { variant: "success" });
         refresh();
       }
     });
@@ -637,7 +656,7 @@ export function ElProfesorBoard({
         </div>
       )}
 
-      {isAdmin && (mostDifficultGlobal.length > 0 || flagStatsByBlockType.length > 0 || staleChapters.length > 0) && (
+      {isAdmin && (mostDifficultGlobal.length > 0 || leechFlashcards.length > 0 || flagStatsByBlockType.length > 0 || staleChapters.length > 0) && (
         <details className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
           <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
             <ShieldAlert className="h-3.5 w-3.5" /> Diagnostics de contenu (admin)
@@ -656,6 +675,36 @@ export function ElProfesorBoard({
                       <Badge variant="danger" className="shrink-0">
                         {stat.againCount}×
                       </Badge>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {leechFlashcards.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-foreground-subtle" title="Ratée par une forte proportion des utilisateurs qui l'ont vue — souvent une question mal formulée plutôt qu'une vraie difficulté">
+                  Cartes sangsues (échec fréquent, probablement mal formulées)
+                </p>
+                <ul className="mt-2 space-y-1.5">
+                  {leechFlashcards.slice(0, 5).map((stat) => (
+                    <li key={stat.flashcardId} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="min-w-0 truncate text-foreground-muted" title={stat.front}>
+                        {stat.front}
+                        {stat.chapterTitle && <span className="text-foreground-subtle"> — {stat.chapterTitle}</span>}
+                      </span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Badge variant="danger">{Math.round(stat.againRate * 100)} %</Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleSuggestLeechVariant(stat)}
+                          disabled={isLeechPending && pendingLeechId === stat.flashcardId}
+                          title="Génère une reformulation de la question via IA et l'ajoute comme variante à tester (item « Test de formulations »)"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" /> {isLeechPending && pendingLeechId === stat.flashcardId ? "…" : "Reformuler"}
+                        </Button>
+                      </div>
                     </li>
                   ))}
                 </ul>

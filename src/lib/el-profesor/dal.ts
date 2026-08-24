@@ -1161,6 +1161,90 @@ export async function getMostDifficultFlashcardsGlobal(limit = 10): Promise<Diff
   return stats.sort((a, b) => b.againCount - a.againCount);
 }
 
+export interface LeechFlashcardStat {
+  flashcardId: string;
+  front: string;
+  back: string;
+  subEntityName: string;
+  bookTitle: string;
+  chapterTitle: string;
+  attemptCount: number;
+  againCount: number;
+  againRate: number;
+}
+
+// A minimum sample before a rate means anything, and a rate high enough
+// that the card — not the learner — is the likely problem.
+const LEECH_MIN_ATTEMPTS = 8;
+const LEECH_MIN_AGAIN_RATE = 0.5;
+
+/**
+ * "Cartes sangsues" — piste d'amélioration 2026-08-24 ("traitement des
+ * cartes sangsues") : flashcards qu'un nombre suffisant d'utilisateurs
+ * ratent de façon persistante, signe fréquent d'une carte mal formulée
+ * plutôt que d'une vraie difficulté de la notion (question ambiguë, deux
+ * informations demandées à la fois, réponse attendue trop vague...).
+ * Distinct de getMostDifficultFlashcardsGlobal (classement par nombre brut
+ * d'échecs) : ici un taux, avec un minimum d'essais, pour qu'une carte vue
+ * deux fois et ratée une fois ne devance pas une carte vue 200 fois et
+ * ratée 40 fois (20 %, bien plus parlant à volume). Même agrégat anonyme
+ * que getMostDifficultFlashcardsGlobal — jamais quel utilisateur a répondu
+ * quoi, seulement des tallies par carte.
+ */
+export async function getLeechFlashcards(limit = 10): Promise<LeechFlashcardStat[]> {
+  const supabase = createAdminClient();
+  const { data: logs } = await supabase.from("el_profesor_review_log").select("flashcard_id, rating").eq("source", "scheduled");
+  if (!logs || logs.length === 0) return [];
+
+  const statsByCard = new Map<string, { attempts: number; again: number }>();
+  for (const row of logs) {
+    const s = statsByCard.get(row.flashcard_id) ?? { attempts: 0, again: 0 };
+    s.attempts++;
+    if (row.rating === "again") s.again++;
+    statsByCard.set(row.flashcard_id, s);
+  }
+
+  const leechIds = [...statsByCard.entries()]
+    .filter(([, s]) => s.attempts >= LEECH_MIN_ATTEMPTS && s.again / s.attempts >= LEECH_MIN_AGAIN_RATE)
+    .sort((a, b) => b[1].again / b[1].attempts - a[1].again / a[1].attempts)
+    .slice(0, limit)
+    .map(([id]) => id);
+  if (leechIds.length === 0) return [];
+
+  const { data: flashcards } = await supabase.from("el_profesor_flashcards").select("id, front, back, fiche_id").in("id", leechIds).eq("status", "published");
+  if (!flashcards || flashcards.length === 0) return [];
+
+  const ficheIds = [...new Set(flashcards.map((f) => f.fiche_id))];
+  const { data: fiches } = await supabase.from("el_profesor_fiches").select("id, sub_entity_id").in("id", ficheIds);
+  const subEntityByFiche = new Map((fiches ?? []).map((f) => [f.id, f.sub_entity_id]));
+  const ficheContexts = await resolveFicheContexts(ficheIds);
+  const subEntityIds = [...new Set((fiches ?? []).map((f) => f.sub_entity_id))];
+  const { data: subEntities } = subEntityIds.length ? await supabase.from("el_profesor_sub_entities").select("id, name").in("id", subEntityIds) : { data: [] };
+  const subEntityNameById = new Map((subEntities ?? []).map((s) => [s.id, s.name]));
+
+  const stats: LeechFlashcardStat[] = flashcards
+    .map((f) => {
+      const ctx = ficheContexts.get(f.fiche_id);
+      const s = statsByCard.get(f.id);
+      const subEntityId = subEntityByFiche.get(f.fiche_id);
+      if (!ctx || !s) return null;
+      return {
+        flashcardId: f.id,
+        front: (f.front as unknown as { text: string }).text,
+        back: (f.back as unknown as { text: string }).text,
+        subEntityName: (subEntityId && subEntityNameById.get(subEntityId)) || ctx.chapterTitle,
+        bookTitle: ctx.bookTitle,
+        chapterTitle: ctx.chapterTitle,
+        attemptCount: s.attempts,
+        againCount: s.again,
+        againRate: s.again / s.attempts,
+      } satisfies LeechFlashcardStat;
+    })
+    .filter((s): s is LeechFlashcardStat => s !== null);
+
+  return stats.sort((a, b) => b.againRate - a.againRate);
+}
+
 export interface ReviewTimeStats {
   totalMs: number;
   last7DaysMs: number;
