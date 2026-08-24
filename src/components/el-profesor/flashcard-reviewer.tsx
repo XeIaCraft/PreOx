@@ -9,7 +9,43 @@ import { submitReview, undoReview, excludeFlashcardFromReviews } from "@/app/app
 import { FlagButton } from "@/components/el-profesor/flag-button";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { useToast } from "@/components/ui/toast";
-import type { Flashcard, ReviewSource, ReviewState } from "@/lib/el-profesor/types";
+import type { Flashcard, ReviewSource, ReviewState, ImageOcclusion } from "@/lib/el-profesor/types";
+
+/**
+ * A flashcard's image with its labeled zones masked (front, `revealed`
+ * false) or revealed (back, `revealed` true) — "retrouve la légende",
+ * follow-up to item 23. Plain image display (no occlusions) when the
+ * flashcard has none, same as before this feature existed.
+ */
+function OcclusionImage({
+  imageUrl,
+  imageAlt,
+  occlusions,
+  revealed,
+}: {
+  imageUrl: string;
+  imageAlt: string | null;
+  occlusions: ImageOcclusion[];
+  revealed: boolean;
+}) {
+  return (
+    <div className="relative mb-3 inline-block max-w-full">
+      {/* eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a local asset */}
+      <img src={imageUrl} alt={imageAlt ?? ""} className="max-h-[40vh] max-w-full rounded-[var(--radius-sm)] object-contain" draggable={false} />
+      {occlusions.map((o) => (
+        <div
+          key={o.id}
+          className={`absolute flex items-center justify-center overflow-hidden rounded-sm text-[10px] font-medium leading-tight ${
+            revealed ? "border-2 border-accent bg-accent/10 text-accent-strong" : "border-2 border-foreground bg-foreground"
+          }`}
+          style={{ left: `${o.x * 100}%`, top: `${o.y * 100}%`, width: `${o.width * 100}%`, height: `${o.height * 100}%` }}
+        >
+          {revealed && <span className="px-0.5 text-center">{o.label}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 interface LastAction {
   index: number;
@@ -487,8 +523,7 @@ export function FlashcardReviewer({
           >
             <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-border bg-surface p-8 text-center shadow-sm [backface-visibility:hidden]">
               {current.imageUrl && (
-                // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a local asset
-                <img src={current.imageUrl} alt={current.imageAlt ?? ""} className="mb-3 max-h-[40%] max-w-full rounded-[var(--radius-sm)] object-contain" />
+                <OcclusionImage imageUrl={current.imageUrl} imageAlt={current.imageAlt} occlusions={current.imageOcclusions} revealed={false} />
               )}
               <p className="text-lg text-foreground">{shownVariant?.text ?? current.front.text}</p>
             </div>
@@ -507,6 +542,9 @@ export function FlashcardReviewer({
                   </button>
                   <FlagButton targetType="flashcard" targetId={current.id} />
                 </div>
+              )}
+              {current.imageUrl && current.imageOcclusions.length > 0 && (
+                <OcclusionImage imageUrl={current.imageUrl} imageAlt={current.imageAlt} occlusions={current.imageOcclusions} revealed={true} />
               )}
               <p className="text-lg font-medium text-primary-strong">{current.back.text}</p>
             </div>

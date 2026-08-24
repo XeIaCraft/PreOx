@@ -290,6 +290,9 @@ export type ElProfesorFlashcardRow = {
   image_url: string | null;
   image_alt: string | null;
   variants: Json;
+  suggested_image_page: number | null;
+  suggested_image_hint: string | null;
+  image_occlusions: Json;
   created_at: string;
   updated_at: string;
 };

@@ -100,6 +100,10 @@ const FLASHCARD_ITEM_SCHEMA = {
     front: { type: "STRING" },
     back: { type: "STRING" },
     citations: { type: "ARRAY", items: CITATION_SCHEMA },
+    // Optional — only set when a nearby diagram/schema would genuinely help
+    // this flashcard (PDF sources only, see buildExtractionPrompt).
+    suggested_image_page: { type: "INTEGER" },
+    suggested_image_hint: { type: "STRING" },
   },
   required: ["front", "back", "citations"],
 };

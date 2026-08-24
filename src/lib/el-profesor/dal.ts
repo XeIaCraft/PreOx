@@ -36,6 +36,7 @@ import type {
   FicheQuestion,
   FicheAnswer,
   FlashcardVariant,
+  ImageOcclusion,
 } from "./types";
 import type {
   ElProfesorBookRow,
@@ -140,6 +141,9 @@ function toFlashcard(row: ElProfesorFlashcardRow): Flashcard {
     imageUrl: row.image_url,
     imageAlt: row.image_alt,
     variants: (row.variants as unknown as FlashcardVariant[]) ?? [],
+    imageOcclusions: (row.image_occlusions as unknown as ImageOcclusion[]) ?? [],
+    suggestedImagePage: row.suggested_image_page,
+    suggestedImageHint: row.suggested_image_hint,
   };
 }
 

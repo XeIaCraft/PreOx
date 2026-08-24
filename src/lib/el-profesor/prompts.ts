@@ -56,6 +56,8 @@ ${FLASHCARD_QUALITY_DOC}
 
 Chaque flashcard : une question précise et sans ambiguïté au recto ("front"), la réponse exacte attendue au verso ("back"), et sa/ses citation(s) source.
 
+Repère aussi les schémas/images du document : si une page proche de cette flashcard contient un schéma, une image, un tableau visuel (pas juste du texte) qui aiderait concrètement à répondre ou à mémoriser (ex: anatomie, circuit, courbe, dispositif), indique "suggested_image_page" (même règle de comptage que "page" dans les citations — position réelle dans le fichier, pas le folio imprimé) et "suggested_image_hint" (description courte de ce qu'il faut capturer, ex: « le schéma du circuit du gaz frais »). Ne force rien : la plupart des flashcards n'ont besoin d'aucune image — laisse ces deux champs vides quand ce n'est pas le cas.
+
 4. Indique enfin "estimated_remaining_passes" : ton estimation honnête du nombre de passes de complément supplémentaires ("Compléter l'extraction", qui relit le PDF pour combler les trous) probablement encore nécessaires pour une couverture quasi-exhaustive de ce chapitre. Base-toi sur la longueur/densité réelle du chapitre et sur ce que tu sens avoir pu couvrir en une seule lecture — 0 si le chapitre est court/simple et que tu es confiant d'avoir tout couvert, un chiffre plus élevé (2, 3...) pour un chapitre long ou très dense où une seule passe ne peut raisonnablement pas tout capter.
 
 Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
@@ -98,7 +100,7 @@ Règles strictes pour chaque bloc :
 
 ${FLASHCARD_QUALITY_DOC}
 
-Chaque flashcard : une question précise et sans ambiguïté au recto ("front"), la réponse exacte attendue au verso ("back"), et sa/ses citation(s) source (même règle : "page": 0, "quote" verbatim).
+Chaque flashcard : une question précise et sans ambiguïté au recto ("front"), la réponse exacte attendue au verso ("back"), et sa/ses citation(s) source (même règle : "page": 0, "quote" verbatim). Ne remplis jamais "suggested_image_page"/"suggested_image_hint" pour ce document — il n'y a pas de fichier source à capturer.
 
 4. Indique enfin "estimated_remaining_passes" : ce document n'a pas de passe de complément possible (pas de fichier à relire) — réponds toujours 0.
 
@@ -177,7 +179,7 @@ Pour les flashcards en particulier, regarde si le résumé ci-dessus laisse des 
 
 ${FLASHCARD_QUALITY_DOC}
 
-Mêmes règles strictes que pour l'extraction initiale : chaque bloc et chaque flashcard doit citer verbatim (page + texte exact) le passage du livre qui le fonde, les tableaux comparatifs vont dans un vrai tableau, les protocoles par paliers dans une liste d'étapes structurée.
+Mêmes règles strictes que pour l'extraction initiale : chaque bloc et chaque flashcard doit citer verbatim (page + texte exact) le passage du livre qui le fonde, les tableaux comparatifs vont dans un vrai tableau, les protocoles par paliers dans une liste d'étapes structurée. Même règle aussi pour "suggested_image_page"/"suggested_image_hint" sur une flashcard : seulement quand un schéma/image proche aiderait vraiment, jamais par défaut.
 
 Indique enfin "estimated_remaining_passes" : ta nouvelle estimation, APRÈS cette passe de complément, du nombre de passes encore probablement nécessaires pour une couverture quasi-exhaustive — 0 si tu es maintenant confiant que le chapitre est couvert dans son ensemble.
 

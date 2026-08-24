@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, ChevronUp, ChevronDown, FileText, PartyPopper, Search } from "lucide-react";
@@ -120,12 +120,16 @@ export function ExtractionReviewView({
 
   // Image capture from the PDF (item 23): the crop comes back as a data
   // URL from PdfViewer's own canvas — held here until the admin picks which
-  // of the current fiche's flashcards it belongs to.
+  // of the current fiche's flashcards it belongs to (unless the capture was
+  // triggered from a specific flashcard's suggestion hint, see below, in
+  // which case it's attached straight away with no chooser).
   const [pendingCapture, setPendingCapture] = useState<string | null>(null);
+  const [directCaptureFlashcardId, setDirectCaptureFlashcardId] = useState<string | null>(null);
+  const [captureRequest, setCaptureRequest] = useState<{ page: number; token: number } | null>(null);
+  const captureRequestTokenRef = useRef(0);
 
-  function handleAttachCapture(flashcardId: string) {
-    if (!pendingCapture) return;
-    const base64 = pendingCapture.split(",")[1] ?? "";
+  function attachImage(flashcardId: string, dataUrl: string) {
+    const base64 = dataUrl.split(",")[1] ?? "";
     startTransition(async () => {
       const result = await uploadFlashcardImage(flashcardId, base64, "image/png");
       if (result.error) toast(result.error, { variant: "error" });
@@ -133,8 +137,32 @@ export function ExtractionReviewView({
         toast(result.success ?? "Image ajoutée.", { variant: "success" });
         router.refresh();
       }
-      setPendingCapture(null);
     });
+  }
+
+  function handlePdfCapture(dataUrl: string) {
+    if (directCaptureFlashcardId) {
+      attachImage(directCaptureFlashcardId, dataUrl);
+      setDirectCaptureFlashcardId(null);
+    } else {
+      setPendingCapture(dataUrl);
+    }
+  }
+
+  function handleAttachCapture(flashcardId: string) {
+    if (!pendingCapture) return;
+    attachImage(flashcardId, pendingCapture);
+    setPendingCapture(null);
+  }
+
+  /** "Capturer" button on a flashcard's suggested-image hint — jumps the PDF straight to the hinted page and arms capture mode, skipping the target-flashcard chooser since we already know which card this is for. */
+  function handleCaptureHint(flashcardId: string, page: number) {
+    setDirectCaptureFlashcardId(flashcardId);
+    captureRequestTokenRef.current += 1;
+    setCaptureRequest({ page, token: captureRequestTokenRef.current });
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+      setPdfModalOpen(true);
+    }
   }
 
   function handleMoveSubEntity(subEntityId: string, direction: "up" | "down") {
@@ -323,6 +351,7 @@ export function ExtractionReviewView({
                           onChanged={refresh}
                           onCitationClick={handleCitationClick}
                           flags={flagsByTarget[card.id]}
+                          onRequestImageCapture={(page) => handleCaptureHint(card.id, page)}
                         />
                       ))}
                       {visibleFlashcards.length === 0 && (
@@ -341,7 +370,14 @@ export function ExtractionReviewView({
             {sourceKind !== "pdf" ? (
               <SourceTextPanel text={sourceText} />
             ) : pdfUrl ? (
-              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} onCapture={setPendingCapture} />
+              <PdfViewer
+                url={pdfUrl}
+                highlight={highlight}
+                coverage={coverage}
+                onSelection={setPendingSelection}
+                onCapture={handlePdfCapture}
+                captureRequest={captureRequest}
+              />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
             )}
@@ -355,7 +391,14 @@ export function ExtractionReviewView({
             {sourceKind !== "pdf" ? (
               <SourceTextPanel text={sourceText} />
             ) : pdfUrl ? (
-              <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} onCapture={setPendingCapture} />
+              <PdfViewer
+                url={pdfUrl}
+                highlight={highlight}
+                coverage={coverage}
+                onSelection={setPendingSelection}
+                onCapture={handlePdfCapture}
+                captureRequest={captureRequest}
+              />
             ) : (
               <p className="p-4 text-sm text-foreground-subtle">Chargement du PDF…</p>
             )}

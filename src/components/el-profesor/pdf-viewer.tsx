@@ -77,6 +77,7 @@ export function PdfViewer({
   coverage,
   onSelection,
   onCapture,
+  captureRequest,
 }: {
   url: string;
   highlight?: PdfHighlight;
@@ -84,6 +85,8 @@ export function PdfViewer({
   onSelection?: (selection: PdfSelection) => void;
   /** Item 23 of the backlog: lets an admin drag-select a rectangle on the currently rendered page and get it back as a PNG data URL, cropped straight from the canvas pdfjs already rendered — no server-side PDF rendering needed. */
   onCapture?: (dataUrl: string) => void;
+  /** Remotely jumps to `page` and arms capture mode — bump `token` to re-trigger even for the same page. Follow-up to item 23: jumping straight to a Gemini-suggested image location. */
+  captureRequest?: { page: number; token: number } | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -132,6 +135,22 @@ export function PdfViewer({
     if (highlight?.page) {
       setPageNum(highlight.page);
       setPageInput(String(highlight.page));
+    }
+  }
+
+  // Remote "go capture this suggested image" request (item 23 follow-up) —
+  // jumps to the hinted page and arms capture mode without the admin
+  // touching the toolbar toggle. Same derived-during-render pattern as
+  // highlightKey above: `token` changing is the signal, not its value.
+  const [lastCaptureRequestToken, setLastCaptureRequestToken] = useState(captureRequest?.token ?? null);
+  if ((captureRequest?.token ?? null) !== lastCaptureRequestToken) {
+    setLastCaptureRequestToken(captureRequest?.token ?? null);
+    if (captureRequest) {
+      setPageNum(captureRequest.page);
+      setPageInput(String(captureRequest.page));
+      setCaptureMode(true);
+      setCaptureStart(null);
+      setCaptureRect(null);
     }
   }
 

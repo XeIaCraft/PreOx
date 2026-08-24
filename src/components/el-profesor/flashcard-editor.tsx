@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { Trash2, Image as ImageIcon, X, Plus, FlaskConical } from "lucide-react";
+import { Trash2, Image as ImageIcon, X, Plus, FlaskConical, Lightbulb, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -12,6 +12,7 @@ import {
   removeFlashcardImage,
   updateFlashcardVariants,
   getFlashcardVariantStatsAction,
+  updateFlashcardOcclusions,
 } from "@/app/apps/el-profesor/actions/extraction";
 import { FlagsList } from "@/components/el-profesor/flags-list";
 import { EditableCitations } from "@/components/el-profesor/editable-citations";
@@ -19,9 +20,134 @@ import { EditHistory } from "@/components/el-profesor/block-editor";
 import { useToast } from "@/components/ui/toast";
 import { fileToBase64 } from "@/lib/client-file";
 import type { FlashcardVariantStat } from "@/lib/el-profesor/dal";
-import type { Citation, Flag, Flashcard, FlashcardVariant } from "@/lib/el-profesor/types";
+import type { Citation, Flag, Flashcard, FlashcardVariant, ImageOcclusion } from "@/lib/el-profesor/types";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Legend-hiding image occlusion ("retrouve la légende" — follow-up to item
+ * 23): drag rectangles directly on the flashcard's image and name each one.
+ * Every zone is masked on the front, all revealed on the back — one card
+ * tests the whole diagram, not one card per zone.
+ */
+function OcclusionEditor({ flashcard, onChanged }: { flashcard: Flashcard; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [occlusions, setOcclusions] = useState<ImageOcclusion[]>(flashcard.imageOcclusions);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragRect, setDragRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  function pointFromEvent(e: React.PointerEvent): { x: number; y: number } | null {
+    const el = wrapperRef.current;
+    if (!el) return null;
+    const box = el.getBoundingClientRect();
+    return { x: (e.clientX - box.left) / box.width, y: (e.clientY - box.top) / box.height };
+  }
+
+  function handlePointerDown(e: React.PointerEvent) {
+    const p = pointFromEvent(e);
+    if (!p) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragStart(p);
+    setDragRect({ x: p.x, y: p.y, width: 0, height: 0 });
+  }
+
+  function handlePointerMove(e: React.PointerEvent) {
+    if (!dragStart) return;
+    const p = pointFromEvent(e);
+    if (!p) return;
+    setDragRect({
+      x: Math.min(dragStart.x, p.x),
+      y: Math.min(dragStart.y, p.y),
+      width: Math.abs(p.x - dragStart.x),
+      height: Math.abs(p.y - dragStart.y),
+    });
+  }
+
+  function handlePointerUp() {
+    setDragStart(null);
+    setDragRect((rect) => {
+      if (rect && rect.width > 0.02 && rect.height > 0.02) {
+        setOcclusions((prev) => [...prev, { id: crypto.randomUUID(), ...rect, label: "" }]);
+      }
+      return null;
+    });
+  }
+
+  function updateLabel(id: string, label: string) {
+    setOcclusions((prev) => prev.map((o) => (o.id === id ? { ...o, label } : o)));
+  }
+
+  function removeOcclusion(id: string) {
+    setOcclusions((prev) => prev.filter((o) => o.id !== id));
+  }
+
+  function handleSave() {
+    const cleaned = occlusions.filter((o) => o.label.trim());
+    startTransition(async () => {
+      const result = await updateFlashcardOcclusions(flashcard.id, cleaned);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        setOcclusions(cleaned);
+        onChanged();
+      }
+    });
+  }
+
+  if (!flashcard.imageUrl) return null;
+
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+        <EyeOff className="h-3.5 w-3.5" /> Légende masquée
+      </p>
+      <p className="mt-1 text-[11px] text-foreground-subtle">Dessinez un rectangle sur l&apos;image pour chaque élément à faire deviner, puis nommez-le.</p>
+      <div
+        ref={wrapperRef}
+        className="relative mt-2 w-full max-w-sm cursor-crosshair touch-none select-none"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a local asset */}
+        <img src={flashcard.imageUrl} alt="" className="w-full rounded-[var(--radius-sm)] border border-border" draggable={false} />
+        {occlusions.map((o) => (
+          <div
+            key={o.id}
+            className="pointer-events-none absolute rounded-sm border-2 border-accent bg-accent/30"
+            style={{ left: `${o.x * 100}%`, top: `${o.y * 100}%`, width: `${o.width * 100}%`, height: `${o.height * 100}%` }}
+          />
+        ))}
+        {dragRect && (
+          <div
+            className="pointer-events-none absolute rounded-sm border-2 border-primary bg-primary/20"
+            style={{ left: `${dragRect.x * 100}%`, top: `${dragRect.y * 100}%`, width: `${dragRect.width * 100}%`, height: `${dragRect.height * 100}%` }}
+          />
+        )}
+      </div>
+      <div className="mt-2 space-y-1.5">
+        {occlusions.map((o, i) => (
+          <div key={o.id} className="flex items-center gap-1.5">
+            <span className="shrink-0 text-xs text-foreground-subtle">Zone {i + 1}</span>
+            <input
+              value={o.label}
+              onChange={(e) => updateLabel(o.id, e.target.value)}
+              placeholder="Nom de l'élément masqué"
+              className="w-full rounded-[var(--radius-sm)] border border-border bg-surface p-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+            />
+            <button type="button" onClick={() => removeOcclusion(o.id)} className="text-foreground-subtle hover:text-danger" aria-label="Retirer cette zone">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <Button variant="secondary" size="sm" className="mt-2" onClick={handleSave} disabled={isPending}>
+        Enregistrer les zones masquées
+      </Button>
+    </div>
+  );
+}
 
 /** Test de formulations (item 47) — alternate front wordings + their aggregate success rate from the review log. */
 function VariantTester({ flashcard, onChanged }: { flashcard: Flashcard; onChanged: () => void }) {
@@ -120,11 +246,14 @@ export function FlashcardEditor({
   onChanged,
   onCitationClick,
   flags,
+  onRequestImageCapture,
 }: {
   flashcard: Flashcard;
   onChanged: () => void;
   onCitationClick?: (c: Citation) => void;
   flags?: Flag[];
+  /** Jumps the PDF viewer to a suggested page and arms capture mode for this exact flashcard — see extraction-review-view's handleCaptureHint. Omitted wherever there's no PDF viewer alongside (e.g. nowhere outside admin review today). */
+  onRequestImageCapture?: (page: number) => void;
 }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -205,6 +334,21 @@ export function FlashcardEditor({
           className="w-full rounded-[var(--radius-sm)] border border-border bg-surface p-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
         />
 
+        {flashcard.suggestedImagePage != null && !flashcard.imageUrl && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-accent-tint px-2.5 py-1.5 text-xs text-accent">
+            <span className="flex items-center gap-1.5">
+              <Lightbulb className="h-3.5 w-3.5 shrink-0" />
+              Image suggérée p.{flashcard.suggestedImagePage}
+              {flashcard.suggestedImageHint ? ` — ${flashcard.suggestedImageHint}` : ""}
+            </span>
+            {onRequestImageCapture && (
+              <Button variant="secondary" size="sm" onClick={() => onRequestImageCapture(flashcard.suggestedImagePage!)}>
+                Capturer
+              </Button>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           <input
             ref={imageInputRef}
@@ -232,6 +376,8 @@ export function FlashcardEditor({
           )}
         </div>
       </div>
+
+      <OcclusionEditor flashcard={flashcard} onChanged={onChanged} />
 
       <VariantTester flashcard={flashcard} onChanged={onChanged} />
 

@@ -240,7 +240,13 @@ function parseImportedExtraction(raw: string): ExtractionResult {
       if (!isCitationArray(card.citations)) {
         throw new GeminiError(`Sous-entité « ${label} », flashcard #${ci + 1} : « citations » manquant ou invalide.`);
       }
-      return { front: card.front, back: card.back, citations: card.citations };
+      return {
+        front: card.front,
+        back: card.back,
+        citations: card.citations,
+        suggested_image_page: typeof card.suggested_image_page === "number" ? card.suggested_image_page : null,
+        suggested_image_hint: typeof card.suggested_image_hint === "string" ? card.suggested_image_hint : null,
+      };
     });
 
     return { name: sub.name, summary: sub.summary, fiche: { title: fiche.title, blocks, flashcards } };
@@ -356,6 +362,8 @@ async function insertNewSubEntity(
         citations: card.citations as unknown as Citation[] as never,
         status: "draft",
         needs_review: cardNeedsReview(cardIndex),
+        suggested_image_page: card.suggested_image_page ?? null,
+        suggested_image_hint: card.suggested_image_hint ?? null,
       }))
     );
     if (error) throw new GeminiError("Échec de l'enregistrement des flashcards.");
@@ -446,6 +454,8 @@ async function persistComplementaryAdditions(
           citations: card.citations as unknown as Citation[] as never,
           status: "draft",
           needs_review: true,
+          suggested_image_page: card.suggested_image_page ?? null,
+          suggested_image_hint: card.suggested_image_hint ?? null,
         }))
       );
       if (error) throw new GeminiError(`Échec de l'enregistrement des flashcards complémentaires pour « ${addition.sub_entity_name} ».`);
@@ -694,7 +704,11 @@ export async function uploadFlashcardImage(flashcardId: string, imageBase64: str
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.from("el_profesor_flashcards").update({ image_url: publicUrl, image_alt: alt?.trim() || null }).eq("id", flashcardId);
+  // Clears the extraction-time suggestion (item 23 follow-up) — it's served its purpose now that an image is actually attached.
+  const { error } = await supabase
+    .from("el_profesor_flashcards")
+    .update({ image_url: publicUrl, image_alt: alt?.trim() || null, suggested_image_page: null, suggested_image_hint: null })
+    .eq("id", flashcardId);
   if (error) return { error: "Image envoyée, mais impossible de l'enregistrer." };
 
   revalidatePath("/apps/el-profesor");
@@ -709,6 +723,25 @@ export async function updateFlashcardVariants(flashcardId: string, variants: { i
   if (error) return { error: "Impossible d'enregistrer les formulations." };
   revalidatePath("/apps/el-profesor");
   return { success: "Formulations mises à jour." };
+}
+
+/**
+ * Labeled masked regions on a flashcard's image ("retrouve la légende" —
+ * follow-up to item 23): normalized 0-1 coordinates so they survive any
+ * display size. Every region is hidden on the front, all revealed on the
+ * back — one card tests the whole diagram at once rather than one card per
+ * region, keeping the review flow unchanged.
+ */
+export async function updateFlashcardOcclusions(
+  flashcardId: string,
+  occlusions: { id: string; x: number; y: number; width: number; height: number; label: string }[]
+): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_flashcards").update({ image_occlusions: occlusions as never }).eq("id", flashcardId);
+  if (error) return { error: "Impossible d'enregistrer les zones masquées." };
+  revalidatePath("/apps/el-profesor");
+  return { success: "Zones masquées mises à jour." };
 }
 
 export async function getFlashcardVariantStatsAction(

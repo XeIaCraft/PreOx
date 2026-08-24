@@ -99,6 +99,9 @@ export type FicheBlock = {
 /** Alternate phrasing of a flashcard's front (item 47) — the back never varies, only how the question is asked. */
 export type FlashcardVariant = { id: string; text: string };
 
+/** One masked, labeled region on a flashcard's image (item 23 follow-up) — normalized 0-1 coordinates so it survives any display size. Front hides every region as a solid box ("retrouve la légende"); back reveals every label. */
+export type ImageOcclusion = { id: string; x: number; y: number; width: number; height: number; label: string };
+
 export type Flashcard = {
   id: string;
   ficheId: string;
@@ -111,6 +114,10 @@ export type Flashcard = {
   imageUrl: string | null;
   imageAlt: string | null;
   variants: FlashcardVariant[];
+  imageOcclusions: ImageOcclusion[];
+  /** Extraction-time hint ("there's a diagram worth capturing around here") — cleared once an image is actually attached. Never set for a Word/PowerPoint-sourced chapter (no page to point to). */
+  suggestedImagePage: number | null;
+  suggestedImageHint: string | null;
 };
 
 export type FlagTargetType = "block" | "flashcard";
@@ -218,6 +225,9 @@ export type ExtractedFlashcard = {
   front: string;
   back: string;
   citations: Citation[];
+  /** Set by Gemini when a nearby diagram/schema would meaningfully help this flashcard — PDF sources only, see suggestedImagePage on Flashcard. */
+  suggested_image_page?: number | null;
+  suggested_image_hint?: string | null;
 };
 
 export type ExtractedFiche = {
