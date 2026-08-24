@@ -1538,6 +1538,8 @@ export async function getElProfesorClaudeConfig(): Promise<{ apiKey: string; mod
   };
 }
 
+export { getAiSpendCapUsd, getCurrentMonthAiSpendUsd } from "./ai-spend-cap";
+
 export interface GeminiUsageWindowStats {
   calls: number;
   failures: number;

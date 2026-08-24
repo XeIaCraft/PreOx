@@ -2,6 +2,7 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { GeminiError, parseGeminiJson } from "@/lib/gemini-shared";
+import { assertAiSpendCapNotExceeded } from "./ai-spend-cap";
 import {
   buildExtractionPrompt,
   buildTextExtractionPrompt,
@@ -457,6 +458,11 @@ async function callGeminiJson(
   responseSchema: Record<string, unknown>,
   attempt = 0
 ): Promise<unknown> {
+  // Checked once per top-level call, not on retries of the same request —
+  // a 429/503 retry is still the generation the caller already committed
+  // to, not a new one to gate.
+  if (attempt === 0) await assertAiSpendCapNotExceeded();
+
   const response = await fetch(`${MODELS_BASE_URL}/${model}:generateContent?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

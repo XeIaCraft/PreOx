@@ -11,6 +11,7 @@ import {
   buildNotionUpdateCheckPrompt,
 } from "@/lib/el-profesor/prompts";
 import { BLOCK_TYPES } from "./gemini";
+import { assertAiSpendCapNotExceeded } from "./ai-spend-cap";
 
 // Claude as an alternate extraction provider to Gemini — another lever
 // against quota exhaustion, chosen from the "Réglages IA" panel. Kept as a
@@ -304,6 +305,7 @@ export function buildNotionUpdateCheckBatchContent(
 /** Submits one batch covering every request at once — returns Anthropic's own batch id to poll later. */
 export async function submitClaudeBatch(config: ClaudeConfig, kind: ClaudeBatchKind, requests: ClaudeBatchRequestSpec[]): Promise<string> {
   if (requests.length === 0) throw new GeminiError("Aucune requête à soumettre.");
+  await assertAiSpendCapNotExceeded();
   const client = claudeClient(config.apiKey);
   try {
     const batch = await client.messages.batches.create({

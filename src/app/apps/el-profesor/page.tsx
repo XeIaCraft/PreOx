@@ -23,6 +23,8 @@ import {
   getElProfesorGeminiExtraKeyCount,
   getElProfesorGeminiFallbackModel,
   getGeminiUsageStats,
+  getAiSpendCapUsd,
+  getCurrentMonthAiSpendUsd,
   getElProfesorAiProvider,
   hasElProfesorClaudeKey,
   getElProfesorClaudeModel,
@@ -68,6 +70,8 @@ export default async function ElProfesorPage() {
     geminiExtraKeyCount,
     geminiFallbackModel,
     geminiUsageStats,
+    aiSpendCapUsd,
+    currentMonthAiSpendUsd,
     aiProvider,
     hasClaudeKey,
     claudeModel,
@@ -99,6 +103,8 @@ export default async function ElProfesorPage() {
     isAdmin ? getElProfesorGeminiExtraKeyCount() : Promise.resolve(0),
     isAdmin ? getElProfesorGeminiFallbackModel() : Promise.resolve(null),
     isAdmin ? getGeminiUsageStats() : Promise.resolve(null),
+    isAdmin ? getAiSpendCapUsd() : Promise.resolve(null),
+    isAdmin ? getCurrentMonthAiSpendUsd() : Promise.resolve(0),
     isAdmin ? getElProfesorAiProvider() : Promise.resolve("gemini" as const),
     isAdmin ? hasElProfesorClaudeKey() : Promise.resolve(false),
     isAdmin ? getElProfesorClaudeModel() : Promise.resolve(""),
@@ -136,6 +142,8 @@ export default async function ElProfesorPage() {
         geminiExtraKeyCount={geminiExtraKeyCount}
         geminiFallbackModel={geminiFallbackModel}
         geminiUsageStats={geminiUsageStats}
+        aiSpendCapUsd={aiSpendCapUsd}
+        currentMonthAiSpendUsd={currentMonthAiSpendUsd}
         aiProvider={aiProvider}
         hasClaudeKey={hasClaudeKey}
         claudeModel={claudeModel}

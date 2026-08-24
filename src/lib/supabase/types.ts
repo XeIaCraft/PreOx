@@ -457,6 +457,7 @@ export type ElProfesorSettingsRow = {
   gemini_fallback_model: string | null;
   ai_provider: "gemini" | "claude";
   claude_model: string;
+  ai_spend_cap_usd: number | null;
   updated_at: string;
 };
 

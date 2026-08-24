@@ -158,6 +158,28 @@ export async function clearClaudeApiKey(): Promise<ActionState> {
   return { success: "Clé API supprimée." };
 }
 
+/**
+ * Monthly $ ceiling on estimated Gemini/Claude spend (see ai-pricing.ts) —
+ * piste 2026-08-24 ("plafond de dépense IA"). null clears the cap (no
+ * limit, the previous default behavior). Enforced by
+ * assertAiSpendCapNotExceeded, called from the low-level entry point of
+ * each provider before a new generation starts.
+ */
+export async function updateAiSpendCap(capUsd: number | null): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  if (capUsd != null && (!Number.isFinite(capUsd) || capUsd < 0)) return { error: "Le plafond doit être un nombre positif." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_settings")
+    .update({ ai_spend_cap_usd: capUsd, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) return { error: "Impossible de mettre à jour le plafond de dépense." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: capUsd != null ? "Plafond de dépense enregistré." : "Plafond de dépense retiré." };
+}
+
 /** Secondary model tried (for every configured key) if the primary model keeps failing with quota/capacity errors. */
 export async function updateGeminiFallbackModel(model: string): Promise<ActionState> {
   await requireElProfesorAdmin();

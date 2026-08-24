@@ -219,6 +219,8 @@ export function ElProfesorBoard({
   geminiExtraKeyCount,
   geminiFallbackModel,
   geminiUsageStats,
+  aiSpendCapUsd,
+  currentMonthAiSpendUsd,
   aiProvider,
   hasClaudeKey,
   claudeModel,
@@ -252,6 +254,8 @@ export function ElProfesorBoard({
   geminiExtraKeyCount: number;
   geminiFallbackModel: string | null;
   geminiUsageStats: GeminiUsageStats | null;
+  aiSpendCapUsd: number | null;
+  currentMonthAiSpendUsd: number;
   aiProvider: ElProfesorAiProvider;
   hasClaudeKey: boolean;
   claudeModel: string;
@@ -1309,6 +1313,8 @@ export function ElProfesorBoard({
           extraKeyCount={geminiExtraKeyCount}
           fallbackModel={geminiFallbackModel}
           usageStats={geminiUsageStats}
+          aiSpendCapUsd={aiSpendCapUsd}
+          currentMonthAiSpendUsd={currentMonthAiSpendUsd}
           aiProvider={aiProvider}
           hasClaudeKey={hasClaudeKey}
           claudeModel={claudeModel || "claude-sonnet-5"}

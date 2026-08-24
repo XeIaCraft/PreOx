@@ -15,6 +15,7 @@ import {
   updateClaudeModel,
   updateClaudeApiKey,
   clearClaudeApiKey,
+  updateAiSpendCap,
 } from "@/app/apps/el-profesor/actions/settings";
 import { useToast } from "@/components/ui/toast";
 import type { GeminiUsageStats, ElProfesorAiProvider } from "@/lib/el-profesor/dal";
@@ -41,6 +42,8 @@ export function GeminiSettingsDialog({
   extraKeyCount,
   fallbackModel,
   usageStats,
+  aiSpendCapUsd,
+  currentMonthAiSpendUsd,
   aiProvider,
   hasClaudeKey,
   claudeModel,
@@ -52,6 +55,8 @@ export function GeminiSettingsDialog({
   extraKeyCount: number;
   fallbackModel: string | null;
   usageStats: GeminiUsageStats | null;
+  aiSpendCapUsd: number | null;
+  currentMonthAiSpendUsd: number;
   aiProvider: ElProfesorAiProvider;
   hasClaudeKey: boolean;
   claudeModel: string;
@@ -77,6 +82,10 @@ export function GeminiSettingsDialog({
   const [claudeApiKey, setClaudeApiKey] = useState("");
   const [claudeKeyConfigured, setClaudeKeyConfigured] = useState(hasClaudeKey);
   const [isClaudeKeyPending, startClaudeKeyTransition] = useTransition();
+
+  const [spendCapInput, setSpendCapInput] = useState(aiSpendCapUsd != null ? String(aiSpendCapUsd) : "");
+  const [savedSpendCap, setSavedSpendCap] = useState(aiSpendCapUsd);
+  const [isSpendCapPending, startSpendCapTransition] = useTransition();
 
   function handleSwitchProvider(next: ElProfesorAiProvider) {
     if (next === provider) return;
@@ -177,6 +186,35 @@ export function GeminiSettingsDialog({
       else {
         toast(result.success ?? "Clés supplémentaires retirées.", { variant: "success" });
         setSavedExtraKeyCount(0);
+      }
+    });
+  }
+
+  function handleSaveSpendCap() {
+    const trimmed = spendCapInput.trim();
+    const parsed = trimmed ? Number(trimmed.replace(",", ".")) : null;
+    if (trimmed && (!Number.isFinite(parsed) || (parsed as number) < 0)) {
+      toast("Le plafond doit être un nombre positif.", { variant: "error" });
+      return;
+    }
+    startSpendCapTransition(async () => {
+      const result = await updateAiSpendCap(parsed);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Plafond mis à jour.", { variant: "success" });
+        setSavedSpendCap(parsed);
+      }
+    });
+  }
+
+  function handleClearSpendCap() {
+    setSpendCapInput("");
+    startSpendCapTransition(async () => {
+      const result = await updateAiSpendCap(null);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Plafond retiré.", { variant: "success" });
+        setSavedSpendCap(null);
       }
     });
   }
@@ -405,6 +443,44 @@ export function GeminiSettingsDialog({
           </ul>
         </div>
       )}
+
+      <div className="mt-5 space-y-1.5 border-t border-border pt-4">
+        <Label htmlFor="ai-spend-cap">Plafond de dépense IA mensuel (optionnel)</Label>
+        <div className="flex gap-2">
+          <Input
+            id="ai-spend-cap"
+            type="number"
+            min={0}
+            step="0.01"
+            value={spendCapInput}
+            onChange={(e) => setSpendCapInput(e.target.value)}
+            placeholder="ex. 20 (en $)"
+          />
+          <Button
+            variant="secondary"
+            onClick={handleSaveSpendCap}
+            disabled={isSpendCapPending || spendCapInput.trim() === (savedSpendCap != null ? String(savedSpendCap) : "")}
+          >
+            {isSpendCapPending ? "…" : "Enregistrer"}
+          </Button>
+        </div>
+        <p className={`text-xs ${savedSpendCap != null && currentMonthAiSpendUsd >= savedSpendCap ? "font-medium text-danger" : "text-foreground-subtle"}`}>
+          {savedSpendCap != null
+            ? `Dépense estimée ce mois-ci : ${formatUsd(currentMonthAiSpendUsd)} / ${formatUsd(savedSpendCap)}${
+                currentMonthAiSpendUsd >= savedSpendCap ? " — plafond atteint, toute nouvelle génération est bloquée." : "."
+              }`
+            : `Aucun plafond — dépense estimée ce mois-ci : ${formatUsd(currentMonthAiSpendUsd)}.`}
+        </p>
+        {savedSpendCap != null && (
+          <button type="button" onClick={handleClearSpendCap} disabled={isSpendCapPending} className="text-xs text-danger underline">
+            Retirer le plafond
+          </button>
+        )}
+        <p className="text-[11px] text-foreground-subtle">
+          Une fois atteint, toute nouvelle extraction, complément ou proposition échoue avec un message explicite jusqu&apos;au mois
+          suivant (ou jusqu&apos;à relèvement manuel du plafond) — une génération déjà en cours n&apos;est jamais interrompue.
+        </p>
+      </div>
 
       {usageStats && (
         <div className="mt-5 space-y-2 border-t border-border pt-4">
