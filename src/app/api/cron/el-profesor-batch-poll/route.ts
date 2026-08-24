@@ -8,7 +8,7 @@ import { persistExtraction, persistComplementaryAdditions, allNeedReviewFlags } 
 import { continueComplementaryBatch, type BatchItemTarget } from "@/lib/el-profesor/batch-submit";
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import { extractPdfPageTexts, correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
-import type { ExtractionResult, ComplementaryResult, NotionCategorizationResult, ContradictionCheckResult } from "@/lib/el-profesor/types";
+import type { ExtractionResult, ComplementaryResult, NotionCategorizationResult, ContradictionCheckResult, NotionUpdateCheckResult } from "@/lib/el-profesor/types";
 
 export const maxDuration = 60;
 
@@ -124,15 +124,30 @@ async function applyBatchResult(
     return { continued: false };
   }
 
-  // target.type === "contradiction"
-  const check = result.output as ContradictionCheckResult;
-  if (check.contradictory && check.explanation.trim()) {
-    // A unique-constraint conflict just means this pair was already flagged elsewhere — safe to ignore.
-    await admin.from("el_profesor_contradictions").insert({
+  if (target.type === "contradiction") {
+    const check = result.output as ContradictionCheckResult;
+    if (check.contradictory && check.explanation.trim()) {
+      // A unique-constraint conflict just means this pair was already flagged elsewhere — safe to ignore.
+      await admin.from("el_profesor_contradictions").insert({
+        notion_id: target.notionId,
+        fiche_id_a: target.ficheIdA,
+        fiche_id_b: target.ficheIdB,
+        explanation: check.explanation,
+      });
+    }
+    return { continued: false };
+  }
+
+  // target.type === "notion_update"
+  const check = result.output as NotionUpdateCheckResult;
+  if (check.needs_update && (check.blocks.length > 0 || check.flashcards.length > 0)) {
+    await admin.from("el_profesor_notion_update_proposals").insert({
       notion_id: target.notionId,
-      fiche_id_a: target.ficheIdA,
-      fiche_id_b: target.ficheIdB,
+      fiche_id: target.ficheId,
+      source_kind: target.sourceKind,
+      source_excerpt: target.sourceExcerpt,
       explanation: check.explanation,
+      additions: { blocks: check.blocks, flashcards: check.flashcards } as never,
     });
   }
   return { continued: false };
@@ -215,7 +230,7 @@ export async function GET(request: Request) {
         const message = err instanceof Error ? err.message.slice(0, 300) : "Échec de l'application du résultat.";
         await admin.from("el_profesor_batch_items").update({ status: "errored", processed_at: new Date().toISOString(), error: message }).eq("id", item.id);
       }
-      if (job.kind === "notion_categorization" || job.kind === "contradiction_check") touchedNotions = true;
+      if (job.kind === "notion_categorization" || job.kind === "contradiction_check" || job.kind === "notion_update_check") touchedNotions = true;
     }
 
     await admin

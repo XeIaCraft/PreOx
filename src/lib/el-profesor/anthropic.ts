@@ -3,7 +3,13 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { GeminiError, unescapeHtmlEntities } from "@/lib/gemini-shared";
-import { buildExtractionPrompt, buildComplementaryPrompt, buildNotionCategorizationPrompt, buildContradictionCheckPrompt } from "@/lib/el-profesor/prompts";
+import {
+  buildExtractionPrompt,
+  buildComplementaryPrompt,
+  buildNotionCategorizationPrompt,
+  buildContradictionCheckPrompt,
+  buildNotionUpdateCheckPrompt,
+} from "@/lib/el-profesor/prompts";
 import { BLOCK_TYPES } from "./gemini";
 
 // Claude as an alternate extraction provider to Gemini — another lever
@@ -175,6 +181,21 @@ const CONTRADICTION_CHECK_TOOL = {
   },
 };
 
+const NOTION_UPDATE_CHECK_TOOL = {
+  name: "submit_notion_update_check",
+  description: "Soumet le résultat de la comparaison entre la fiche et la source externe.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      needs_update: { type: "boolean" },
+      explanation: { type: "string" },
+      blocks: { type: "array", items: FICHE_BLOCK_ITEM_SCHEMA },
+      flashcards: { type: "array", items: FLASHCARD_ITEM_SCHEMA },
+    },
+    required: ["needs_update", "explanation", "blocks", "flashcards"],
+  },
+};
+
 /** Best-effort usage journal — same table as Gemini's, a "claude:" model prefix distinguishes the provider in the dashboard. */
 async function logClaudeUsage(entry: {
   model: string;
@@ -228,7 +249,7 @@ function pdfDocumentBlock(bytes: Uint8Array): ClaudeContentBlock {
 // flat 50% discount even for a single chapter, so routing everything
 // through one path avoids maintaining two versions of each call.
 
-export type ClaudeBatchKind = "extraction" | "complementary" | "notion_categorization" | "contradiction_check";
+export type ClaudeBatchKind = "extraction" | "complementary" | "notion_categorization" | "contradiction_check" | "notion_update_check";
 
 export interface ClaudeBatchRequestSpec {
   customId: string;
@@ -241,6 +262,7 @@ const BATCH_TOOL_BY_KIND: Record<ClaudeBatchKind, ClaudeTool> = {
   complementary: COMPLEMENTARY_TOOL,
   notion_categorization: NOTION_CATEGORIZATION_TOOL,
   contradiction_check: CONTRADICTION_CHECK_TOOL,
+  notion_update_check: NOTION_UPDATE_CHECK_TOOL,
 };
 
 export function claudeBatchTool(kind: ClaudeBatchKind): ClaudeTool {
@@ -267,6 +289,16 @@ export function buildContradictionCheckBatchContent(
   ficheBText: string
 ): ClaudeContentBlock[] {
   return [{ type: "text", text: buildContradictionCheckPrompt(notionName, ficheATitle, ficheAText, ficheBTitle, ficheBText) } as ClaudeContentBlock];
+}
+
+export function buildNotionUpdateCheckBatchContent(
+  notionName: string,
+  ficheTitle: string,
+  ficheText: string,
+  sourceLabel: string,
+  sourceText: string
+): ClaudeContentBlock[] {
+  return [{ type: "text", text: buildNotionUpdateCheckPrompt(notionName, ficheTitle, ficheText, sourceLabel, sourceText) } as ClaudeContentBlock];
 }
 
 /** Submits one batch covering every request at once — returns Anthropic's own batch id to poll later. */

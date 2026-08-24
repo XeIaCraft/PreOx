@@ -348,6 +348,44 @@ Réponds uniquement avec le JSON demandé : "contradictory" (booléen — true s
 `.trim();
 }
 
+/**
+ * Compares a fiche's current content against an external source (a pasted
+ * answer from a literature-search tool like Consensus/OpenEvidence, or the
+ * text of an uploaded article) to decide whether the fiche needs updating —
+ * the "réunification" counterpart of buildComplementaryPrompt, but sourced
+ * from outside the library instead of the chapter's own PDF. Deliberately
+ * proposes only the delta (like a complementary addition), never a full
+ * rewrite — the admin reviews and applies, same as every other AI output.
+ */
+export function buildNotionUpdateCheckPrompt(
+  notionName: string,
+  ficheTitle: string,
+  ficheText: string,
+  sourceLabel: string,
+  sourceText: string
+): string {
+  return `
+${EXPERT_READER_CONTEXT}
+
+Tu compares le contenu déjà rédigé d'une fiche de révision médicale, liée à la notion transversale « ${notionName} », à une source externe plus récente — ${sourceLabel}. Ta tâche : déterminer si cette source apporte une information qui manque à la fiche, ou qui la contredit / rend obsolète sur un point de fait (nouvelle recommandation, seuil modifié, conduite à tenir révisée, contre-indication ajoutée...) — pas une simple différence de formulation ou de niveau de détail qui ne change rien au fond.
+
+Fiche « ${ficheTitle} » (contenu actuel) :
+« ${ficheText} »
+
+Source externe (${sourceLabel}) :
+« ${sourceText} »
+
+Si la source ne change ni n'ajoute rien de substantiel par rapport à ce que la fiche dit déjà, réponds "needs_update": false, "explanation": "" et laisse "blocks"/"flashcards" vides — ne force rien.
+
+Si la source apporte réellement quelque chose de nouveau ou de contradictoire pour cette fiche précise :
+- "needs_update": true.
+- "explanation" : en une ou deux phrases, ce qui change et pourquoi — c'est ce que l'admin lira pour décider s'il valide la proposition.
+- "blocks"/"flashcards" : UNIQUEMENT ce qu'il faut ajouter ou corriger, jamais une réécriture complète de la fiche — même format que pour une extraction (block_type/content/citations pour les blocs, front/back/citations pour les flashcards). Pour "citations", mets toujours "page": 0 (cette source n'a pas de pagination de fichier PDF fiable) et fais reposer la citation sur "quote" : le passage exact de la source externe qui justifie l'ajout.
+
+Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildVerificationPrompt(extractionJson: string): string {
   return `
 Tu reçois le document source (chapitre PDF) et, ci-dessous, un JSON d'extraction déjà produit à partir de ce document (sous-entités, fiches, blocs avec citations, flashcards). Ta seule tâche : vérifier la fidélité de chaque bloc et chaque flashcard à sa citation et au document source.

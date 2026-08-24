@@ -290,3 +290,29 @@ export type ContradictionCheckResult = {
   contradictory: boolean;
   explanation: string;
 };
+
+// -- Notion update from an external source (pasted text or an uploaded article) --
+
+export type NotionUpdateSourceKind = "pasted_text" | "article";
+export type NotionUpdateProposalStatus = "pending" | "applied" | "dismissed";
+
+export type NotionUpdateCheckResult = {
+  needs_update: boolean;
+  explanation: string;
+  blocks: ExtractedFicheBlock[];
+  flashcards: ExtractedFlashcard[];
+};
+
+/** One fiche flagged as needing an update in light of an external source, awaiting admin review — see checkNotionForUpdatesFromText/Article in actions/notion-updates.ts. */
+export type NotionUpdateProposal = {
+  id: string;
+  notionId: string;
+  notionName: string;
+  fiche: NotionLinkedFiche;
+  sourceKind: NotionUpdateSourceKind;
+  sourceExcerpt: string;
+  explanation: string;
+  additions: { blocks: ExtractedFicheBlock[]; flashcards: ExtractedFlashcard[] };
+  status: NotionUpdateProposalStatus;
+  createdAt: string;
+};

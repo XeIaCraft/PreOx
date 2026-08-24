@@ -38,6 +38,10 @@ import type {
   FicheAnswer,
   FlashcardVariant,
   ImageOcclusion,
+  NotionUpdateProposal,
+  NotionUpdateProposalStatus,
+  ExtractedFicheBlock,
+  ExtractedFlashcard,
 } from "./types";
 import type {
   ElProfesorBookRow,
@@ -1983,6 +1987,42 @@ export async function getContradictions(status?: ContradictionStatus): Promise<C
       } satisfies Contradiction;
     })
     .filter((c): c is Contradiction => Boolean(c));
+}
+
+/** Notion-update proposals for the admin review list on /notions — pending by default, or a specific status when passed. */
+export async function getNotionUpdateProposals(status?: NotionUpdateProposalStatus): Promise<NotionUpdateProposal[]> {
+  const supabase = await createClient();
+  let query = supabase.from("el_profesor_notion_update_proposals").select("*").order("created_at", { ascending: false });
+  query = status ? query.eq("status", status) : query.eq("status", "pending");
+  const { data } = await query;
+  if (!data || data.length === 0) return [];
+
+  const ficheIds = [...new Set(data.map((p) => p.fiche_id))];
+  const ficheContexts = await resolveFicheContexts(ficheIds);
+
+  const notionIds = [...new Set(data.map((p) => p.notion_id))];
+  const { data: notions } = await supabase.from("el_profesor_notions").select("id, name").in("id", notionIds);
+  const notionNameById = new Map((notions ?? []).map((n) => [n.id, n.name]));
+
+  return data
+    .map((p) => {
+      const fiche = ficheContexts.get(p.fiche_id);
+      if (!fiche) return null;
+      const additions = p.additions as unknown as { blocks: ExtractedFicheBlock[]; flashcards: ExtractedFlashcard[] };
+      return {
+        id: p.id,
+        notionId: p.notion_id,
+        notionName: notionNameById.get(p.notion_id) ?? "",
+        fiche,
+        sourceKind: p.source_kind,
+        sourceExcerpt: p.source_excerpt,
+        explanation: p.explanation,
+        additions,
+        status: p.status,
+        createdAt: p.created_at,
+      } satisfies NotionUpdateProposal;
+    })
+    .filter((p): p is NotionUpdateProposal => Boolean(p));
 }
 
 // -- Test de formulations de flashcards --------------------------------------

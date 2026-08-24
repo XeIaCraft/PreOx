@@ -25,6 +25,7 @@ const BATCH_KIND_LABEL: Record<ElProfesorBatchJobKind, string> = {
   complementary: "Complément",
   notion_categorization: "Catégorisation par notion",
   contradiction_check: "Détection de contradictions",
+  notion_update_check: "Mise à jour depuis une source externe",
 };
 
 // Kept in sync with EL_PROFESOR_GEMINI_MODEL_DEFAULT in src/lib/el-profesor/gemini.ts

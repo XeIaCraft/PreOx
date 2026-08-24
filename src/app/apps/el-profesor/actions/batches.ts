@@ -18,11 +18,12 @@ import {
   buildExtractionBatchContent,
   buildNotionCategorizationBatchContent,
   buildContradictionCheckBatchContent,
+  buildNotionUpdateCheckBatchContent,
   type ClaudeBatchRequestSpec,
 } from "@/lib/el-profesor/anthropic";
 import { insertBatchJob, insertBatchItems, submitComplementaryBatchCore, type BatchItemTarget } from "@/lib/el-profesor/batch-submit";
 import { GeminiError } from "@/lib/gemini-shared";
-import type { ElProfesorBatchJobRow } from "@/lib/supabase/types";
+import type { ElProfesorBatchJobRow, ElProfesorNotionUpdateSourceKind } from "@/lib/supabase/types";
 
 export interface ActionState {
   error?: string;
@@ -264,4 +265,63 @@ export async function getBatchJobs(): Promise<ElProfesorBatchJobRow[]> {
   const supabase = await createClient();
   const { data } = await supabase.from("el_profesor_batch_jobs").select("*").order("created_at", { ascending: false }).limit(30);
   return data ?? [];
+}
+
+/**
+ * Compares an external source (pasted answer or extracted article text) to
+ * every fiche linked to a notion, in one Claude batch — called by
+ * actions/notion-updates.ts when Claude is the active provider. `sourceText`
+ * is the full text (already read from the paste or the uploaded file);
+ * only a short excerpt of it is stored per-item, for admin traceability —
+ * the full text isn't needed again once each fiche has been checked.
+ */
+export async function submitNotionUpdateCheckBatch(
+  notionId: string,
+  sourceKind: ElProfesorNotionUpdateSourceKind,
+  sourceText: string
+): Promise<ActionState> {
+  const profile = await requireElProfesorAdmin();
+  const supabase = await createClient();
+  if (!sourceText.trim()) return { error: "Source vide." };
+
+  const summaries = await getNotionSummaries();
+  const summary = summaries.find((s) => s.notion.id === notionId);
+  if (!summary) return { error: "Notion introuvable." };
+  if (summary.fiches.length === 0) return { error: "Aucune fiche liée à cette notion." };
+
+  let config;
+  try {
+    config = await getElProfesorClaudeConfig();
+  } catch {
+    return { error: "Configurez votre clé API Claude dans les réglages d'El Profesor." };
+  }
+
+  const sourceLabel = sourceKind === "article" ? "extrait d'un article importé" : "réponse d'un outil de littérature médicale";
+  const sourceExcerpt = sourceText.slice(0, 500);
+
+  const requests: (ClaudeBatchRequestSpec & { target: BatchItemTarget })[] = [];
+  for (const f of summary.fiches) {
+    const content = await getFicheTextForAI(f.ficheId);
+    if (!content || !content.text.trim()) continue;
+    requests.push({
+      customId: randomUUID(),
+      content: buildNotionUpdateCheckBatchContent(summary.notion.name, content.title, content.text, sourceLabel, sourceText),
+      tool: claudeBatchTool("notion_update_check"),
+      target: { type: "notion_update", notionId, ficheId: f.ficheId, sourceKind, sourceExcerpt },
+    });
+  }
+  if (requests.length === 0) return { error: "Aucune fiche avec du contenu à comparer." };
+
+  let anthropicBatchId: string;
+  try {
+    anthropicBatchId = await submitClaudeBatch(config, "notion_update_check", requests);
+  } catch (err) {
+    return { error: err instanceof GeminiError ? err.message : "Échec de la soumission du lot." };
+  }
+
+  const batchJobId = await insertBatchJob(supabase, "notion_update_check", anthropicBatchId, requests.length, profile.id);
+  await insertBatchItems(supabase, batchJobId, requests);
+
+  revalidatePath("/apps/el-profesor/notions");
+  return { success: `Lot Claude soumis pour ${requests.length} fiche(s) — les propositions apparaîtront ici dès qu'elles seront prêtes.` };
 }

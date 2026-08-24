@@ -11,6 +11,7 @@ import {
   buildMnemonicPrompt,
   buildNotionCategorizationPrompt,
   buildContradictionCheckPrompt,
+  buildNotionUpdateCheckPrompt,
   buildWeaknessSynthesisPrompt,
   buildFicheTranslationPrompt,
   buildClinicalCasePrompt,
@@ -25,6 +26,7 @@ import type {
   BlockType,
   NotionCategorizationResult,
   ContradictionCheckResult,
+  NotionUpdateCheckResult,
 } from "@/lib/el-profesor/types";
 
 const FILES_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files";
@@ -244,6 +246,17 @@ const CONTRADICTION_CHECK_SCHEMA = {
     explanation: { type: "STRING" },
   },
   required: ["contradictory", "explanation"],
+};
+
+const NOTION_UPDATE_CHECK_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    needs_update: { type: "BOOLEAN" },
+    explanation: { type: "STRING" },
+    blocks: { type: "ARRAY", items: FICHE_BLOCK_ITEM_SCHEMA },
+    flashcards: { type: "ARRAY", items: FLASHCARD_ITEM_SCHEMA },
+  },
+  required: ["needs_update", "explanation", "blocks", "flashcards"],
 };
 
 export type UploadedGeminiFile = {
@@ -685,6 +698,20 @@ export async function checkContradiction(
 ): Promise<ContradictionCheckResult> {
   const instructions = buildContradictionCheckPrompt(notionName, ficheATitle, ficheAText, ficheBTitle, ficheBText);
   const { result } = await textRotation<ContradictionCheckResult>(config, instructions, CONTRADICTION_CHECK_SCHEMA);
+  return result;
+}
+
+/** Compares a fiche to an external source (pasted answer or uploaded article) and proposes what to add/update, if anything. Rotates on quota/capacity errors. */
+export async function checkNotionUpdate(
+  config: GeminiRotationConfig,
+  notionName: string,
+  ficheTitle: string,
+  ficheText: string,
+  sourceLabel: string,
+  sourceText: string
+): Promise<NotionUpdateCheckResult> {
+  const instructions = buildNotionUpdateCheckPrompt(notionName, ficheTitle, ficheText, sourceLabel, sourceText);
+  const { result } = await textRotation<NotionUpdateCheckResult>(config, instructions, NOTION_UPDATE_CHECK_SCHEMA);
   return result;
 }
 

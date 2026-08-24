@@ -7,7 +7,7 @@ import { getChapterContent, getElProfesorClaudeConfig } from "@/lib/el-profesor/
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import { buildCoverageSummary, MAX_AUTO_COMPLEMENTARY_PASSES } from "@/lib/el-profesor/extraction-persist";
 import { submitClaudeBatch, claudeBatchTool, buildComplementaryBatchContent, type ClaudeBatchKind, type ClaudeBatchRequestSpec, type ClaudeConfig } from "@/lib/el-profesor/anthropic";
-import type { Database, ElProfesorChapterStatus } from "@/lib/supabase/types";
+import type { Database, ElProfesorChapterStatus, ElProfesorNotionUpdateSourceKind } from "@/lib/supabase/types";
 
 // Batch submission plumbing shared between the admin-facing actions
 // (actions/batches.ts, "use server" — every export there is a client-
@@ -41,7 +41,14 @@ type ChapterComplementaryTarget = {
 };
 type FicheNotionTarget = { type: "fiche"; ficheId: string };
 type ContradictionTarget = { type: "contradiction"; notionId: string; ficheIdA: string; ficheIdB: string };
-export type BatchItemTarget = ChapterExtractionTarget | ChapterComplementaryTarget | FicheNotionTarget | ContradictionTarget;
+type NotionUpdateTarget = {
+  type: "notion_update";
+  notionId: string;
+  ficheId: string;
+  sourceKind: ElProfesorNotionUpdateSourceKind;
+  sourceExcerpt: string;
+};
+export type BatchItemTarget = ChapterExtractionTarget | ChapterComplementaryTarget | FicheNotionTarget | ContradictionTarget | NotionUpdateTarget;
 
 export async function insertBatchJob(
   supabase: SupabaseClient<Database>,

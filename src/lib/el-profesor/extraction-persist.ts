@@ -8,6 +8,8 @@ import type {
   ExtractionResult,
   ComplementaryResult,
   ExtractedSubEntity,
+  ExtractedFicheBlock,
+  ExtractedFlashcard,
   VerificationFlag,
   Citation,
   BlockContent,
@@ -215,6 +217,64 @@ export async function persistComplementaryAdditions(
       () => true
     );
     added += counts.blockCount + counts.cardCount + 1;
+  }
+
+  return added;
+}
+
+/**
+ * Appends draft blocks/flashcards to one specific fiche — the single-fiche
+ * counterpart of persistComplementaryAdditions' "existing sub-entity"
+ * branch, used when the target fiche is already known directly (e.g.
+ * applying a notion-update proposal) rather than matched by name within a
+ * chapter's content. Same conservative pattern as everywhere else: always
+ * `draft`/`needs_review`, never an overwrite of existing content.
+ */
+export async function appendFicheAdditions(
+  supabase: SupabaseClient<Database>,
+  ficheId: string,
+  blocks: ExtractedFicheBlock[],
+  flashcards: ExtractedFlashcard[]
+): Promise<number> {
+  let added = 0;
+
+  if (blocks.length > 0) {
+    const { count: existingBlockCount } = await supabase
+      .from("el_profesor_fiche_blocks")
+      .select("id", { count: "exact", head: true })
+      .eq("fiche_id", ficheId);
+    const blockOffset = existingBlockCount ?? 0;
+
+    const { error } = await supabase.from("el_profesor_fiche_blocks").insert(
+      blocks.map((block, i) => ({
+        fiche_id: ficheId,
+        order_index: blockOffset + i,
+        block_type: block.block_type,
+        content: block.content as unknown as BlockContent as never,
+        citations: block.citations as unknown as Citation[] as never,
+        needs_review: true,
+        status: "draft",
+      }))
+    );
+    if (error) throw new GeminiError("Échec de l'enregistrement des blocs proposés.");
+    added += blocks.length;
+  }
+
+  if (flashcards.length > 0) {
+    const { error } = await supabase.from("el_profesor_flashcards").insert(
+      flashcards.map((card) => ({
+        fiche_id: ficheId,
+        front: { text: card.front } as FlashcardSide as never,
+        back: { text: card.back } as FlashcardSide as never,
+        citations: card.citations as unknown as Citation[] as never,
+        status: "draft",
+        needs_review: true,
+        suggested_image_page: card.suggested_image_page ?? null,
+        suggested_image_hint: card.suggested_image_hint ?? null,
+      }))
+    );
+    if (error) throw new GeminiError("Échec de l'enregistrement des flashcards proposées.");
+    added += flashcards.length;
   }
 
   return added;

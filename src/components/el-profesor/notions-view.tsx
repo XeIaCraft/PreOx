@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Tag, ShieldAlert, Sparkles, Check, X, Merge, Undo2, Copy } from "lucide-react";
+import { ArrowLeft, Tag, ShieldAlert, Sparkles, Check, X, Merge, Undo2, Copy, FileSearch, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
 import {
   categorizeChapterNotions,
   detectContradictionsForNotion,
@@ -16,8 +17,14 @@ import {
   clearFicheSuperseded,
   resolveContradictionAndSupersede,
 } from "@/app/apps/el-profesor/actions/notions";
+import {
+  checkNotionForUpdatesFromText,
+  checkNotionForUpdatesFromArticle,
+  applyNotionUpdateProposal,
+  dismissNotionUpdateProposal,
+} from "@/app/apps/el-profesor/actions/notion-updates";
 import { useToast } from "@/components/ui/toast";
-import type { NotionSummary, Contradiction, CrossBookDuplicateFlashcards, SupersededFicheEntry } from "@/lib/el-profesor/types";
+import type { NotionSummary, Contradiction, CrossBookDuplicateFlashcards, SupersededFicheEntry, NotionUpdateProposal } from "@/lib/el-profesor/types";
 
 function FicheRef({ fiche }: { fiche: { ficheTitle: string; chapterTitle: string; bookTitle: string; chapterId: string } }) {
   return (
@@ -206,18 +213,192 @@ function SupersededFicheRow({ entry, onChanged }: { entry: SupersededFicheEntry;
   );
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.slice(result.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * "Comparer à une source externe" (demande du 2026-08-24) : l'admin colle la
+ * réponse d'un outil de littérature médicale (Consensus, OpenEvidence...) ou
+ * importe un article, et chaque fiche liée à la notion est comparée à ce
+ * texte — les fiches qui semblent devoir être mises à jour ressortent comme
+ * propositions en brouillon (voir NotionUpdateProposalCard), jamais
+ * appliquées automatiquement.
+ */
+function NotionUpdateCheckDialog({
+  notionId,
+  notionName,
+  onClose,
+  onSubmitted,
+}: {
+  notionId: string;
+  notionName: string;
+  onClose: () => void;
+  onSubmitted: () => void;
+}) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [pastedText, setPastedText] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function handleSubmitText() {
+    if (!pastedText.trim()) return;
+    startTransition(async () => {
+      const result = await checkNotionForUpdatesFromText(notionId, pastedText);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "", { variant: "success" });
+        onSubmitted();
+        onClose();
+      }
+    });
+  }
+
+  function handleSubmitFile() {
+    const file = fileInputRef.current?.files?.[0];
+    if (!file) return;
+    startTransition(async () => {
+      try {
+        const base64 = await fileToBase64(file);
+        const result = await checkNotionForUpdatesFromArticle(notionId, base64, file.name);
+        if (result.error) toast(result.error, { variant: "error" });
+        else {
+          toast(result.success ?? "", { variant: "success" });
+          onSubmitted();
+          onClose();
+        }
+      } catch {
+        toast("Échec de la lecture du fichier.", { variant: "error" });
+      }
+    });
+  }
+
+  return (
+    <Modal
+      title={`Comparer « ${notionName} » à une source externe`}
+      description="Collez la réponse d'un outil de littérature médicale (Consensus, OpenEvidence...) ou importez un article — chaque fiche liée à cette notion sera comparée, et une proposition de mise à jour apparaîtra pour celles qui semblent devoir changer."
+      onClose={onClose}
+      size="md"
+    >
+      <div className="space-y-1.5">
+        <label htmlFor="notion-update-text" className="text-sm font-medium text-foreground">
+          Coller un texte
+        </label>
+        <textarea
+          id="notion-update-text"
+          value={pastedText}
+          onChange={(e) => setPastedText(e.target.value)}
+          rows={6}
+          placeholder="Réponse collée d'un outil de littérature médicale, ou tout autre texte pertinent…"
+          className="w-full resize-none rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-sm placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        />
+        <Button size="sm" onClick={handleSubmitText} disabled={isPending || !pastedText.trim()}>
+          <FileSearch className="h-3.5 w-3.5" /> {isPending ? "…" : "Comparer ce texte"}
+        </Button>
+      </div>
+
+      <div className="mt-5 space-y-1.5 border-t border-border pt-4">
+        <label htmlFor="notion-update-file" className="text-sm font-medium text-foreground">
+          Ou importer un article
+        </label>
+        <input
+          id="notion-update-file"
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.docx,.pptx,.txt,.md"
+          className="block w-full text-sm text-foreground-muted file:mr-3 file:rounded-[var(--radius-sm)] file:border-0 file:bg-surface-muted file:px-3 file:py-1.5 file:text-sm"
+        />
+        <p className="text-xs text-foreground-subtle">PDF, Word (.docx), PowerPoint (.pptx) ou texte brut — 15 Mo maximum.</p>
+        <Button variant="secondary" size="sm" onClick={handleSubmitFile} disabled={isPending}>
+          <Upload className="h-3.5 w-3.5" /> {isPending ? "…" : "Comparer ce fichier"}
+        </Button>
+      </div>
+
+      <div className="mt-5 flex justify-end">
+        <Button variant="ghost" onClick={onClose} disabled={isPending}>
+          Fermer
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function NotionUpdateProposalCard({ proposal, onChanged }: { proposal: NotionUpdateProposal; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+
+  function handleApply() {
+    startTransition(async () => {
+      const result = await applyNotionUpdateProposal(proposal.id);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "", { variant: "success" });
+        onChanged();
+      }
+    });
+  }
+
+  function handleDismiss() {
+    startTransition(async () => {
+      const result = await dismissNotionUpdateProposal(proposal.id);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "", { variant: "success" });
+        onChanged();
+      }
+    });
+  }
+
+  const itemCount = proposal.additions.blocks.length + proposal.additions.flashcards.length;
+
+  return (
+    <div className="rounded-[var(--radius-md)] border border-accent/30 bg-accent-tint/30 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <FicheRef fiche={proposal.fiche} />
+        <div className="flex items-center gap-1.5">
+          <Badge variant="neutral">{proposal.notionName}</Badge>
+          <Badge variant="accent">{proposal.sourceKind === "article" ? "Article importé" : "Texte collé"}</Badge>
+        </div>
+      </div>
+      <p className="mt-2 text-sm text-foreground">{proposal.explanation}</p>
+      <p className="mt-2 text-xs italic text-foreground-subtle">« {proposal.sourceExcerpt.slice(0, 200)}{proposal.sourceExcerpt.length > 200 ? "…" : ""} »</p>
+      <p className="mt-2 text-xs text-foreground-subtle">
+        {itemCount} élément{itemCount > 1 ? "s" : ""} proposé{itemCount > 1 ? "s" : ""} ({proposal.additions.blocks.length} bloc(s), {proposal.additions.flashcards.length} flashcard(s))
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={handleApply} disabled={isPending}>
+          <Check className="h-3.5 w-3.5" /> Appliquer en brouillon
+        </Button>
+        <Button variant="ghost" size="sm" onClick={handleDismiss} disabled={isPending}>
+          <X className="h-3.5 w-3.5" /> Ignorer
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function NotionsView({
   chapters,
   notionSummaries,
   contradictions,
   crossBookDuplicates,
   supersededFiches,
+  notionUpdateProposals,
 }: {
   chapters: { id: string; title: string; bookTitle: string }[];
   notionSummaries: NotionSummary[];
   contradictions: Contradiction[];
   crossBookDuplicates: CrossBookDuplicateFlashcards[];
   supersededFiches: SupersededFicheEntry[];
+  notionUpdateProposals: NotionUpdateProposal[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -225,6 +406,7 @@ export function NotionsView({
   const [isDetecting, startDetecting] = useTransition();
   const [selectedChapterId, setSelectedChapterId] = useState(chapters[0]?.id ?? "");
   const [detectingNotionId, setDetectingNotionId] = useState<string | null>(null);
+  const [updateCheckNotion, setUpdateCheckNotion] = useState<{ id: string; name: string } | null>(null);
 
   function handleCategorize() {
     if (!selectedChapterId) return;
@@ -304,6 +486,19 @@ export function NotionsView({
         </div>
       )}
 
+      {notionUpdateProposals.length > 0 && (
+        <div className="mt-8">
+          <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground">
+            <FileSearch className="h-4 w-4 text-accent" /> Mises à jour proposées ({notionUpdateProposals.length})
+          </p>
+          <div className="space-y-3">
+            {notionUpdateProposals.map((p) => (
+              <NotionUpdateProposalCard key={p.id} proposal={p} onChanged={refresh} />
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-8">
         <p className="mb-2 text-sm font-medium text-foreground">Notions ({notionSummaries.length})</p>
         {notionSummaries.length === 0 ? (
@@ -330,6 +525,14 @@ export function NotionsView({
                       >
                         <Sparkles className="h-3.5 w-3.5" />
                         {isDetecting && detectingNotionId === notion.id ? "Analyse…" : "Détecter les contradictions"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setUpdateCheckNotion({ id: notion.id, name: notion.name })}
+                        title="Comparer cette notion à un article ou à une réponse d'un outil de littérature médicale"
+                      >
+                        <FileSearch className="h-3.5 w-3.5" /> Comparer à une source
                       </Button>
                     </div>
                   </div>
@@ -403,6 +606,15 @@ export function NotionsView({
             ))}
           </div>
         </details>
+      )}
+
+      {updateCheckNotion && (
+        <NotionUpdateCheckDialog
+          notionId={updateCheckNotion.id}
+          notionName={updateCheckNotion.name}
+          onClose={() => setUpdateCheckNotion(null)}
+          onSubmitted={refresh}
+        />
       )}
     </div>
   );

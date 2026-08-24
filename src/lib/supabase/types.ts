@@ -207,7 +207,7 @@ export type ATableSettingsRow = {
 
 export type ElProfesorChapterStatus = "pending" | "queued" | "extracting" | "draft_ready" | "published" | "failed";
 
-export type ElProfesorBatchJobKind = "extraction" | "complementary" | "notion_categorization" | "contradiction_check";
+export type ElProfesorBatchJobKind = "extraction" | "complementary" | "notion_categorization" | "contradiction_check" | "notion_update_check";
 export type ElProfesorBatchJobStatus = "submitted" | "completed" | "failed";
 export type ElProfesorBatchItemStatus = "pending" | "succeeded" | "errored" | "expired" | "canceled";
 
@@ -234,6 +234,23 @@ export type ElProfesorBatchItemRow = {
   error: string | null;
   processed_at: string | null;
   created_at: string;
+};
+
+export type ElProfesorNotionUpdateSourceKind = "pasted_text" | "article";
+export type ElProfesorNotionUpdateProposalStatus = "pending" | "applied" | "dismissed";
+
+export type ElProfesorNotionUpdateProposalRow = {
+  id: string;
+  notion_id: string;
+  fiche_id: string;
+  source_kind: ElProfesorNotionUpdateSourceKind;
+  source_excerpt: string;
+  explanation: string;
+  additions: Json;
+  status: ElProfesorNotionUpdateProposalStatus;
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
 };
 export type ElProfesorContentStatus = "draft" | "published";
 export type ElProfesorReviewRating = "again" | "good";
@@ -744,6 +761,19 @@ export type Database = {
         Row: ElProfesorBatchItemRow;
         Insert: Partial<ElProfesorBatchItemRow> & { batch_job_id: string; custom_id: string; target: Json };
         Update: Partial<ElProfesorBatchItemRow>;
+        Relationships: [];
+      };
+      el_profesor_notion_update_proposals: {
+        Row: ElProfesorNotionUpdateProposalRow;
+        Insert: Partial<ElProfesorNotionUpdateProposalRow> & {
+          notion_id: string;
+          fiche_id: string;
+          source_kind: ElProfesorNotionUpdateSourceKind;
+          source_excerpt: string;
+          explanation: string;
+          additions: Json;
+        };
+        Update: Partial<ElProfesorNotionUpdateProposalRow>;
         Relationships: [];
       };
       el_profesor_flags: {
