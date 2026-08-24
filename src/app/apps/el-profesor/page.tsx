@@ -4,23 +4,23 @@ import {
   getDueCountsByChapter,
   getNeedsReviewCounts,
   getMasteryCountsByChapter,
-  getElProfesorGeminiModel,
-  getGlobalDueQueue,
-  getDifficultQueue,
   getDifficultCountsByChapter,
+  getGlobalChapterMasteryPercentages,
   getReviewActivitySummary,
   getOverconfidentMissCount,
   getUpcomingReviewForecast,
+  getGlobalDueQueue,
+  getDifficultQueue,
   getMostDifficultFlashcardsGlobal,
   getLeechFlashcards,
   getDailyCard,
   getBookmarkedEntities,
-  getGlobalChapterMasteryPercentages,
   getStaleChaptersForAdmin,
   getKnowledgeExpiryAlerts,
   getReviewTimeStats,
   getFlagStatsByBlockType,
   hasElProfesorGeminiKey,
+  getElProfesorGeminiModel,
   getElProfesorGeminiExtraKeyCount,
   getElProfesorGeminiFallbackModel,
   getGeminiUsageStats,
@@ -33,11 +33,91 @@ import {
   getOnThisDayNote,
   getRecommendedNextBook,
   getDueBlocksForUser,
+  type BookWithChapters,
 } from "@/lib/el-profesor/dal";
 import { getBatchJobs } from "@/app/apps/el-profesor/actions/batches";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { ToastProvider } from "@/components/ui/toast";
 import { recordAppVisit } from "@/app/actions/discovery";
+import type { DashboardSecondaryData, DashboardAiConfigData } from "@/lib/el-profesor/dashboard-types";
+
+async function loadSecondaryDashboardData(
+  profileId: string,
+  isAdmin: boolean,
+  allChapters: BookWithChapters["chapters"],
+  books: BookWithChapters[],
+  libraryBooks: BookWithChapters[]
+): Promise<DashboardSecondaryData> {
+  const [
+    activity,
+    overconfidentMissCount,
+    forecast,
+    globalDue,
+    difficult,
+    mostDifficultGlobal,
+    leechFlashcards,
+    dailyCard,
+    bookmarks,
+    staleChapters,
+    knowledgeExpiryAlerts,
+    reviewTimeStats,
+    flagStatsByBlockType,
+    onThisDayNote,
+    bookRecommendation,
+    dueBlocks,
+  ] = await Promise.all([
+    getReviewActivitySummary(profileId),
+    getOverconfidentMissCount(profileId),
+    getUpcomingReviewForecast(profileId, allChapters),
+    getGlobalDueQueue(profileId, allChapters),
+    getDifficultQueue(profileId, allChapters),
+    isAdmin ? getMostDifficultFlashcardsGlobal() : Promise.resolve([]),
+    isAdmin ? getLeechFlashcards() : Promise.resolve([]),
+    getDailyCard(profileId, allChapters),
+    getBookmarkedEntities(profileId),
+    isAdmin ? getStaleChaptersForAdmin(allChapters, libraryBooks) : Promise.resolve([]),
+    getKnowledgeExpiryAlerts(profileId, allChapters, libraryBooks),
+    getReviewTimeStats(profileId),
+    isAdmin ? getFlagStatsByBlockType() : Promise.resolve([]),
+    getOnThisDayNote(profileId),
+    getRecommendedNextBook(profileId, books),
+    getDueBlocksForUser(profileId),
+  ]);
+  return {
+    activity,
+    overconfidentMissCount,
+    forecast,
+    globalDueCount: globalDue.length,
+    difficultCount: difficult.length,
+    mostDifficultGlobal,
+    leechFlashcards,
+    dailyCard,
+    bookmarks,
+    staleChapters,
+    knowledgeExpiryAlerts,
+    reviewTimeStats,
+    flagStatsByBlockType,
+    onThisDayNote,
+    bookRecommendation,
+    dueBlocks,
+  };
+}
+
+async function loadAiConfigData(): Promise<DashboardAiConfigData> {
+  const [geminiModel, geminiExtraKeyCount, geminiFallbackModel, geminiUsageStats, aiSpendCapUsd, currentMonthAiSpendUsd, hasClaudeKey, claudeModel, batchJobs] =
+    await Promise.all([
+      getElProfesorGeminiModel(),
+      getElProfesorGeminiExtraKeyCount(),
+      getElProfesorGeminiFallbackModel(),
+      getGeminiUsageStats(),
+      getAiSpendCapUsd(),
+      getCurrentMonthAiSpendUsd(),
+      hasElProfesorClaudeKey(),
+      getElProfesorClaudeModel(),
+      getBatchJobs(),
+    ]);
+  return { geminiModel, geminiExtraKeyCount, geminiFallbackModel, geminiUsageStats, aiSpendCapUsd, currentMonthAiSpendUsd, hasClaudeKey, claudeModel, batchJobs };
+}
 
 export default async function ElProfesorPage() {
   const profile = (await getCurrentProfile())!;
@@ -48,75 +128,26 @@ export default async function ElProfesorPage() {
   // admins need visibility into the pipeline's in-progress state.
   const books = isAdmin ? libraryBooks : libraryBooks.map((b) => ({ ...b, chapters: b.chapters.filter((c) => c.status === "published") }));
   const allChapters = books.flatMap((b) => b.chapters);
-  const [
-    dueCounts,
-    needsReviewCounts,
-    masteryCounts,
-    geminiModel,
-    globalDue,
-    difficult,
-    difficultCounts,
-    activity,
-    overconfidentMissCount,
-    forecast,
-    mostDifficultGlobal,
-    leechFlashcards,
-    dailyCard,
-    bookmarks,
-    globalMastery,
-    staleChapters,
-    knowledgeExpiryAlerts,
-    reviewTimeStats,
-    flagStatsByBlockType,
-    hasGeminiKey,
-    geminiExtraKeyCount,
-    geminiFallbackModel,
-    geminiUsageStats,
-    aiSpendCapUsd,
-    currentMonthAiSpendUsd,
-    aiProvider,
-    hasClaudeKey,
-    claudeModel,
-    readingPosition,
-    onThisDayNote,
-    bookRecommendation,
-    dueBlocks,
-    batchJobs,
-  ] = await Promise.all([
+
+  // Core data the book list itself renders from — awaited so the page's
+  // static shell (header + book list) never shows a placeholder for it.
+  const [dueCounts, needsReviewCounts, masteryCounts, difficultCounts, globalMastery, hasGeminiKey, aiProvider, readingPosition] = await Promise.all([
     getDueCountsByChapter(profile.id, allChapters),
     isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
     getMasteryCountsByChapter(profile.id, allChapters),
-    isAdmin ? getElProfesorGeminiModel() : Promise.resolve(null),
-    getGlobalDueQueue(profile.id, allChapters),
-    getDifficultQueue(profile.id, allChapters),
     getDifficultCountsByChapter(profile.id, allChapters),
-    getReviewActivitySummary(profile.id),
-    getOverconfidentMissCount(profile.id),
-    getUpcomingReviewForecast(profile.id, allChapters),
-    isAdmin ? getMostDifficultFlashcardsGlobal() : Promise.resolve([]),
-    isAdmin ? getLeechFlashcards() : Promise.resolve([]),
-    getDailyCard(profile.id, allChapters),
-    getBookmarkedEntities(profile.id),
     getGlobalChapterMasteryPercentages(allChapters),
-    isAdmin ? getStaleChaptersForAdmin(allChapters, libraryBooks) : Promise.resolve([]),
-    getKnowledgeExpiryAlerts(profile.id, allChapters, libraryBooks),
-    getReviewTimeStats(profile.id),
-    isAdmin ? getFlagStatsByBlockType() : Promise.resolve([]),
     isAdmin ? hasElProfesorGeminiKey() : Promise.resolve(false),
-    isAdmin ? getElProfesorGeminiExtraKeyCount() : Promise.resolve(0),
-    isAdmin ? getElProfesorGeminiFallbackModel() : Promise.resolve(null),
-    isAdmin ? getGeminiUsageStats() : Promise.resolve(null),
-    isAdmin ? getAiSpendCapUsd() : Promise.resolve(null),
-    isAdmin ? getCurrentMonthAiSpendUsd() : Promise.resolve(0),
     isAdmin ? getElProfesorAiProvider() : Promise.resolve("gemini" as const),
-    isAdmin ? hasElProfesorClaudeKey() : Promise.resolve(false),
-    isAdmin ? getElProfesorClaudeModel() : Promise.resolve(""),
     getReadingPosition(profile.id),
-    getOnThisDayNote(profile.id),
-    getRecommendedNextBook(profile.id, books),
-    getDueBlocksForUser(profile.id),
-    isAdmin ? getBatchJobs() : Promise.resolve([]),
   ]);
+
+  // Started here (server render), not awaited — passed down as a Promise
+  // and unwrapped with React's use() only where each slice is actually
+  // needed, streamed in behind a <Suspense> boundary once ready. See
+  // src/lib/el-profesor/dashboard-types.ts for what each covers.
+  const secondaryDataPromise = loadSecondaryDashboardData(profile.id, isAdmin, allChapters, books, libraryBooks);
+  const aiConfigPromise = isAdmin ? loadAiConfigData() : Promise.resolve(null);
 
   return (
     <ToastProvider>
@@ -125,37 +156,14 @@ export default async function ElProfesorPage() {
         dueCounts={dueCounts}
         needsReviewCounts={needsReviewCounts}
         masteryCounts={masteryCounts}
-        isAdmin={isAdmin}
-        geminiModel={geminiModel}
-        globalDueCount={globalDue.length}
-        difficultCount={difficult.length}
         difficultCounts={difficultCounts}
-        activity={activity}
-        overconfidentMissCount={overconfidentMissCount}
-        forecast={forecast}
-        mostDifficultGlobal={mostDifficultGlobal}
-        leechFlashcards={leechFlashcards}
-        dailyCard={dailyCard}
-        bookmarks={bookmarks}
         globalMastery={globalMastery}
-        staleChapters={staleChapters}
-        knowledgeExpiryAlerts={knowledgeExpiryAlerts}
-        reviewTimeStats={reviewTimeStats}
-        flagStatsByBlockType={flagStatsByBlockType}
+        isAdmin={isAdmin}
         hasGeminiKey={hasGeminiKey}
-        geminiExtraKeyCount={geminiExtraKeyCount}
-        geminiFallbackModel={geminiFallbackModel}
-        geminiUsageStats={geminiUsageStats}
-        aiSpendCapUsd={aiSpendCapUsd}
-        currentMonthAiSpendUsd={currentMonthAiSpendUsd}
         aiProvider={aiProvider}
-        hasClaudeKey={hasClaudeKey}
-        claudeModel={claudeModel}
         serverResumeChapterId={readingPosition?.chapterId ?? null}
-        onThisDayNote={onThisDayNote}
-        bookRecommendation={bookRecommendation}
-        dueBlocks={dueBlocks}
-        batchJobs={batchJobs}
+        secondaryDataPromise={secondaryDataPromise}
+        aiConfigPromise={aiConfigPromise}
       />
     </ToastProvider>
   );

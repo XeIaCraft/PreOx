@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { Suspense, use, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -32,7 +32,6 @@ import {
   Scissors,
   BookText,
   Timer,
-  AlertTriangle,
   Siren,
   NotebookPen,
 } from "lucide-react";
@@ -50,7 +49,8 @@ import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-cha
 import { SplitBookDialog } from "@/components/el-profesor/dialogs/split-book-dialog";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
-import { LearningWidgets, DailyCard, LibraryStats, BookmarksList, OnThisDayNoteCard, BookRecommendationCard, DueBlocksWidget } from "@/components/el-profesor/learning-widgets";
+import { LibraryStats } from "@/components/el-profesor/learning-widgets";
+import { DashboardSecondaryWidgets, DashboardWidgetsSkeleton } from "@/components/el-profesor/dashboard-secondary-widgets";
 import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
@@ -60,40 +60,9 @@ import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/ex
 import { exportBookNotes } from "@/app/apps/el-profesor/actions/notes";
 import { getLastChapter } from "@/lib/el-profesor/local-prefs";
 import { formatUsd } from "@/lib/el-profesor/ai-pricing";
-import { suggestLeechVariant } from "@/app/apps/el-profesor/actions/leech";
-import type {
-  BookWithChapters,
-  ChapterDueCounts,
-  ChapterMasteryCounts,
-  ReviewActivitySummary,
-  UpcomingForecastDay,
-  DifficultFlashcardStat,
-  LeechFlashcardStat,
-  BookmarkedEntity,
-  ChapterMasteryPercentile,
-  StaleChapterAlert,
-  KnowledgeExpiryAlert,
-  BlockTypeFlagStat,
-  GeminiUsageStats,
-  ElProfesorAiProvider,
-  OnThisDayNote,
-  BookRecommendation,
-  DueBlockEntry,
-} from "@/lib/el-profesor/dal";
-import type { ChapterStatus, Flashcard, BlockType } from "@/lib/el-profesor/types";
-import type { ElProfesorBatchJobRow } from "@/lib/supabase/types";
-
-const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
-  definition_mecanisme: "Définition / mécanisme",
-  valeurs_seuils: "Valeurs & seuils",
-  tableau_comparatif: "Tableau comparatif",
-  protocole_paliers: "Protocole",
-  mnemotechnique: "Mnémotechnique",
-  perle_clinique: "Perle clinique",
-  piege_erreur: "Piège fréquent",
-  formule: "Formule",
-  texte_libre: "Note",
-};
+import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts, ChapterMasteryPercentile, ElProfesorAiProvider } from "@/lib/el-profesor/dal";
+import type { ChapterStatus } from "@/lib/el-profesor/types";
+import type { DashboardSecondaryData, DashboardAiConfigData } from "@/lib/el-profesor/dashboard-types";
 
 function MasteryBar({ counts }: { counts: { total: number; new: number; learning: number; acquired: number } }) {
   if (counts.total === 0) return null;
@@ -207,79 +176,107 @@ const EXAM_DURATION_PRESETS = [
   { label: "45 min", seconds: 45 * 60 },
 ];
 
+/**
+ * Piste 2026-08-24 ("chargement progressif du tableau de bord") — the
+ * average-cost-per-Claude-call estimate only exists once chapters are
+ * selected for a bulk batch, so its data (usage stats, spend log) is
+ * streamed separately from the rest of the dashboard rather than blocking
+ * initial paint. See the comment on estimatedBulkCostUsd this replaced.
+ */
+function BulkCostEstimate({ aiConfigPromise, selectedCount }: { aiConfigPromise: Promise<DashboardAiConfigData | null>; selectedCount: number }) {
+  const config = use(aiConfigPromise);
+  const claudeModelKey = `claude:${config?.claudeModel || "claude-sonnet-5"}`;
+  const claudeUsage = config?.geminiUsageStats?.byModel.find((m) => m.model === claudeModelKey);
+  const avgCostPerCallUsd = claudeUsage && claudeUsage.calls > 0 && !claudeUsage.hasUnpricedCalls ? claudeUsage.estimatedCostUsd / claudeUsage.calls : null;
+  const estimatedBulkCostUsd = avgCostPerCallUsd !== null ? avgCostPerCallUsd * selectedCount : null;
+  return estimatedBulkCostUsd !== null ? (
+    <span
+      className="text-xs text-foreground-subtle"
+      title="Estimation basée sur le coût moyen des appels Claude déjà journalisés sur 7 jours (extraction + complément + autres usages confondus) — une passe par chapitre ; un complément « jusqu'à couverture » peut en enchaîner plusieurs si le contenu est dense."
+    >
+      ≈ {formatUsd(estimatedBulkCostUsd)} estimé
+    </span>
+  ) : (
+    <span className="text-xs text-foreground-subtle" title="Pas encore assez d'appels Claude journalisés pour estimer un coût moyen.">
+      coût estimé indisponible
+    </span>
+  );
+}
+
+function GeminiSettingsLoadingModal({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal title="Réglages IA" onClose={onClose} size="md">
+      <p className="text-sm text-foreground-subtle">Chargement…</p>
+    </Modal>
+  );
+}
+
+/** Only fetched/awaited when the settings dialog actually opens — see aiConfigPromise on ElProfesorBoard. */
+function GeminiSettingsLoader({
+  aiConfigPromise,
+  hasApiKey,
+  aiProvider,
+  onClose,
+}: {
+  aiConfigPromise: Promise<DashboardAiConfigData | null>;
+  hasApiKey: boolean;
+  aiProvider: ElProfesorAiProvider;
+  onClose: () => void;
+}) {
+  const config = use(aiConfigPromise);
+  if (!config) return null;
+  return (
+    <GeminiSettingsDialog
+      currentModel={config.geminiModel ?? "gemini-flash-latest"}
+      hasApiKey={hasApiKey}
+      extraKeyCount={config.geminiExtraKeyCount}
+      fallbackModel={config.geminiFallbackModel}
+      usageStats={config.geminiUsageStats}
+      aiSpendCapUsd={config.aiSpendCapUsd}
+      currentMonthAiSpendUsd={config.currentMonthAiSpendUsd}
+      aiProvider={aiProvider}
+      hasClaudeKey={config.hasClaudeKey}
+      claudeModel={config.claudeModel || "claude-sonnet-5"}
+      batchJobs={config.batchJobs}
+      onClose={onClose}
+    />
+  );
+}
+
 export function ElProfesorBoard({
   books,
   dueCounts,
   needsReviewCounts,
   masteryCounts,
   isAdmin,
-  geminiModel,
-  globalDueCount,
-  difficultCount,
   difficultCounts,
-  activity,
-  overconfidentMissCount,
-  forecast,
-  mostDifficultGlobal,
-  leechFlashcards,
-  dailyCard,
-  bookmarks,
   globalMastery,
-  staleChapters,
-  knowledgeExpiryAlerts,
-  reviewTimeStats,
-  flagStatsByBlockType,
   hasGeminiKey,
-  geminiExtraKeyCount,
-  geminiFallbackModel,
-  geminiUsageStats,
-  aiSpendCapUsd,
-  currentMonthAiSpendUsd,
   aiProvider,
-  hasClaudeKey,
-  claudeModel,
   serverResumeChapterId,
-  onThisDayNote,
-  bookRecommendation,
-  dueBlocks,
-  batchJobs,
+  secondaryDataPromise,
+  aiConfigPromise,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
   needsReviewCounts: ChapterDueCounts;
   masteryCounts: ChapterMasteryCounts;
   isAdmin: boolean;
-  geminiModel: string | null;
-  globalDueCount: number;
-  difficultCount: number;
   difficultCounts: ChapterDueCounts;
-  activity: ReviewActivitySummary;
-  overconfidentMissCount: number;
-  forecast: UpcomingForecastDay[];
-  mostDifficultGlobal: DifficultFlashcardStat[];
-  leechFlashcards: LeechFlashcardStat[];
-  dailyCard: Flashcard | null;
-  bookmarks: BookmarkedEntity[];
   globalMastery: Record<string, ChapterMasteryPercentile>;
-  staleChapters: StaleChapterAlert[];
-  knowledgeExpiryAlerts: KnowledgeExpiryAlert[];
-  reviewTimeStats: { totalMs: number; last7DaysMs: number };
-  flagStatsByBlockType: BlockTypeFlagStat[];
   hasGeminiKey: boolean;
-  geminiExtraKeyCount: number;
-  geminiFallbackModel: string | null;
-  geminiUsageStats: GeminiUsageStats | null;
-  aiSpendCapUsd: number | null;
-  currentMonthAiSpendUsd: number;
   aiProvider: ElProfesorAiProvider;
-  hasClaudeKey: boolean;
-  claudeModel: string;
   /** Cross-device resume position (server-stored) — preferred over the local-only cache when present. */
   serverResumeChapterId: string | null;
-  onThisDayNote: OnThisDayNote | null;
-  bookRecommendation: BookRecommendation | null;
-  dueBlocks: DueBlockEntry[];
-  batchJobs: ElProfesorBatchJobRow[];
+  /**
+   * Piste 2026-08-24 ("chargement progressif du tableau de bord") — started
+   * server-side without being awaited, unwrapped with React's use() inside
+   * DashboardSecondaryWidgets/GeminiSettingsLoader/BulkCostEstimate below,
+   * each behind its own <Suspense> boundary, so the book list above never
+   * waits on these heavier queries.
+   */
+  secondaryDataPromise: Promise<DashboardSecondaryData>;
+  aiConfigPromise: Promise<DashboardAiConfigData | null>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -294,8 +291,6 @@ export function ElProfesorBoard({
   // call by hand doesn't apply (Gemini stays synchronous, one chapter at a time).
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [isBulkPending, startBulkTransition] = useTransition();
-  const [pendingLeechId, setPendingLeechId] = useState<string | null>(null);
-  const [isLeechPending, startLeechTransition] = useTransition();
   // Lazy initializer (client-only read), same pattern used elsewhere for
   // one-time localStorage reads — null on the server, resolved on mount.
   const [resumeChapterId] = useState(() => serverResumeChapterId ?? getLastChapter());
@@ -325,19 +320,6 @@ export function ElProfesorBoard({
   // this same set (see bulkSelectable below, computed identically per-chapter).
   const bulkSelectableChapterIds =
     isAdmin && aiProvider === "claude" ? books.flatMap((b) => b.chapters.filter((c) => c.sourceKind === "pdf").map((c) => c.id)) : [];
-
-  // Demandé le 2026-08-24 : prix estimé AVANT de lancer une génération, pas
-  // seulement après coup (item 80/81 ne couvraient que l'historique déjà
-  // consommé). Faute de suivi du nombre de pages par appel dans le journal
-  // d'usage, on approxime par le coût moyen des appels Claude déjà loggés
-  // sur 7 jours (mélange extraction/complément/etc., mais ce sont l'immense
-  // majorité des appels Claude du module) — mieux qu'aucun chiffre, mais
-  // annoncé comme approximatif dans l'infobulle plutôt que présenté comme
-  // exact. `null` tant qu'aucun appel Claude n'a encore été journalisé.
-  const claudeModelKey = `claude:${claudeModel || "claude-sonnet-5"}`;
-  const claudeUsage = geminiUsageStats?.byModel.find((m) => m.model === claudeModelKey);
-  const avgCostPerCallUsd = claudeUsage && claudeUsage.calls > 0 && !claudeUsage.hasUnpricedCalls ? claudeUsage.estimatedCostUsd / claudeUsage.calls : null;
-  const estimatedBulkCostUsd = avgCostPerCallUsd !== null ? avgCostPerCallUsd * selectedChapterIds.size : null;
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -403,19 +385,6 @@ export function ElProfesorBoard({
       else {
         toast(result.success ?? "Lot soumis.", { variant: "success" });
         setSelectedChapterIds(new Set());
-        refresh();
-      }
-    });
-  }
-
-  function handleSuggestLeechVariant(stat: LeechFlashcardStat) {
-    setPendingLeechId(stat.flashcardId);
-    startLeechTransition(async () => {
-      const result = await suggestLeechVariant(stat.flashcardId, stat.subEntityName, stat.againRate);
-      setPendingLeechId(null);
-      if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.suggestion ? `Variante ajoutée : « ${result.suggestion} »` : (result.success ?? "Variante ajoutée."), { variant: "success" });
         refresh();
       }
     });
@@ -657,159 +626,15 @@ export function ElProfesorBoard({
         </Link>
       )}
 
-      {dailyCard && <DailyCard card={dailyCard} />}
-      {onThisDayNote && <OnThisDayNoteCard note={onThisDayNote} />}
-      {bookRecommendation && <BookRecommendationCard recommendation={bookRecommendation} />}
-
-      <BookmarksList bookmarks={bookmarks} />
-      <DueBlocksWidget blocks={dueBlocks} />
-
       {books.length > 0 && (
-        <LearningWidgets
-          activity={activity}
-          overconfidentMissCount={overconfidentMissCount}
-          forecast={forecast}
-          globalDueCount={globalDueCount}
-          difficultCount={difficultCount}
-          totalAcquired={totalAcquired}
-          chaptersMastered={chaptersMastered}
-          reviewTimeStats={reviewTimeStats}
-        />
-      )}
-
-      {globalDueCount >= 50 && (
-        <div className="mt-6 flex items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-danger/30 bg-danger-tint px-4 py-3">
-          <p className="text-sm text-danger">
-            {globalDueCount} cartes en attente de révision — la pile s&apos;accumule, un rattrapage s&apos;impose.
-          </p>
-          <Link href="/apps/el-profesor/review?mode=due">
-            <Button size="sm" variant="secondary">
-              Rattraper
-            </Button>
-          </Link>
-        </div>
-      )}
-
-      {knowledgeExpiryAlerts.length > 0 && (
-        <div className="mt-6 rounded-[var(--radius-lg)] border border-danger/30 bg-danger-tint px-4 py-3">
-          <p className="flex items-center gap-1.5 text-sm font-medium text-danger">
-            <AlertTriangle className="h-4 w-4" /> Connaissances probablement périmées
-          </p>
-          <p className="mt-0.5 text-xs text-danger/80">
-            Ces chapitres étaient maîtrisés mais n&apos;ont pas été revus depuis longtemps après leur échéance — le risque d&apos;oubli
-            y est élevé, une révision dédiée vaut mieux qu&apos;une simple mise à jour.
-          </p>
-          <ul className="mt-2 space-y-1.5">
-            {knowledgeExpiryAlerts.slice(0, 5).map((alert) => (
-              <li key={alert.chapterId} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <span className="text-foreground-muted">
-                  <span className="font-medium text-foreground">{alert.chapterTitle}</span> — {alert.bookTitle} · {alert.expiredCount} carte
-                  {alert.expiredCount > 1 ? "s" : ""} en retard de {alert.oldestOverdueDays}+ jours
-                </span>
-                <Link href={`/apps/el-profesor/chapters/${alert.chapterId}/review?mode=due`}>
-                  <Button size="sm" variant="secondary">
-                    Rafraîchir
-                  </Button>
-                </Link>
-              </li>
-            ))}
-            {knowledgeExpiryAlerts.length > 5 && (
-              <li className="text-xs text-danger/80">+ {knowledgeExpiryAlerts.length - 5} autre(s) chapitre(s)</li>
-            )}
-          </ul>
-        </div>
-      )}
-
-      {isAdmin && (mostDifficultGlobal.length > 0 || leechFlashcards.length > 0 || flagStatsByBlockType.length > 0 || staleChapters.length > 0) && (
-        <details className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface p-4">
-          <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
-            <ShieldAlert className="h-3.5 w-3.5" /> Diagnostics de contenu (admin)
-          </summary>
-          <div className="mt-3 space-y-4">
-            {mostDifficultGlobal.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-foreground-subtle">Flashcards les plus ratées (tous utilisateurs)</p>
-                <ul className="mt-2 space-y-1.5">
-                  {mostDifficultGlobal.slice(0, 5).map((stat) => (
-                    <li key={stat.flashcardId} className="flex items-center justify-between gap-2 text-sm">
-                      <span className="min-w-0 truncate text-foreground-muted" title={stat.front}>
-                        {stat.front}
-                        {stat.chapterTitle && <span className="text-foreground-subtle"> — {stat.chapterTitle}</span>}
-                      </span>
-                      <Badge variant="danger" className="shrink-0">
-                        {stat.againCount}×
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {leechFlashcards.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-foreground-subtle" title="Ratée par une forte proportion des utilisateurs qui l'ont vue — souvent une question mal formulée plutôt qu'une vraie difficulté">
-                  Cartes sangsues (échec fréquent, probablement mal formulées)
-                </p>
-                <ul className="mt-2 space-y-1.5">
-                  {leechFlashcards.slice(0, 5).map((stat) => (
-                    <li key={stat.flashcardId} className="flex items-center justify-between gap-2 text-sm">
-                      <span className="min-w-0 truncate text-foreground-muted" title={stat.front}>
-                        {stat.front}
-                        {stat.chapterTitle && <span className="text-foreground-subtle"> — {stat.chapterTitle}</span>}
-                      </span>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <Badge variant="danger">{Math.round(stat.againRate * 100)} %</Badge>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleSuggestLeechVariant(stat)}
-                          disabled={isLeechPending && pendingLeechId === stat.flashcardId}
-                          title="Génère une reformulation de la question via IA et l'ajoute comme variante à tester (item « Test de formulations »)"
-                        >
-                          <Sparkles className="h-3.5 w-3.5" /> {isLeechPending && pendingLeechId === stat.flashcardId ? "…" : "Reformuler"}
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {flagStatsByBlockType.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-foreground-subtle">Signalements par type de bloc</p>
-                <ul className="mt-2 space-y-1.5">
-                  {flagStatsByBlockType.map((stat) => (
-                    <li key={stat.blockType} className="flex items-center justify-between gap-2 text-sm">
-                      <span className="text-foreground-muted">{BLOCK_TYPE_LABELS[stat.blockType]}</span>
-                      <Badge variant="danger" className="shrink-0">
-                        {stat.flagCount}×
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {staleChapters.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-accent">Chapitres jamais révisés récemment</p>
-                <ul className="mt-2 space-y-1 text-sm text-foreground-muted">
-                  {staleChapters.map((c) => (
-                    <li key={c.chapterId}>
-                      {c.chapterTitle} <span className="text-foreground-subtle">— {c.bookTitle}</span>
-                      {c.lastReviewedAt ? (
-                        <span className="text-foreground-subtle"> (dernière révision : {new Date(c.lastReviewedAt).toLocaleDateString("fr-FR")})</span>
-                      ) : (
-                        <span className="text-foreground-subtle"> (jamais révisé)</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </details>
+        <Suspense fallback={<DashboardWidgetsSkeleton />}>
+          <DashboardSecondaryWidgets
+            dataPromise={secondaryDataPromise}
+            totalAcquired={totalAcquired}
+            chaptersMastered={chaptersMastered}
+            isAdmin={isAdmin}
+          />
+        </Suspense>
       )}
 
       {books.length > 0 && (
@@ -872,18 +697,9 @@ export function ElProfesorBoard({
           <span className="text-sm font-medium text-foreground">
             {selectedChapterIds.size} chapitre{selectedChapterIds.size > 1 ? "s" : ""} sélectionné{selectedChapterIds.size > 1 ? "s" : ""}
           </span>
-          {estimatedBulkCostUsd !== null ? (
-            <span
-              className="text-xs text-foreground-subtle"
-              title="Estimation basée sur le coût moyen des appels Claude déjà journalisés sur 7 jours (extraction + complément + autres usages confondus) — une passe par chapitre ; un complément « jusqu'à couverture » peut en enchaîner plusieurs si le contenu est dense."
-            >
-              ≈ {formatUsd(estimatedBulkCostUsd)} estimé
-            </span>
-          ) : (
-            <span className="text-xs text-foreground-subtle" title="Pas encore assez d'appels Claude journalisés pour estimer un coût moyen.">
-              coût estimé indisponible
-            </span>
-          )}
+          <Suspense fallback={<span className="text-xs text-foreground-subtle">calcul du coût…</span>}>
+            <BulkCostEstimate aiConfigPromise={aiConfigPromise} selectedCount={selectedChapterIds.size} />
+          </Suspense>
           <Button size="sm" onClick={handleBulkExtract} disabled={isBulkPending}>
             <Sparkles className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Extraire via un lot Claude"}
           </Button>
@@ -1392,23 +1208,17 @@ export function ElProfesorBoard({
         </Modal>
       )}
       {modal?.type === "gemini_settings" && (
-        <GeminiSettingsDialog
-          currentModel={geminiModel ?? "gemini-flash-latest"}
-          hasApiKey={hasGeminiKey}
-          extraKeyCount={geminiExtraKeyCount}
-          fallbackModel={geminiFallbackModel}
-          usageStats={geminiUsageStats}
-          aiSpendCapUsd={aiSpendCapUsd}
-          currentMonthAiSpendUsd={currentMonthAiSpendUsd}
-          aiProvider={aiProvider}
-          hasClaudeKey={hasClaudeKey}
-          claudeModel={claudeModel || "claude-sonnet-5"}
-          batchJobs={batchJobs}
-          onClose={() => {
-            setModal(null);
-            refresh();
-          }}
-        />
+        <Suspense fallback={<GeminiSettingsLoadingModal onClose={() => setModal(null)} />}>
+          <GeminiSettingsLoader
+            aiConfigPromise={aiConfigPromise}
+            hasApiKey={hasGeminiKey}
+            aiProvider={aiProvider}
+            onClose={() => {
+              setModal(null);
+              refresh();
+            }}
+          />
+        </Suspense>
       )}
 
       <OnboardingTour moduleKey="el-profesor" steps={EL_PROFESOR_ONBOARDING_STEPS} open={tourOpen} onOpenChange={setTourOpen} />
