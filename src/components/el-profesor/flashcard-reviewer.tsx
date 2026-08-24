@@ -9,7 +9,26 @@ import { submitReview, undoReview, excludeFlashcardFromReviews } from "@/app/app
 import { FlagButton } from "@/components/el-profesor/flag-button";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { useToast } from "@/components/ui/toast";
+import { maskClozeText, splitClozeSegments } from "@/lib/el-profesor/cloze";
 import type { Flashcard, ReviewSource, ReviewState, ImageOcclusion } from "@/lib/el-profesor/types";
+
+/** A cloze passage with its blanked spans highlighted — the revealed side of a "flashcard à trous" (piste 2026-08-24). Plain text render when there's nothing to hide. */
+function ClozeText({ text, ranges, hiddenClassName }: { text: string; ranges: { start: number; end: number }[]; hiddenClassName: string }) {
+  const segments = splitClozeSegments(text, ranges);
+  return (
+    <>
+      {segments.map((s, i) =>
+        s.hidden ? (
+          <mark key={i} className={hiddenClassName}>
+            {s.text}
+          </mark>
+        ) : (
+          <span key={i}>{s.text}</span>
+        )
+      )}
+    </>
+  );
+}
 
 /**
  * A flashcard's image with its labeled zones masked (front, `revealed`
@@ -525,7 +544,9 @@ export function FlashcardReviewer({
               {current.imageUrl && (
                 <OcclusionImage imageUrl={current.imageUrl} imageAlt={current.imageAlt} occlusions={current.imageOcclusions} revealed={false} />
               )}
-              <p className="text-lg text-foreground">{shownVariant?.text ?? current.front.text}</p>
+              <p className="text-lg text-foreground">
+                {current.clozeRanges.length > 0 ? maskClozeText(current.front.text, current.clozeRanges) : (shownVariant?.text ?? current.front.text)}
+              </p>
             </div>
             <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-primary/30 bg-surface p-8 text-center shadow-sm [backface-visibility:hidden] [transform:rotateY(180deg)]">
               {revealed && (
@@ -546,7 +567,16 @@ export function FlashcardReviewer({
               {current.imageUrl && current.imageOcclusions.length > 0 && (
                 <OcclusionImage imageUrl={current.imageUrl} imageAlt={current.imageAlt} occlusions={current.imageOcclusions} revealed={true} />
               )}
-              <p className="text-lg font-medium text-primary-strong">{current.back.text}</p>
+              {current.clozeRanges.length > 0 ? (
+                <>
+                  <p className="text-lg font-medium text-foreground">
+                    <ClozeText text={current.front.text} ranges={current.clozeRanges} hiddenClassName="rounded bg-primary-tint px-1 text-primary-strong" />
+                  </p>
+                  {current.back.text && <p className="mt-2 text-sm text-foreground-muted">{current.back.text}</p>}
+                </>
+              ) : (
+                <p className="text-lg font-medium text-primary-strong">{current.back.text}</p>
+              )}
             </div>
           </div>
           {revealed && dragX !== 0 && (

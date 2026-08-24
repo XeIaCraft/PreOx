@@ -343,6 +343,7 @@ export type ElProfesorFlashcardRow = {
   suggested_image_page: number | null;
   suggested_image_hint: string | null;
   image_occlusions: Json;
+  cloze_ranges: Json;
   created_at: string;
   updated_at: string;
 };

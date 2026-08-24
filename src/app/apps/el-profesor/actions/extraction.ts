@@ -19,6 +19,7 @@ import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
 import { extractPdfPageTextsWithOcr } from "@/lib/el-profesor/pdf-ocr";
+import { parseClozeText } from "@/lib/el-profesor/cloze";
 import {
   allNeedReviewFlags,
   persistExtraction,
@@ -541,6 +542,32 @@ export async function updateFlashcardVariants(flashcardId: string, variants: { i
   if (error) return { error: "Impossible d'enregistrer les formulations." };
   revalidatePath("/apps/el-profesor");
   return { success: "Formulations mises à jour." };
+}
+
+/**
+ * Cloze card editing (piste "flashcards à trous", 2026-08-24) — `rawText`
+ * is the admin's `{{...}}`-marked passage; parseClozeText strips the
+ * markers into plain text + the ranges to hide, which is what's actually
+ * persisted (front.text + cloze_ranges), never the raw markup itself.
+ * Passing an empty `rawText` (or one with no `{{...}}`) clears
+ * cloze_ranges — the card reverts to being an ordinary Q&A flashcard.
+ */
+export async function updateFlashcardCloze(flashcardId: string, rawText: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const trimmed = rawText.trim();
+  if (!trimmed) return { error: "Le texte à trous ne peut pas être vide." };
+
+  const { text, ranges } = parseClozeText(trimmed);
+  if (!text.trim()) return { error: "Le texte à trous ne peut pas être vide." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_flashcards")
+    .update({ front: { text } as never, cloze_ranges: ranges as never })
+    .eq("id", flashcardId);
+  if (error) return { error: "Impossible d'enregistrer le texte à trous." };
+  revalidatePath("/apps/el-profesor");
+  return { success: ranges.length > 0 ? "Carte à trous mise à jour." : "Aucun trou marqué — la carte redevient une carte question/réponse classique." };
 }
 
 /**

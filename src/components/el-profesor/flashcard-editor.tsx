@@ -13,12 +13,14 @@ import {
   updateFlashcardVariants,
   getFlashcardVariantStatsAction,
   updateFlashcardOcclusions,
+  updateFlashcardCloze,
 } from "@/app/apps/el-profesor/actions/extraction";
 import { FlagsList } from "@/components/el-profesor/flags-list";
 import { EditableCitations } from "@/components/el-profesor/editable-citations";
 import { EditHistory } from "@/components/el-profesor/block-editor";
 import { useToast } from "@/components/ui/toast";
 import { fileToBase64 } from "@/lib/client-file";
+import { parseClozeText, formatClozeText, maskClozeText } from "@/lib/el-profesor/cloze";
 import type { FlashcardVariantStat } from "@/lib/el-profesor/dal";
 import type { Citation, Flag, Flashcard, FlashcardVariant, ImageOcclusion } from "@/lib/el-profesor/types";
 
@@ -241,6 +243,60 @@ function VariantTester({ flashcard, onChanged }: { flashcard: Flashcard; onChang
   );
 }
 
+/**
+ * Cloze deletion cards ("flashcards à trous", piste d'amélioration
+ * 2026-08-24) — the admin marks blanks by wrapping them in `{{...}}`
+ * directly in the passage; saving strips the markers (parseClozeText) and
+ * persists plain text + the ranges to hide. An empty result (no markers
+ * left) reverts the card to an ordinary Q&A card.
+ */
+function ClozeEditor({ flashcard, onChanged }: { flashcard: Flashcard; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [rawText, setRawText] = useState(() => formatClozeText(flashcard.front.text, flashcard.clozeRanges));
+
+  const { text: previewText, ranges: previewRanges } = parseClozeText(rawText);
+  const masked = maskClozeText(previewText, previewRanges);
+
+  function handleSave() {
+    startTransition(async () => {
+      const result = await updateFlashcardCloze(flashcard.id, rawText);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Enregistré.", { variant: "success" });
+        onChanged();
+      }
+    });
+  }
+
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+        <EyeOff className="h-3.5 w-3.5" /> Texte à trous (cloze)
+      </p>
+      <p className="mt-1 text-xs text-foreground-subtle">
+        Entourez chaque réponse à masquer avec des doubles accolades, ex. « Le propofol agit sur les récepteurs
+        <code className="mx-1 rounded bg-surface-muted px-1">{"{{GABA-A}}"}</code>». Aucune accolade restante = carte question/réponse classique.
+      </p>
+      <textarea
+        value={rawText}
+        onChange={(e) => setRawText(e.target.value)}
+        rows={3}
+        placeholder="Ex. Le propofol agit sur les récepteurs {{GABA-A}}."
+        className="mt-1.5 w-full rounded-[var(--radius-sm)] border border-border bg-surface p-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      />
+      {previewRanges.length > 0 && (
+        <p className="mt-1.5 text-xs text-foreground-subtle">
+          Aperçu du recto : <span className="text-foreground-muted">{masked}</span>
+        </p>
+      )}
+      <Button variant="secondary" size="sm" className="mt-1.5" onClick={handleSave} disabled={isPending}>
+        Enregistrer le texte à trous
+      </Button>
+    </div>
+  );
+}
+
 export function FlashcardEditor({
   flashcard,
   onChanged,
@@ -378,6 +434,8 @@ export function FlashcardEditor({
       </div>
 
       <OcclusionEditor flashcard={flashcard} onChanged={onChanged} />
+
+      <ClozeEditor flashcard={flashcard} onChanged={onChanged} />
 
       <VariantTester flashcard={flashcard} onChanged={onChanged} />
 

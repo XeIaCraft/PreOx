@@ -102,6 +102,9 @@ export type FlashcardVariant = { id: string; text: string };
 /** One masked, labeled region on a flashcard's image (item 23 follow-up) — normalized 0-1 coordinates so it survives any display size. Front hides every region as a solid box ("retrouve la légende"); back reveals every label. */
 export type ImageOcclusion = { id: string; x: number; y: number; width: number; height: number; label: string };
 
+/** A blanked span of `front.text` (piste "flashcards à trous", 2026-08-24) — empty array means an ordinary Q&A card, unchanged. See cloze.ts for the {{...}} markup that produces these. */
+export type ClozeRange = { start: number; end: number };
+
 export type Flashcard = {
   id: string;
   ficheId: string;
@@ -115,6 +118,7 @@ export type Flashcard = {
   imageAlt: string | null;
   variants: FlashcardVariant[];
   imageOcclusions: ImageOcclusion[];
+  clozeRanges: ClozeRange[];
   /** Extraction-time hint ("there's a diagram worth capturing around here") — cleared once an image is actually attached. Never set for a Word/PowerPoint-sourced chapter (no page to point to). */
   suggestedImagePage: number | null;
   suggestedImageHint: string | null;

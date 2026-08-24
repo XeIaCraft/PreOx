@@ -41,6 +41,7 @@ import type {
   FicheAnswer,
   FlashcardVariant,
   ImageOcclusion,
+  ClozeRange,
   NotionUpdateProposal,
   NotionUpdateProposalStatus,
   ExtractedFicheBlock,
@@ -151,6 +152,7 @@ function toFlashcard(row: ElProfesorFlashcardRow): Flashcard {
     imageAlt: row.image_alt,
     variants: (row.variants as unknown as FlashcardVariant[]) ?? [],
     imageOcclusions: (row.image_occlusions as unknown as ImageOcclusion[]) ?? [],
+    clozeRanges: (row.cloze_ranges as unknown as ClozeRange[]) ?? [],
     suggestedImagePage: row.suggested_image_page,
     suggestedImageHint: row.suggested_image_hint,
   };
