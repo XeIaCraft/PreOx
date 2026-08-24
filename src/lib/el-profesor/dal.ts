@@ -33,6 +33,7 @@ import type {
   NotionLinkedFiche,
   NotionSummary,
   NotionRecommendation,
+  DoseCalculator,
   Contradiction,
   ContradictionStatus,
   CrossBookDuplicateFlashcards,
@@ -2167,6 +2168,40 @@ export async function getNotionRecommendations(notionIds: string[]): Promise<Rec
   for (const row of data ?? []) {
     const list = result[row.notion_id] ?? [];
     list.push({ id: row.id, notionId: row.notion_id, title: row.title, url: row.url, source: row.source, note: row.note, createdAt: row.created_at });
+    result[row.notion_id] = list;
+  }
+  return result;
+}
+
+/**
+ * Piste d'amélioration 2026-08-24 ("calculateur de doses contextuel") —
+ * admin-authored weight-based dosing entries per notion. Never AI-written:
+ * only an admin ever inserts into this table (see the migration).
+ */
+export async function getDoseCalculators(notionIds: string[]): Promise<Record<string, DoseCalculator[]>> {
+  const result: Record<string, DoseCalculator[]> = {};
+  if (notionIds.length === 0) return result;
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("el_profesor_dose_calculators")
+    .select("id, notion_id, label, dose_per_kg, dose_unit, max_dose, frequency, note, created_at")
+    .in("notion_id", notionIds)
+    .order("created_at", { ascending: true });
+
+  for (const row of data ?? []) {
+    const list = result[row.notion_id] ?? [];
+    list.push({
+      id: row.id,
+      notionId: row.notion_id,
+      label: row.label,
+      dosePerKg: row.dose_per_kg,
+      doseUnit: row.dose_unit,
+      maxDose: row.max_dose,
+      frequency: row.frequency,
+      note: row.note,
+      createdAt: row.created_at,
+    });
     result[row.notion_id] = list;
   }
   return result;

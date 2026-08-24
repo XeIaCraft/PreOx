@@ -3,7 +3,24 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Tag, ShieldAlert, Sparkles, Check, X, Merge, Undo2, Copy, FileSearch, Upload, Landmark, ExternalLink, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Tag,
+  ShieldAlert,
+  Sparkles,
+  Check,
+  X,
+  Merge,
+  Undo2,
+  Copy,
+  FileSearch,
+  Upload,
+  Landmark,
+  ExternalLink,
+  Plus,
+  Trash2,
+  Calculator,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/input";
@@ -18,6 +35,8 @@ import {
   resolveContradictionAndSupersede,
   addNotionRecommendation,
   deleteNotionRecommendation,
+  addDoseCalculator,
+  deleteDoseCalculator,
 } from "@/app/apps/el-profesor/actions/notions";
 import {
   checkNotionForUpdatesFromText,
@@ -29,6 +48,7 @@ import { useToast } from "@/components/ui/toast";
 import type {
   NotionSummary,
   NotionRecommendation,
+  DoseCalculator as DoseCalculatorEntry,
   Contradiction,
   CrossBookDuplicateFlashcards,
   SupersededFicheEntry,
@@ -256,6 +276,152 @@ function RecommendationsManager({
       ) : (
         <Button variant="ghost" size="sm" onClick={() => setAdding(true)} className="mt-1.5 h-6 px-2 text-xs">
           <Plus className="h-3 w-3" /> Ajouter un lien
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Piste 2026-08-24 ("calculateur de doses contextuel") — admin-only
+ * management, same shape as RecommendationsManager. Every field the admin
+ * types is stored verbatim; no AI assist, no formula parsing on this
+ * screen either.
+ */
+function DoseCalculatorsManager({
+  notionId,
+  calculators,
+  onChanged,
+}: {
+  notionId: string;
+  calculators: DoseCalculatorEntry[];
+  onChanged: () => void;
+}) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState("");
+  const [dosePerKg, setDosePerKg] = useState("");
+  const [doseUnit, setDoseUnit] = useState("mg");
+  const [maxDose, setMaxDose] = useState("");
+  const [frequency, setFrequency] = useState("");
+  const [note, setNote] = useState("");
+
+  function handleAdd() {
+    const parsedDose = Number(dosePerKg);
+    const parsedMax = maxDose.trim() ? Number(maxDose) : null;
+    startTransition(async () => {
+      const result = await addDoseCalculator(notionId, label, parsedDose, doseUnit, parsedMax, frequency, note);
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      setLabel("");
+      setDosePerKg("");
+      setDoseUnit("mg");
+      setMaxDose("");
+      setFrequency("");
+      setNote("");
+      setAdding(false);
+      onChanged();
+    });
+  }
+
+  function handleDelete(id: string) {
+    startTransition(async () => {
+      const result = await deleteDoseCalculator(id);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <p className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">
+        <Calculator className="h-3 w-3" /> Calculateurs de dose
+      </p>
+      {calculators.length > 0 && (
+        <ul className="mt-1.5 space-y-1">
+          {calculators.map((c) => (
+            <li key={c.id} className="flex items-start justify-between gap-2 text-xs">
+              <span>
+                <span className="font-medium text-foreground">{c.label}</span>
+                <span className="text-foreground-subtle">
+                  {" "}
+                  — {c.dosePerKg} {c.doseUnit}/kg{c.maxDose != null ? ` (max ${c.maxDose} ${c.doseUnit})` : ""}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => handleDelete(c.id)}
+                disabled={isPending}
+                className="shrink-0 text-foreground-subtle hover:text-danger"
+                aria-label="Supprimer ce calculateur"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {adding ? (
+        <div className="mt-2 space-y-1.5">
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="Libellé (ex. Amoxicilline — angine)"
+            className="w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          />
+          <div className="flex gap-1.5">
+            <input
+              type="number"
+              min={0}
+              step="any"
+              value={dosePerKg}
+              onChange={(e) => setDosePerKg(e.target.value)}
+              placeholder="Dose/kg"
+              className="w-24 rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+            />
+            <input
+              value={doseUnit}
+              onChange={(e) => setDoseUnit(e.target.value)}
+              placeholder="Unité (mg)"
+              className="w-20 rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+            />
+            <input
+              type="number"
+              min={0}
+              step="any"
+              value={maxDose}
+              onChange={(e) => setMaxDose(e.target.value)}
+              placeholder="Dose max (optionnel)"
+              className="flex-1 rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+            />
+          </div>
+          <input
+            value={frequency}
+            onChange={(e) => setFrequency(e.target.value)}
+            placeholder="Fréquence (ex. 3 fois par jour) — optionnel"
+            className="w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          />
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Note / mise en garde — optionnel"
+            className="w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={handleAdd} disabled={isPending || !label.trim() || !dosePerKg.trim()}>
+              {isPending ? "…" : "Ajouter"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setAdding(false)} disabled={isPending}>
+              Annuler
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button variant="ghost" size="sm" onClick={() => setAdding(true)} className="mt-1.5 h-6 px-2 text-xs">
+          <Plus className="h-3 w-3" /> Ajouter un calculateur
         </Button>
       )}
     </div>
@@ -518,6 +684,7 @@ export function NotionsView({
   chapters,
   notionSummaries,
   recommendations,
+  doseCalculators,
   contradictions,
   crossBookDuplicates,
   supersededFiches,
@@ -526,6 +693,7 @@ export function NotionsView({
   chapters: { id: string; title: string; bookTitle: string }[];
   notionSummaries: NotionSummary[];
   recommendations: Record<string, NotionRecommendation[]>;
+  doseCalculators: Record<string, DoseCalculatorEntry[]>;
   contradictions: Contradiction[];
   crossBookDuplicates: CrossBookDuplicateFlashcards[];
   supersededFiches: SupersededFicheEntry[];
@@ -676,6 +844,7 @@ export function NotionsView({
                   </ul>
                   {fiches.length >= 2 && <MergeFichesForm fiches={fiches} onChanged={refresh} />}
                   <RecommendationsManager notionId={notion.id} recommendations={recommendations[notion.id] ?? []} onChanged={refresh} />
+                  <DoseCalculatorsManager notionId={notion.id} calculators={doseCalculators[notion.id] ?? []} onChanged={refresh} />
                 </div>
               );
             })}

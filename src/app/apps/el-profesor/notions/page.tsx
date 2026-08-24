@@ -3,6 +3,7 @@ import {
   getLibrary,
   getNotionSummaries,
   getNotionRecommendations,
+  getDoseCalculators,
   getContradictions,
   getCrossBookFlashcardDuplicates,
   getSupersededFiches,
@@ -22,7 +23,8 @@ export default async function NotionsPage() {
     getSupersededFiches(),
     getNotionUpdateProposals(),
   ]);
-  const recommendations = await getNotionRecommendations(notionSummaries.map((s) => s.notion.id));
+  const notionIds = notionSummaries.map((s) => s.notion.id);
+  const [recommendations, doseCalculators] = await Promise.all([getNotionRecommendations(notionIds), getDoseCalculators(notionIds)]);
 
   const chapters = books.flatMap((book) =>
     book.chapters
@@ -36,6 +38,7 @@ export default async function NotionsPage() {
         chapters={chapters}
         notionSummaries={notionSummaries}
         recommendations={recommendations}
+        doseCalculators={doseCalculators}
         contradictions={contradictions}
         crossBookDuplicates={crossBookDuplicates}
         supersededFiches={supersededFiches}

@@ -187,6 +187,24 @@ export type NotionRecommendation = {
   createdAt: string;
 };
 
+/**
+ * Piste 2026-08-24 ("calculateur de doses contextuel") — an admin-authored
+ * weight-based dosing entry (mg/kg style), never AI-generated. The only
+ * computation ever performed on this is `min(dosePerKg * weightKg,
+ * maxDose)` — deliberately no formula engine, no free-form expression.
+ */
+export type DoseCalculator = {
+  id: string;
+  notionId: string;
+  label: string;
+  dosePerKg: number;
+  doseUnit: string;
+  maxDose: number | null;
+  frequency: string;
+  note: string;
+  createdAt: string;
+};
+
 export type ContradictionStatus = "pending" | "dismissed" | "resolved";
 
 export type Contradiction = {

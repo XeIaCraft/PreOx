@@ -292,3 +292,54 @@ export async function deleteNotionRecommendation(id: string): Promise<ActionStat
   revalidatePath("/apps/el-profesor/glossary");
   return { success: "Recommandation supprimée." };
 }
+
+/**
+ * Piste d'amélioration 2026-08-24 ("calculateur de doses contextuel") —
+ * attaches a weight-based dosing entry to a notion. Deliberately no AI
+ * anywhere: an admin types every number themselves, and the only
+ * computation ever performed downstream on these values is
+ * `min(dosePerKg * weightKg, maxDose)` — see DoseCalculator's doc comment.
+ */
+export async function addDoseCalculator(
+  notionId: string,
+  label: string,
+  dosePerKg: number,
+  doseUnit: string,
+  maxDose: number | null,
+  frequency: string,
+  note: string
+): Promise<ActionState> {
+  const profile = await requireElProfesorAdmin();
+  const trimmedLabel = label.trim();
+  if (!trimmedLabel) return { error: "Le libellé est obligatoire." };
+  if (!Number.isFinite(dosePerKg) || dosePerKg <= 0) return { error: "La dose par kg doit être un nombre positif." };
+  if (maxDose != null && (!Number.isFinite(maxDose) || maxDose <= 0)) return { error: "La dose maximale doit être un nombre positif." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_dose_calculators").insert({
+    notion_id: notionId,
+    label: trimmedLabel,
+    dose_per_kg: dosePerKg,
+    dose_unit: doseUnit.trim() || "mg",
+    max_dose: maxDose,
+    frequency: frequency.trim(),
+    note: note.trim(),
+    created_by: profile.id,
+  });
+  if (error) return { error: "Impossible d'enregistrer ce calculateur." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  return { success: "Calculateur ajouté." };
+}
+
+export async function deleteDoseCalculator(id: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_dose_calculators").delete().eq("id", id);
+  if (error) return { error: "Impossible de supprimer ce calculateur." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  return { success: "Calculateur supprimé." };
+}

@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, Search, GraduationCap, ExternalLink, Landmark } from "lucide-react";
+import { ArrowLeft, BookOpen, Search, GraduationCap, ExternalLink, Landmark, Calculator, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import type { NotionSummary, NotionRecommendation } from "@/lib/el-profesor/types";
+import type { NotionSummary, NotionRecommendation, DoseCalculator as DoseCalculatorEntry } from "@/lib/el-profesor/types";
 import type { NotionReadiness } from "@/lib/el-profesor/dal";
 
 /** Piste 2026-08-24 ("estimation de préparation par notion") — color + label for a readiness percentage, same three-tier read as the rest of the app's progress indicators. */
@@ -14,14 +14,82 @@ function readinessTier(pct: number): { badgeClassName: string; barClassName: str
   return { badgeClassName: "bg-danger/15 text-danger", barClassName: "bg-danger", label: "Fragile" };
 }
 
+function formatDoseValue(v: number): string {
+  return v.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
+}
+
+/**
+ * Piste 2026-08-24 ("calculateur de doses contextuel") — the only
+ * computation here is `min(dosePerKg * weightKg, maxDose)`, entirely
+ * client-side on admin-authored numbers. The disclaimer is not optional
+ * decoration: this is the single most safety-sensitive widget in the
+ * module, so it stays visible whenever a computed value is shown.
+ */
+function DoseCalculatorSection({ calculators }: { calculators: DoseCalculatorEntry[] }) {
+  const [weight, setWeight] = useState("");
+  const weightKg = Number(weight);
+  const validWeight = weight.trim() !== "" && Number.isFinite(weightKg) && weightKg > 0;
+
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <p className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">
+        <Calculator className="h-3 w-3" /> Calculateur de dose
+      </p>
+      <label className="mt-1.5 flex items-center gap-2 text-xs text-foreground-subtle">
+        Poids du patient (kg)
+        <input
+          type="number"
+          min={0}
+          step="0.1"
+          value={weight}
+          onChange={(e) => setWeight(e.target.value)}
+          placeholder="ex. 15"
+          className="w-20 rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        />
+      </label>
+      <ul className="mt-2 space-y-1.5">
+        {calculators.map((c) => {
+          const raw = validWeight ? c.dosePerKg * weightKg : null;
+          const capped = raw != null && c.maxDose != null ? Math.min(raw, c.maxDose) : raw;
+          const wasCapped = raw != null && c.maxDose != null && raw > c.maxDose;
+          return (
+            <li key={c.id} className="rounded-[var(--radius-sm)] bg-surface-muted/50 p-2 text-xs">
+              <p className="font-medium text-foreground">{c.label}</p>
+              <p className="text-foreground-subtle">
+                {c.dosePerKg} {c.doseUnit}/kg
+                {c.maxDose != null ? ` (max ${c.maxDose} ${c.doseUnit})` : ""}
+                {c.frequency ? ` — ${c.frequency}` : ""}
+              </p>
+              {capped != null && (
+                <p className="mt-1 font-medium text-primary-strong">
+                  ≈ {formatDoseValue(capped)} {c.doseUnit}
+                  {wasCapped ? " (plafonné)" : ""}
+                </p>
+              )}
+              {c.note && <p className="mt-0.5 text-foreground-subtle">{c.note}</p>}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-2 flex items-start gap-1 text-[11px] font-medium text-danger">
+        <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
+        Outil de calcul, pas un avis médical — vérifiez systématiquement la posologie auprès d&apos;une source de référence à jour avant
+        toute administration.
+      </p>
+    </div>
+  );
+}
+
 export function GlossaryView({
   notions,
   readiness,
   recommendations,
+  doseCalculators,
 }: {
   notions: NotionSummary[];
   readiness: Record<string, NotionReadiness>;
   recommendations: Record<string, NotionRecommendation[]>;
+  doseCalculators: Record<string, DoseCalculatorEntry[]>;
 }) {
   const [query, setQuery] = useState("");
 
@@ -65,6 +133,7 @@ export function GlossaryView({
             const r = readiness[notion.id];
             const tier = r && r.total > 0 ? readinessTier(r.readinessPct) : null;
             const notionRecommendations = recommendations[notion.id] ?? [];
+            const notionDoseCalculators = doseCalculators[notion.id] ?? [];
             return (
               <div key={notion.id} id={`notion-${notion.id}`} className="rounded-[var(--radius-md)] border border-border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -134,6 +203,7 @@ export function GlossaryView({
                     </ul>
                   </div>
                 )}
+                {notionDoseCalculators.length > 0 && <DoseCalculatorSection calculators={notionDoseCalculators} />}
               </div>
             );
           })}

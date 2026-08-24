@@ -539,6 +539,19 @@ export type ElProfesorNotionRecommendationRow = {
   created_at: string;
 };
 
+export type ElProfesorDoseCalculatorRow = {
+  id: string;
+  notion_id: string;
+  label: string;
+  dose_per_kg: number;
+  dose_unit: string;
+  max_dose: number | null;
+  frequency: string;
+  note: string;
+  created_by: string | null;
+  created_at: string;
+};
+
 export type UserLoginLogRow = {
   id: string;
   user_id: string;
@@ -848,6 +861,12 @@ export type Database = {
         Row: ElProfesorNotionRecommendationRow;
         Insert: Partial<ElProfesorNotionRecommendationRow> & { notion_id: string; title: string; url: string };
         Update: Partial<ElProfesorNotionRecommendationRow>;
+        Relationships: [];
+      };
+      el_profesor_dose_calculators: {
+        Row: ElProfesorDoseCalculatorRow;
+        Insert: Partial<ElProfesorDoseCalculatorRow> & { notion_id: string; label: string; dose_per_kg: number };
+        Update: Partial<ElProfesorDoseCalculatorRow>;
         Relationships: [];
       };
       el_profesor_contradictions: {
