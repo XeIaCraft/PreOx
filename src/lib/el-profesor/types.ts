@@ -61,6 +61,7 @@ export type Chapter = {
   estimatedRemainingPasses: number | null;
   sourceKind: ChapterSourceKind;
   sourceText: string | null;
+  updatedAt: string;
 };
 
 export type SubEntity = {

@@ -159,6 +159,49 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
   }
 }
 
+// How long a chapter can sit in "extracting" before it's offered as
+// resettable — comfortably above a normal Gemini extraction (typically
+// under a minute), so this never interrupts a genuinely in-progress run,
+// but short enough that a stuck one (killed by a function timeout or a
+// dropped connection — the try/catch in extractChapter that would normally
+// flip the status to "failed" never gets to run in that case) doesn't sit
+// unrecoverable for long.
+const STUCK_EXTRACTION_MINUTES = 3;
+
+/**
+ * Manual escape hatch for a chapter stuck at "extracting" (item requested
+ * 2026-08-25, after a report of Gemini-mode chapters staying stuck with no
+ * way to retry other than deleting the whole chapter) — the only way this
+ * status doesn't self-heal to "failed" via extractChapter's own catch block
+ * is if the process running it was killed outright (Vercel function
+ * timeout, dropped connection), so there is nothing to actually cancel:
+ * this just clears the stale status so the normal "Extraire" retry button
+ * reappears. Deliberately excludes "queued" (Claude batch submissions) —
+ * those can legitimately sit for hours waiting on the Batches API and are
+ * resolved by the cron poller, not this.
+ */
+export async function resetStuckExtraction(chapterId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: chapter } = await supabase.from("el_profesor_chapters").select("status, updated_at").eq("id", chapterId).single();
+  if (!chapter) return { error: "Chapitre introuvable." };
+  if (chapter.status !== "extracting") {
+    return { error: "Ce chapitre n'est pas en cours d'extraction." };
+  }
+  const ageMinutes = (Date.now() - new Date(chapter.updated_at).getTime()) / 60_000;
+  if (ageMinutes < STUCK_EXTRACTION_MINUTES) {
+    return { error: `Attendez encore quelques instants — une extraction met normalement moins de ${STUCK_EXTRACTION_MINUTES} minutes.` };
+  }
+
+  const message = "Extraction interrompue (connexion perdue ou délai dépassé) — relancez-la.";
+  await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
+  await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "failed", error: message });
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Chapitre réinitialisé — vous pouvez relancer l'extraction." };
+}
+
 function stripCodeFence(raw: string): string {
   const trimmed = raw.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);

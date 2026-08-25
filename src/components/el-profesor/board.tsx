@@ -34,6 +34,7 @@ import {
   Timer,
   Siren,
   NotebookPen,
+  RotateCcw,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -53,7 +54,7 @@ import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-se
 import { LibraryStats } from "@/components/el-profesor/learning-widgets";
 import { DashboardSecondaryWidgets, DashboardWidgetsSkeleton } from "@/components/el-profesor/dashboard-secondary-widgets";
 import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
-import { extractChapter, extractChapterComplementary } from "@/app/apps/el-profesor/actions/extraction";
+import { extractChapter, extractChapterComplementary, resetStuckExtraction } from "@/app/apps/el-profesor/actions/extraction";
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
 import { exportBookArchive, archiveBook } from "@/app/apps/el-profesor/actions/archive";
@@ -134,6 +135,15 @@ function ElapsedTime({ startedAt }: { startedAt: number }) {
   }, []);
 
   return <span className="tabular-nums">{formatElapsed(now - startedAt)}</span>;
+}
+
+// Mirrors STUCK_EXTRACTION_MINUTES in actions/extraction.ts — only offer
+// the reset button once the server would actually accept it, so it never
+// flashes up for a chapter that's still genuinely extracting.
+const STUCK_EXTRACTION_MS = 3 * 60 * 1000;
+
+function isStuckExtraction(updatedAt: string): boolean {
+  return Date.now() - new Date(updatedAt).getTime() > STUCK_EXTRACTION_MS;
 }
 
 const STATUS_LABEL: Record<ChapterStatus, string> = {
@@ -381,6 +391,19 @@ export function ElProfesorBoard({
       if (result.error) toast(result.error, { variant: "error" });
       else {
         toast(result.success ?? "Extraction terminée.", { variant: "success" });
+        refresh();
+      }
+    });
+  }
+
+  function handleResetStuck(chapterId: string) {
+    setPendingId(chapterId);
+    startTransition(async () => {
+      const result = await resetStuckExtraction(chapterId);
+      setPendingId(null);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Réinitialisé.", { variant: "success" });
         refresh();
       }
     });
@@ -1039,6 +1062,17 @@ export function ElProfesorBoard({
                           ) : (
                             "Extraire"
                           )}
+                        </Button>
+                      )}
+                      {isAdmin && chapter.status === "extracting" && isStuckExtraction(chapter.updatedAt) && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleResetStuck(chapter.id)}
+                          disabled={busy}
+                          title="L'extraction semble bloquée (aucune progression depuis plusieurs minutes) — réinitialise le chapitre pour pouvoir relancer l'extraction"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser
                         </Button>
                       )}
                       {isAdmin && chapter.status === "draft_ready" && (
