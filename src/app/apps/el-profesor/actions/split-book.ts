@@ -91,7 +91,18 @@ export async function suggestBookChapters(storagePath: string): Promise<ActionSt
     return { error: "Configurez votre clé API Gemini dans les réglages d'El Profesor pour utiliser la suggestion automatique.", pageCount };
   }
 
-  const pageTexts = await extractPdfPageTexts(bytes);
+  let pageTexts: string[];
+  try {
+    pageTexts = await extractPdfPageTexts(bytes);
+  } catch {
+    // The one call in this function that wasn't guarded (found 2026-08-25,
+    // after a report of the page crashing outright with no error message) —
+    // a malformed page or a very large book taking too long here would
+    // otherwise throw uncaught out of the Server Action and crash to Next's
+    // generic error page instead of surfacing a clean message.
+    return { error: "Échec de la lecture du texte du PDF — fichier corrompu, ou trop volumineux pour être lu à temps. Utilisez le découpage manuel ci-dessous.", pageCount };
+  }
+
   try {
     const chapters = await detectChapterBoundaries(config, pageTexts);
     if (chapters.length === 0) return { error: "Aucun découpage détecté — essayez le mode manuel.", pageCount };
