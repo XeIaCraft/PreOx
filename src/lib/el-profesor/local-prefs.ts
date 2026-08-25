@@ -104,3 +104,14 @@ export function getPdfZoom(): number | null {
 export function setPdfZoom(zoom: number) {
   setItem("pdf-zoom", String(zoom));
 }
+
+export type DashboardViewMode = "book" | "notion";
+
+/** Which grouping the dashboard's book list renders in — "Par livre" vs "Par notion" (requested repeatedly, added 2026-08-25). */
+export function getDashboardViewMode(): DashboardViewMode {
+  return getItem("dashboard-view") === "notion" ? "notion" : "book";
+}
+
+export function setDashboardViewMode(mode: DashboardViewMode) {
+  setItem("dashboard-view", mode);
+}

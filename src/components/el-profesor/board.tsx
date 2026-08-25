@@ -44,6 +44,7 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { NotesSearchDialog } from "@/components/el-profesor/notes-search-dialog";
+import { DashboardNotionView, DashboardNotionViewSkeleton } from "@/components/el-profesor/dashboard-notion-view";
 import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog";
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { SplitBookDialog } from "@/components/el-profesor/dialogs/split-book-dialog";
@@ -58,11 +59,11 @@ import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-con
 import { exportBookArchive, archiveBook } from "@/app/apps/el-profesor/actions/archive";
 import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/export";
 import { exportBookNotes } from "@/app/apps/el-profesor/actions/notes";
-import { getLastChapter } from "@/lib/el-profesor/local-prefs";
+import { getLastChapter, getDashboardViewMode, setDashboardViewMode, type DashboardViewMode } from "@/lib/el-profesor/local-prefs";
 import { formatUsd } from "@/lib/el-profesor/ai-pricing";
 import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts, ChapterMasteryPercentile, ElProfesorAiProvider } from "@/lib/el-profesor/dal";
 import type { ChapterStatus } from "@/lib/el-profesor/types";
-import type { DashboardSecondaryData, DashboardAiConfigData } from "@/lib/el-profesor/dashboard-types";
+import type { DashboardSecondaryData, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
 
 function MasteryBar({ counts }: { counts: { total: number; new: number; learning: number; acquired: number } }) {
   if (counts.total === 0) return null;
@@ -288,6 +289,7 @@ export function ElProfesorBoard({
   serverResumeChapterId,
   secondaryDataPromise,
   aiConfigPromise,
+  notionViewDataPromise,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -309,6 +311,8 @@ export function ElProfesorBoard({
    */
   secondaryDataPromise: Promise<DashboardSecondaryData>;
   aiConfigPromise: Promise<DashboardAiConfigData | null>;
+  /** Same streamed-promise pattern, consumed by DashboardNotionView only once the "Par notion" toggle is selected. */
+  notionViewDataPromise: Promise<DashboardNotionViewData>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -327,6 +331,11 @@ export function ElProfesorBoard({
   // one-time localStorage reads — null on the server, resolved on mount.
   const [resumeChapterId] = useState(() => serverResumeChapterId ?? getLastChapter());
   const [tourOpen, setTourOpen] = useState(() => !hasSeenOnboarding("el-profesor"));
+  const [viewMode, setViewModeState] = useState<DashboardViewMode>(() => getDashboardViewMode());
+  function setViewMode(mode: DashboardViewMode) {
+    setViewModeState(mode);
+    setDashboardViewMode(mode);
+  }
 
   let resume: { book: BookWithChapters; chapter: BookWithChapters["chapters"][number] } | null = null;
   if (resumeChapterId) {
@@ -693,7 +702,30 @@ export function ElProfesorBoard({
         </div>
       )}
 
-      {themes.length > 1 && (
+      {books.length > 0 && (
+        <div className="mt-6 flex w-fit items-center gap-1 rounded-full border border-border p-1">
+          <button
+            type="button"
+            onClick={() => setViewMode("book")}
+            className={`rounded-full px-3 py-1 text-xs font-medium ${
+              viewMode === "book" ? "bg-primary-tint text-primary-strong" : "text-foreground-subtle hover:text-foreground"
+            }`}
+          >
+            Par livre
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("notion")}
+            className={`rounded-full px-3 py-1 text-xs font-medium ${
+              viewMode === "notion" ? "bg-primary-tint text-primary-strong" : "text-foreground-subtle hover:text-foreground"
+            }`}
+          >
+            Par notion
+          </button>
+        </div>
+      )}
+
+      {viewMode === "book" && themes.length > 1 && (
         <div className="mt-6 flex flex-wrap items-center gap-1.5">
           <button
             type="button"
@@ -719,7 +751,7 @@ export function ElProfesorBoard({
         </div>
       )}
 
-      {isAdmin && aiProvider === "claude" && bulkSelectableChapterIds.length > 0 && selectedChapterIds.size === 0 && (
+      {viewMode === "book" && isAdmin && aiProvider === "claude" && bulkSelectableChapterIds.length > 0 && selectedChapterIds.size === 0 && (
         <button
           type="button"
           onClick={() => setSelectedChapterIds(new Set(bulkSelectableChapterIds))}
@@ -755,6 +787,15 @@ export function ElProfesorBoard({
         </div>
       )}
 
+      {viewMode === "notion" && (
+        <div className="mt-6">
+          <Suspense fallback={<DashboardNotionViewSkeleton />}>
+            <DashboardNotionView dataPromise={notionViewDataPromise} />
+          </Suspense>
+        </div>
+      )}
+
+      {viewMode === "book" && (
       <div className="mt-8 space-y-8">
         {visibleBooks.map((book) => {
           const bookIndex = books.findIndex((b) => b.id === book.id);
@@ -1106,6 +1147,7 @@ export function ElProfesorBoard({
           );
         })}
       </div>
+      )}
 
       {modal?.type === "add_book" && (
         <AddBookDialog

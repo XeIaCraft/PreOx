@@ -11,8 +11,9 @@ import type {
   OnThisDayNote,
   BookRecommendation,
   DueBlockEntry,
+  NotionReadiness,
 } from "@/lib/el-profesor/dal";
-import type { Flashcard } from "@/lib/el-profesor/types";
+import type { Flashcard, NotionSummary, NotionRecommendation, DoseCalculator } from "@/lib/el-profesor/types";
 import type { ElProfesorBatchJobRow } from "@/lib/supabase/types";
 
 /**
@@ -59,4 +60,18 @@ export interface DashboardAiConfigData {
   hasClaudeKey: boolean;
   claudeModel: string;
   batchJobs: ElProfesorBatchJobRow[];
+}
+
+/**
+ * "Vue par notion" on the dashboard (requested repeatedly, added 2026-08-25)
+ * — the same cross-book grouping already shown on the standalone /glossary
+ * page, streamed separately so switching the dashboard's "Par livre / Par
+ * notion" toggle never blocks on it before the toggle is actually used.
+ */
+export interface DashboardNotionViewData {
+  notions: NotionSummary[];
+  readiness: Record<string, NotionReadiness>;
+  recommendations: Record<string, NotionRecommendation[]>;
+  doseCalculators: Record<string, DoseCalculator[]>;
+  caseCounts: Record<string, number>;
 }

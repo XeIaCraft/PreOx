@@ -33,13 +33,18 @@ import {
   getOnThisDayNote,
   getRecommendedNextBook,
   getDueBlocksForUser,
+  getGlossary,
+  getNotionReadiness,
+  getNotionRecommendations,
+  getDoseCalculators,
+  getCaseJournalCountsByNotion,
   type BookWithChapters,
 } from "@/lib/el-profesor/dal";
 import { getBatchJobs } from "@/app/apps/el-profesor/actions/batches";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { ToastProvider } from "@/components/ui/toast";
 import { recordAppVisit } from "@/app/actions/discovery";
-import type { DashboardSecondaryData, DashboardAiConfigData } from "@/lib/el-profesor/dashboard-types";
+import type { DashboardSecondaryData, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
 
 async function loadSecondaryDashboardData(
   profileId: string,
@@ -103,6 +108,18 @@ async function loadSecondaryDashboardData(
   };
 }
 
+async function loadNotionViewData(profileId: string): Promise<DashboardNotionViewData> {
+  const notions = await getGlossary();
+  const notionIds = notions.map((n) => n.notion.id);
+  const [readiness, recommendations, doseCalculators, caseCounts] = await Promise.all([
+    getNotionReadiness(profileId, notions),
+    getNotionRecommendations(notionIds),
+    getDoseCalculators(notionIds),
+    getCaseJournalCountsByNotion(profileId, notionIds),
+  ]);
+  return { notions, readiness, recommendations, doseCalculators, caseCounts };
+}
+
 async function loadAiConfigData(): Promise<DashboardAiConfigData> {
   const [geminiModel, geminiExtraKeyCount, geminiFallbackModel, geminiUsageStats, aiSpendCapUsd, currentMonthAiSpendUsd, hasClaudeKey, claudeModel, batchJobs] =
     await Promise.all([
@@ -148,6 +165,7 @@ export default async function ElProfesorPage() {
   // src/lib/el-profesor/dashboard-types.ts for what each covers.
   const secondaryDataPromise = loadSecondaryDashboardData(profile.id, isAdmin, allChapters, books, libraryBooks);
   const aiConfigPromise = isAdmin ? loadAiConfigData() : Promise.resolve(null);
+  const notionViewDataPromise = loadNotionViewData(profile.id);
 
   return (
     <ToastProvider>
@@ -164,6 +182,7 @@ export default async function ElProfesorPage() {
         serverResumeChapterId={readingPosition?.chapterId ?? null}
         secondaryDataPromise={secondaryDataPromise}
         aiConfigPromise={aiConfigPromise}
+        notionViewDataPromise={notionViewDataPromise}
       />
     </ToastProvider>
   );

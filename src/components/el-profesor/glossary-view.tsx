@@ -80,6 +80,117 @@ function DoseCalculatorSection({ calculators }: { calculators: DoseCalculatorEnt
   );
 }
 
+/**
+ * The per-notion card list — extracted (2026-08-25) so the same rendering
+ * can be reused both on the standalone /glossary page and as the "Par
+ * notion" grouping on the main dashboard (see DashboardNotionView), instead
+ * of duplicating this ~90-line block.
+ */
+export function NotionList({
+  notions,
+  readiness,
+  recommendations,
+  doseCalculators,
+  caseCounts,
+}: {
+  notions: NotionSummary[];
+  readiness: Record<string, NotionReadiness>;
+  recommendations: Record<string, NotionRecommendation[]>;
+  doseCalculators: Record<string, DoseCalculatorEntry[]>;
+  caseCounts: Record<string, number>;
+}) {
+  return (
+    <div className="space-y-3">
+      {notions.map(({ notion, fiches }) => {
+        const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
+        const r = readiness[notion.id];
+        const tier = r && r.total > 0 ? readinessTier(r.readinessPct) : null;
+        const notionRecommendations = recommendations[notion.id] ?? [];
+        const notionDoseCalculators = doseCalculators[notion.id] ?? [];
+        return (
+          <div key={notion.id} id={`notion-${notion.id}`} className="rounded-[var(--radius-md)] border border-border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-medium text-foreground">{notion.name}</p>
+              <div className="flex items-center gap-2">
+                <Badge variant="neutral">
+                  {fiches.length} fiche{fiches.length > 1 ? "s" : ""}
+                  {distinctBooks > 1 ? ` · ${distinctBooks} livres` : ""}
+                </Badge>
+                {tier && (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tier.badgeClassName}`}
+                    title={`Préparation estimée : ${r.acquired}/${r.total} flashcards maîtrisées sur les fiches de cette notion.`}
+                  >
+                    {tier.label} · {r.readinessPct}%
+                  </span>
+                )}
+                <Link
+                  href={`/apps/el-profesor/review?mode=theme&notionId=${notion.id}&name=${encodeURIComponent(notion.name)}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary-tint px-2.5 py-1 text-xs font-medium text-primary-strong hover:bg-primary-tint/70"
+                >
+                  <GraduationCap className="h-3.5 w-3.5" /> Réviser ce thème
+                </Link>
+                <Link
+                  href={`/apps/el-profesor/journal?notionId=${notion.id}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-foreground-subtle hover:text-foreground"
+                  title="Mon journal de cas pour cette notion"
+                >
+                  <NotebookPen className="h-3.5 w-3.5" /> {caseCounts[notion.id] ? `${caseCounts[notion.id]} cas` : "Cas"}
+                </Link>
+              </div>
+            </div>
+            {r && r.total > 0 && tier && (
+              <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-muted">
+                <div className={`h-full rounded-full ${tier.barClassName}`} style={{ width: `${r.readinessPct}%` }} />
+              </div>
+            )}
+            <ul className="mt-2 space-y-1 text-xs text-foreground-subtle">
+              {fiches.map((f) => (
+                <li key={f.ficheId}>
+                  <Link href={`/apps/el-profesor/chapters/${f.chapterId}`} className="inline-flex items-center gap-1 hover:underline">
+                    <BookOpen className="h-3 w-3 shrink-0" />
+                    <span className="font-medium text-foreground">{f.ficheTitle}</span>
+                    <span>
+                      — {f.bookTitle} / {f.chapterTitle}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            {notionRecommendations.length > 0 && (
+              <div className="mt-3 border-t border-border pt-2">
+                <p className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">
+                  <Landmark className="h-3 w-3" /> Recommandations officielles
+                </p>
+                <ul className="mt-1 space-y-1">
+                  {notionRecommendations.map((rec) => (
+                    <li key={rec.id}>
+                      <a
+                        href={rec.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-start gap-1 text-xs text-primary-strong hover:underline"
+                      >
+                        <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
+                        <span>
+                          {rec.title}
+                          {rec.source ? <span className="text-foreground-subtle"> — {rec.source}</span> : null}
+                        </span>
+                      </a>
+                      {rec.note && <p className="ml-4 text-[11px] text-foreground-subtle">{rec.note}</p>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {notionDoseCalculators.length > 0 && <DoseCalculatorSection calculators={notionDoseCalculators} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function GlossaryView({
   notions,
   readiness,
@@ -129,93 +240,8 @@ export function GlossaryView({
       ) : filtered.length === 0 ? (
         <p className="mt-6 text-sm text-foreground-subtle">Aucun résultat pour « {query} ».</p>
       ) : (
-        <div className="mt-6 space-y-3">
-          {filtered.map(({ notion, fiches }) => {
-            const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
-            const r = readiness[notion.id];
-            const tier = r && r.total > 0 ? readinessTier(r.readinessPct) : null;
-            const notionRecommendations = recommendations[notion.id] ?? [];
-            const notionDoseCalculators = doseCalculators[notion.id] ?? [];
-            return (
-              <div key={notion.id} id={`notion-${notion.id}`} className="rounded-[var(--radius-md)] border border-border p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-medium text-foreground">{notion.name}</p>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="neutral">
-                      {fiches.length} fiche{fiches.length > 1 ? "s" : ""}
-                      {distinctBooks > 1 ? ` · ${distinctBooks} livres` : ""}
-                    </Badge>
-                    {tier && (
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tier.badgeClassName}`}
-                        title={`Préparation estimée : ${r.acquired}/${r.total} flashcards maîtrisées sur les fiches de cette notion.`}
-                      >
-                        {tier.label} · {r.readinessPct}%
-                      </span>
-                    )}
-                    <Link
-                      href={`/apps/el-profesor/review?mode=theme&notionId=${notion.id}&name=${encodeURIComponent(notion.name)}`}
-                      className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary-tint px-2.5 py-1 text-xs font-medium text-primary-strong hover:bg-primary-tint/70"
-                    >
-                      <GraduationCap className="h-3.5 w-3.5" /> Réviser ce thème
-                    </Link>
-                    <Link
-                      href={`/apps/el-profesor/journal?notionId=${notion.id}`}
-                      className="inline-flex items-center gap-1 rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-foreground-subtle hover:text-foreground"
-                      title="Mon journal de cas pour cette notion"
-                    >
-                      <NotebookPen className="h-3.5 w-3.5" /> {caseCounts[notion.id] ? `${caseCounts[notion.id]} cas` : "Cas"}
-                    </Link>
-                  </div>
-                </div>
-                {r && r.total > 0 && tier && (
-                  <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-muted">
-                    <div className={`h-full rounded-full ${tier.barClassName}`} style={{ width: `${r.readinessPct}%` }} />
-                  </div>
-                )}
-                <ul className="mt-2 space-y-1 text-xs text-foreground-subtle">
-                  {fiches.map((f) => (
-                    <li key={f.ficheId}>
-                      <Link href={`/apps/el-profesor/chapters/${f.chapterId}`} className="inline-flex items-center gap-1 hover:underline">
-                        <BookOpen className="h-3 w-3 shrink-0" />
-                        <span className="font-medium text-foreground">{f.ficheTitle}</span>
-                        <span>
-                          — {f.bookTitle} / {f.chapterTitle}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-                {notionRecommendations.length > 0 && (
-                  <div className="mt-3 border-t border-border pt-2">
-                    <p className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">
-                      <Landmark className="h-3 w-3" /> Recommandations officielles
-                    </p>
-                    <ul className="mt-1 space-y-1">
-                      {notionRecommendations.map((rec) => (
-                        <li key={rec.id}>
-                          <a
-                            href={rec.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-start gap-1 text-xs text-primary-strong hover:underline"
-                          >
-                            <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
-                            <span>
-                              {rec.title}
-                              {rec.source ? <span className="text-foreground-subtle"> — {rec.source}</span> : null}
-                            </span>
-                          </a>
-                          {rec.note && <p className="ml-4 text-[11px] text-foreground-subtle">{rec.note}</p>}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {notionDoseCalculators.length > 0 && <DoseCalculatorSection calculators={notionDoseCalculators} />}
-              </div>
-            );
-          })}
+        <div className="mt-6">
+          <NotionList notions={filtered} readiness={readiness} recommendations={recommendations} doseCalculators={doseCalculators} caseCounts={caseCounts} />
         </div>
       )}
     </div>
