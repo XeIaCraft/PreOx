@@ -5,11 +5,18 @@ const nextConfig: NextConfig = {
   // a would-be attacker knowing, but no reason to hand it out either.
   poweredByHeader: false,
   experimental: {
-    // Default is 1MB — a dense chapter's hand-pasted extraction JSON
-    // (many sub-entities, blocks, verbatim citation quotes) can exceed
-    // that, so importChapterContent's Server Action needs more room.
+    // Default is 1MB — raised to 8MB for importChapterContent's hand-pasted
+    // extraction JSON, then to 50MB (2026-08-24) because "Diviser un PDF"
+    // (splitBookIntoChapters/suggestBookChapters/getBookPdfPageCount) sends
+    // the whole book's PDF bytes as a direct Server Action argument, and a
+    // real illustrated textbook routinely exceeds 8MB — every request was
+    // rejected before the action even ran. If a book PDF is scanned/image-
+    // heavy enough to exceed even 50MB, this ceiling needs revisiting
+    // (or the upload needs to bypass the Server Action body entirely via a
+    // direct-to-storage upload) — not addressed here since not confirmed
+    // to be the actual remaining failure mode yet.
     serverActions: {
-      bodySizeLimit: "8mb",
+      bodySizeLimit: "50mb",
     },
   },
   images: {
