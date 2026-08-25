@@ -1,4 +1,11 @@
 import { getCurrentProfile } from "@/lib/auth/dal";
+
+// Server Actions invoked from this page (e.g. suggestBookChapters in
+// actions/split-book.ts, which can process up to 2000 pages of a book PDF
+// in one Gemini call) run under this page's function duration — the
+// platform default is comfortably short for that, so raised explicitly as
+// a safety margin.
+export const maxDuration = 60;
 import {
   getLibrary,
   getDueCountsByChapter,
