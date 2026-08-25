@@ -35,6 +35,7 @@ import {
   Siren,
   NotebookPen,
   RotateCcw,
+  ChevronRight,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -60,7 +61,14 @@ import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-con
 import { exportBookArchive, archiveBook } from "@/app/apps/el-profesor/actions/archive";
 import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/export";
 import { exportBookNotes } from "@/app/apps/el-profesor/actions/notes";
-import { getLastChapter, getDashboardViewMode, setDashboardViewMode, type DashboardViewMode } from "@/lib/el-profesor/local-prefs";
+import {
+  getLastChapter,
+  getDashboardViewMode,
+  setDashboardViewMode,
+  getCollapsedBooks,
+  setCollapsedBooks,
+  type DashboardViewMode,
+} from "@/lib/el-profesor/local-prefs";
 import { formatUsd } from "@/lib/el-profesor/ai-pricing";
 import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts, ChapterMasteryPercentile, ElProfesorAiProvider } from "@/lib/el-profesor/dal";
 import type { ChapterStatus } from "@/lib/el-profesor/types";
@@ -356,6 +364,19 @@ export function ElProfesorBoard({
   function setViewMode(mode: DashboardViewMode) {
     setViewModeState(mode);
     setDashboardViewMode(mode);
+  }
+
+  // Per-book collapse on the "Par livre" view — long chapter lists across
+  // several books made for a lot of scrolling on mobile (requested 2026-08-25).
+  const [collapsedBookIds, setCollapsedBookIds] = useState<Set<string>>(() => getCollapsedBooks());
+  function toggleBookCollapsed(bookId: string) {
+    setCollapsedBookIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(bookId)) next.delete(bookId);
+      else next.add(bookId);
+      setCollapsedBooks(next);
+      return next;
+    });
   }
 
   let resume: { book: BookWithChapters; chapter: BookWithChapters["chapters"][number] } | null = null;
@@ -840,10 +861,18 @@ export function ElProfesorBoard({
               const m = masteryCounts[c.id];
               return m && m.total > 0 && m.acquired === m.total;
             });
+          const collapsed = collapsedBookIds.has(book.id);
           return (
           <div key={book.id}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => toggleBookCollapsed(book.id)}
+                aria-expanded={!collapsed}
+                aria-label={`${collapsed ? "Développer" : "Réduire"} ${book.title}`}
+                className="flex flex-1 items-center gap-3 text-left"
+              >
+                <ChevronRight className={`h-4 w-4 shrink-0 text-foreground-subtle transition-transform ${collapsed ? "" : "rotate-90"}`} />
                 {book.coverUrl && (
                   <span className="relative h-14 w-10 shrink-0 overflow-hidden rounded-[var(--radius-sm)] border border-border bg-surface-muted">
                     <Image src={book.coverUrl} alt="" fill sizes="40px" className="object-cover" />
@@ -851,6 +880,11 @@ export function ElProfesorBoard({
                 )}
                 <div>
                   <h2 className="font-serif-display text-lg font-medium text-foreground">{book.title}</h2>
+                  {collapsed && (
+                    <p className="text-xs text-foreground-subtle">
+                      {book.chapters.length} chapitre{book.chapters.length > 1 ? "s" : ""}
+                    </p>
+                  )}
                   {bookMastered && (
                     <span className="mt-0.5 flex items-center gap-1 text-xs font-medium text-accent">
                       <Trophy className="h-3 w-3" /> Livre maîtrisé
@@ -867,7 +901,7 @@ export function ElProfesorBoard({
                     </span>
                   )}
                 </div>
-              </div>
+              </button>
               <div className="flex flex-wrap items-center gap-2">
                 <Link
                   href={`/apps/el-profesor/books/${book.id}`}
@@ -981,6 +1015,8 @@ export function ElProfesorBoard({
               </div>
             </div>
 
+            {!collapsed && (
+            <>
             <ChapterProgressComparison chapters={publishedChapters} masteryCounts={masteryCounts} />
 
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -1194,6 +1230,8 @@ export function ElProfesorBoard({
                 );
               })}
             </div>
+            </>
+            )}
           </div>
           );
         })}

@@ -115,3 +115,13 @@ export function getDashboardViewMode(): DashboardViewMode {
 export function setDashboardViewMode(mode: DashboardViewMode) {
   setItem("dashboard-view", mode);
 }
+
+/** Which books are collapsed on the dashboard's "Par livre" view (requested 2026-08-25, for a less overwhelming mobile scroll through many chapters). Book ids never contain commas (UUIDs). */
+export function getCollapsedBooks(): Set<string> {
+  const raw = getItem("collapsed-books");
+  return new Set(raw ? raw.split(",").filter(Boolean) : []);
+}
+
+export function setCollapsedBooks(ids: Set<string>) {
+  setItem("collapsed-books", [...ids].join(","));
+}
