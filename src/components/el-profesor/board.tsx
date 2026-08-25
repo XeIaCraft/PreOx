@@ -569,9 +569,9 @@ export function ElProfesorBoard({
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 xl:max-w-6xl">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] bg-primary-tint text-primary-strong">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-primary-tint text-primary-strong">
             <GraduationCap className="h-5 w-5" />
           </span>
           <div>
@@ -579,7 +579,7 @@ export function ElProfesorBoard({
             <p className="text-sm text-foreground-muted">Fiches et flashcards générées à partir de vos livres.</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/apps/el-profesor/emergency"
             className="flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger-tint px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger-tint/70"
@@ -767,7 +767,7 @@ export function ElProfesorBoard({
             });
           return (
           <div key={book.id}>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 {book.coverUrl && (
                   <span className="relative h-14 w-10 shrink-0 overflow-hidden rounded-[var(--radius-sm)] border border-border bg-surface-muted">
@@ -793,7 +793,7 @@ export function ElProfesorBoard({
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Link
                   href={`/apps/el-profesor/books/${book.id}`}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] text-foreground-subtle hover:bg-surface-muted hover:text-foreground"
