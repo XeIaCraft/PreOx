@@ -12,6 +12,18 @@ import {
 } from "@/lib/el-profesor/prompts";
 import { BLOCK_TYPES } from "./gemini";
 import { assertAiSpendCapNotExceeded } from "./ai-spend-cap";
+import type {
+  BlockType,
+  BlockContent,
+  Citation,
+  ExtractedFicheBlock,
+  ExtractedFlashcard,
+  ExtractedFiche,
+  ExtractedSubEntity,
+  ExtractionResult,
+  ComplementaryResult,
+  ComplementaryAddition,
+} from "./types";
 
 // Claude as an alternate extraction provider to Gemini — another lever
 // against quota exhaustion, chosen from the "Réglages IA" panel. Kept as a
@@ -403,4 +415,89 @@ export async function getClaudeBatchResults(
     }
   }
   return results;
+}
+
+// Claude's tool-use output is schema-guided but not schema-enforced the way
+// Gemini's responseSchema is — found 2026-08-25 after two chapters in the
+// same complementary batch both failed with "Cannot read properties of
+// undefined (reading 'forEach')": a required array (blocks/flashcards/
+// citations/...) came back missing on at least one entry, and every
+// downstream consumer (extraction-persist.ts, pdf-text.ts) assumes these
+// arrays always exist, exactly like Gemini's output always guarantees.
+// applyBatchResult (batch-poll.ts) used to cast `result.output` straight to
+// ExtractionResult/ComplementaryResult with no check at all; these
+// normalizers instead walk the raw shape and default every missing/
+// malformed array to `[]` (dropping only the one malformed item, not the
+// whole batch result) before it's trusted as one of those types.
+
+function normalizeCitations(raw: unknown): Citation[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((c): c is Citation => !!c && typeof c === "object" && typeof (c as Citation).page === "number" && typeof (c as Citation).quote === "string");
+}
+
+function normalizeBlock(raw: unknown): ExtractedFicheBlock | null {
+  if (!raw || typeof raw !== "object") return null;
+  const b = raw as Record<string, unknown>;
+  if (!BLOCK_TYPES.includes(b.block_type as BlockType)) return null;
+  if (!b.content || typeof b.content !== "object") return null;
+  return { block_type: b.block_type as BlockType, content: b.content as BlockContent, citations: normalizeCitations(b.citations) };
+}
+
+function normalizeFlashcard(raw: unknown): ExtractedFlashcard | null {
+  if (!raw || typeof raw !== "object") return null;
+  const c = raw as Record<string, unknown>;
+  if (typeof c.front !== "string" || typeof c.back !== "string") return null;
+  return {
+    front: c.front,
+    back: c.back,
+    citations: normalizeCitations(c.citations),
+    suggested_image_page: typeof c.suggested_image_page === "number" ? c.suggested_image_page : null,
+    suggested_image_hint: typeof c.suggested_image_hint === "string" ? c.suggested_image_hint : null,
+  };
+}
+
+function normalizeFiche(raw: unknown): ExtractedFiche {
+  const f = (raw ?? {}) as Record<string, unknown>;
+  return {
+    title: typeof f.title === "string" ? f.title : "",
+    blocks: Array.isArray(f.blocks) ? f.blocks.map(normalizeBlock).filter((b): b is ExtractedFicheBlock => b !== null) : [],
+    flashcards: Array.isArray(f.flashcards) ? f.flashcards.map(normalizeFlashcard).filter((c): c is ExtractedFlashcard => c !== null) : [],
+  };
+}
+
+function normalizeSubEntity(raw: unknown): ExtractedSubEntity | null {
+  if (!raw || typeof raw !== "object") return null;
+  const s = raw as Record<string, unknown>;
+  if (typeof s.name !== "string") return null;
+  return { name: s.name, summary: typeof s.summary === "string" ? s.summary : "", fiche: normalizeFiche(s.fiche) };
+}
+
+export function normalizeExtractionResult(raw: unknown): ExtractionResult {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const subEntities = Array.isArray(r.sub_entities) ? r.sub_entities.map(normalizeSubEntity).filter((s): s is ExtractedSubEntity => s !== null) : [];
+  return { sub_entities: subEntities, estimated_remaining_passes: typeof r.estimated_remaining_passes === "number" ? r.estimated_remaining_passes : 0 };
+}
+
+export function normalizeComplementaryResult(raw: unknown): ComplementaryResult {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const additions = Array.isArray(r.additions_for_existing)
+    ? r.additions_for_existing
+        .map((raw): ComplementaryAddition | null => {
+          if (!raw || typeof raw !== "object") return null;
+          const a = raw as Record<string, unknown>;
+          if (typeof a.sub_entity_name !== "string") return null;
+          return {
+            sub_entity_name: a.sub_entity_name,
+            blocks: Array.isArray(a.blocks) ? a.blocks.map(normalizeBlock).filter((b): b is ExtractedFicheBlock => b !== null) : [],
+            flashcards: Array.isArray(a.flashcards) ? a.flashcards.map(normalizeFlashcard).filter((c): c is ExtractedFlashcard => c !== null) : [],
+          };
+        })
+        .filter((a): a is ComplementaryAddition => a !== null)
+    : [];
+  const newSubEntities = Array.isArray(r.new_sub_entities) ? r.new_sub_entities.map(normalizeSubEntity).filter((s): s is ExtractedSubEntity => s !== null) : [];
+  return {
+    additions_for_existing: additions,
+    new_sub_entities: newSubEntities,
+    estimated_remaining_passes: typeof r.estimated_remaining_passes === "number" ? r.estimated_remaining_passes : 0,
+  };
 }

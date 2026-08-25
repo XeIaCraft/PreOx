@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPushToUser } from "@/lib/push";
 import { getElProfesorClaudeConfig, findOrCreateNotion, linkFicheToNotion, getChapterContent } from "@/lib/el-profesor/dal";
-import { retrieveClaudeBatch, getClaudeBatchResults, type ClaudeBatchResult } from "@/lib/el-profesor/anthropic";
+import {
+  retrieveClaudeBatch,
+  getClaudeBatchResults,
+  normalizeExtractionResult,
+  normalizeComplementaryResult,
+  type ClaudeBatchResult,
+} from "@/lib/el-profesor/anthropic";
 import { persistExtraction, persistComplementaryAdditions, allNeedReviewFlags } from "@/lib/el-profesor/extraction-persist";
 import { continueComplementaryBatch, type BatchItemTarget } from "@/lib/el-profesor/batch-submit";
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
@@ -78,7 +84,7 @@ async function applyBatchResult(
   }
 
   if (target.type === "chapter" && target.mode === "extraction") {
-    const extraction = result.output as ExtractionResult;
+    const extraction = normalizeExtractionResult(result.output);
     await correctCitationsIfPossible(admin, target.chapterId, extraction, "extraction");
     const flags = allNeedReviewFlags(extraction);
     await persistExtraction(admin, target.chapterId, extraction, flags);
@@ -91,7 +97,7 @@ async function applyBatchResult(
   }
 
   if (target.type === "chapter" && target.mode === "complementary") {
-    const complementary = result.output as ComplementaryResult;
+    const complementary = normalizeComplementaryResult(result.output);
     await correctCitationsIfPossible(admin, target.chapterId, complementary, "complementary");
     const existingContent = await getChapterContent(target.chapterId, true, admin);
     const addedCount = await persistComplementaryAdditions(admin, target.chapterId, complementary, existingContent);
