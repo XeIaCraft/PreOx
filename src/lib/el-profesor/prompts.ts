@@ -14,6 +14,16 @@ const EXPERT_READER_CONTEXT = `
 Le lecteur est un(e) anesthésiste-réanimateur belge (en formation ou déjà spécialiste) qui vise une maîtrise théorique de niveau EXPERT (registre des référentiels européens UEMS/EBA/EDAIC) — être étudiant n'abaisse pas l'exigence de profondeur. Calibre systématiquement la profondeur du contenu — fiches ET flashcards — en conséquence : ce qui compte, c'est ce qui permet de reconnaître une situation, décider, agir et prioriser en clinique ou de trancher une distinction piégeuse à l'oral, pas seulement mémoriser une définition isolée.
 `.trim();
 
+// Explicit regardless of the model's own default (added 2026-08-25, after a
+// question about English-language source books): without this, a book in
+// English risks producing fiche/flashcard text in English too, since
+// nothing else in these prompts says otherwise. Citations are the one
+// deliberate exception — they must stay verbatim in the source's own
+// language to remain a faithful, page-matching quote.
+const LANGUAGE_RULE = `
+Langue : rédige tout le contenu que tu génères (noms de sous-entités, titres de fiche, texte des blocs, questions et réponses des flashcards) exclusivement en FRANÇAIS, quelle que soit la langue du document source (même s'il est en anglais ou dans une autre langue) — traduis fidèlement en conservant la terminologie médicale standard, ne recopie jamais tel quel un passage en langue étrangère en dehors d'une citation. Seules les "citations" (le champ "quote") restent verbatim dans la langue exacte du texte source, car elles doivent correspondre mot pour mot au passage cité.
+`.trim();
+
 const FLASHCARD_QUALITY_DOC = `
 Couverture : génère AUTANT DE FLASHCARDS QUE NÉCESSAIRE pour couvrir tout ce qui, dans les blocs déjà extraits, est réellement testable ou utile à la décision clinique — pas un nombre fixe, pas une seule carte générique par sous-entité. Une sous-entité riche et nuancée mérite beaucoup de cartes ; une sous-entité pauvre en mérite peu. N'invente rien pour atteindre un quota, et ne fusionne jamais deux faits distincts dans une carte vague — une carte = une idée testable et sans ambiguïté.
 
@@ -33,6 +43,8 @@ export function buildExtractionPrompt(chapterTitle: string): string {
 Tu es un assistant d'extraction pour du matériel pédagogique médical de haut niveau (anesthésie/médecine). Le document fourni est un chapitre de livre intitulé « ${chapterTitle} ». Certaines pages sont du texte natif propre, d'autres sont des scans/photos — lis-les comme des images si besoin.
 
 ${EXPERT_READER_CONTEXT}
+
+${LANGUAGE_RULE}
 
 Objectif absolu : NE JAMAIS PERDRE D'INFORMATION IMPORTANTE. Le lecteur utilisera exclusivement ce que tu extrais pour réviser — tout ce que tu omets est perdu pour lui. En cas de doute sur l'importance d'une information, inclus-la plutôt que de l'omettre.
 
@@ -79,6 +91,8 @@ Tu es un assistant d'extraction pour du matériel pédagogique médical de haut 
 ${sourceText}
 
 ${EXPERT_READER_CONTEXT}
+
+${LANGUAGE_RULE}
 
 Objectif absolu : NE JAMAIS PERDRE D'INFORMATION IMPORTANTE. Le lecteur utilisera exclusivement ce que tu extrais pour réviser — tout ce que tu omets est perdu pour lui. En cas de doute sur l'importance d'une information, inclus-la plutôt que de l'omettre.
 
@@ -163,6 +177,8 @@ Tu es le même assistant d'extraction que précédemment, sur le même chapitre 
 
 ${EXPERT_READER_CONTEXT}
 
+${LANGUAGE_RULE}
+
 Voici un résumé de ce qui est déjà couvert (nom de chaque sous-entité, type et résumé de chacun de ses blocs déjà extraits, et les questions des flashcards déjà générées) :
 
 ${coverageSummaryJson}
@@ -190,6 +206,8 @@ Réponds uniquement avec le JSON demandé, structuré exactement selon le schém
 export function buildSelectionPrompt(subEntityName: string, chapterTitle: string, page: number, quote: string): string {
   return `
 ${EXPERT_READER_CONTEXT}
+
+${LANGUAGE_RULE}
 
 Un utilisateur a lui-même sélectionné, à la main, le passage suivant dans le chapitre « ${chapterTitle} », page ${page}, à propos de la sous-entité « ${subEntityName} » :
 
