@@ -16,7 +16,14 @@ import { continueComplementaryBatch, type BatchItemTarget } from "@/lib/el-profe
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import { correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
 import { extractPdfPageTextsWithOcr } from "@/lib/el-profesor/pdf-ocr";
+import { GeminiError } from "@/lib/gemini-shared";
 import type { ExtractionResult, ComplementaryResult, NotionCategorizationResult, ContradictionCheckResult, NotionUpdateCheckResult } from "@/lib/el-profesor/types";
+
+/** True when `raw[key]` is a non-empty array — used to tell "Claude genuinely found nothing" apart from "normalization had to drop everything because the response was malformed" (see the two call sites below). */
+function hadRawArray(raw: unknown, key: string): boolean {
+  const v = (raw as Record<string, unknown> | null | undefined)?.[key];
+  return Array.isArray(v) && v.length > 0;
+}
 
 /**
  * The actual polling logic (extracted 2026-08-25 from the cron route so it
@@ -85,6 +92,14 @@ async function applyBatchResult(
 
   if (target.type === "chapter" && target.mode === "extraction") {
     const extraction = normalizeExtractionResult(result.output);
+    if (hadRawArray(result.output, "sub_entities") && extraction.sub_entities.length === 0) {
+      // Claude's response wasn't empty — normalization rejected every single
+      // sub-entity as malformed. Surfacing that as a loud failure (instead
+      // of silently "succeeding" with nothing extracted) is the whole point
+      // of this check: a user report of "I lost everything, it just said no
+      // entries" is what a silent empty success looks like from the outside.
+      throw new GeminiError("Réponse Claude illisible (structure inattendue) — toutes les sous-entités ont été rejetées lors de la validation.");
+    }
     await correctCitationsIfPossible(admin, target.chapterId, extraction, "extraction");
     const flags = allNeedReviewFlags(extraction);
     await persistExtraction(admin, target.chapterId, extraction, flags);
@@ -98,6 +113,10 @@ async function applyBatchResult(
 
   if (target.type === "chapter" && target.mode === "complementary") {
     const complementary = normalizeComplementaryResult(result.output);
+    const rawHadAdditions = hadRawArray(result.output, "additions_for_existing") || hadRawArray(result.output, "new_sub_entities");
+    if (rawHadAdditions && complementary.additions_for_existing.length === 0 && complementary.new_sub_entities.length === 0) {
+      throw new GeminiError("Réponse Claude illisible (structure inattendue) — tous les ajouts ont été rejetés lors de la validation.");
+    }
     await correctCitationsIfPossible(admin, target.chapterId, complementary, "complementary");
     const existingContent = await getChapterContent(target.chapterId, true, admin);
     const addedCount = await persistComplementaryAdditions(admin, target.chapterId, complementary, existingContent);
