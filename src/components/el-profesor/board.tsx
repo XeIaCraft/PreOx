@@ -36,6 +36,7 @@ import {
   NotebookPen,
   RotateCcw,
   ChevronRight,
+  History,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -58,6 +59,7 @@ import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/acti
 import { extractChapter, extractChapterComplementary, resetStuckExtraction } from "@/app/apps/el-profesor/actions/extraction";
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
+import { ExtractionHistoryDialog } from "@/components/el-profesor/dialogs/extraction-history-dialog";
 import { exportBookArchive, archiveBook } from "@/app/apps/el-profesor/actions/archive";
 import { getChapterFlashcardsForExport } from "@/app/apps/el-profesor/actions/export";
 import { exportBookNotes } from "@/app/apps/el-profesor/actions/notes";
@@ -197,6 +199,7 @@ type ModalState =
   | { type: "archive_book"; bookId: string; title: string }
   | { type: "new_edition"; book: { id: string; title: string; author: string | null; edition: string | null; theme: string | null } }
   | { type: "exam_start"; chapterId: string; chapterTitle: string }
+  | { type: "extraction_history"; chapterId: string; chapterTitle: string }
   | null;
 
 const EXAM_DURATION_PRESETS = [
@@ -1208,6 +1211,17 @@ export function ElProfesorBoard({
                           Importer
                         </Button>
                       )}
+                      {isAdmin && chapter.status !== "pending" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setModal({ type: "extraction_history", chapterId: chapter.id, chapterTitle: chapter.title })}
+                          aria-label="Historique des tentatives IA"
+                          title="Voir les 5 dernières tentatives d'extraction (requêtes envoyées, réponses reçues) — utile pour diagnostiquer une génération vide"
+                        >
+                          <History className="h-4 w-4" />
+                        </Button>
+                      )}
                       {isAdmin && (
                         <Button
                           variant="ghost"
@@ -1337,6 +1351,9 @@ export function ElProfesorBoard({
             refresh();
           }}
         />
+      )}
+      {modal?.type === "extraction_history" && (
+        <ExtractionHistoryDialog chapterId={modal.chapterId} chapterTitle={modal.chapterTitle} onClose={() => setModal(null)} />
       )}
       {modal?.type === "archive_book" && (
         <Modal title="Archiver ce livre ?" onClose={() => setModal(null)} size="sm">

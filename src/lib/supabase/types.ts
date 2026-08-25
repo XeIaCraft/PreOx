@@ -402,6 +402,10 @@ export type ElProfesorExtractionJobRow = {
   status: "pending" | "running" | "succeeded" | "failed";
   raw_output: Json | null;
   error: string | null;
+  provider: string | null;
+  model: string | null;
+  request_prompt: string | null;
+  raw_response: string | null;
   created_by: string | null;
   created_at: string;
 };

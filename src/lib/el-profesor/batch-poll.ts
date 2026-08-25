@@ -11,13 +11,35 @@ import {
   normalizeComplementaryResult,
   type ClaudeBatchResult,
 } from "@/lib/el-profesor/anthropic";
-import { persistExtraction, persistComplementaryAdditions, allNeedReviewFlags } from "@/lib/el-profesor/extraction-persist";
+import { persistExtraction, persistComplementaryAdditions, allNeedReviewFlags, buildCoverageSummary } from "@/lib/el-profesor/extraction-persist";
 import { continueComplementaryBatch, type BatchItemTarget } from "@/lib/el-profesor/batch-submit";
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import { correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
 import { extractPdfPageTextsWithOcr } from "@/lib/el-profesor/pdf-ocr";
 import { GeminiError } from "@/lib/gemini-shared";
+import { buildExtractionPrompt, buildComplementaryPrompt } from "@/lib/el-profesor/prompts";
+import { insertExtractionJob } from "@/lib/el-profesor/extraction-jobs";
 import type { ExtractionResult, ComplementaryResult, NotionCategorizationResult, ContradictionCheckResult, NotionUpdateCheckResult } from "@/lib/el-profesor/types";
+
+/**
+ * Extra debug context attached to a GeminiError thrown from inside
+ * applyBatchResult (below), so the outer polling loop's catch block — the
+ * generic safety net for ANY failure, not just this one — can still log a
+ * useful request/response pair to el_profesor_extraction_jobs instead of
+ * just a bare error message. Requested 2026-08-25 alongside the "loud
+ * failure" guards themselves — exactly the malformed/empty-response cases
+ * this carries context for are the ones that used to be hardest to debug.
+ */
+interface ExtractionFailureDebug {
+  requestPrompt: string | null;
+  rawResponse: string | null;
+}
+
+function extractionFailure(message: string, debug: ExtractionFailureDebug): never {
+  const err = new GeminiError(message) as GeminiError & { debug?: ExtractionFailureDebug };
+  err.debug = debug;
+  throw err;
+}
 
 /** True when `raw[key]` is a non-empty array — used to tell "Claude genuinely found nothing" apart from "normalization had to drop everything because the response was malformed" (see the two call sites below). */
 function hadRawArray(raw: unknown, key: string): boolean {
@@ -77,13 +99,14 @@ async function applyBatchResult(
   admin: ReturnType<typeof createAdminClient>,
   target: BatchItemTarget,
   result: ClaudeBatchResult,
-  createdBy: string | null
+  createdBy: string | null,
+  model: string
 ): Promise<{ continued: boolean }> {
   if (result.outcome !== "succeeded") {
     if (target.type === "chapter") {
       const message = result.outcome === "errored" ? result.message : `Lot ${result.outcome === "expired" ? "expiré" : "annulé"} côté Claude.`;
       await admin.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", target.chapterId);
-      await admin.from("el_profesor_extraction_jobs").insert({ chapter_id: target.chapterId, status: "failed", error: message });
+      await insertExtractionJob(admin, { chapterId: target.chapterId, status: "failed", error: message, provider: "claude", model });
     }
     // Notion/contradiction failures: nothing to roll back (no chapter status involved) —
     // the batch item itself keeps the error for the admin "Lots Claude" panel.
@@ -91,6 +114,10 @@ async function applyBatchResult(
   }
 
   if (target.type === "chapter" && target.mode === "extraction") {
+    const { data: chapterRow } = await admin.from("el_profesor_chapters").select("title").eq("id", target.chapterId).maybeSingle();
+    const requestPrompt = chapterRow ? buildExtractionPrompt(chapterRow.title) : null;
+    const rawResponse = JSON.stringify(result.output);
+
     const extraction = normalizeExtractionResult(result.output);
     if (extraction.sub_entities.length === 0) {
       // A real chapter always has something extractable — zero sub-entities
@@ -103,12 +130,20 @@ async function applyBatchResult(
       const reason = hadRawArray(result.output, "sub_entities")
         ? "toutes les sous-entités ont été rejetées lors de la validation (réponse mal formée)"
         : "la réponse ne contenait aucune sous-entité";
-      throw new GeminiError(`Extraction vide — ${reason}. Réessayez.`);
+      extractionFailure(`Extraction vide — ${reason}. Réessayez.`, { requestPrompt, rawResponse });
     }
     await correctCitationsIfPossible(admin, target.chapterId, extraction, "extraction");
     const flags = allNeedReviewFlags(extraction);
     await persistExtraction(admin, target.chapterId, extraction, flags);
-    await admin.from("el_profesor_extraction_jobs").insert({ chapter_id: target.chapterId, status: "succeeded", raw_output: extraction as unknown as never });
+    await insertExtractionJob(admin, {
+      chapterId: target.chapterId,
+      status: "succeeded",
+      rawOutput: extraction,
+      provider: "claude",
+      model,
+      requestPrompt,
+      rawResponse,
+    });
     await admin
       .from("el_profesor_chapters")
       .update({ status: "draft_ready", estimated_remaining_passes: extraction.estimated_remaining_passes })
@@ -117,15 +152,32 @@ async function applyBatchResult(
   }
 
   if (target.type === "chapter" && target.mode === "complementary") {
+    const [{ data: chapterRow }, existingContentForPrompt] = await Promise.all([
+      admin.from("el_profesor_chapters").select("title").eq("id", target.chapterId).maybeSingle(),
+      getChapterContent(target.chapterId, true, admin),
+    ]);
+    const requestPrompt = chapterRow ? buildComplementaryPrompt(chapterRow.title, buildCoverageSummary(existingContentForPrompt)) : null;
+    const rawResponse = JSON.stringify(result.output);
+
     const complementary = normalizeComplementaryResult(result.output);
     const rawHadAdditions = hadRawArray(result.output, "additions_for_existing") || hadRawArray(result.output, "new_sub_entities");
     if (rawHadAdditions && complementary.additions_for_existing.length === 0 && complementary.new_sub_entities.length === 0) {
-      throw new GeminiError("Réponse Claude illisible (structure inattendue) — tous les ajouts ont été rejetés lors de la validation.");
+      extractionFailure("Réponse Claude illisible (structure inattendue) — tous les ajouts ont été rejetés lors de la validation.", {
+        requestPrompt,
+        rawResponse,
+      });
     }
     await correctCitationsIfPossible(admin, target.chapterId, complementary, "complementary");
-    const existingContent = await getChapterContent(target.chapterId, true, admin);
-    const addedCount = await persistComplementaryAdditions(admin, target.chapterId, complementary, existingContent);
-    await admin.from("el_profesor_extraction_jobs").insert({ chapter_id: target.chapterId, status: "succeeded", raw_output: complementary as unknown as never });
+    const addedCount = await persistComplementaryAdditions(admin, target.chapterId, complementary, existingContentForPrompt);
+    await insertExtractionJob(admin, {
+      chapterId: target.chapterId,
+      status: "succeeded",
+      rawOutput: complementary,
+      provider: "claude",
+      model,
+      requestPrompt,
+      rawResponse,
+    });
 
     const remaining = complementary.estimated_remaining_passes;
     const nextPasses = target.passesRun + 1;
@@ -265,7 +317,7 @@ export async function pollAllClaudeBatches(): Promise<{ polled: number; complete
       const item = itemByCustomId.get(result.customId);
       if (!item) continue;
       try {
-        const { continued } = await applyBatchResult(admin, item.target as unknown as BatchItemTarget, result, job.created_by);
+        const { continued } = await applyBatchResult(admin, item.target as unknown as BatchItemTarget, result, job.created_by, claudeConfig.model);
         if (!continued) anyFinished = true;
         if (result.outcome === "succeeded") {
           succeeded++;
@@ -290,8 +342,17 @@ export async function pollAllClaudeBatches(): Promise<{ polled: number; complete
         // chapters submitted together both got stuck this way).
         const target = item.target as unknown as BatchItemTarget;
         if (target.type === "chapter") {
+          const debug = (err as { debug?: ExtractionFailureDebug })?.debug;
           await admin.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", target.chapterId);
-          await admin.from("el_profesor_extraction_jobs").insert({ chapter_id: target.chapterId, status: "failed", error: message });
+          await insertExtractionJob(admin, {
+            chapterId: target.chapterId,
+            status: "failed",
+            error: message,
+            provider: "claude",
+            model: claudeConfig.model,
+            requestPrompt: debug?.requestPrompt ?? null,
+            rawResponse: debug?.rawResponse ?? null,
+          });
         }
       }
       if (job.kind === "notion_categorization" || job.kind === "contradiction_check" || job.kind === "notion_update_check") touchedNotions = true;

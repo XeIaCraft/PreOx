@@ -20,6 +20,8 @@ import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
 import { extractPdfPageTextsWithOcr } from "@/lib/el-profesor/pdf-ocr";
 import { parseClozeText } from "@/lib/el-profesor/cloze";
+import { buildExtractionPrompt, buildTextExtractionPrompt, buildComplementaryPrompt } from "@/lib/el-profesor/prompts";
+import { insertExtractionJob } from "@/lib/el-profesor/extraction-jobs";
 import {
   allNeedReviewFlags,
   persistExtraction,
@@ -91,8 +93,13 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
       // Gemini's text-only path regardless of the configured provider — no
       // Claude batch path exists for a source with no PDF to attach.
       const config = await getElProfesorGeminiConfig();
-      const { extraction: textExtraction } = await extractChapterContentFromTextWithRotation(config, chapter.title, chapter.source_text ?? "");
+      const { extraction: textExtraction, model: textModel, rawResponseText: textRawResponse } = await extractChapterContentFromTextWithRotation(
+        config,
+        chapter.title,
+        chapter.source_text ?? ""
+      );
       extraction = textExtraction;
+      const textRequestPrompt = buildTextExtractionPrompt(chapter.title, chapter.source_text ?? "");
       if (extraction.sub_entities.length === 0) {
         // A real chapter always has something extractable — an empty result
         // here means the call silently produced nothing usable (found
@@ -105,7 +112,15 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
       flags = allNeedReviewFlags(extraction);
 
       await persistExtraction(supabase, chapterId, extraction, flags);
-      await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "succeeded", raw_output: extraction as unknown as never });
+      await insertExtractionJob(supabase, {
+        chapterId,
+        status: "succeeded",
+        rawOutput: extraction,
+        provider: "gemini",
+        model: textModel,
+        requestPrompt: textRequestPrompt,
+        rawResponse: textRawResponse,
+      });
       await supabase
         .from("el_profesor_chapters")
         .update({ status: "draft_ready", estimated_remaining_passes: extraction.estimated_remaining_passes })
@@ -121,13 +136,14 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
     // PDF chapter, Gemini provider (Claude was already routed to the batch path above).
     const config = await getElProfesorGeminiConfig();
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
-    const [{ extraction: geminiExtraction, apiKey: winningKey, model, file }, pageTexts] = await Promise.all([
+    const [{ extraction: geminiExtraction, apiKey: winningKey, model, file, rawResponseText: pdfRawResponse }, pageTexts] = await Promise.all([
       extractChapterContentWithRotation(config, bytes, chapter.title, chapter.title),
       extractPdfPageTextsWithOcr(bytes, chapter.title).catch(() => null),
     ]);
     extraction = geminiExtraction;
     apiKey = winningKey;
     geminiFileName = file.name;
+    const pdfRequestPrompt = buildExtractionPrompt(chapter.title);
 
     if (extraction.sub_entities.length === 0) {
       // Same reasoning as the Word/PowerPoint path above — a chapter with
@@ -148,9 +164,15 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
 
     await persistExtraction(supabase, chapterId, extraction, flags);
 
-    await supabase
-      .from("el_profesor_extraction_jobs")
-      .insert({ chapter_id: chapterId, status: "succeeded", raw_output: extraction as unknown as never });
+    await insertExtractionJob(supabase, {
+      chapterId,
+      status: "succeeded",
+      rawOutput: extraction,
+      provider: "gemini",
+      model,
+      requestPrompt: pdfRequestPrompt,
+      rawResponse: pdfRawResponse,
+    });
     await supabase
       .from("el_profesor_chapters")
       .update({ status: "draft_ready", estimated_remaining_passes: extraction.estimated_remaining_passes })
@@ -167,7 +189,7 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
   } catch (err) {
     const message = err instanceof GeminiError ? err.message : "Échec de l'extraction du chapitre.";
     await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
-    await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "failed", error: message });
+    await insertExtractionJob(supabase, { chapterId, status: "failed", error: message, provider: "gemini" });
     return { error: message };
   } finally {
     if (geminiFileName) await deleteGeminiFile(apiKey, geminiFileName);
@@ -223,7 +245,7 @@ export async function resetStuckExtraction(chapterId: string): Promise<ActionSta
     }
     const message = "Extraction interrompue (connexion perdue ou délai dépassé) — relancez-la.";
     await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
-    await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "failed", error: message });
+    await insertExtractionJob(supabase, { chapterId, status: "failed", error: message, provider: "gemini" });
     revalidatePath("/apps/el-profesor");
     return { success: "Chapitre réinitialisé — vous pouvez relancer l'extraction." };
   }
@@ -242,12 +264,52 @@ export async function resetStuckExtraction(chapterId: string): Promise<ActionSta
     }
     const message = item.error || "Le résultat du lot Claude n'a pas pu être appliqué à ce chapitre — relancez l'extraction.";
     await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
-    await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "failed", error: message });
+    await insertExtractionJob(supabase, { chapterId, status: "failed", error: message, provider: "claude" });
     revalidatePath("/apps/el-profesor");
     return { success: "Chapitre réinitialisé — vous pouvez relancer l'extraction." };
   }
 
   return { error: "Ce chapitre n'est pas en cours d'extraction." };
+}
+
+export interface ExtractionJobHistoryEntry {
+  id: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  provider: string | null;
+  model: string | null;
+  requestPrompt: string | null;
+  rawResponse: string | null;
+  error: string | null;
+  createdAt: string;
+}
+
+/**
+ * Debugging aid (requested 2026-08-25, after two separate "empty
+ * generation, no error shown" reports impossible to root-cause without
+ * seeing the actual exchange) — the last 5 extraction attempts logged for
+ * this chapter, whichever provider handled them, exactly what was sent and
+ * received. See insertExtractionJob (lib/el-profesor/extraction-jobs.ts)
+ * for where these rows come from.
+ */
+export async function getExtractionJobHistory(chapterId: string): Promise<ExtractionJobHistoryEntry[]> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("el_profesor_extraction_jobs")
+    .select("id, status, provider, model, request_prompt, raw_response, error, created_at")
+    .eq("chapter_id", chapterId)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    status: row.status,
+    provider: row.provider,
+    model: row.model,
+    requestPrompt: row.request_prompt,
+    rawResponse: row.raw_response,
+    error: row.error,
+    createdAt: row.created_at,
+  }));
 }
 
 function stripCodeFence(raw: string): string {
@@ -370,9 +432,13 @@ export async function importChapterContent(chapterId: string, rawJson: string): 
 
     await persistExtraction(supabase, chapterId, extraction, allNeedReviewFlags(extraction));
 
-    await supabase
-      .from("el_profesor_extraction_jobs")
-      .insert({ chapter_id: chapterId, status: "succeeded", raw_output: extraction as unknown as never });
+    await insertExtractionJob(supabase, {
+      chapterId,
+      status: "succeeded",
+      rawOutput: extraction,
+      provider: "external",
+      rawResponse: rawJson,
+    });
     await supabase
       .from("el_profesor_chapters")
       .update({ status: "draft_ready", estimated_remaining_passes: extraction.estimated_remaining_passes })
@@ -383,7 +449,7 @@ export async function importChapterContent(chapterId: string, rawJson: string): 
   } catch (err) {
     const message = err instanceof GeminiError ? err.message : "Échec de l'import.";
     await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
-    await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "failed", error: message });
+    await insertExtractionJob(supabase, { chapterId, status: "failed", error: message, provider: "external" });
     return { error: message };
   }
 }
@@ -422,9 +488,15 @@ async function runOneComplementaryPass(
     // persistComplementaryAdditions marks every gap-fill addition needs_review unconditionally.
     const addedCount = await persistComplementaryAdditions(supabase, chapterId, complementary, existingContent);
 
-    await supabase
-      .from("el_profesor_extraction_jobs")
-      .insert({ chapter_id: chapterId, status: "succeeded", raw_output: complementary as unknown as never });
+    await insertExtractionJob(supabase, {
+      chapterId,
+      status: "succeeded",
+      rawOutput: complementary,
+      provider: "gemini",
+      model: result.model,
+      requestPrompt: buildComplementaryPrompt(chapter.title, coverageSummary),
+      rawResponse: result.rawResponseText,
+    });
 
     return { addedCount, estimatedRemainingPasses: complementary.estimated_remaining_passes };
   } finally {
@@ -505,7 +577,7 @@ export async function extractChapterComplementary(chapterId: string, options?: {
   } catch (err) {
     const message = err instanceof GeminiError ? err.message : "Échec de la génération complémentaire.";
     await supabase.from("el_profesor_chapters").update({ status: originalStatus, extraction_error: message }).eq("id", chapterId);
-    await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "failed", error: message });
+    await insertExtractionJob(supabase, { chapterId, status: "failed", error: message, provider: "gemini" });
     return { error: message };
   }
 }

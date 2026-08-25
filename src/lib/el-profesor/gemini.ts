@@ -477,6 +477,7 @@ async function callGeminiJson(
   model: string,
   parts: Array<Record<string, unknown>>,
   responseSchema: Record<string, unknown>,
+  onRawResponse?: (text: string) => void,
   attempt = 0
 ): Promise<unknown> {
   // Checked once per top-level call, not on retries of the same request —
@@ -501,7 +502,7 @@ async function callGeminiJson(
     await logGeminiUsage({ model, success: false, statusCode: response.status, errorMessage: body.slice(0, 300) });
     if (RETRYABLE_STATUS.has(response.status) && attempt < RETRY_DELAYS_MS.length) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
-      return callGeminiJson(apiKey, model, parts, responseSchema, attempt + 1);
+      return callGeminiJson(apiKey, model, parts, responseSchema, onRawResponse, attempt + 1);
     }
     throw new GeminiError(`Appel Gemini échoué (${response.status}) : ${body.slice(0, 300) || "erreur inconnue"}.`);
   }
@@ -515,6 +516,7 @@ async function callGeminiJson(
     await logGeminiUsage({ model, success: false, statusCode: response.status, errorMessage: "Réponse vide ou inattendue." });
     throw new GeminiError("Réponse Gemini vide ou inattendue.");
   }
+  onRawResponse?.(text);
 
   await logGeminiUsage({
     model,
@@ -533,18 +535,20 @@ function callGeminiWithFile(
   model: string,
   file: UploadedGeminiFile,
   instructions: string,
-  responseSchema: Record<string, unknown>
+  responseSchema: Record<string, unknown>,
+  onRawResponse?: (text: string) => void
 ): Promise<unknown> {
-  return callGeminiJson(apiKey, model, [{ fileData: { mimeType: file.mimeType, fileUri: file.uri } }, { text: instructions }], responseSchema);
+  return callGeminiJson(apiKey, model, [{ fileData: { mimeType: file.mimeType, fileUri: file.uri } }, { text: instructions }], responseSchema, onRawResponse);
 }
 
 export async function extractChapterContent(
   apiKey: string,
   model: string,
   file: UploadedGeminiFile,
-  chapterTitle: string
+  chapterTitle: string,
+  onRawResponse?: (text: string) => void
 ): Promise<ExtractionResult> {
-  const result = await callGeminiWithFile(apiKey, model, file, buildExtractionPrompt(chapterTitle), EXTRACTION_RESPONSE_SCHEMA);
+  const result = await callGeminiWithFile(apiKey, model, file, buildExtractionPrompt(chapterTitle), EXTRACTION_RESPONSE_SCHEMA, onRawResponse);
   return result as ExtractionResult;
 }
 
@@ -554,10 +558,11 @@ export async function extractComplementaryContent(
   model: string,
   file: UploadedGeminiFile,
   chapterTitle: string,
-  coverageSummaryJson: string
+  coverageSummaryJson: string,
+  onRawResponse?: (text: string) => void
 ): Promise<ComplementaryResult> {
   const prompt = buildComplementaryPrompt(chapterTitle, coverageSummaryJson);
-  const result = await callGeminiWithFile(apiKey, model, file, prompt, COMPLEMENTARY_RESPONSE_SCHEMA);
+  const result = await callGeminiWithFile(apiKey, model, file, prompt, COMPLEMENTARY_RESPONSE_SCHEMA, onRawResponse);
   return result as ComplementaryResult;
 }
 
@@ -607,31 +612,43 @@ async function withFileRotation<T>(
   throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
 }
 
-/** Rotation-aware wrapper around uploadPdfToGemini + extractChapterContent — see withFileRotation. */
+/**
+ * Rotation-aware wrapper around uploadPdfToGemini + extractChapterContent —
+ * see withFileRotation. `rawResponseText` captures the winning attempt's raw
+ * response text (debugging aid, requested 2026-08-25 — see the doc comment
+ * on el_profesor_extraction_jobs' request_prompt/raw_response columns) —
+ * null only if the call threw before Gemini ever returned text.
+ */
 export async function extractChapterContentWithRotation(
   config: GeminiRotationConfig,
   bytes: Uint8Array,
   displayName: string,
   chapterTitle: string
-): Promise<{ extraction: ExtractionResult; apiKey: string; model: string; file: UploadedGeminiFile }> {
+): Promise<{ extraction: ExtractionResult; apiKey: string; model: string; file: UploadedGeminiFile; rawResponseText: string | null }> {
+  let rawResponseText: string | null = null;
   const { result, apiKey, model, file } = await withFileRotation(config, bytes, displayName, (key, m, file) =>
-    extractChapterContent(key, m, file, chapterTitle)
+    extractChapterContent(key, m, file, chapterTitle, (text) => {
+      rawResponseText = text;
+    })
   );
-  return { extraction: result, apiKey, model, file };
+  return { extraction: result, apiKey, model, file, rawResponseText };
 }
 
-/** Rotation-aware wrapper around uploadPdfToGemini + extractComplementaryContent — see withFileRotation. */
+/** Rotation-aware wrapper around uploadPdfToGemini + extractComplementaryContent — see withFileRotation and extractChapterContentWithRotation's doc comment for rawResponseText. */
 export async function extractComplementaryContentWithRotation(
   config: GeminiRotationConfig,
   bytes: Uint8Array,
   displayName: string,
   chapterTitle: string,
   coverageSummaryJson: string
-): Promise<{ complementary: ComplementaryResult; apiKey: string; model: string; file: UploadedGeminiFile }> {
+): Promise<{ complementary: ComplementaryResult; apiKey: string; model: string; file: UploadedGeminiFile; rawResponseText: string | null }> {
+  let rawResponseText: string | null = null;
   const { result, apiKey, model, file } = await withFileRotation(config, bytes, displayName, (key, m, file) =>
-    extractComplementaryContent(key, m, file, chapterTitle, coverageSummaryJson)
+    extractComplementaryContent(key, m, file, chapterTitle, coverageSummaryJson, (text) => {
+      rawResponseText = text;
+    })
   );
-  return { complementary: result, apiKey, model, file };
+  return { complementary: result, apiKey, model, file, rawResponseText };
 }
 
 async function ocrPdfPagesRequest(
@@ -675,12 +692,13 @@ export async function ocrScannedPages(
 async function textRotation<T>(
   config: GeminiRotationConfig,
   instructions: string,
-  responseSchema: Record<string, unknown>
+  responseSchema: Record<string, unknown>,
+  onRawResponse?: (text: string) => void
 ): Promise<{ result: T; apiKey: string; model: string }> {
   let lastError: unknown;
   for (const { apiKey, model } of rotationCombos(config)) {
     try {
-      const result = (await callGeminiJson(apiKey, model, [{ text: instructions }], responseSchema)) as T;
+      const result = (await callGeminiJson(apiKey, model, [{ text: instructions }], responseSchema, onRawResponse)) as T;
       return { result, apiKey, model };
     } catch (err) {
       lastError = err;
@@ -702,10 +720,13 @@ export async function extractChapterContentFromTextWithRotation(
   config: GeminiRotationConfig,
   chapterTitle: string,
   sourceText: string
-): Promise<{ extraction: ExtractionResult; apiKey: string; model: string }> {
+): Promise<{ extraction: ExtractionResult; apiKey: string; model: string; rawResponseText: string | null }> {
   const instructions = buildTextExtractionPrompt(chapterTitle, sourceText);
-  const { result, apiKey, model } = await textRotation<ExtractionResult>(config, instructions, EXTRACTION_RESPONSE_SCHEMA);
-  return { extraction: result, apiKey, model };
+  let rawResponseText: string | null = null;
+  const { result, apiKey, model } = await textRotation<ExtractionResult>(config, instructions, EXTRACTION_RESPONSE_SCHEMA, (text) => {
+    rawResponseText = text;
+  });
+  return { extraction: result, apiKey, model, rawResponseText };
 }
 
 /**
