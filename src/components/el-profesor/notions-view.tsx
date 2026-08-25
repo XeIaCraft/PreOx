@@ -55,6 +55,10 @@ import type {
   NotionUpdateProposal,
 } from "@/lib/el-profesor/types";
 
+// Mirrors MAX_ARTICLE_BYTES in actions/notion-updates.ts — checked here too so an
+// oversized file gets a clear message instead of failing the Server Action request.
+const MAX_ARTICLE_BYTES = 15 * 1024 * 1024;
+
 function FicheRef({ fiche }: { fiche: { ficheTitle: string; chapterTitle: string; bookTitle: string; chapterId: string } }) {
   return (
     <Link href={`/apps/el-profesor/chapters/${fiche.chapterId}`} className="hover:underline">
@@ -560,6 +564,10 @@ function NotionUpdateCheckDialog({
   function handleSubmitFile() {
     const file = fileInputRef.current?.files?.[0];
     if (!file) return;
+    if (file.size > MAX_ARTICLE_BYTES) {
+      toast("Fichier trop lourd (15 Mo maximum).", { variant: "error" });
+      return;
+    }
     startTransition(async () => {
       try {
         const base64 = await fileToBase64(file);

@@ -12,6 +12,8 @@ import { fileToBase64 } from "@/lib/client-file";
 import { findSimilarRecipe } from "@/lib/a-table/dedupe";
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+// Mirrors MAX_EXPORT_BYTES in actions/paprika.ts.
+const MAX_PAPRIKA_EXPORT_BYTES = 20 * 1024 * 1024;
 
 interface AddRecipeDialogProps {
   existingTags?: string[];
@@ -87,6 +89,10 @@ export function AddRecipeDialog({ existingTags, existingRecipes, onClose, onSave
 
   function handleImportPaprika(file: File | null) {
     if (!file) return;
+    if (file.size > MAX_PAPRIKA_EXPORT_BYTES) {
+      toast("Fichier trop lourd (20 Mo maximum).", { variant: "error" });
+      return;
+    }
     setIsImportingPaprika(true);
     fileToBase64(file)
       .then((base64) => importPaprikaExport(base64))
