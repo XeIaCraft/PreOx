@@ -142,8 +142,19 @@ function ElapsedTime({ startedAt }: { startedAt: number }) {
 // flashes up for a chapter that's still genuinely extracting.
 const STUCK_EXTRACTION_MS = 3 * 60 * 1000;
 
+// Purely cosmetic gate for "queued" chapters (Claude batch) — the server
+// action itself decides via the batch item's own resolved status, not
+// elapsed time (a batch can legitimately take hours), but showing the
+// button the instant a batch is submitted would read as broken when it's
+// just still processing normally.
+const STUCK_QUEUED_MS = 15 * 60 * 1000;
+
 function isStuckExtraction(updatedAt: string): boolean {
   return Date.now() - new Date(updatedAt).getTime() > STUCK_EXTRACTION_MS;
+}
+
+function isStuckQueued(updatedAt: string): boolean {
+  return Date.now() - new Date(updatedAt).getTime() > STUCK_QUEUED_MS;
 }
 
 const STATUS_LABEL: Record<ChapterStatus, string> = {
@@ -1064,17 +1075,23 @@ export function ElProfesorBoard({
                           )}
                         </Button>
                       )}
-                      {isAdmin && chapter.status === "extracting" && isStuckExtraction(chapter.updatedAt) && (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleResetStuck(chapter.id)}
-                          disabled={busy}
-                          title="L'extraction semble bloquée (aucune progression depuis plusieurs minutes) — réinitialise le chapitre pour pouvoir relancer l'extraction"
-                        >
-                          <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser
-                        </Button>
-                      )}
+                      {isAdmin &&
+                        ((chapter.status === "extracting" && isStuckExtraction(chapter.updatedAt)) ||
+                          (chapter.status === "queued" && isStuckQueued(chapter.updatedAt))) && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleResetStuck(chapter.id)}
+                            disabled={busy}
+                            title={
+                              chapter.status === "queued"
+                                ? "Le lot Claude semble résolu sans que ce chapitre ait été mis à jour — réinitialise le chapitre pour pouvoir relancer l'extraction (sans effet si le lot est en réalité toujours en cours)"
+                                : "L'extraction semble bloquée (aucune progression depuis plusieurs minutes) — réinitialise le chapitre pour pouvoir relancer l'extraction"
+                            }
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser
+                          </Button>
+                        )}
                       {isAdmin && chapter.status === "draft_ready" && (
                         <Link href={`/apps/el-profesor/chapters/${chapter.id}/admin-review`}>
                           <Button size="sm">

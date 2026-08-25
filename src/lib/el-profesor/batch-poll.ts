@@ -251,6 +251,18 @@ export async function pollAllClaudeBatches(): Promise<{ polled: number; complete
         anyFinished = true;
         const message = err instanceof Error ? err.message.slice(0, 300) : "Échec de l'application du résultat.";
         await admin.from("el_profesor_batch_items").update({ status: "errored", processed_at: new Date().toISOString(), error: message }).eq("id", item.id);
+        // applyBatchResult already flips a chapter to "failed" when Claude's
+        // own outcome wasn't "succeeded" — but a chapter whose Claude call DID
+        // succeed and then threw here (a malformed/unexpected result shape,
+        // or a DB write failure while persisting it) would otherwise stay
+        // stuck at "queued" forever, since nothing else ever revisits it once
+        // this job leaves "submitted" status (bug found 2026-08-25: two
+        // chapters submitted together both got stuck this way).
+        const target = item.target as unknown as BatchItemTarget;
+        if (target.type === "chapter") {
+          await admin.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", target.chapterId);
+          await admin.from("el_profesor_extraction_jobs").insert({ chapter_id: target.chapterId, status: "failed", error: message });
+        }
       }
       if (job.kind === "notion_categorization" || job.kind === "contradiction_check" || job.kind === "notion_update_check") touchedNotions = true;
     }

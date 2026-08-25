@@ -169,16 +169,30 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
 const STUCK_EXTRACTION_MINUTES = 3;
 
 /**
- * Manual escape hatch for a chapter stuck at "extracting" (item requested
- * 2026-08-25, after a report of Gemini-mode chapters staying stuck with no
- * way to retry other than deleting the whole chapter) — the only way this
- * status doesn't self-heal to "failed" via extractChapter's own catch block
- * is if the process running it was killed outright (Vercel function
- * timeout, dropped connection), so there is nothing to actually cancel:
- * this just clears the stale status so the normal "Extraire" retry button
- * reappears. Deliberately excludes "queued" (Claude batch submissions) —
- * those can legitimately sit for hours waiting on the Batches API and are
- * resolved by the cron poller, not this.
+ * Manual escape hatch for a chapter stuck at "extracting" or "queued" (item
+ * requested 2026-08-25, after reports of both: Gemini-mode chapters staying
+ * stuck with no way to retry other than deleting the whole chapter, then a
+ * Claude batch that completed — tokens billed, "2 erreurs" visible in
+ * Réglages IA — while its two chapters stayed at "queued" forever). Neither
+ * case has anything left to actually cancel — the process/batch that would
+ * have set the real status is already gone or resolved — so this only
+ * clears the stale status so the normal "Extraire" retry button reappears.
+ *
+ * "extracting" (Gemini's synchronous path) uses a time heuristic: the only
+ * way it doesn't self-heal via extractChapter's own catch block is the
+ * process being killed outright (Vercel function timeout, dropped
+ * connection), which leaves no other signal to check against.
+ *
+ * "queued" (a submitted Claude batch item) instead checks the batch item's
+ * own resolved status rather than guessing from elapsed time — a batch can
+ * legitimately take hours, so time alone can't tell "still processing"
+ * apart from "stuck". If Claude's own outcome was errored/expired/canceled,
+ * applyBatchResult (batch-poll.ts) already sets the chapter to "failed"
+ * itself; this only catches the gap where that pass threw on a supposedly
+ * "succeeded" result (malformed shape, DB write failure) and never got to
+ * — that bug is now fixed going forward, but a chapter already orphaned by
+ * it before the fix has nothing left to re-poll (its job already left
+ * "submitted"), so this is also how it gets unstuck.
  */
 export async function resetStuckExtraction(chapterId: string): Promise<ActionState> {
   await requireElProfesorAdmin();
@@ -186,20 +200,39 @@ export async function resetStuckExtraction(chapterId: string): Promise<ActionSta
 
   const { data: chapter } = await supabase.from("el_profesor_chapters").select("status, updated_at").eq("id", chapterId).single();
   if (!chapter) return { error: "Chapitre introuvable." };
-  if (chapter.status !== "extracting") {
-    return { error: "Ce chapitre n'est pas en cours d'extraction." };
-  }
-  const ageMinutes = (Date.now() - new Date(chapter.updated_at).getTime()) / 60_000;
-  if (ageMinutes < STUCK_EXTRACTION_MINUTES) {
-    return { error: `Attendez encore quelques instants — une extraction met normalement moins de ${STUCK_EXTRACTION_MINUTES} minutes.` };
+
+  if (chapter.status === "extracting") {
+    const ageMinutes = (Date.now() - new Date(chapter.updated_at).getTime()) / 60_000;
+    if (ageMinutes < STUCK_EXTRACTION_MINUTES) {
+      return { error: `Attendez encore quelques instants — une extraction met normalement moins de ${STUCK_EXTRACTION_MINUTES} minutes.` };
+    }
+    const message = "Extraction interrompue (connexion perdue ou délai dépassé) — relancez-la.";
+    await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
+    await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "failed", error: message });
+    revalidatePath("/apps/el-profesor");
+    return { success: "Chapitre réinitialisé — vous pouvez relancer l'extraction." };
   }
 
-  const message = "Extraction interrompue (connexion perdue ou délai dépassé) — relancez-la.";
-  await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
-  await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "failed", error: message });
+  if (chapter.status === "queued") {
+    const { data: item } = await supabase
+      .from("el_profesor_batch_items")
+      .select("status, error")
+      .contains("target", { chapterId })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!item) return { error: "Aucun lot Claude associé à ce chapitre." };
+    if (item.status === "pending") {
+      return { error: "Le lot Claude est toujours en cours de traitement chez Claude — réessayez plus tard, ou utilisez « Vérifier maintenant » dans Réglages IA." };
+    }
+    const message = item.error || "Le résultat du lot Claude n'a pas pu être appliqué à ce chapitre — relancez l'extraction.";
+    await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
+    await supabase.from("el_profesor_extraction_jobs").insert({ chapter_id: chapterId, status: "failed", error: message });
+    revalidatePath("/apps/el-profesor");
+    return { success: "Chapitre réinitialisé — vous pouvez relancer l'extraction." };
+  }
 
-  revalidatePath("/apps/el-profesor");
-  return { success: "Chapitre réinitialisé — vous pouvez relancer l'extraction." };
+  return { error: "Ce chapitre n'est pas en cours d'extraction." };
 }
 
 function stripCodeFence(raw: string): string {
