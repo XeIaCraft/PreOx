@@ -92,13 +92,18 @@ async function applyBatchResult(
 
   if (target.type === "chapter" && target.mode === "extraction") {
     const extraction = normalizeExtractionResult(result.output);
-    if (hadRawArray(result.output, "sub_entities") && extraction.sub_entities.length === 0) {
-      // Claude's response wasn't empty — normalization rejected every single
-      // sub-entity as malformed. Surfacing that as a loud failure (instead
-      // of silently "succeeding" with nothing extracted) is the whole point
-      // of this check: a user report of "I lost everything, it just said no
-      // entries" is what a silent empty success looks like from the outside.
-      throw new GeminiError("Réponse Claude illisible (structure inattendue) — toutes les sous-entités ont été rejetées lors de la validation.");
+    if (extraction.sub_entities.length === 0) {
+      // A real chapter always has something extractable — zero sub-entities
+      // is always a failure worth surfacing, whether Claude's own response
+      // was already empty or normalization rejected everything as malformed
+      // (found 2026-08-25: a report of an "empty generation" with no error
+      // shown, on a chapter confirmed to have real text via manual
+      // selection — "succeeding" silently with nothing is what that looked
+      // like from the outside).
+      const reason = hadRawArray(result.output, "sub_entities")
+        ? "toutes les sous-entités ont été rejetées lors de la validation (réponse mal formée)"
+        : "la réponse ne contenait aucune sous-entité";
+      throw new GeminiError(`Extraction vide — ${reason}. Réessayez.`);
     }
     await correctCitationsIfPossible(admin, target.chapterId, extraction, "extraction");
     const flags = allNeedReviewFlags(extraction);

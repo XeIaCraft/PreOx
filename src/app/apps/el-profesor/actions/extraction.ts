@@ -93,6 +93,15 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
       const config = await getElProfesorGeminiConfig();
       const { extraction: textExtraction } = await extractChapterContentFromTextWithRotation(config, chapter.title, chapter.source_text ?? "");
       extraction = textExtraction;
+      if (extraction.sub_entities.length === 0) {
+        // A real chapter always has something extractable — an empty result
+        // here means the call silently produced nothing usable (found
+        // 2026-08-25: a report of an "empty generation" with no error shown,
+        // on a chapter confirmed to have real text via manual selection).
+        // Surfacing it as a failure is far safer than "succeeding" with an
+        // empty chapter the admin has no reason to notice or retry.
+        throw new GeminiError("Extraction vide — aucune sous-entité produite. Réessayez, ou vérifiez que le document contient bien du contenu.");
+      }
       flags = allNeedReviewFlags(extraction);
 
       await persistExtraction(supabase, chapterId, extraction, flags);
@@ -119,6 +128,12 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
     extraction = geminiExtraction;
     apiKey = winningKey;
     geminiFileName = file.name;
+
+    if (extraction.sub_entities.length === 0) {
+      // Same reasoning as the Word/PowerPoint path above — a chapter with
+      // real content should never produce zero sub-entities.
+      throw new GeminiError("Extraction vide — aucune sous-entité produite. Réessayez, ou vérifiez que le PDF contient bien du contenu extractible.");
+    }
 
     // Ground-truth-corrects citation pages against the PDF's actual text
     // when possible (best-effort — null on a malformed/unparseable file, in
