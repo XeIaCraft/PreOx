@@ -3,8 +3,8 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { GeminiError } from "@/lib/gemini-shared";
+import { EL_PROFESOR_PDF_BUCKET as BUCKET } from "./storage-constants";
 
-const BUCKET = "el-profesor-pdfs";
 const SIGNED_URL_TTL_SECONDS = 60 * 10;
 
 /**

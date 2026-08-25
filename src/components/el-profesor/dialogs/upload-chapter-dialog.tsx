@@ -4,7 +4,8 @@ import { useState, useTransition } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
-import { uploadChapter } from "@/app/apps/el-profesor/actions/library";
+import { uploadChapterFromPdfPath, uploadChapterFromOfficeFile, type ActionState } from "@/app/apps/el-profesor/actions/library";
+import { uploadPdfDirect } from "@/lib/el-profesor/client-pdf-upload";
 import { useToast } from "@/components/ui/toast";
 
 function titleFromFilename(name: string): string {
@@ -12,6 +13,21 @@ function titleFromFilename(name: string): string {
     .replace(/\.(pdf|docx|pptx)$/i, "")
     .replace(/[_-]+/g, " ")
     .trim();
+}
+
+/**
+ * A PDF is uploaded directly to storage first (large chapter PDFs can't
+ * pass through a Server Action argument — see uploadChapterFromPdfPath's
+ * doc comment); Word/PowerPoint files stay small enough to send directly.
+ */
+async function uploadOneChapter(bookId: string, title: string, orderIndex: number, file: File): Promise<ActionState & { chapterId?: string }> {
+  if (file.type === "application/pdf") {
+    const chapterId = crypto.randomUUID();
+    const uploaded = await uploadPdfDirect(`${bookId}/${chapterId}.pdf`, file);
+    if ("error" in uploaded) return uploaded;
+    return uploadChapterFromPdfPath(bookId, title, orderIndex, chapterId, uploaded.path);
+  }
+  return uploadChapterFromOfficeFile(bookId, title, orderIndex, file);
 }
 
 export function UploadChapterDialog({
@@ -44,7 +60,7 @@ export function UploadChapterDialog({
 
     startTransition(async () => {
       if (files.length === 1) {
-        const result = await uploadChapter(bookId, title, nextOrder, files[0]);
+        const result = await uploadOneChapter(bookId, title, nextOrder, files[0]);
         if (result.error) toast(result.error, { variant: "error" });
         else {
           toast(result.success ?? "Chapitre importé.", { variant: "success" });
@@ -62,7 +78,7 @@ export function UploadChapterDialog({
       for (let i = 0; i < files.length; i++) {
         setProgress({ done: i, total: files.length });
         const chapterTitle = titles[i]?.trim() || titleFromFilename(files[i].name);
-        const result = await uploadChapter(bookId, chapterTitle, nextOrder + i, files[i]);
+        const result = await uploadOneChapter(bookId, chapterTitle, nextOrder + i, files[i]);
         if (result.error) firstError = firstError ?? `« ${chapterTitle} » : ${result.error}`;
         else successCount++;
       }

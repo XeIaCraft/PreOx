@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { getBookPdfPageCount, suggestBookChapters, splitBookIntoChapters } from "@/app/apps/el-profesor/actions/split-book";
+import { uploadPdfDirect } from "@/lib/el-profesor/client-pdf-upload";
 
 interface Row {
   title: string;
@@ -38,18 +39,35 @@ export function SplitBookDialog({
   onSaved: () => void;
 }) {
   const { toast } = useToast();
+  const [isUploading, setIsUploading] = useState(false);
   const [isSuggesting, startSuggesting] = useTransition();
   const [isSaving, startSaving] = useTransition();
   const [file, setFile] = useState<File | null>(null);
+  const [bookPdfPath, setBookPdfPath] = useState<string | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
 
   async function handleFileChange(f: File | null) {
     setFile(f);
+    setBookPdfPath(null);
     setPageCount(null);
     setRows([]);
     if (!f) return;
-    const result = await getBookPdfPageCount(f);
+
+    setIsUploading(true);
+    // Staged under `_staging/` since the whole book is never a persisted
+    // entity — only the resulting per-chapter PDFs are (see splitBookIntoChapters,
+    // which deletes this path once it's done reading from it).
+    const uploaded = await uploadPdfDirect(`_staging/${crypto.randomUUID()}.pdf`, f);
+    if ("error" in uploaded) {
+      setIsUploading(false);
+      toast(uploaded.error, { variant: "error" });
+      return;
+    }
+    setBookPdfPath(uploaded.path);
+
+    const result = await getBookPdfPageCount(uploaded.path);
+    setIsUploading(false);
     if (result.error) {
       toast(result.error, { variant: "error" });
       return;
@@ -59,9 +77,9 @@ export function SplitBookDialog({
   }
 
   function handleSuggest() {
-    if (!file) return;
+    if (!bookPdfPath) return;
     startSuggesting(async () => {
-      const result = await suggestBookChapters(file);
+      const result = await suggestBookChapters(bookPdfPath);
       if (result.error) toast(result.error, { variant: "error" });
       if (result.suggestions && result.suggestions.length > 0) {
         const total = result.pageCount ?? pageCount ?? 0;
@@ -96,12 +114,12 @@ export function SplitBookDialog({
     rows.every((r) => r.title.trim() && Number(r.startPage) >= 1 && Number(r.endPage) >= Number(r.startPage) && (!pageCount || Number(r.endPage) <= pageCount));
 
   function handleSave() {
-    if (!file || !rowsValid) return;
+    if (!bookPdfPath || !rowsValid) return;
     startSaving(async () => {
       const result = await splitBookIntoChapters(
         bookId,
         nextOrder,
-        file,
+        bookPdfPath,
         rows.map((r) => ({ title: r.title.trim(), startPage: Number(r.startPage), endPage: Number(r.endPage) }))
       );
       if (result.error) toast(result.error, { variant: "error" });
@@ -112,7 +130,7 @@ export function SplitBookDialog({
     });
   }
 
-  const isPending = isSuggesting || isSaving;
+  const isPending = isSuggesting || isSaving || isUploading;
 
   return (
     <Modal
@@ -129,12 +147,14 @@ export function SplitBookDialog({
             type="file"
             accept="application/pdf"
             onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
+            disabled={isUploading}
             className="block w-full text-sm text-foreground-muted file:mr-3 file:rounded-[var(--radius-sm)] file:border-0 file:bg-primary-tint file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary-strong"
           />
+          {isUploading && <p className="text-xs text-foreground-subtle">Envoi du PDF en cours… (peut prendre un moment pour un gros fichier)</p>}
           {pageCount !== null && <p className="text-xs text-foreground-subtle">{pageCount} page(s) au total.</p>}
         </div>
 
-        {file && (
+        {file && bookPdfPath && (
           <>
             <Button variant="secondary" size="sm" onClick={handleSuggest} disabled={isPending}>
               <Sparkles className="h-3.5 w-3.5" /> {isSuggesting ? "Analyse en cours…" : "Suggérer les chapitres via IA"}
@@ -173,7 +193,7 @@ export function SplitBookDialog({
         <Button variant="secondary" onClick={onClose} disabled={isPending}>
           Annuler
         </Button>
-        <Button onClick={handleSave} disabled={isPending || !file || !rowsValid}>
+        <Button onClick={handleSave} disabled={isPending || !bookPdfPath || !rowsValid}>
           {isSaving ? "Création…" : `Créer ${rows.length || ""} chapitre${rows.length > 1 ? "s" : ""}`}
         </Button>
       </div>

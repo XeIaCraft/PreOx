@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireElProfesorAdmin, getElProfesorGeminiConfig } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
-import { uploadChapterPdf, deleteChapterPdf } from "@/lib/el-profesor/storage";
+import { uploadChapterPdf, deleteChapterPdf, downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import { extractPdfPageTexts } from "@/lib/el-profesor/pdf-text";
 import { splitPdfByRanges, getPdfPageCount } from "@/lib/el-profesor/pdf-split";
 import { detectChapterBoundaries } from "@/lib/el-profesor/gemini";
@@ -12,9 +12,16 @@ import { GeminiError } from "@/lib/gemini-shared";
 
 // "Diviser un PDF en chapitres" admin tool (requested 2026-08-24): upload
 // the whole book once instead of pre-splitting each chapter into its own
-// file by hand before uploading. Two-step flow, both against the same File
-// held client-side (never persisted as a standalone "book" object — only
-// the resulting per-chapter PDFs are):
+// file by hand before uploading. Two-step flow, both against the same
+// storage path — the whole book PDF is uploaded directly from the browser
+// to a throwaway `_staging/` path via a signed upload URL (see
+// actions/pdf-upload.ts + lib/el-profesor/client-pdf-upload.ts) *before*
+// any of these functions run, specifically so a large book PDF (100+ MB)
+// never has to pass through a Server Action request body — every function
+// below downloads the bytes server-side from storage instead of receiving
+// them directly. The book itself is never persisted as a standalone "book"
+// object — only the resulting per-chapter PDFs are, and the staging file
+// is deleted once splitBookIntoChapters is done with it (success or not).
 //   1. suggestBookChapters (optional) — AI-assisted boundary guesses.
 //   2. splitBookIntoChapters (final) — the admin's reviewed/edited ranges,
 //      each split into its own PDF and inserted as a chapter.
@@ -40,19 +47,24 @@ export interface ChapterRange {
 // this falls back to manual mode (start/end page per chapter, no AI call).
 const MAX_PAGES_FOR_AI_DETECTION = 700;
 
-export async function getBookPdfPageCount(file: File): Promise<ActionState & { pageCount?: number }> {
+export async function getBookPdfPageCount(storagePath: string): Promise<ActionState & { pageCount?: number }> {
   await requireElProfesorAdmin();
-  const bytes = new Uint8Array(await file.arrayBuffer());
   try {
+    const bytes = await downloadChapterPdfBytes(storagePath);
     return { pageCount: await getPdfPageCount(bytes) };
   } catch {
-    return { error: "PDF illisible." };
+    return { error: "PDF illisible ou introuvable dans le stockage." };
   }
 }
 
-export async function suggestBookChapters(file: File): Promise<ActionState & { suggestions?: ChapterSuggestion[]; pageCount?: number }> {
+export async function suggestBookChapters(storagePath: string): Promise<ActionState & { suggestions?: ChapterSuggestion[]; pageCount?: number }> {
   await requireElProfesorAdmin();
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  let bytes: Uint8Array;
+  try {
+    bytes = await downloadChapterPdfBytes(storagePath);
+  } catch {
+    return { error: "PDF illisible ou introuvable dans le stockage." };
+  }
 
   let pageCount: number;
   try {
@@ -84,15 +96,33 @@ export async function suggestBookChapters(file: File): Promise<ActionState & { s
   }
 }
 
-export async function splitBookIntoChapters(bookId: string, startOrderIndex: number, file: File, chapters: ChapterRange[]): Promise<ActionState> {
+export async function splitBookIntoChapters(bookId: string, startOrderIndex: number, bookPdfPath: string, chapters: ChapterRange[]): Promise<ActionState> {
   await requireElProfesorAdmin();
+  try {
+    return await doSplitBookIntoChapters(bookId, startOrderIndex, bookPdfPath, chapters);
+  } finally {
+    // The staging upload (browser → storage, before this action was ever
+    // called — see the module doc comment) has served its purpose either
+    // way: the split parts below are uploaded as their own chapter files,
+    // so nothing else ever references this path again.
+    await deleteChapterPdf(bookPdfPath).catch(() => {});
+  }
+}
+
+async function doSplitBookIntoChapters(bookId: string, startOrderIndex: number, bookPdfPath: string, chapters: ChapterRange[]): Promise<ActionState> {
   if (chapters.length === 0) return { error: "Aucun chapitre défini." };
   for (const c of chapters) {
     if (!c.title.trim()) return { error: "Chaque chapitre doit avoir un titre." };
     if (c.startPage < 1 || c.endPage < c.startPage) return { error: `Plage de pages invalide pour « ${c.title} ».` };
   }
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  let bytes: Uint8Array;
+  try {
+    bytes = await downloadChapterPdfBytes(bookPdfPath);
+  } catch {
+    return { error: "PDF illisible ou introuvable dans le stockage." };
+  }
+
   let parts: Uint8Array[];
   try {
     parts = await splitPdfByRanges(

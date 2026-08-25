@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireElProfesorAdmin } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
-import { uploadChapterPdf as uploadPdfBytes, deleteChapterPdf, uploadPublicImage } from "@/lib/el-profesor/storage";
+import { deleteChapterPdf, downloadChapterPdfBytes, uploadPublicImage } from "@/lib/el-profesor/storage";
 import { extractDocxText, extractPptxText } from "@/lib/el-profesor/office-text";
 import { getPdfPageCount } from "@/lib/el-profesor/pdf-split";
 import { GeminiError } from "@/lib/gemini-shared";
@@ -176,74 +176,86 @@ const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingm
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 /**
- * Accepts a PDF (the normal, fully-featured path: real pages, citation
- * ground-truth, PDF viewer) or a Word/PowerPoint file (item 5 of the
- * backlog: plain text extracted up front and stored on the chapter row
- * itself — there's no binary to keep, no page position to cite, and no
- * verification pass against a source document later).
+ * PDF chapter import — split out from uploadChapter (2026-08-24) because a
+ * real chapter PDF can run to 100+ MB and a Server Action argument can't
+ * carry that (Next.js's own body size limit, and beyond a point Vercel's
+ * platform-level request body cap regardless of what Next.js allows). The
+ * browser uploads the PDF directly to storage via a signed upload URL
+ * *before* calling this (see actions/pdf-upload.ts +
+ * lib/el-profesor/client-pdf-upload.ts) — `storagePath` is that upload's
+ * final location (`${bookId}/${chapterId}.pdf`), already the chapter's
+ * permanent PDF, so this only has to record it and read its page count.
  */
-export async function uploadChapter(
+export async function uploadChapterFromPdfPath(
   bookId: string,
   title: string,
   orderIndex: number,
-  file: File
+  chapterId: string,
+  storagePath: string
 ): Promise<ActionState & { chapterId?: string }> {
   await requireElProfesorAdmin();
 
   if (!title.trim()) return { error: "Le titre du chapitre est obligatoire." };
 
+  let bytes: Uint8Array;
+  try {
+    bytes = await downloadChapterPdfBytes(storagePath);
+  } catch {
+    return { error: "PDF illisible ou introuvable dans le stockage." };
+  }
+  // Best-effort — a page count read failure shouldn't block the upload,
+  // it just leaves per-page cost estimation unavailable for this chapter.
+  const pageCount = await getPdfPageCount(bytes).catch(() => null);
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_chapters").insert({
+    id: chapterId,
+    book_id: bookId,
+    title: title.trim(),
+    order_index: orderIndex,
+    pdf_storage_path: storagePath,
+    pdf_page_count: pageCount,
+    source_kind: "pdf",
+    status: "pending",
+  });
+  if (error) {
+    await deleteChapterPdf(storagePath);
+    return { error: "Impossible d'enregistrer le chapitre." };
+  }
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Chapitre importé. Lancez l'extraction quand vous êtes prêt.", chapterId };
+}
+
+/** Word/PowerPoint chapter import — small enough (unlike a PDF) to pass directly as a Server Action argument. */
+export async function uploadChapterFromOfficeFile(bookId: string, title: string, orderIndex: number, file: File): Promise<ActionState & { chapterId?: string }> {
+  await requireElProfesorAdmin();
+
+  if (!title.trim()) return { error: "Le titre du chapitre est obligatoire." };
+  if (file.type !== DOCX_MIME && file.type !== PPTX_MIME) return { error: "Le fichier doit être un .docx ou un .pptx." };
+
   const chapterId = randomUUID();
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const supabase = await createClient();
-
-  if (file.type === "application/pdf") {
-    let storagePath: string;
-    try {
-      storagePath = await uploadPdfBytes(bookId, chapterId, bytes);
-    } catch {
-      return { error: "Échec de l'envoi du PDF." };
-    }
-    // Best-effort — a page count read failure shouldn't block the upload,
-    // it just leaves per-page cost estimation unavailable for this chapter.
-    const pageCount = await getPdfPageCount(bytes).catch(() => null);
-
-    const { error } = await supabase.from("el_profesor_chapters").insert({
-      id: chapterId,
-      book_id: bookId,
-      title: title.trim(),
-      order_index: orderIndex,
-      pdf_storage_path: storagePath,
-      pdf_page_count: pageCount,
-      source_kind: "pdf",
-      status: "pending",
-    });
-    if (error) {
-      await deleteChapterPdf(storagePath);
-      return { error: "Impossible d'enregistrer le chapitre." };
-    }
-  } else if (file.type === DOCX_MIME || file.type === PPTX_MIME) {
-    const sourceKind = file.type === DOCX_MIME ? "docx" : "pptx";
-    let sourceText: string;
-    try {
-      sourceText = sourceKind === "docx" ? await extractDocxText(bytes) : await extractPptxText(bytes);
-    } catch (err) {
-      return { error: err instanceof GeminiError ? err.message : "Échec de la lecture du fichier." };
-    }
-
-    const { error } = await supabase.from("el_profesor_chapters").insert({
-      id: chapterId,
-      book_id: bookId,
-      title: title.trim(),
-      order_index: orderIndex,
-      pdf_storage_path: null,
-      source_kind: sourceKind,
-      source_text: sourceText,
-      status: "pending",
-    });
-    if (error) return { error: "Impossible d'enregistrer le chapitre." };
-  } else {
-    return { error: "Le fichier doit être un PDF, un .docx ou un .pptx." };
+  const sourceKind = file.type === DOCX_MIME ? "docx" : "pptx";
+  let sourceText: string;
+  try {
+    sourceText = sourceKind === "docx" ? await extractDocxText(bytes) : await extractPptxText(bytes);
+  } catch (err) {
+    return { error: err instanceof GeminiError ? err.message : "Échec de la lecture du fichier." };
   }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_chapters").insert({
+    id: chapterId,
+    book_id: bookId,
+    title: title.trim(),
+    order_index: orderIndex,
+    pdf_storage_path: null,
+    source_kind: sourceKind,
+    source_text: sourceText,
+    status: "pending",
+  });
+  if (error) return { error: "Impossible d'enregistrer le chapitre." };
 
   revalidatePath("/apps/el-profesor");
   return { success: "Chapitre importé. Lancez l'extraction quand vous êtes prêt.", chapterId };
