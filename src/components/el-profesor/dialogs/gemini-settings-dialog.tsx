@@ -17,7 +17,9 @@ import {
   clearClaudeApiKey,
   updateAiSpendCap,
 } from "@/app/apps/el-profesor/actions/settings";
+import { pollClaudeBatchesNow } from "@/app/apps/el-profesor/actions/batches";
 import { useToast } from "@/components/ui/toast";
+import { RefreshCw } from "lucide-react";
 import type { GeminiUsageStats, ElProfesorAiProvider } from "@/lib/el-profesor/dal";
 import type { ElProfesorBatchJobRow, ElProfesorBatchJobKind } from "@/lib/supabase/types";
 import { estimateCostUsd, formatUsd } from "@/lib/el-profesor/ai-pricing";
@@ -86,6 +88,19 @@ export function GeminiSettingsDialog({
   const [spendCapInput, setSpendCapInput] = useState(aiSpendCapUsd != null ? String(aiSpendCapUsd) : "");
   const [savedSpendCap, setSavedSpendCap] = useState(aiSpendCapUsd);
   const [isSpendCapPending, startSpendCapTransition] = useTransition();
+
+  const [isPollPending, startPollTransition] = useTransition();
+
+  function handlePollNow() {
+    startPollTransition(async () => {
+      const result = await pollClaudeBatchesNow();
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Vérifié.", { variant: "success" });
+        onClose();
+      }
+    });
+  }
 
   function handleSwitchProvider(next: ElProfesorAiProvider) {
     if (next === provider) return;
@@ -401,10 +416,15 @@ export function GeminiSettingsDialog({
 
       {batchJobs.length > 0 && (
         <div className="mt-5 space-y-2 border-t border-border pt-4">
-          <p className="text-sm font-medium text-foreground">Lots Claude récents</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium text-foreground">Lots Claude récents</p>
+            <Button variant="secondary" size="sm" onClick={handlePollNow} disabled={isPollPending}>
+              <RefreshCw className="h-3.5 w-3.5" /> {isPollPending ? "Vérification…" : "Vérifier maintenant"}
+            </Button>
+          </div>
           <p className="text-xs text-foreground-subtle">
-            Soumis par le serveur, récupérés automatiquement par une tâche planifiée toutes les 15 minutes — inutile de garder cet
-            onglet ouvert.
+            Soumis par le serveur, récupérés automatiquement une fois par jour (limite du plan Vercel) — utilisez « Vérifier
+            maintenant » pour ne pas attendre si un lot est déjà terminé côté Claude.
           </p>
           <ul className="max-h-56 space-y-1.5 overflow-y-auto text-xs">
             {batchJobs.map((job) => (

@@ -22,6 +22,7 @@ import {
   type ClaudeBatchRequestSpec,
 } from "@/lib/el-profesor/anthropic";
 import { insertBatchJob, insertBatchItems, submitComplementaryBatchCore, type BatchItemTarget } from "@/lib/el-profesor/batch-submit";
+import { pollAllClaudeBatches } from "@/lib/el-profesor/batch-poll";
 import { GeminiError } from "@/lib/gemini-shared";
 import type { ElProfesorBatchJobRow, ElProfesorNotionUpdateSourceKind } from "@/lib/supabase/types";
 
@@ -265,6 +266,25 @@ export async function getBatchJobs(): Promise<ElProfesorBatchJobRow[]> {
   const supabase = await createClient();
   const { data } = await supabase.from("el_profesor_batch_jobs").select("*").order("created_at", { ascending: false }).limit(30);
   return data ?? [];
+}
+
+/**
+ * On-demand version of the cron poller (item requested 2026-08-25, after a
+ * report of a chapter staying at "En file (lot Claude)" while Claude had
+ * already billed and finished the batch) — the cron only fires once a day
+ * on the Vercel Hobby plan, which can otherwise leave a finished batch
+ * unlanded for up to 24h. Runs the exact same pass, just triggered from the
+ * "Vérifier maintenant" button instead of waiting for the schedule.
+ */
+export async function pollClaudeBatchesNow(): Promise<ActionState & { polled?: number; completed?: number }> {
+  await requireElProfesorAdmin();
+  const { polled, completed } = await pollAllClaudeBatches();
+  if (polled === 0) return { success: "Aucun lot en attente — rien à vérifier.", polled, completed };
+  return {
+    success: `${polled} lot(s) vérifié(s), ${completed} terminé(s) et appliqué(s).`,
+    polled,
+    completed,
+  };
 }
 
 /**
