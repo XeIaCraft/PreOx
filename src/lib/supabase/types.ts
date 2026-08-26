@@ -510,6 +510,7 @@ export type ElProfesorNoteRow = {
 export type ElProfesorNotionRow = {
   id: string;
   name: string;
+  position: number;
   created_at: string;
 };
 

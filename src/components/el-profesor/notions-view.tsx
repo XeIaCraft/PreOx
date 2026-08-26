@@ -39,6 +39,7 @@ import {
   deleteNotionRecommendation,
   addDoseCalculator,
   deleteDoseCalculator,
+  moveNotion,
   moveNotionFiche,
 } from "@/app/apps/el-profesor/actions/notions";
 import {
@@ -704,6 +705,14 @@ export function NotionsView({
     router.refresh();
   }
 
+  function handleMoveNotion(notionId: string, direction: "up" | "down") {
+    startMovingFiche(async () => {
+      const result = await moveNotion(notionId, direction);
+      if (result.error) toast(result.error, { variant: "error" });
+      else refresh();
+    });
+  }
+
   function handleMoveFiche(notionId: string, ficheId: string, direction: "up" | "down") {
     startMovingFiche(async () => {
       const result = await moveNotionFiche(notionId, ficheId, direction);
@@ -780,12 +789,34 @@ export function NotionsView({
           <p className="text-sm text-foreground-subtle">Aucune notion pour l&apos;instant — catégorisez un premier chapitre ci-dessus.</p>
         ) : (
           <div className="space-y-3">
-            {notionSummaries.map(({ notion, fiches }) => {
+            {notionSummaries.map(({ notion, fiches }, i) => {
               const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
               return (
                 <div key={notion.id} className="rounded-[var(--radius-md)] border border-border p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-medium text-foreground">{notion.name}</p>
+                    <div className="flex items-center gap-1.5">
+                      <span className="flex shrink-0 flex-col">
+                        <button
+                          type="button"
+                          onClick={() => handleMoveNotion(notion.id, "up")}
+                          disabled={i === 0}
+                          aria-label="Monter cette notion"
+                          className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                        >
+                          <ChevronUp className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveNotion(notion.id, "down")}
+                          disabled={i === notionSummaries.length - 1}
+                          aria-label="Descendre cette notion"
+                          className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                        >
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                      </span>
+                      <p className="font-medium text-foreground">{notion.name}</p>
+                    </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="neutral">
                         {fiches.length} fiche{fiches.length > 1 ? "s" : ""}

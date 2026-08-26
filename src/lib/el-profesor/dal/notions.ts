@@ -46,7 +46,9 @@ export async function findOrCreateNotion(name: string, client?: SupabaseClient<D
   const existing = (all ?? []).find((n) => n.name.toLowerCase() === trimmed.toLowerCase());
   if (existing) return existing.id;
 
-  const { data: created, error } = await supabase.from("el_profesor_notions").insert({ name: trimmed }).select("id").maybeSingle();
+  const { data: lastNotion } = await supabase.from("el_profesor_notions").select("position").order("position", { ascending: false }).limit(1).maybeSingle();
+  const position = (lastNotion?.position ?? -1) + 1;
+  const { data: created, error } = await supabase.from("el_profesor_notions").insert({ name: trimmed, position }).select("id").maybeSingle();
   if (error || !created) {
     // Likely a race on the unique constraint — re-fetch and use whichever won.
     const { data: retry } = await supabase.from("el_profesor_notions").select("id, name").ilike("name", trimmed).maybeSingle();
@@ -114,7 +116,7 @@ export async function getEmergencyBlocks(): Promise<EmergencyBlockEntry[]> {
 export async function getGlossary(): Promise<NotionSummary[]> {
   const supabase = await createClient();
   const [{ data: notions }, { data: links }] = await Promise.all([
-    supabase.from("el_profesor_notions").select("*").order("name", { ascending: true }),
+    supabase.from("el_profesor_notions").select("*").order("position", { ascending: true }),
     supabase.from("el_profesor_notion_links").select("notion_id, fiche_id").order("position", { ascending: true }),
   ]);
   if (!notions || notions.length === 0 || !links || links.length === 0) return [];
@@ -289,7 +291,7 @@ export async function getCaseJournalCountsByNotion(userId: string, notionIds: st
 export async function getNotionSummaries(): Promise<NotionSummary[]> {
   const supabase = await createClient();
   const [{ data: notions }, { data: links }] = await Promise.all([
-    supabase.from("el_profesor_notions").select("*").order("name", { ascending: true }),
+    supabase.from("el_profesor_notions").select("*").order("position", { ascending: true }),
     supabase.from("el_profesor_notion_links").select("notion_id, fiche_id").order("position", { ascending: true }),
   ]);
   if (!notions || notions.length === 0) return [];

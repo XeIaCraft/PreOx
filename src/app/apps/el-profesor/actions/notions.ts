@@ -224,6 +224,33 @@ export async function clearFicheSuperseded(ficheId: string): Promise<ActionState
   return { success: "Fiche réactivée." };
 }
 
+/** Reorders the notions list itself (requested 2026-08-26) — swaps this notion's manual position with its previous/next sibling. No-op at either end. */
+export async function moveNotion(notionId: string, direction: "up" | "down"): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: notions } = await supabase.from("el_profesor_notions").select("id, position").order("position", { ascending: true });
+  const list = notions ?? [];
+  const index = list.findIndex((n) => n.id === notionId);
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (index === -1 || targetIndex < 0 || targetIndex >= list.length) {
+    return { success: "OK" };
+  }
+
+  const current = list[index];
+  const target = list[targetIndex];
+  const [error1, error2] = await Promise.all([
+    supabase.from("el_profesor_notions").update({ position: target.position }).eq("id", current.id).then((r) => r.error),
+    supabase.from("el_profesor_notions").update({ position: current.position }).eq("id", target.id).then((r) => r.error),
+  ]);
+  if (error1 || error2) return { error: "Impossible de réordonner cette notion." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Notion déplacée." };
+}
+
 /**
  * Reorders the fiches listed under a notion (requested 2026-08-26) — swaps
  * this fiche's manual position with its previous/next sibling within the
