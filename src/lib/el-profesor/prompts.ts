@@ -510,6 +510,44 @@ Réponds uniquement avec le JSON demandé (un champ "text" pour le contenu corri
 `.trim();
 }
 
+/**
+ * Real cross-book fusion for a notion (requested 2026-08-26 — the notion
+ * "glossary" had only ever cross-linked separate fiches, never actually
+ * merged their content, so reading a notion still meant opening every book
+ * one by one). Every source block is numbered ("[b3]") so the model can
+ * point back to exactly which ones it drew from instead of writing new
+ * citations itself — see the doc comment on SynthesisCitation: the app
+ * resolves "source_block_ids" back to the real citations afterward, so
+ * nothing here is ever trusted to invent a page/quote.
+ */
+export function buildNotionSynthesisPrompt(
+  notionName: string,
+  sourceBlocks: { id: string; bookTitle: string; chapterTitle: string; ficheTitle: string; blockType: string; text: string }[]
+): string {
+  const body = sourceBlocks.map((b) => `[${b.id}] (${b.bookTitle} — ${b.chapterTitle} — ${b.ficheTitle} — type: ${b.blockType})\n${b.text}`).join("\n\n");
+  return `
+${EXPERT_READER_CONTEXT}
+
+${LANGUAGE_RULE}
+
+Voici tous les blocs de contenu déjà extraits et publiés, dans toute la bibliothèque, qui traitent de la notion transversale « ${notionName} » — chacun vient d'un livre (potentiellement différent) et porte un identifiant entre crochets, ex. [b3] :
+
+${body}
+
+Ta tâche : rédige UNE SEULE fiche de synthèse qui couvre cette notion en lisant chaque information UNE SEULE FOIS au lieu de la revoir livre par livre, en respectant ces règles strictes :
+
+1. Si plusieurs blocs disent la même chose (même en termes différents), fusionne-les en un seul bloc de synthèse — ne répète jamais un fait déjà couvert par un bloc de synthèse précédent.
+2. Si un bloc source apporte un détail complémentaire propre à un livre (absent des autres), garde-le — soit comme nuance dans un bloc existant, soit comme bloc à part si le sujet diffère assez — ne perds jamais une information réellement utile sous prétexte de dédupliquer.
+3. Types de blocs disponibles, mêmes règles de contenu qu'une extraction normale :
+${BLOCK_TYPES_DOC}
+Ne fusionne jamais deux blocs sources de nature différente (ex. un tableau comparatif et une définition) dans un seul bloc de synthèse — ce sont deux blocs distincts, même s'ils traitent du même sous-thème.
+4. Si deux blocs sources se contredisent factuellement sur un point précis (valeur numérique différente, conduite à tenir opposée), ne tranche PAS toi-même lequel a raison : garde les deux formulations dans le même bloc de synthèse en signalant explicitement la divergence (« Selon [nom du livre A] ... alors que selon [nom du livre B] ... »).
+5. N'INVENTE RIEN : chaque bloc de synthèse doit être fondé UNIQUEMENT sur les blocs sources listés ci-dessus, jamais sur tes propres connaissances. Pour CHAQUE bloc de synthèse que tu écris, indique dans "source_block_ids" la liste complète des identifiants entre crochets des blocs sources qui l'ont nourri (ex. ["b3", "b7"]) — utilise tous les blocs sources pertinents pour ce point précis, pas seulement le premier trouvé, et n'omets aucun bloc source que tu as effectivement utilisé.
+
+Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
+`.trim();
+}
+
 export function buildVerificationPrompt(extractionJson: string): string {
   return `
 Tu reçois le document source (chapitre PDF) et, ci-dessous, un JSON d'extraction déjà produit à partir de ce document (sous-entités, fiches, blocs avec citations, flashcards). Ta seule tâche : vérifier la fidélité de chaque bloc et chaque flashcard à sa citation et au document source.

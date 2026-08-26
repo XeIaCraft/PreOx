@@ -815,7 +815,9 @@ export function NotionsView({
                           <ChevronDown className="h-3 w-3" />
                         </button>
                       </span>
-                      <p className="font-medium text-foreground">{notion.name}</p>
+                      <Link href={`/apps/el-profesor/notions/${notion.id}`} className="font-medium text-foreground hover:underline">
+                        {notion.name}
+                      </Link>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="neutral">

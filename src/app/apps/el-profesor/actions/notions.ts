@@ -12,10 +12,13 @@ import {
   findOrCreateNotion,
   linkFicheToNotion,
   getNotionSummaries,
+  getSynthesisSourceBlocks,
 } from "@/lib/el-profesor/dal";
-import { categorizeFicheNotions, checkContradiction } from "@/lib/el-profesor/gemini";
+import { categorizeFicheNotions, checkContradiction, generateNotionSynthesisContent, BLOCK_TYPES } from "@/lib/el-profesor/gemini";
 import { submitNotionCategorizationBatch, submitContradictionCheckBatch } from "./batches";
 import { GeminiError } from "@/lib/gemini-shared";
+import type { SynthesisCitation, BlockContent } from "@/lib/el-profesor/types";
+import type { SynthesisSourceBlock } from "@/lib/el-profesor/dal/notions";
 
 export interface ActionState {
   error?: string;
@@ -319,6 +322,120 @@ export async function resolveContradictionAndSupersede(
 
   revalidatePath("/apps/el-profesor/notions");
   return { success: "Fiche remplacée et contradiction résolue." };
+}
+
+/**
+ * Real cross-book fusion (requested 2026-08-26 — the notion glossary had
+ * only ever cross-linked separate fiches, never actually merged their
+ * content, so reading a notion still meant opening every book one by one).
+ * Reads every published block across the library tagged with this notion
+ * and rewrites it via Gemini as one deduplicated fiche. Every synthesized
+ * block's citations are resolved from the ACTUAL source blocks the model
+ * pointed to (see buildNotionSynthesisPrompt) — never trusted from the
+ * model itself, and a block whose citations can't be resolved to a real
+ * source is dropped rather than kept with fabricated provenance. Always
+ * lands as "draft" — an admin reviews and publishes explicitly, same as
+ * every other AI-generated content in this module.
+ */
+export async function generateNotionSynthesis(notionId: string): Promise<ActionState> {
+  const profile = await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: notion } = await supabase.from("el_profesor_notions").select("name").eq("id", notionId).maybeSingle();
+  if (!notion) return { error: "Notion introuvable." };
+
+  const { ficheIds, sourceBlocks } = await getSynthesisSourceBlocks(notionId);
+  if (sourceBlocks.length === 0) return { error: "Aucun contenu publié à synthétiser pour cette notion." };
+
+  let config;
+  try {
+    config = await getElProfesorGeminiConfig();
+  } catch {
+    return { error: "Configurez votre clé API Gemini dans les réglages d'El Profesor." };
+  }
+
+  try {
+    const { blocks: rawBlocks, model } = await generateNotionSynthesisContent(
+      config,
+      notion.name,
+      sourceBlocks.map((b) => ({ id: b.sourceBlockId, bookTitle: b.bookTitle, chapterTitle: b.chapterTitle, ficheTitle: b.ficheTitle, blockType: b.blockType, text: b.text }))
+    );
+
+    const blockById = new Map(sourceBlocks.map((b) => [b.sourceBlockId, b]));
+    const resolvedBlocks = rawBlocks
+      .filter((rb) => BLOCK_TYPES.includes(rb.block_type) && rb.content && typeof rb.content === "object" && Array.isArray(rb.source_block_ids))
+      .map((rb, i) => {
+        const contributing = rb.source_block_ids
+          .map((id) => blockById.get(id))
+          .filter((b): b is SynthesisSourceBlock => Boolean(b));
+        const citations: SynthesisCitation[] = contributing.flatMap((b) => b.citations);
+        const sourceFicheIds = [...new Set(contributing.map((b) => b.ficheId))];
+        return { order_index: i, block_type: rb.block_type, content: rb.content, citations, source_fiche_ids: sourceFicheIds };
+      })
+      // A block the model claimed but that resolves to zero real source
+      // citations means every source_block_id it gave was invalid — drop
+      // it rather than persist a block with fabricated provenance.
+      .filter((b) => b.citations.length > 0);
+
+    if (resolvedBlocks.length === 0) {
+      throw new GeminiError("La synthèse générée n'a produit aucun bloc exploitable (citations introuvables) — réessayez.");
+    }
+
+    const { data: synthesisRow, error: upsertError } = await supabase
+      .from("el_profesor_notion_syntheses")
+      .upsert(
+        { notion_id: notionId, status: "draft", source_fiche_ids: ficheIds, model, generated_at: new Date().toISOString(), generated_by: profile.id, error: null },
+        { onConflict: "notion_id" }
+      )
+      .select("id")
+      .single();
+    if (upsertError || !synthesisRow) return { error: "Échec de l'enregistrement de la synthèse." };
+
+    await supabase.from("el_profesor_notion_synthesis_blocks").delete().eq("synthesis_id", synthesisRow.id);
+    const { error: insertError } = await supabase.from("el_profesor_notion_synthesis_blocks").insert(
+      resolvedBlocks.map((b) => ({
+        synthesis_id: synthesisRow.id,
+        order_index: b.order_index,
+        block_type: b.block_type,
+        content: b.content as unknown as BlockContent as never,
+        citations: b.citations as unknown as SynthesisCitation[] as never,
+        source_fiche_ids: b.source_fiche_ids,
+      }))
+    );
+    if (insertError) return { error: "Synthèse générée mais échec de l'enregistrement des blocs." };
+
+    revalidatePath(`/apps/el-profesor/notions/${notionId}`);
+    revalidatePath("/apps/el-profesor/notions");
+    revalidatePath("/apps/el-profesor/glossary");
+    revalidatePath("/apps/el-profesor");
+    return { success: `Synthèse générée (${resolvedBlocks.length} bloc(s)) — à relire avant publication.` };
+  } catch (err) {
+    const message = err instanceof GeminiError ? err.message : "Échec de la génération de la synthèse.";
+    await supabase.from("el_profesor_notion_syntheses").upsert({ notion_id: notionId, source_fiche_ids: ficheIds, error: message }, { onConflict: "notion_id" });
+    return { error: message };
+  }
+}
+
+export async function publishNotionSynthesis(notionId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_notion_syntheses").update({ status: "published" }).eq("notion_id", notionId);
+  if (error) return { error: "Impossible de publier la synthèse." };
+  revalidatePath(`/apps/el-profesor/notions/${notionId}`);
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Synthèse publiée." };
+}
+
+export async function unpublishNotionSynthesis(notionId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_notion_syntheses").update({ status: "draft" }).eq("notion_id", notionId);
+  if (error) return { error: "Impossible de repasser la synthèse en brouillon." };
+  revalidatePath(`/apps/el-profesor/notions/${notionId}`);
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Synthèse repassée en brouillon." };
 }
 
 /**

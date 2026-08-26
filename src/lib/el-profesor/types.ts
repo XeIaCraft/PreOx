@@ -177,6 +177,44 @@ export type NotionSummary = {
   fiches: NotionLinkedFiche[];
 };
 
+/**
+ * Real cross-book fusion (requested 2026-08-26, after the notion "glossary"
+ * turned out to only ever cross-link fiches rather than actually merge
+ * their content) — a citation carried over verbatim from the source block
+ * it came from, tagged with which book/chapter/fiche it belongs to since a
+ * single synthesized block can now span more than one book's own PDF.
+ */
+export type SynthesisCitation = Citation & {
+  ficheId: string;
+  chapterId: string;
+  bookTitle: string;
+  chapterTitle: string;
+};
+
+export type NotionSynthesisBlock = {
+  id: string;
+  orderIndex: number;
+  blockType: BlockType;
+  content: BlockContent;
+  /** Every citation here comes from an actual source block the AI cited — never invented, see buildNotionSynthesisPrompt. */
+  citations: SynthesisCitation[];
+  /** Distinct fiches this block draws from — used to render "sources" badges without re-deriving from citations. */
+  sourceFicheIds: string[];
+};
+
+export type NotionSynthesisStatus = "draft" | "published";
+
+export type NotionSynthesis = {
+  notionId: string;
+  status: NotionSynthesisStatus;
+  blocks: NotionSynthesisBlock[];
+  model: string | null;
+  generatedAt: string | null;
+  error: string | null;
+  /** True when the notion's currently-eligible source fiches (published, not merged/obsolete) differ from what the last generation actually read — a sign an admin should regenerate. */
+  isStale: boolean;
+};
+
 /** Manual link to an official guideline source (HAS, SPILF, société savante...) attached to a notion — never AI-generated, see the migration comment. */
 export type NotionRecommendation = {
   id: string;

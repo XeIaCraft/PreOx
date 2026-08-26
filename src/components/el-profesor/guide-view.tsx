@@ -332,11 +332,20 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
 
         <Section id="notions" title="Notions et glossaire" icon={Tag}>
           <p>
-            Une « notion » regroupe les fiches de plusieurs livres qui traitent du même sujet (ex. « hyperkaliémie ») — utile pour
-            réviser un thème d&apos;un coup plutôt que livre par livre. Le glossaire (accessible à tous) liste ces notions avec un
-            raccourci <GraduationCap className="inline h-3.5 w-3.5 align-text-bottom" /> pour réviser directement ce thème, un badge
-            « Prêt / À consolider / Fragile » qui estime votre préparation à partir des flashcards déjà maîtrisées, et un compteur{" "}
-            <NotebookPen className="inline h-3.5 w-3.5 align-text-bottom" /> vers vos cas cliniques personnels liés à cette notion.
+            Une « notion » regroupe les fiches de plusieurs livres qui traitent du même sujet (ex. « hyperkaliémie »). Cliquez sur son
+            nom pour ouvrir sa <strong>synthèse</strong> : une fiche unique, réécrite par IA à partir de tout le contenu publié sur ce
+            sujet dans la bibliothèque — les faits qui se répètent d&apos;un livre à l&apos;autre ne sont lus qu&apos;une fois, tandis
+            que le détail propre à chaque livre est conservé. Chaque bloc de synthèse reste tracé jusqu&apos;à son (ou ses) livre(s)
+            source(s) — l&apos;IA ne reformule jamais une citation, elle ne fait que regrouper des blocs déjà extraits et vérifiés. Les
+            fiches sources d&apos;origine restent listées en bas de la page pour qui veut le détail complet d&apos;un livre en
+            particulier.
+          </p>
+          <p>
+            Le glossaire (accessible à tous) liste ces notions avec un raccourci{" "}
+            <GraduationCap className="inline h-3.5 w-3.5 align-text-bottom" /> pour réviser directement ce thème (flashcards
+            mélangées de tous les livres liés), un badge « Prêt / À consolider / Fragile » qui estime votre préparation à partir des
+            flashcards déjà maîtrisées, et un compteur <NotebookPen className="inline h-3.5 w-3.5 align-text-bottom" /> vers vos cas
+            cliniques personnels liés à cette notion.
           </p>
           <p>
             Certaines notions affichent aussi des <Landmark className="inline h-3.5 w-3.5 align-text-bottom" /> recommandations
@@ -348,6 +357,10 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
           {isAdmin && (
             <ul className="space-y-1.5">
               <IconRow icon={Tag}>Catégoriser automatiquement les fiches d&apos;un chapitre par notion.</IconRow>
+              <IconRow icon={Sparkles}>
+                Générer (ou régénérer) la synthèse d&apos;une notion, depuis sa propre page — reste en brouillon jusqu&apos;à ce que
+                vous la publiiez ; un bandeau signale quand le contenu source a changé depuis la dernière génération.
+              </IconRow>
               <IconRow icon={Sparkles}>Détecter les contradictions entre deux fiches partageant une notion.</IconRow>
               <IconRow icon={Merge}>Fusionner des fiches redondantes, ou marquer l&apos;une d&apos;elles obsolète/remplacée.</IconRow>
               <IconRow icon={FileSearch}>

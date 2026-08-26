@@ -23,6 +23,7 @@ import {
   buildLeechRewordingPrompt,
   buildFlashcardFlagFixPrompt,
   buildBlockFlagFixPrompt,
+  buildNotionSynthesisPrompt,
 } from "@/lib/el-profesor/prompts";
 import type {
   ComplementaryResult,
@@ -33,6 +34,7 @@ import type {
   NotionCategorizationResult,
   ContradictionCheckResult,
   NotionUpdateCheckResult,
+  BlockContent,
 } from "@/lib/el-profesor/types";
 
 const FILES_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files";
@@ -168,6 +170,29 @@ const COMPLEMENTARY_RESPONSE_SCHEMA = {
     estimated_remaining_passes: ESTIMATED_REMAINING_PASSES_SCHEMA,
   },
   required: ["additions_for_existing", "new_sub_entities", "estimated_remaining_passes"],
+};
+
+const NOTION_SYNTHESIS_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    blocks: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          block_type: { type: "STRING", enum: BLOCK_TYPES },
+          content: BLOCK_CONTENT_SCHEMA,
+          source_block_ids: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Identifiants entre crochets (ex. \"b3\") des blocs sources qui ont nourri ce bloc de synthèse.",
+          },
+        },
+        required: ["block_type", "content", "source_block_ids"],
+      },
+    },
+  },
+  required: ["blocks"],
 };
 
 const SELECTION_RESPONSE_SCHEMA = {
@@ -899,6 +924,31 @@ export async function checkNotionUpdate(
   const instructions = buildNotionUpdateCheckPrompt(notionName, ficheTitle, ficheText, sourceLabel, sourceText);
   const { result } = await textRotation<NotionUpdateCheckResult>(config, instructions, NOTION_UPDATE_CHECK_SCHEMA);
   return result;
+}
+
+export interface RawNotionSynthesisBlock {
+  block_type: BlockType;
+  content: BlockContent;
+  source_block_ids: string[];
+}
+
+/**
+ * Real cross-book fusion (requested 2026-08-26) — reads every published
+ * block across the library that treats a given notion and rewrites it as
+ * one deduplicated fiche, citing back to the exact source blocks it drew
+ * from (resolved to real citations by the caller — see
+ * buildNotionSynthesisPrompt's doc comment, and normalizeNotionSynthesis
+ * in actions/notions.ts for the defensive parsing). Rotates on quota/capacity
+ * errors like every other text-only call.
+ */
+export async function generateNotionSynthesisContent(
+  config: GeminiRotationConfig,
+  notionName: string,
+  sourceBlocks: { id: string; bookTitle: string; chapterTitle: string; ficheTitle: string; blockType: string; text: string }[]
+): Promise<{ blocks: RawNotionSynthesisBlock[]; model: string }> {
+  const instructions = buildNotionSynthesisPrompt(notionName, sourceBlocks);
+  const { result, model } = await textRotation<{ blocks: RawNotionSynthesisBlock[] }>(config, instructions, NOTION_SYNTHESIS_SCHEMA);
+  return { blocks: result.blocks, model };
 }
 
 export async function verifyExtraction(

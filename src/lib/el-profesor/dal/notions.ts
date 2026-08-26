@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { toFicheBlock, resolveFicheContexts } from "./shared";
 import { findDuplicateFlashcards } from "../dedupe";
+import { blockToPlainText } from "../block-text";
 import type {
   FicheBlock,
   Notion,
@@ -21,6 +22,10 @@ import type {
   NotionUpdateProposalStatus,
   ExtractedFicheBlock,
   ExtractedFlashcard,
+  NotionSynthesis,
+  SynthesisCitation,
+  BlockType,
+  BlockContent,
 } from "../types";
 import type { Database } from "@/lib/supabase/types";
 
@@ -521,4 +526,138 @@ export async function getNotionUpdateProposals(status?: NotionUpdateProposalStat
       } satisfies NotionUpdateProposal;
     })
     .filter((p): p is NotionUpdateProposal => Boolean(p));
+}
+
+/** Every fiche linked to a notion (cross-book context included), for the synthesis page's "sources" section — no published-only filter (unlike getEligibleSynthesisFiches) so a merged/obsolete or unpublished fiche still shows up there, just not fed into the synthesis. */
+export async function getNotionFiches(notionId: string): Promise<NotionLinkedFiche[]> {
+  const supabase = await createClient();
+  const { data: links } = await supabase
+    .from("el_profesor_notion_links")
+    .select("fiche_id")
+    .eq("notion_id", notionId)
+    .order("position", { ascending: true });
+  const ficheIds = (links ?? []).map((l) => l.fiche_id);
+  if (ficheIds.length === 0) return [];
+  const contexts = await resolveFicheContexts(ficheIds);
+  return ficheIds.map((id) => contexts.get(id)).filter((f): f is NotionLinkedFiche => Boolean(f));
+}
+
+export interface SynthesisSourceBlock {
+  /** Stable per-generation label used only in the prompt (e.g. "b3") — never persisted, only resolved back to real citations once the model replies (see generateNotionSynthesis in actions/notions.ts). */
+  sourceBlockId: string;
+  ficheId: string;
+  chapterId: string;
+  bookTitle: string;
+  chapterTitle: string;
+  ficheTitle: string;
+  blockType: string;
+  text: string;
+  citations: SynthesisCitation[];
+}
+
+/** Fiches eligible to feed a notion's synthesis: linked, published, and not merged/superseded into another fiche — same "active content" filter the rest of the module already applies. */
+async function getEligibleSynthesisFiches(notionId: string): Promise<{ id: string }[]> {
+  const supabase = await createClient();
+  const { data: links } = await supabase.from("el_profesor_notion_links").select("fiche_id").eq("notion_id", notionId);
+  const ficheIds = (links ?? []).map((l) => l.fiche_id);
+  if (ficheIds.length === 0) return [];
+
+  const { data: fiches } = await supabase
+    .from("el_profesor_fiches")
+    .select("id")
+    .in("id", ficheIds)
+    .eq("status", "published")
+    .is("superseded_by_fiche_id", null);
+  return fiches ?? [];
+}
+
+/** Just the fiche ids (cheap) — used to detect staleness against a synthesis's stored source_fiche_ids without fetching every block's text. */
+export async function getEligibleSynthesisFicheIds(notionId: string): Promise<string[]> {
+  return (await getEligibleSynthesisFiches(notionId)).map((f) => f.id);
+}
+
+/** Every published block from every currently-eligible fiche of a notion, numbered for the synthesis prompt — see generateNotionSynthesis in actions/notions.ts. */
+export async function getSynthesisSourceBlocks(notionId: string): Promise<{ ficheIds: string[]; sourceBlocks: SynthesisSourceBlock[] }> {
+  const eligibleFiches = await getEligibleSynthesisFiches(notionId);
+  const ficheIds = eligibleFiches.map((f) => f.id);
+  if (ficheIds.length === 0) return { ficheIds, sourceBlocks: [] };
+
+  const supabase = await createClient();
+  const [{ data: blockRows }, contexts] = await Promise.all([
+    supabase
+      .from("el_profesor_fiche_blocks")
+      .select("*")
+      .in("fiche_id", ficheIds)
+      .eq("status", "published")
+      .order("fiche_id", { ascending: true })
+      .order("order_index", { ascending: true }),
+    resolveFicheContexts(ficheIds),
+  ]);
+
+  const sourceBlocks: SynthesisSourceBlock[] = [];
+  (blockRows ?? []).forEach((row, i) => {
+    const block = toFicheBlock(row);
+    const ctx = contexts.get(block.ficheId);
+    if (!ctx) return;
+    sourceBlocks.push({
+      sourceBlockId: `b${i + 1}`,
+      ficheId: ctx.ficheId,
+      chapterId: ctx.chapterId,
+      bookTitle: ctx.bookTitle,
+      chapterTitle: ctx.chapterTitle,
+      ficheTitle: ctx.ficheTitle,
+      blockType: block.blockType,
+      text: blockToPlainText(block.blockType, block.content),
+      citations: block.citations.map((c) => ({
+        ...c,
+        ficheId: ctx.ficheId,
+        chapterId: ctx.chapterId,
+        bookTitle: ctx.bookTitle,
+        chapterTitle: ctx.chapterTitle,
+      })),
+    });
+  });
+
+  return { ficheIds, sourceBlocks };
+}
+
+function sameIdSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const setB = new Set(b);
+  return a.every((id) => setB.has(id));
+}
+
+/**
+ * The notion's current synthesis, if any. RLS already hides a draft
+ * synthesis from non-admins (see the migration), so this needs no extra
+ * visibility check of its own. `isStale` flags when the notion's currently
+ * eligible fiches differ from what the last generation actually read —
+ * e.g. a new chapter got linked, or one was merged/marked obsolete since.
+ */
+export async function getNotionSynthesis(notionId: string): Promise<NotionSynthesis | null> {
+  const supabase = await createClient();
+  const { data: synthesisRow } = await supabase.from("el_profesor_notion_syntheses").select("*").eq("notion_id", notionId).maybeSingle();
+  if (!synthesisRow) return null;
+
+  const [{ data: blockRows }, eligibleFicheIds] = await Promise.all([
+    supabase.from("el_profesor_notion_synthesis_blocks").select("*").eq("synthesis_id", synthesisRow.id).order("order_index", { ascending: true }),
+    getEligibleSynthesisFicheIds(notionId),
+  ]);
+
+  return {
+    notionId,
+    status: synthesisRow.status,
+    model: synthesisRow.model,
+    generatedAt: synthesisRow.generated_at,
+    error: synthesisRow.error,
+    isStale: !sameIdSet(eligibleFicheIds, synthesisRow.source_fiche_ids ?? []),
+    blocks: (blockRows ?? []).map((r) => ({
+      id: r.id,
+      orderIndex: r.order_index,
+      blockType: r.block_type as BlockType,
+      content: r.content as unknown as BlockContent,
+      citations: (r.citations as unknown as SynthesisCitation[]) ?? [],
+      sourceFicheIds: r.source_fiche_ids ?? [],
+    })),
+  };
 }

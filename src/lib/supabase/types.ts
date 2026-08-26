@@ -522,6 +522,30 @@ export type ElProfesorNotionLinkRow = {
   created_at: string;
 };
 
+export type ElProfesorNotionSynthesisRow = {
+  id: string;
+  notion_id: string;
+  status: "draft" | "published";
+  source_fiche_ids: string[];
+  model: string | null;
+  generated_at: string | null;
+  generated_by: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ElProfesorNotionSynthesisBlockRow = {
+  id: string;
+  synthesis_id: string;
+  order_index: number;
+  block_type: string;
+  content: Json;
+  citations: Json;
+  source_fiche_ids: string[];
+  created_at: string;
+};
+
 export type ElProfesorContradictionRow = {
   id: string;
   notion_id: string | null;
@@ -872,6 +896,18 @@ export type Database = {
         Row: ElProfesorNotionLinkRow;
         Insert: Partial<ElProfesorNotionLinkRow> & { notion_id: string; fiche_id: string };
         Update: Partial<ElProfesorNotionLinkRow>;
+        Relationships: [];
+      };
+      el_profesor_notion_syntheses: {
+        Row: ElProfesorNotionSynthesisRow;
+        Insert: Partial<ElProfesorNotionSynthesisRow> & { notion_id: string };
+        Update: Partial<ElProfesorNotionSynthesisRow>;
+        Relationships: [];
+      };
+      el_profesor_notion_synthesis_blocks: {
+        Row: ElProfesorNotionSynthesisBlockRow;
+        Insert: Partial<ElProfesorNotionSynthesisBlockRow> & { synthesis_id: string; block_type: string; content: Json };
+        Update: Partial<ElProfesorNotionSynthesisBlockRow>;
         Relationships: [];
       };
       el_profesor_notion_recommendations: {

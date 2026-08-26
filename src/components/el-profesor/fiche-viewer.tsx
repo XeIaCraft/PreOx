@@ -75,7 +75,7 @@ function BlockRereadControl({ blockId, initialState }: { blockId: string; initia
   );
 }
 
-const BLOCK_META: Record<BlockType, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
+export const BLOCK_META: Record<BlockType, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
   definition_mecanisme: { label: "Définition / mécanisme", icon: BookMarked },
   valeurs_seuils: { label: "Valeurs & seuils", icon: Gauge },
   tableau_comparatif: { label: "Tableau comparatif", icon: Table2 },
