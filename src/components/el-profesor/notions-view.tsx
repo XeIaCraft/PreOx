@@ -10,7 +10,6 @@ import {
   Sparkles,
   Check,
   X,
-  Merge,
   Undo2,
   Copy,
   FileSearch,
@@ -20,23 +19,27 @@ import {
   Plus,
   Trash2,
   Calculator,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { MergeFichesForm } from "@/components/el-profesor/merge-fiches-form";
+import { RenameFicheButton } from "@/components/el-profesor/inline-rename-fiche";
 import {
   categorizeChapterNotions,
   detectContradictionsForNotion,
   resolveContradiction,
   dismissContradiction,
-  markFicheSuperseded,
   clearFicheSuperseded,
   resolveContradictionAndSupersede,
   addNotionRecommendation,
   deleteNotionRecommendation,
   addDoseCalculator,
   deleteDoseCalculator,
+  moveNotionFiche,
 } from "@/app/apps/el-profesor/actions/notions";
 import {
   checkNotionForUpdatesFromText,
@@ -432,50 +435,6 @@ function DoseCalculatorsManager({
   );
 }
 
-function MergeFichesForm({ fiches, onChanged }: { fiches: NotionSummary["fiches"]; onChanged: () => void }) {
-  const { toast } = useToast();
-  const [isPending, startTransition] = useTransition();
-  const [duplicateId, setDuplicateId] = useState(fiches[0]?.ficheId ?? "");
-  const [canonicalId, setCanonicalId] = useState(fiches[1]?.ficheId ?? "");
-
-  function handleMerge() {
-    if (!duplicateId || !canonicalId || duplicateId === canonicalId) return;
-    startTransition(async () => {
-      const result = await markFicheSuperseded(duplicateId, canonicalId, "duplicate", "");
-      if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "", { variant: "success" });
-        onChanged();
-      }
-    });
-  }
-
-  return (
-    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-2 text-xs">
-      <Merge className="h-3.5 w-3.5 shrink-0 text-foreground-subtle" />
-      <span className="text-foreground-subtle">Fusionner</span>
-      <Select value={duplicateId} onChange={(e) => setDuplicateId(e.target.value)} className="max-w-[220px] text-xs">
-        {fiches.map((f) => (
-          <option key={f.ficheId} value={f.ficheId}>
-            {f.ficheTitle} ({f.bookTitle})
-          </option>
-        ))}
-      </Select>
-      <span className="text-foreground-subtle">dans</span>
-      <Select value={canonicalId} onChange={(e) => setCanonicalId(e.target.value)} className="max-w-[220px] text-xs">
-        {fiches.map((f) => (
-          <option key={f.ficheId} value={f.ficheId}>
-            {f.ficheTitle} ({f.bookTitle})
-          </option>
-        ))}
-      </Select>
-      <Button variant="ghost" size="sm" onClick={handleMerge} disabled={isPending || duplicateId === canonicalId}>
-        Fusionner
-      </Button>
-    </div>
-  );
-}
-
 function SupersededFicheRow({ entry, onChanged }: { entry: SupersededFicheEntry; onChanged: () => void }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -711,6 +670,7 @@ export function NotionsView({
   const { toast } = useToast();
   const [isCategorizing, startCategorizing] = useTransition();
   const [isDetecting, startDetecting] = useTransition();
+  const [, startMovingFiche] = useTransition();
   const [selectedChapterId, setSelectedChapterId] = useState(chapters[0]?.id ?? "");
   const [detectingNotionId, setDetectingNotionId] = useState<string | null>(null);
   const [updateCheckNotion, setUpdateCheckNotion] = useState<{ id: string; name: string } | null>(null);
@@ -742,6 +702,14 @@ export function NotionsView({
 
   function refresh() {
     router.refresh();
+  }
+
+  function handleMoveFiche(notionId: string, ficheId: string, direction: "up" | "down") {
+    startMovingFiche(async () => {
+      const result = await moveNotionFiche(notionId, ficheId, direction);
+      if (result.error) toast(result.error, { variant: "error" });
+      else refresh();
+    });
   }
 
   const pending = contradictions.filter((c) => c.status === "pending");
@@ -843,10 +811,31 @@ export function NotionsView({
                       </Button>
                     </div>
                   </div>
-                  <ul className="mt-2 space-y-0.5 text-xs text-foreground-subtle">
-                    {fiches.map((f) => (
-                      <li key={f.ficheId}>
+                  <ul className="mt-2 space-y-1 text-xs text-foreground-subtle">
+                    {fiches.map((f, i) => (
+                      <li key={f.ficheId} className="flex items-center gap-1.5">
+                        <span className="flex shrink-0 flex-col">
+                          <button
+                            type="button"
+                            onClick={() => handleMoveFiche(notion.id, f.ficheId, "up")}
+                            disabled={i === 0}
+                            aria-label="Monter cette fiche"
+                            className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                          >
+                            <ChevronUp className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveFiche(notion.id, f.ficheId, "down")}
+                            disabled={i === fiches.length - 1}
+                            aria-label="Descendre cette fiche"
+                            className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </button>
+                        </span>
                         <FicheRef fiche={f} />
+                        <RenameFicheButton ficheId={f.ficheId} currentTitle={f.ficheTitle} onRenamed={refresh} />
                       </li>
                     ))}
                   </ul>

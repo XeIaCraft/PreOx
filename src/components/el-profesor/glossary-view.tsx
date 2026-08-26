@@ -1,11 +1,35 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, Search, GraduationCap, ExternalLink, Landmark, Calculator, TriangleAlert, NotebookPen } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  Search,
+  GraduationCap,
+  ExternalLink,
+  Landmark,
+  Calculator,
+  TriangleAlert,
+  NotebookPen,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { RenameFicheButton } from "@/components/el-profesor/inline-rename-fiche";
+import { MergeFichesForm } from "@/components/el-profesor/merge-fiches-form";
+import { moveNotionFiche } from "@/app/apps/el-profesor/actions/notions";
+import { useToast } from "@/components/ui/toast";
 import type { NotionSummary, NotionRecommendation, DoseCalculator as DoseCalculatorEntry } from "@/lib/el-profesor/types";
 import type { NotionReadiness } from "@/lib/el-profesor/dal";
+
+// Notion cards can list many fiches (a well-covered notion easily reaches
+// a dozen) — collapsed to this many by default so the "Par notion" view
+// stays scannable, with a "+N de plus" toggle for the rest (requested
+// 2026-08-26 alongside the density complaints on this exact screen).
+const COLLAPSED_FICHE_COUNT = 4;
 
 /** Piste 2026-08-24 ("estimation de préparation par notion") — color + label for a readiness percentage, same three-tier read as the rest of the app's progress indicators. */
 function readinessTier(pct: number): { badgeClassName: string; barClassName: string; label: string } {
@@ -86,19 +110,95 @@ function DoseCalculatorSection({ calculators }: { calculators: DoseCalculatorEnt
  * notion" grouping on the main dashboard (see DashboardNotionView), instead
  * of duplicating this ~90-line block.
  */
+/** One notion's fiche listing, with the collapse-past-N behavior and (admin-only) rename/reorder/merge controls. Extracted so hooks (useState for the collapse toggle) stay valid despite the outer list being a .map(). */
+function NotionFicheList({ notionId, fiches, isAdmin, onChanged }: { notionId: string; fiches: NotionSummary["fiches"]; isAdmin: boolean; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? fiches : fiches.slice(0, COLLAPSED_FICHE_COUNT);
+  const hiddenCount = fiches.length - visible.length;
+
+  function handleMove(ficheId: string, direction: "up" | "down") {
+    startTransition(async () => {
+      const result = await moveNotionFiche(notionId, ficheId, direction);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  return (
+    <>
+      <ul className="mt-2 space-y-1 text-xs text-foreground-subtle">
+        {visible.map((f, i) => (
+          <li key={f.ficheId} className="flex items-center gap-1.5">
+            {isAdmin && (
+              <span className="flex shrink-0 flex-col">
+                <button
+                  type="button"
+                  onClick={() => handleMove(f.ficheId, "up")}
+                  disabled={isPending || i === 0}
+                  aria-label="Monter cette fiche"
+                  className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                >
+                  <ChevronUp className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMove(f.ficheId, "down")}
+                  disabled={isPending || i === visible.length - 1}
+                  aria-label="Descendre cette fiche"
+                  className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+            <Link href={`/apps/el-profesor/chapters/${f.chapterId}`} className="inline-flex min-w-0 items-center gap-1 hover:underline">
+              <BookOpen className="h-3 w-3 shrink-0" />
+              <span className="truncate font-medium text-foreground">{f.ficheTitle}</span>
+              <span className="shrink-0">
+                — {f.bookTitle} / {f.chapterTitle}
+              </span>
+            </Link>
+            {isAdmin && <RenameFicheButton ficheId={f.ficheId} currentTitle={f.ficheTitle} onRenamed={onChanged} />}
+          </li>
+        ))}
+      </ul>
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="mt-1.5 flex items-center gap-1 text-xs text-primary-strong hover:underline"
+        >
+          <ChevronsUpDown className="h-3 w-3" /> +{hiddenCount} de plus
+        </button>
+      )}
+      {isAdmin && fiches.length >= 2 && <MergeFichesForm fiches={fiches} onChanged={onChanged} />}
+    </>
+  );
+}
+
 export function NotionList({
   notions,
   readiness,
   recommendations,
   doseCalculators,
   caseCounts,
+  isAdmin = false,
 }: {
   notions: NotionSummary[];
   readiness: Record<string, NotionReadiness>;
   recommendations: Record<string, NotionRecommendation[]>;
   doseCalculators: Record<string, DoseCalculatorEntry[]>;
   caseCounts: Record<string, number>;
+  /** Rename/reorder/merge controls only make sense for admins — everyone else sees the plain read-only listing. */
+  isAdmin?: boolean;
 }) {
+  const router = useRouter();
+  function refresh() {
+    router.refresh();
+  }
+
   return (
     <div className="space-y-3">
       {notions.map(({ notion, fiches }) => {
@@ -144,19 +244,7 @@ export function NotionList({
                 <div className={`h-full rounded-full ${tier.barClassName}`} style={{ width: `${r.readinessPct}%` }} />
               </div>
             )}
-            <ul className="mt-2 space-y-1 text-xs text-foreground-subtle">
-              {fiches.map((f) => (
-                <li key={f.ficheId}>
-                  <Link href={`/apps/el-profesor/chapters/${f.chapterId}`} className="inline-flex items-center gap-1 hover:underline">
-                    <BookOpen className="h-3 w-3 shrink-0" />
-                    <span className="font-medium text-foreground">{f.ficheTitle}</span>
-                    <span>
-                      — {f.bookTitle} / {f.chapterTitle}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <NotionFicheList notionId={notion.id} fiches={fiches} isAdmin={isAdmin} onChanged={refresh} />
             {notionRecommendations.length > 0 && (
               <div className="mt-3 border-t border-border pt-2">
                 <p className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">
@@ -197,12 +285,14 @@ export function GlossaryView({
   recommendations,
   doseCalculators,
   caseCounts,
+  isAdmin = false,
 }: {
   notions: NotionSummary[];
   readiness: Record<string, NotionReadiness>;
   recommendations: Record<string, NotionRecommendation[]>;
   doseCalculators: Record<string, DoseCalculatorEntry[]>;
   caseCounts: Record<string, number>;
+  isAdmin?: boolean;
 }) {
   const [query, setQuery] = useState("");
 
@@ -241,7 +331,7 @@ export function GlossaryView({
         <p className="mt-6 text-sm text-foreground-subtle">Aucun résultat pour « {query} ».</p>
       ) : (
         <div className="mt-6">
-          <NotionList notions={filtered} readiness={readiness} recommendations={recommendations} doseCalculators={doseCalculators} caseCounts={caseCounts} />
+          <NotionList notions={filtered} readiness={readiness} recommendations={recommendations} doseCalculators={doseCalculators} caseCounts={caseCounts} isAdmin={isAdmin} />
         </div>
       )}
     </div>

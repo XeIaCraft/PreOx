@@ -517,6 +517,7 @@ export type ElProfesorNotionLinkRow = {
   id: string;
   notion_id: string;
   fiche_id: string;
+  position: number;
   created_at: string;
 };
 

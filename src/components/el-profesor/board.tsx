@@ -37,6 +37,7 @@ import {
   RotateCcw,
   ChevronRight,
   History,
+  MoreVertical,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -145,6 +146,46 @@ function ElapsedTime({ startedAt }: { startedAt: number }) {
   }, []);
 
   return <span className="tabular-nums">{formatElapsed(now - startedAt)}</span>;
+}
+
+/**
+ * Groups a chapter card's less-frequently-used admin actions behind a
+ * "Plus" menu (requested 2026-08-26 — the per-book chapter list was "très
+ * dense" with every action always visible) — closes on Escape or on
+ * clicking outside/inside (a backdrop plus a click handler on the panel
+ * itself, since every menu item is a normal onClick button and closing on
+ * bubble is simpler than wiring each one individually).
+ */
+function MoreActionsMenu({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
+  return (
+    <div className="relative">
+      <Button variant="ghost" size="icon" onClick={() => setOpen((v) => !v)} aria-label="Plus d'actions" aria-expanded={open}>
+        <MoreVertical className="h-4 w-4" />
+      </Button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
+          <div
+            onClick={() => setOpen(false)}
+            className="absolute right-0 z-20 mt-1 flex w-52 flex-col gap-0.5 rounded-[var(--radius-md)] border border-border bg-surface p-1.5 shadow-lg"
+          >
+            {children}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 // Mirrors STUCK_EXTRACTION_MINUTES in actions/extraction.ts — only offer
@@ -848,7 +889,7 @@ export function ElProfesorBoard({
       {viewMode === "notion" && (
         <div className="mt-6">
           <Suspense fallback={<DashboardNotionViewSkeleton />}>
-            <DashboardNotionView dataPromise={notionViewDataPromise} />
+            <DashboardNotionView dataPromise={notionViewDataPromise} isAdmin={isAdmin} />
           </Suspense>
         </div>
       )}
@@ -1138,36 +1179,6 @@ export function ElProfesorBoard({
                           </Button>
                         </Link>
                       )}
-                      {isAdmin && chapter.status === "published" && (
-                        <Link href={`/apps/el-profesor/chapters/${chapter.id}/admin-review`}>
-                          <Button variant="ghost" size="sm">
-                            Éditer
-                          </Button>
-                        </Link>
-                      )}
-                      {isAdmin && chapter.status === "published" && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleExportCsv(chapter.id, chapter.title)}
-                          disabled={exportingId === chapter.id}
-                          aria-label="Exporter les flashcards en CSV"
-                          title="Exporter les flashcards en CSV"
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {isAdmin && chapter.status === "published" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleExportAnki(chapter.id, chapter.title)}
-                          disabled={exportingId === chapter.id}
-                          title="Exporter au format Anki (texte tabulé, importable via Fichier > Importer)"
-                        >
-                          Export Anki
-                        </Button>
-                      )}
                       {isAdmin && chapter.sourceKind === "pdf" && (chapter.status === "draft_ready" || chapter.status === "published") && (
                         <>
                           <Button
@@ -1201,43 +1212,76 @@ export function ElProfesorBoard({
                           )}
                         </>
                       )}
-                      {isAdmin && chapter.status !== "extracting" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setModal({ type: "import_content", chapterId: chapter.id, chapterTitle: chapter.title })}
-                          title="Importer des fiches/flashcards générées ailleurs (ex. Claude.ai) au lieu d'appeler Gemini"
-                        >
-                          Importer
-                        </Button>
-                      )}
-                      {isAdmin && chapter.status !== "pending" && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setModal({ type: "extraction_history", chapterId: chapter.id, chapterTitle: chapter.title })}
-                          aria-label="Historique des tentatives IA"
-                          title="Voir les 5 dernières tentatives d'extraction (requêtes envoyées, réponses reçues) — utile pour diagnostiquer une génération vide"
-                        >
-                          <History className="h-4 w-4" />
-                        </Button>
-                      )}
                       {isAdmin && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() =>
-                            setModal({
-                              type: "delete_chapter",
-                              chapterId: chapter.id,
-                              title: chapter.title,
-                              flashcardCount: masteryCounts[chapter.id]?.total ?? 0,
-                            })
-                          }
-                          aria-label="Supprimer le chapitre"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <MoreActionsMenu>
+                          {chapter.status === "published" && (
+                            <Link href={`/apps/el-profesor/chapters/${chapter.id}/admin-review`}>
+                              <Button variant="ghost" size="sm" className="w-full justify-start">
+                                <Pencil className="h-3.5 w-3.5" /> Éditer
+                              </Button>
+                            </Link>
+                          )}
+                          {chapter.status === "published" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full justify-start"
+                              onClick={() => handleExportCsv(chapter.id, chapter.title)}
+                              disabled={exportingId === chapter.id}
+                            >
+                              <Download className="h-3.5 w-3.5" /> Export CSV
+                            </Button>
+                          )}
+                          {chapter.status === "published" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full justify-start"
+                              onClick={() => handleExportAnki(chapter.id, chapter.title)}
+                              disabled={exportingId === chapter.id}
+                              title="Format texte tabulé, importable via Fichier > Importer dans Anki"
+                            >
+                              Export Anki
+                            </Button>
+                          )}
+                          {chapter.status !== "extracting" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full justify-start"
+                              onClick={() => setModal({ type: "import_content", chapterId: chapter.id, chapterTitle: chapter.title })}
+                              title="Importer des fiches/flashcards générées ailleurs (ex. Claude.ai) au lieu d'appeler Gemini"
+                            >
+                              Importer
+                            </Button>
+                          )}
+                          {chapter.status !== "pending" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full justify-start"
+                              onClick={() => setModal({ type: "extraction_history", chapterId: chapter.id, chapterTitle: chapter.title })}
+                              title="Voir les 5 dernières tentatives d'extraction — utile pour diagnostiquer une génération vide"
+                            >
+                              <History className="h-3.5 w-3.5" /> Historique IA
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start text-danger"
+                            onClick={() =>
+                              setModal({
+                                type: "delete_chapter",
+                                chapterId: chapter.id,
+                                title: chapter.title,
+                                flashcardCount: masteryCounts[chapter.id]?.total ?? 0,
+                              })
+                            }
+                          >
+                            <Trash2 className="h-3.5 w-3.5" /> Supprimer
+                          </Button>
+                        </MoreActionsMenu>
                       )}
                     </div>
                   </div>

@@ -26,6 +26,7 @@ export default async function GlossaryPage() {
       recommendations={recommendations}
       doseCalculators={doseCalculators}
       caseCounts={caseCounts}
+      isAdmin={profile.role === "admin"}
     />
   );
 }

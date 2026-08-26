@@ -582,6 +582,26 @@ export async function extractChapterComplementary(chapterId: string, options?: {
   }
 }
 
+/**
+ * Renames a fiche's title (requested 2026-08-26) — the reader-facing name
+ * shown in FicheViewer, the admin-review header, and every fiche listing
+ * (notion view, glossary).
+ */
+export async function renameFiche(ficheId: string, title: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const trimmed = title.trim();
+  if (!trimmed) return { error: "Le titre ne peut pas être vide." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_fiches").update({ title: trimmed }).eq("id", ficheId);
+  if (error) return { error: "Impossible de renommer cette fiche." };
+
+  revalidatePath("/apps/el-profesor");
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  return { success: "Fiche renommée." };
+}
+
 export async function publishFiche(ficheId: string): Promise<ActionState> {
   await requireElProfesorAdmin();
   const supabase = await createClient();

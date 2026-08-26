@@ -55,9 +55,20 @@ export async function findOrCreateNotion(name: string, client?: SupabaseClient<D
   return created.id;
 }
 
+/** Links a fiche to a notion, appending it at the end of that notion's manual order (see moveNotionFiche) — a no-op, position untouched, if already linked. */
 export async function linkFicheToNotion(notionId: string, ficheId: string, client?: SupabaseClient<Database>): Promise<void> {
   const supabase = client ?? (await createClient());
-  await supabase.from("el_profesor_notion_links").upsert({ notion_id: notionId, fiche_id: ficheId }, { onConflict: "notion_id,fiche_id" });
+  const { data: existing } = await supabase.from("el_profesor_notion_links").select("id").eq("notion_id", notionId).eq("fiche_id", ficheId).maybeSingle();
+  if (existing) return;
+  const { data: last } = await supabase
+    .from("el_profesor_notion_links")
+    .select("position")
+    .eq("notion_id", notionId)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const position = (last?.position ?? -1) + 1;
+  await supabase.from("el_profesor_notion_links").upsert({ notion_id: notionId, fiche_id: ficheId, position }, { onConflict: "notion_id,fiche_id" });
 }
 
 export interface EmergencyBlockEntry {
@@ -104,7 +115,7 @@ export async function getGlossary(): Promise<NotionSummary[]> {
   const supabase = await createClient();
   const [{ data: notions }, { data: links }] = await Promise.all([
     supabase.from("el_profesor_notions").select("*").order("name", { ascending: true }),
-    supabase.from("el_profesor_notion_links").select("notion_id, fiche_id"),
+    supabase.from("el_profesor_notion_links").select("notion_id, fiche_id").order("position", { ascending: true }),
   ]);
   if (!notions || notions.length === 0 || !links || links.length === 0) return [];
 
@@ -279,7 +290,7 @@ export async function getNotionSummaries(): Promise<NotionSummary[]> {
   const supabase = await createClient();
   const [{ data: notions }, { data: links }] = await Promise.all([
     supabase.from("el_profesor_notions").select("*").order("name", { ascending: true }),
-    supabase.from("el_profesor_notion_links").select("notion_id, fiche_id"),
+    supabase.from("el_profesor_notion_links").select("notion_id, fiche_id").order("position", { ascending: true }),
   ]);
   if (!notions || notions.length === 0) return [];
 

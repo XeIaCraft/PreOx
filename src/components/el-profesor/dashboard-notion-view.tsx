@@ -14,7 +14,7 @@ import type { DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types"
  * on that query once this view is actually selected — see the doc comment
  * on DashboardNotionViewData.
  */
-export function DashboardNotionView({ dataPromise }: { dataPromise: Promise<DashboardNotionViewData> }) {
+export function DashboardNotionView({ dataPromise, isAdmin = false }: { dataPromise: Promise<DashboardNotionViewData>; isAdmin?: boolean }) {
   const { notions, readiness, recommendations, doseCalculators, caseCounts } = use(dataPromise);
   const [query, setQuery] = useState("");
 
@@ -44,7 +44,14 @@ export function DashboardNotionView({ dataPromise }: { dataPromise: Promise<Dash
         <p className="mt-6 text-sm text-foreground-subtle">Aucun résultat pour « {query} ».</p>
       ) : (
         <div className="mt-4">
-          <NotionList notions={filtered} readiness={readiness} recommendations={recommendations} doseCalculators={doseCalculators} caseCounts={caseCounts} />
+          <NotionList
+            notions={filtered}
+            readiness={readiness}
+            recommendations={recommendations}
+            doseCalculators={doseCalculators}
+            caseCounts={caseCounts}
+            isAdmin={isAdmin}
+          />
         </div>
       )}
     </div>

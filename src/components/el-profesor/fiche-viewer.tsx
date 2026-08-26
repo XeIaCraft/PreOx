@@ -375,7 +375,7 @@ export function FicheViewer({
 }) {
   return (
     <div>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
         <h3 className="font-serif-display text-xl font-medium text-foreground">{title}</h3>
         <div className="flex shrink-0 items-center gap-3">
           <SpeakFicheButton title={title} summary={summary} blocks={blocks} />

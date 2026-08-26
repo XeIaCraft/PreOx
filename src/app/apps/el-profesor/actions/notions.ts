@@ -225,6 +225,41 @@ export async function clearFicheSuperseded(ficheId: string): Promise<ActionState
 }
 
 /**
+ * Reorders the fiches listed under a notion (requested 2026-08-26) — swaps
+ * this fiche's manual position with its previous/next sibling within the
+ * same notion. No-op at either end, same pattern as moveSubEntity/moveFicheBlock.
+ */
+export async function moveNotionFiche(notionId: string, ficheId: string, direction: "up" | "down"): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: links } = await supabase
+    .from("el_profesor_notion_links")
+    .select("id, fiche_id, position")
+    .eq("notion_id", notionId)
+    .order("position", { ascending: true });
+  const list = links ?? [];
+  const index = list.findIndex((l) => l.fiche_id === ficheId);
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (index === -1 || targetIndex < 0 || targetIndex >= list.length) {
+    return { success: "OK" };
+  }
+
+  const current = list[index];
+  const target = list[targetIndex];
+  const [error1, error2] = await Promise.all([
+    supabase.from("el_profesor_notion_links").update({ position: target.position }).eq("id", current.id).then((r) => r.error),
+    supabase.from("el_profesor_notion_links").update({ position: current.position }).eq("id", target.id).then((r) => r.error),
+  ]);
+  if (error1 || error2) return { error: "Impossible de réordonner cette fiche." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Fiche déplacée." };
+}
+
+/**
  * Closes the loop from a contradiction finding straight to obsolescence
  * (item 55): resolving in favor of one fiche marks the other as replaced by
  * it, in one action instead of two separate screens.

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, ChevronUp, ChevronDown, FileText, PartyPopper, Search } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronUp, ChevronDown, FileText, PartyPopper, Search, Merge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -16,6 +16,8 @@ import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-fro
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { BlockEditor } from "@/components/el-profesor/block-editor";
 import { FlashcardEditor } from "@/components/el-profesor/flashcard-editor";
+import { RenameFicheButton } from "@/components/el-profesor/inline-rename-fiche";
+import { MergeFichesForm } from "@/components/el-profesor/merge-fiches-form";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { publishFiche, finalizeChapterPublication, moveSubEntity, uploadFlashcardImage } from "@/app/apps/el-profesor/actions/extraction";
 import { resolveFlags } from "@/app/apps/el-profesor/actions/flags";
@@ -61,6 +63,7 @@ export function ExtractionReviewView({
   const [onlyFlagged, setOnlyFlagged] = useState(false);
   const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
 
   useEffect(() => {
     if (sourceKind !== "pdf") return;
@@ -344,8 +347,11 @@ export function ExtractionReviewView({
             {selected?.fiche ? (
               <div>
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h2 className="font-serif-display text-lg font-medium text-foreground">{selected.fiche.title}</h2>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h2 className="font-serif-display text-lg font-medium text-foreground">{selected.fiche.title}</h2>
+                      <RenameFicheButton ficheId={selected.fiche.id} currentTitle={selected.fiche.title} onRenamed={refresh} />
+                    </div>
                     {selected.summary && <p className="mt-1 text-sm text-foreground-subtle">{selected.summary}</p>}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -359,8 +365,26 @@ export function ExtractionReviewView({
                         Résoudre les {selectedFlagIds.length} signalement{selectedFlagIds.length > 1 ? "s" : ""}
                       </Button>
                     )}
+                    {withFiche.length >= 2 && (
+                      <Button variant="ghost" size="sm" onClick={() => setShowMerge((v) => !v)}>
+                        <Merge className="h-3.5 w-3.5" /> Fusionner
+                      </Button>
+                    )}
                   </div>
                 </div>
+
+                {showMerge && (
+                  <MergeFichesForm
+                    fiches={[
+                      { ficheId: selected.fiche.id, ficheTitle: selected.fiche.title },
+                      ...withFiche.filter((s) => s.id !== selected.id).map((s) => ({ ficheId: s.fiche!.id, ficheTitle: s.fiche!.title })),
+                    ]}
+                    onChanged={() => {
+                      setShowMerge(false);
+                      refresh();
+                    }}
+                  />
+                )}
 
                 {onlyFlagged && visibleBlocks.length === 0 && visibleFlashcards.length === 0 ? (
                   <p className="mt-4 flex items-center gap-2 text-sm text-foreground-subtle">
