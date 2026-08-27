@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireElProfesorAdmin } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
-import { deleteChapterPdf, downloadChapterPdfBytes, uploadPublicImage } from "@/lib/el-profesor/storage";
+import { deleteChapterPdf, downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import { extractDocxText, extractPptxText } from "@/lib/el-profesor/office-text";
 import { getPdfPageCount } from "@/lib/el-profesor/pdf-split";
 import { GeminiError } from "@/lib/gemini-shared";
@@ -110,34 +110,11 @@ export async function moveBook(bookId: string, direction: "up" | "down"): Promis
   return { success: "Livre déplacé." };
 }
 
-const MAX_COVER_BYTES = 5 * 1024 * 1024;
-
-export async function uploadBookCover(bookId: string, imageBase64: string, mimeType: string): Promise<ActionState> {
+export async function uploadBookCover(bookId: string, imageUrl: string): Promise<ActionState> {
   await requireElProfesorAdmin();
-  const bytes = Buffer.from(imageBase64, "base64");
-  if (bytes.byteLength > MAX_COVER_BYTES) return { error: "Image trop lourde (5 Mo maximum)." };
-
-  const ext = mimeType.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "jpg";
-  const path = `${bookId}.${ext}`;
-
-  let publicUrl: string;
-  try {
-    publicUrl = await uploadPublicImage("el-profesor-covers", path, bytes, mimeType);
-  } catch (err) {
-    // Surface the real Supabase Storage error (bucket missing, RLS denial,
-    // payload rejected...) instead of a generic message that hid the
-    // actual cause and made this near-impossible to diagnose remotely.
-    // Covers both a GeminiError from uploadPublicImage's own { error }
-    // check AND an outright thrown exception from the storage client
-    // itself (network failure, an unexpected SDK error...) — the earlier
-    // "err instanceof GeminiError" check missed that second case and fell
-    // through to a generic message with no real cause visible.
-    const message = err instanceof Error ? err.message : "erreur inconnue";
-    return { error: `Échec de l'envoi de l'image : ${message}` };
-  }
 
   const supabase = await createClient();
-  const { error } = await supabase.from("el_profesor_books").update({ cover_url: publicUrl }).eq("id", bookId);
+  const { error } = await supabase.from("el_profesor_books").update({ cover_url: imageUrl }).eq("id", bookId);
   if (error) return { error: "Image envoyée, mais impossible de l'enregistrer." };
 
   revalidatePath("/apps/el-profesor");

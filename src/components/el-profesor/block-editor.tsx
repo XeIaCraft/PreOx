@@ -19,7 +19,8 @@ import { FlagsList } from "@/components/el-profesor/flags-list";
 import { EditableCitations } from "@/components/el-profesor/editable-citations";
 import { suggestFlagFix } from "@/app/apps/el-profesor/actions/flags";
 import { useToast } from "@/components/ui/toast";
-import { fileToBase64 } from "@/lib/client-file";
+import { uploadImageDirect } from "@/lib/el-profesor/client-image-upload";
+import { EL_PROFESOR_BLOCK_IMAGE_BUCKET } from "@/lib/el-profesor/storage-constants";
 import type { Citation, FicheBlock, Flag, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
 import type { ContentLogEntry } from "@/lib/el-profesor/content-log";
 
@@ -286,11 +287,17 @@ export function BlockEditor({
       return;
     }
     setUploadingImage(true);
-    fileToBase64(file)
-      .then((base64) => uploadFicheBlockImage(block.id, base64, file.type))
-      .then((result) => {
-        if (result.error) toast(result.error, { variant: "error" });
-        else onChanged();
+    const ext = file.type.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "png";
+    uploadImageDirect(EL_PROFESOR_BLOCK_IMAGE_BUCKET, `${block.id}-${Date.now()}.${ext}`, file, file.type)
+      .then((uploaded) => {
+        if ("error" in uploaded) {
+          toast(uploaded.error, { variant: "error" });
+          return;
+        }
+        return uploadFicheBlockImage(block.id, uploaded.url).then((result) => {
+          if (result.error) toast(result.error, { variant: "error" });
+          else onChanged();
+        });
       })
       .catch((err) =>
         toast(err instanceof Error ? `Échec de l'envoi de l'image : ${err.message}` : "Échec de l'envoi de l'image.", { variant: "error" })

@@ -20,7 +20,8 @@ import { suggestFlagFix } from "@/app/apps/el-profesor/actions/flags";
 import { EditableCitations } from "@/components/el-profesor/editable-citations";
 import { EditHistory } from "@/components/el-profesor/block-editor";
 import { useToast } from "@/components/ui/toast";
-import { fileToBase64 } from "@/lib/client-file";
+import { uploadImageDirect } from "@/lib/el-profesor/client-image-upload";
+import { EL_PROFESOR_FLASHCARD_IMAGE_BUCKET } from "@/lib/el-profesor/storage-constants";
 import { parseClozeText, formatClozeText, maskClozeText } from "@/lib/el-profesor/cloze";
 import type { FlashcardVariantStat } from "@/lib/el-profesor/dal";
 import type { Citation, Flag, Flashcard, FlashcardVariant, ImageOcclusion } from "@/lib/el-profesor/types";
@@ -359,11 +360,17 @@ export function FlashcardEditor({
       return;
     }
     setUploadingImage(true);
-    fileToBase64(file)
-      .then((base64) => uploadFlashcardImage(flashcard.id, base64, file.type))
-      .then((result) => {
-        if (result.error) toast(result.error, { variant: "error" });
-        else onChanged();
+    const ext = file.type.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "png";
+    uploadImageDirect(EL_PROFESOR_FLASHCARD_IMAGE_BUCKET, `${flashcard.id}-${Date.now()}.${ext}`, file, file.type)
+      .then((uploaded) => {
+        if ("error" in uploaded) {
+          toast(uploaded.error, { variant: "error" });
+          return;
+        }
+        return uploadFlashcardImage(flashcard.id, uploaded.url).then((result) => {
+          if (result.error) toast(result.error, { variant: "error" });
+          else onChanged();
+        });
       })
       .catch((err) =>
         toast(err instanceof Error ? `Échec de l'envoi de l'image : ${err.message}` : "Échec de l'envoi de l'image.", { variant: "error" })

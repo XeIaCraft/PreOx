@@ -22,6 +22,8 @@ import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { publishFiche, finalizeChapterPublication, moveSubEntity, uploadFlashcardImage } from "@/app/apps/el-profesor/actions/extraction";
 import { resolveFlags } from "@/app/apps/el-profesor/actions/flags";
 import { useToast } from "@/components/ui/toast";
+import { uploadImageDirect } from "@/lib/el-profesor/client-image-upload";
+import { EL_PROFESOR_FLASHCARD_IMAGE_BUCKET } from "@/lib/el-profesor/storage-constants";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
 import type { Citation, Flag, ChapterSourceKind } from "@/lib/el-profesor/types";
 
@@ -171,9 +173,20 @@ export function ExtractionReviewView({
   const captureRequestTokenRef = useRef(0);
 
   function attachImage(flashcardId: string, dataUrl: string) {
-    const base64 = dataUrl.split(",")[1] ?? "";
     startTransition(async () => {
-      const result = await uploadFlashcardImage(flashcardId, base64, "image/png");
+      // Uploaded directly to Storage via a signed URL rather than sent as
+      // base64 through this Server Action — a PDF-page crop at real screen
+      // resolution routinely exceeds Vercel's platform-level request body
+      // cap for serverless functions (~4.5 MB), which surfaced only as an
+      // opaque redacted error with no useful message (see
+      // createImageUploadTarget's doc comment for the full story).
+      const blob = await fetch(dataUrl).then((r) => r.blob());
+      const uploaded = await uploadImageDirect(EL_PROFESOR_FLASHCARD_IMAGE_BUCKET, `${flashcardId}-${Date.now()}.png`, blob, "image/png");
+      if ("error" in uploaded) {
+        toast(uploaded.error, { variant: "error" });
+        return;
+      }
+      const result = await uploadFlashcardImage(flashcardId, uploaded.url);
       if (result.error) toast(result.error, { variant: "error" });
       else {
         toast(result.success ?? "Image ajoutée.", { variant: "success" });

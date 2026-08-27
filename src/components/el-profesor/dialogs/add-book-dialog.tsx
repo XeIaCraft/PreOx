@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { createBook, updateBook, uploadBookCover, createNewEditionOfBook } from "@/app/apps/el-profesor/actions/library";
 import { useToast } from "@/components/ui/toast";
-import { fileToBase64 } from "@/lib/client-file";
+import { uploadImageDirect } from "@/lib/el-profesor/client-image-upload";
+import { EL_PROFESOR_COVER_BUCKET } from "@/lib/el-profesor/storage-constants";
 
 const MAX_COVER_BYTES = 5 * 1024 * 1024;
 
@@ -56,11 +57,17 @@ export function AddBookDialog({
       return;
     }
     setUploadingCover(true);
-    fileToBase64(file)
-      .then((base64) => uploadBookCover(book.id, base64, file.type))
-      .then((result) => {
-        if (result.error) toast(result.error, { variant: "error" });
-        else onSaved();
+    const ext = file.type.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "jpg";
+    uploadImageDirect(EL_PROFESOR_COVER_BUCKET, `${book.id}.${ext}`, file, file.type)
+      .then((uploaded) => {
+        if ("error" in uploaded) {
+          toast(uploaded.error, { variant: "error" });
+          return;
+        }
+        return uploadBookCover(book.id, uploaded.url).then((result) => {
+          if (result.error) toast(result.error, { variant: "error" });
+          else onSaved();
+        });
       })
       .catch((err) =>
         toast(err instanceof Error ? `Échec de l'envoi de l'image : ${err.message}` : "Échec de l'envoi de l'image.", { variant: "error" })

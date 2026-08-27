@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireElProfesorAdmin, getElProfesorGeminiConfig, getElProfesorAiProvider } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
-import { downloadChapterPdfBytes, uploadPublicImage } from "@/lib/el-profesor/storage";
+import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import {
   deleteGeminiFile,
   extractChapterContentWithRotation,
@@ -741,43 +741,20 @@ export async function updateFlashcard(
   return { success: "Flashcard mise à jour." };
 }
 
-const MAX_FLASHCARD_IMAGE_BYTES = 5 * 1024 * 1024;
-
 /**
  * Attaches an image/schema to a flashcard (item 23 of the backlog) — either
  * a manual upload or a crop captured client-side from the PDF viewer's own
  * canvas (see PdfViewer's captureMode). Shown alongside the front side
  * during review; plain image-based recall, not a clickable-hotspot diagram.
  */
-export async function uploadFlashcardImage(flashcardId: string, imageBase64: string, mimeType: string, alt?: string): Promise<ActionState> {
+export async function uploadFlashcardImage(flashcardId: string, imageUrl: string, alt?: string): Promise<ActionState> {
   await requireElProfesorAdmin();
-  const bytes = Buffer.from(imageBase64, "base64");
-  if (bytes.byteLength > MAX_FLASHCARD_IMAGE_BYTES) return { error: "Image trop lourde (5 Mo maximum)." };
-
-  const ext = mimeType.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "png";
-  const path = `${flashcardId}-${Date.now()}.${ext}`;
-
-  let publicUrl: string;
-  try {
-    publicUrl = await uploadPublicImage("el-profesor-flashcard-images", path, bytes, mimeType);
-  } catch (err) {
-    // Surface the real Supabase Storage error (bucket missing, RLS denial,
-    // payload rejected...) instead of a generic message that hid the
-    // actual cause and made this near-impossible to diagnose remotely.
-    // Covers both a GeminiError from uploadPublicImage's own { error }
-    // check AND an outright thrown exception from the storage client
-    // itself (network failure, an unexpected SDK error...) — the earlier
-    // "err instanceof GeminiError" check missed that second case and fell
-    // through to a generic message with no real cause visible.
-    const message = err instanceof Error ? err.message : "erreur inconnue";
-    return { error: `Échec de l'envoi de l'image : ${message}` };
-  }
 
   const supabase = await createClient();
   // Clears the extraction-time suggestion (item 23 follow-up) — it's served its purpose now that an image is actually attached.
   const { error } = await supabase
     .from("el_profesor_flashcards")
-    .update({ image_url: publicUrl, image_alt: alt?.trim() || null, suggested_image_page: null, suggested_image_hint: null })
+    .update({ image_url: imageUrl, image_alt: alt?.trim() || null, suggested_image_page: null, suggested_image_hint: null })
     .eq("id", flashcardId);
   if (error) return { error: "Image envoyée, mais impossible de l'enregistrer." };
 
@@ -866,32 +843,11 @@ export async function removeFlashcardImage(flashcardId: string): Promise<ActionS
  * that draws from an illustrated source block (see generateNotionSynthesis
  * in actions/notions.ts), it never generates its own.
  */
-export async function uploadFicheBlockImage(blockId: string, imageBase64: string, mimeType: string, alt?: string): Promise<ActionState> {
+export async function uploadFicheBlockImage(blockId: string, imageUrl: string, alt?: string): Promise<ActionState> {
   await requireElProfesorAdmin();
-  const bytes = Buffer.from(imageBase64, "base64");
-  if (bytes.byteLength > MAX_FLASHCARD_IMAGE_BYTES) return { error: "Image trop lourde (5 Mo maximum)." };
-
-  const ext = mimeType.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "png";
-  const path = `${blockId}-${Date.now()}.${ext}`;
-
-  let publicUrl: string;
-  try {
-    publicUrl = await uploadPublicImage("el-profesor-block-images", path, bytes, mimeType);
-  } catch (err) {
-    // Surface the real Supabase Storage error (bucket missing, RLS denial,
-    // payload rejected...) instead of a generic message that hid the
-    // actual cause and made this near-impossible to diagnose remotely.
-    // Covers both a GeminiError from uploadPublicImage's own { error }
-    // check AND an outright thrown exception from the storage client
-    // itself (network failure, an unexpected SDK error...) — the earlier
-    // "err instanceof GeminiError" check missed that second case and fell
-    // through to a generic message with no real cause visible.
-    const message = err instanceof Error ? err.message : "erreur inconnue";
-    return { error: `Échec de l'envoi de l'image : ${message}` };
-  }
 
   const supabase = await createClient();
-  const { error } = await supabase.from("el_profesor_fiche_blocks").update({ image_url: publicUrl, image_alt: alt?.trim() || null }).eq("id", blockId);
+  const { error } = await supabase.from("el_profesor_fiche_blocks").update({ image_url: imageUrl, image_alt: alt?.trim() || null }).eq("id", blockId);
   if (error) return { error: "Image envoyée, mais impossible de l'enregistrer." };
 
   revalidatePath("/apps/el-profesor");

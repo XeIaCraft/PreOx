@@ -1,29 +1,10 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { GeminiError } from "@/lib/gemini-shared";
 import { EL_PROFESOR_PDF_BUCKET as BUCKET } from "./storage-constants";
 
 const SIGNED_URL_TTL_SECONDS = 60 * 10;
-
-/**
- * Shared upload path for the module's public image buckets (book covers,
- * flashcard images) — both rely on a storage.objects RLS policy gating
- * writes to admins (`is_admin()`), unlike the PDF bucket above which has no
- * public policy at all and always goes through the service-role client.
- */
-export async function uploadPublicImage(bucket: string, path: string, bytes: Uint8Array, mimeType: string): Promise<string> {
-  const supabase = await createClient();
-  const { error } = await supabase.storage.from(bucket).upload(path, bytes, { contentType: mimeType, upsert: true });
-  // Unprefixed — callers add their own "Échec de l'envoi de l'image : "
-  // context, and also apply the same prefix to an outright thrown
-  // exception from the storage client itself (not this { error } path),
-  // so keeping it here would double it for one of the two cases.
-  if (error) throw new GeminiError(error.message);
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
-}
 
 /**
  * The bucket carries no storage.objects policy for authenticated/anon (see
