@@ -641,6 +641,76 @@ export async function unpublishNotionSynthesis(notionId: string): Promise<Action
 }
 
 /**
+ * Manual polish on an AI-generated synthesis block (requested 2026-08-27 —
+ * regenerating the whole synthesis to fix one wording is wasteful once the
+ * structure is otherwise right). Only the content is editable — citations
+ * stay exactly as resolved from the real source blocks (see
+ * generateNotionSynthesis's doc comment), never hand-edited, so the
+ * synthesis never drifts from what it actually cites.
+ */
+export async function updateNotionSynthesisBlockContent(blockId: string, content: BlockContent): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_notion_synthesis_blocks").update({ content: content as never }).eq("id", blockId);
+  if (error) return { error: "Impossible de mettre à jour ce bloc." };
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Bloc mis à jour." };
+}
+
+/** Reorders a synthesis block within its own section — same swap-with-sibling pattern as moveFicheBlock, scoped to blocks sharing both synthesis_id and section_title so a move never crosses into a different subject's section. */
+export async function moveNotionSynthesisBlock(blockId: string, direction: "up" | "down"): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: block } = await supabase
+    .from("el_profesor_notion_synthesis_blocks")
+    .select("id, synthesis_id, section_title, order_index")
+    .eq("id", blockId)
+    .single();
+  if (!block) return { error: "Bloc introuvable." };
+
+  let siblingsQuery = supabase
+    .from("el_profesor_notion_synthesis_blocks")
+    .select("id, order_index")
+    .eq("synthesis_id", block.synthesis_id)
+    .order("order_index", { ascending: true });
+  siblingsQuery = block.section_title ? siblingsQuery.eq("section_title", block.section_title) : siblingsQuery.is("section_title", null);
+  const { data: siblings } = await siblingsQuery;
+  const list = siblings ?? [];
+  const index = list.findIndex((b) => b.id === blockId);
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (index === -1 || targetIndex < 0 || targetIndex >= list.length) {
+    return { success: "OK" };
+  }
+
+  const target = list[targetIndex];
+  const current = list[index];
+  const [error1, error2] = await Promise.all([
+    supabase.from("el_profesor_notion_synthesis_blocks").update({ order_index: target.order_index }).eq("id", current.id).then((r) => r.error),
+    supabase.from("el_profesor_notion_synthesis_blocks").update({ order_index: current.order_index }).eq("id", target.id).then((r) => r.error),
+  ]);
+  if (error1 || error2) return { error: "Impossible de réordonner ce bloc." };
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "OK" };
+}
+
+/** Removes a synthesis block outright (e.g. a genuinely redundant or wrong one) without regenerating the whole synthesis. */
+export async function deleteNotionSynthesisBlock(blockId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_notion_synthesis_blocks").delete().eq("id", blockId);
+  if (error) return { error: "Impossible de supprimer ce bloc." };
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Bloc supprimé." };
+}
+
+/**
  * Piste d'amélioration 2026-08-24 ("recommandations officielles rattachées
  * aux notions") — attaches a manual link to an official guideline source
  * (HAS, SPILF, société savante...) to a notion. Deliberately no AI

@@ -51,7 +51,7 @@ export function EditHistory({ targetId, fetcher }: { targetId: string; fetcher: 
   );
 }
 
-const IS_TEXT_BLOCK = new Set([
+export const IS_TEXT_BLOCK = new Set([
   "definition_mecanisme",
   "valeurs_seuils",
   "mnemotechnique",
@@ -61,7 +61,7 @@ const IS_TEXT_BLOCK = new Set([
   "texte_libre",
 ]);
 
-function TableEditor({ content, onChange }: { content: TableBlockContent; onChange: (c: TableBlockContent) => void }) {
+export function TableEditor({ content, onChange }: { content: TableBlockContent; onChange: (c: TableBlockContent) => void }) {
   const headers = content.headers ?? [];
   const rows = content.rows ?? [];
 
@@ -177,7 +177,7 @@ function TableEditor({ content, onChange }: { content: TableBlockContent; onChan
   );
 }
 
-function ProtocolEditor({ content, onChange }: { content: ProtocolBlockContent; onChange: (c: ProtocolBlockContent) => void }) {
+export function ProtocolEditor({ content, onChange }: { content: ProtocolBlockContent; onChange: (c: ProtocolBlockContent) => void }) {
   const steps = content.steps ?? [];
 
   function updateStep(i: number, patch: Partial<ProtocolBlockContent["steps"][number]>) {

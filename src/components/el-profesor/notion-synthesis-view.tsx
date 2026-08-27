@@ -1,15 +1,31 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Sparkles, Check, Undo2, TriangleAlert, BookOpen } from "lucide-react";
+import { ArrowLeft, Sparkles, Check, Undo2, TriangleAlert, BookOpen, ChevronUp, ChevronDown, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BlockBody, BLOCK_META } from "@/components/el-profesor/fiche-viewer";
-import { generateNotionSynthesis, publishNotionSynthesis, unpublishNotionSynthesis } from "@/app/apps/el-profesor/actions/notions";
+import { TableEditor, ProtocolEditor, IS_TEXT_BLOCK } from "@/components/el-profesor/block-editor";
+import {
+  generateNotionSynthesis,
+  publishNotionSynthesis,
+  unpublishNotionSynthesis,
+  updateNotionSynthesisBlockContent,
+  moveNotionSynthesisBlock,
+  deleteNotionSynthesisBlock,
+} from "@/app/apps/el-profesor/actions/notions";
 import { useToast } from "@/components/ui/toast";
-import type { NotionSynthesis, NotionSynthesisBlock, NotionLinkedFiche, FicheBlock } from "@/lib/el-profesor/types";
+import type {
+  NotionSynthesis,
+  NotionSynthesisBlock,
+  NotionLinkedFiche,
+  FicheBlock,
+  TableBlockContent,
+  ProtocolBlockContent,
+  TextBlockContent,
+} from "@/lib/el-profesor/types";
 
 /** One synthesized block, with a "sources" footer instead of FicheViewer's normal per-citation chips — a synthesis block can draw on several books' own PDFs at once, so there's no single page to jump to. */
 function SynthesisBlockCard({ block }: { block: NotionSynthesisBlock }) {
@@ -62,6 +78,148 @@ function SynthesisBlockCard({ block }: { block: NotionSynthesisBlock }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Admin-only editable variant of a synthesis block (requested 2026-08-27 —
+ * regenerating the whole synthesis to fix one wording, or to drop one
+ * redundant block, wastes an AI call once the structure is otherwise
+ * right). Reuses the same TableEditor/ProtocolEditor/textarea as the fiche
+ * block editor, but never exposes citations for editing — they stay
+ * exactly as resolved from the real source blocks (see
+ * generateNotionSynthesis's doc comment) — and there's no needs_review/
+ * flags/emergency-toggle/mnemonic-suggestion, none of which apply to a
+ * synthesis block. Reordering is scoped to the block's own section
+ * (moveNotionSynthesisBlock), so it can never cross into another subject's
+ * section by accident.
+ */
+function SynthesisBlockEditor({
+  block,
+  isFirst,
+  isLast,
+  onChanged,
+}: {
+  block: NotionSynthesisBlock;
+  isFirst: boolean;
+  isLast: boolean;
+  onChanged: () => void;
+}) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [content, setContent] = useState(block.content);
+  const meta = BLOCK_META[block.blockType];
+  const Icon = meta.icon;
+  const sources = [...new Map(block.citations.map((c) => [`${c.chapterId}`, c])).values()];
+
+  function handleSave() {
+    startTransition(async () => {
+      const result = await updateNotionSynthesisBlockContent(block.id, content);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Bloc mis à jour.", { variant: "success" });
+        onChanged();
+      }
+    });
+  }
+
+  function handleMove(direction: "up" | "down") {
+    startTransition(async () => {
+      const result = await moveNotionSynthesisBlock(block.id, direction);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  function handleDelete() {
+    if (!confirm("Supprimer ce bloc de synthèse ? Il ne sera pas régénéré automatiquement — relancez « Régénérer la synthèse » si besoin.")) return;
+    startTransition(async () => {
+      const result = await deleteNotionSynthesisBlock(block.id);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  return (
+    <div className="rounded-[var(--radius-md)] border border-border p-4">
+      <div className="flex flex-wrap items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1">
+          <div className="flex flex-col">
+            <button
+              type="button"
+              onClick={() => handleMove("up")}
+              disabled={isFirst || isPending}
+              aria-label="Monter ce bloc"
+              className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMove("down")}
+              disabled={isLast || isPending}
+              aria-label="Descendre ce bloc"
+              className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+            <Icon className="h-3.5 w-3.5" /> {meta.label}
+          </span>
+        </div>
+        <button type="button" onClick={handleDelete} disabled={isPending} className="text-foreground-subtle hover:text-danger" aria-label="Supprimer ce bloc">
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="mt-2">
+        {block.blockType === "tableau_comparatif" && (
+          <TableEditor content={content as TableBlockContent} onChange={(c) => setContent(c)} />
+        )}
+        {block.blockType === "protocole_paliers" && (
+          <ProtocolEditor content={content as ProtocolBlockContent} onChange={(c) => setContent(c)} />
+        )}
+        {IS_TEXT_BLOCK.has(block.blockType) && (
+          <textarea
+            value={(content as TextBlockContent).text ?? ""}
+            onChange={(e) => setContent({ text: e.target.value })}
+            rows={4}
+            className="w-full rounded-[var(--radius-sm)] border border-border bg-surface p-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          />
+        )}
+      </div>
+
+      {block.imageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element -- reused verbatim from a source fiche block's own upload (Supabase Storage public URL), not a Next-optimizable asset.
+        <img
+          src={block.imageUrl}
+          alt={block.imageAlt ?? ""}
+          className="mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain"
+        />
+      )}
+
+      {sources.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border pt-2">
+          {sources.map((s) => (
+            <Link
+              key={s.chapterId}
+              href={`/apps/el-profesor/chapters/${s.chapterId}`}
+              className="rounded-full border border-border-strong px-2.5 py-1 text-xs text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
+              title={`p. ${s.page} — « ${s.quote} »`}
+            >
+              {s.bookTitle}
+            </Link>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2 flex justify-end">
+        <Button size="sm" onClick={handleSave} disabled={isPending}>
+          Enregistrer
+        </Button>
+      </div>
     </div>
   );
 }
@@ -217,9 +375,19 @@ export function NotionSynthesisView({
               <div key={title}>
                 <h2 className="font-serif-display text-lg font-medium text-foreground">{title}</h2>
                 <div className="mt-2 space-y-3">
-                  {blocks.map((block) => (
-                    <SynthesisBlockCard key={block.id} block={block} />
-                  ))}
+                  {blocks.map((block, i) =>
+                    isAdmin ? (
+                      <SynthesisBlockEditor
+                        key={block.id}
+                        block={block}
+                        isFirst={i === 0}
+                        isLast={i === blocks.length - 1}
+                        onChanged={refresh}
+                      />
+                    ) : (
+                      <SynthesisBlockCard key={block.id} block={block} />
+                    )
+                  )}
                 </div>
                 {sources.length > 0 && (
                   <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-foreground-subtle">
