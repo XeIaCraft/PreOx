@@ -30,8 +30,7 @@ export function FicheQA({ ficheId, isAdmin = false }: { ficheId: string; isAdmin
   }
 
   // Remounted on ficheId change (chapter-view.tsx keys this component by
-  // fiche id, same pattern as RelatedFiches), so `questions` naturally
-  // starts at null again — no reset needed.
+  // fiche id), so `questions` naturally starts at null again — no reset needed.
   useEffect(() => {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps

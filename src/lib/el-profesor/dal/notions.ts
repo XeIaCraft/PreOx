@@ -155,60 +155,6 @@ export async function getGlossary(): Promise<NotionSummary[]> {
     .filter((s) => s.fiches.length > 0);
 }
 
-// Caps "voir aussi" so a broadly-applied notion (linked to most/every fiche
-// of a chapter — seen 2026-08-26: this list kept growing "the further you
-// read into a chapter", since each fiche shared the same chapter-wide
-// notion with every fiche published before it) can't turn one fiche's
-// inline related-links section into a near-duplicate of the whole chapter.
-const MAX_RELATED_FICHES = 6;
-
-/**
- * Other published fiches that share at least one notion with this one —
- * inline cross-links shown directly on a fiche, rather than only reachable
- * through the admin notions page. Item 4 of the backlog. Excludes fiches
- * from the SAME chapter (already one tap away via the chapter's own
- * sub-entity list — not a useful "see also" pointer, and the main source of
- * this list's bloat when a notion gets applied broadly within one chapter),
- * and prioritizes cross-book matches — the actually useful case — before
- * capping at MAX_RELATED_FICHES.
- */
-export async function getRelatedFiches(ficheId: string): Promise<NotionLinkedFiche[]> {
-  const supabase = await createClient();
-  const { data: myLinks } = await supabase.from("el_profesor_notion_links").select("notion_id").eq("fiche_id", ficheId);
-  const notionIds = (myLinks ?? []).map((l) => l.notion_id);
-  if (notionIds.length === 0) return [];
-
-  const { data: otherLinks } = await supabase
-    .from("el_profesor_notion_links")
-    .select("fiche_id")
-    .in("notion_id", notionIds)
-    .neq("fiche_id", ficheId);
-  const otherFicheIds = [...new Set((otherLinks ?? []).map((l) => l.fiche_id))];
-  if (otherFicheIds.length === 0) return [];
-
-  const { data: publishedFiches } = await supabase
-    .from("el_profesor_fiches")
-    .select("id")
-    .in("id", otherFicheIds)
-    .eq("status", "published");
-  const publishedIds = (publishedFiches ?? []).map((f) => f.id);
-  if (publishedIds.length === 0) return [];
-
-  const contexts = await resolveFicheContexts([ficheId, ...publishedIds]);
-  const me = contexts.get(ficheId);
-  const candidates = publishedIds
-    .map((id) => contexts.get(id))
-    .filter((f): f is NotionLinkedFiche => !!f && (!me || f.chapterId !== me.chapterId));
-
-  candidates.sort((a, b) => {
-    const aCrossBook = me && a.bookId !== me.bookId ? 0 : 1;
-    const bCrossBook = me && b.bookId !== me.bookId ? 0 : 1;
-    return aCrossBook - bCrossBook;
-  });
-
-  return candidates.slice(0, MAX_RELATED_FICHES);
-}
-
 /**
  * Piste d'amélioration 2026-08-24 ("recommandations officielles rattachées
  * aux notions") — manual links to official guideline sources per notion,

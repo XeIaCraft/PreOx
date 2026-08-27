@@ -17,7 +17,6 @@ import { buildCoverageEntries } from "@/lib/el-profesor/coverage-entries";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { ProposeFlashcardDialog } from "@/components/el-profesor/propose-flashcard-dialog";
-import { RelatedFiches } from "@/components/el-profesor/related-fiches";
 import { FicheQA } from "@/components/el-profesor/fiche-qa";
 import { StudyToolsButtons } from "@/components/el-profesor/study-tools-buttons";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
@@ -591,7 +590,6 @@ export function ChapterView({
                     }
                   />
                   <NoteEditor key={selected.id} subEntityId={selected.id} />
-                  <RelatedFiches key={selected.fiche.id} ficheId={selected.fiche.id} />
                   <FicheQA key={selected.fiche.id} ficheId={selected.fiche.id} isAdmin={isAdmin} />
                   <button
                     type="button"
