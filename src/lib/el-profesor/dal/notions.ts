@@ -26,6 +26,7 @@ import type {
   SynthesisCitation,
   BlockType,
   BlockContent,
+  NotionCategory,
 } from "../types";
 import type { Database } from "@/lib/supabase/types";
 
@@ -136,9 +137,9 @@ export async function getGlossary(): Promise<NotionSummary[]> {
 
   const ficheContexts = await resolveFicheContexts([...publishedIds]);
 
-  return (notions as { id: string; name: string; created_at: string }[])
+  return (notions as { id: string; name: string; created_at: string; category_id: string | null }[])
     .map((n) => ({
-      notion: { id: n.id, name: n.name, createdAt: n.created_at } as Notion,
+      notion: { id: n.id, name: n.name, createdAt: n.created_at, categoryId: n.category_id } as Notion,
       fiches: links
         .filter((l) => l.notion_id === n.id && publishedIds.has(l.fiche_id))
         .map((l) => ficheContexts.get(l.fiche_id))
@@ -147,10 +148,22 @@ export async function getGlossary(): Promise<NotionSummary[]> {
     .filter((s) => s.fiches.length > 0);
 }
 
+// Caps "voir aussi" so a broadly-applied notion (linked to most/every fiche
+// of a chapter — seen 2026-08-26: this list kept growing "the further you
+// read into a chapter", since each fiche shared the same chapter-wide
+// notion with every fiche published before it) can't turn one fiche's
+// inline related-links section into a near-duplicate of the whole chapter.
+const MAX_RELATED_FICHES = 6;
+
 /**
  * Other published fiches that share at least one notion with this one —
  * inline cross-links shown directly on a fiche, rather than only reachable
- * through the admin notions page. Item 4 of the backlog.
+ * through the admin notions page. Item 4 of the backlog. Excludes fiches
+ * from the SAME chapter (already one tap away via the chapter's own
+ * sub-entity list — not a useful "see also" pointer, and the main source of
+ * this list's bloat when a notion gets applied broadly within one chapter),
+ * and prioritizes cross-book matches — the actually useful case — before
+ * capping at MAX_RELATED_FICHES.
  */
 export async function getRelatedFiches(ficheId: string): Promise<NotionLinkedFiche[]> {
   const supabase = await createClient();
@@ -174,8 +187,19 @@ export async function getRelatedFiches(ficheId: string): Promise<NotionLinkedFic
   const publishedIds = (publishedFiches ?? []).map((f) => f.id);
   if (publishedIds.length === 0) return [];
 
-  const contexts = await resolveFicheContexts(publishedIds);
-  return [...contexts.values()];
+  const contexts = await resolveFicheContexts([ficheId, ...publishedIds]);
+  const me = contexts.get(ficheId);
+  const candidates = publishedIds
+    .map((id) => contexts.get(id))
+    .filter((f): f is NotionLinkedFiche => !!f && (!me || f.chapterId !== me.chapterId));
+
+  candidates.sort((a, b) => {
+    const aCrossBook = me && a.bookId !== me.bookId ? 0 : 1;
+    const bCrossBook = me && b.bookId !== me.bookId ? 0 : 1;
+    return aCrossBook - bCrossBook;
+  });
+
+  return candidates.slice(0, MAX_RELATED_FICHES);
 }
 
 /**
@@ -292,6 +316,13 @@ export async function getCaseJournalCountsByNotion(userId: string, notionIds: st
   return result;
 }
 
+/** Every notion category, in manual order — for grouping the notion list and for the admin assignment dropdown. */
+export async function getNotionCategories(): Promise<NotionCategory[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("el_profesor_notion_categories").select("id, name, position").order("position", { ascending: true });
+  return data ?? [];
+}
+
 /** Every notion with the fiches linked to it (cross-book context included), for the admin notions/contradictions screen. */
 export async function getNotionSummaries(): Promise<NotionSummary[]> {
   const supabase = await createClient();
@@ -304,8 +335,8 @@ export async function getNotionSummaries(): Promise<NotionSummary[]> {
   const ficheIds = [...new Set((links ?? []).map((l) => l.fiche_id))];
   const ficheContexts = await resolveFicheContexts(ficheIds);
 
-  return (notions as { id: string; name: string; created_at: string }[]).map((n) => ({
-    notion: { id: n.id, name: n.name, createdAt: n.created_at } as Notion,
+  return (notions as { id: string; name: string; created_at: string; category_id: string | null }[]).map((n) => ({
+    notion: { id: n.id, name: n.name, createdAt: n.created_at, categoryId: n.category_id } as Notion,
     fiches: (links ?? [])
       .filter((l) => l.notion_id === n.id)
       .map((l) => ficheContexts.get(l.fiche_id))

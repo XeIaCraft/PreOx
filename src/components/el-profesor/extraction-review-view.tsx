@@ -301,24 +301,29 @@ export function ExtractionReviewView({
             return (
               <div key={sub.id} className="flex shrink-0 items-center gap-0.5 lg:w-full">
                 {!onlyFlagged && (
-                  <div className="hidden shrink-0 flex-col lg:flex">
+                  // Visible at every width (was desktop-only — with no other way to
+                  // reorder a chapter's sub-entities, that left mobile with none at
+                  // all). Up/down works fine as a mental model here even though this
+                  // list scrolls horizontally below lg — it's still just "earlier"/
+                  // "later" in the chapter, same as the vertical desktop layout.
+                  <div className="flex shrink-0 flex-col">
                     <button
                       type="button"
                       onClick={() => handleMoveSubEntity(sub.id, "up")}
                       disabled={i === 0}
                       aria-label="Monter cette sous-entité"
-                      className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                      className="p-1 text-foreground-subtle hover:text-foreground disabled:opacity-30"
                     >
-                      <ChevronUp className="h-3 w-3" />
+                      <ChevronUp className="h-3.5 w-3.5" />
                     </button>
                     <button
                       type="button"
                       onClick={() => handleMoveSubEntity(sub.id, "down")}
                       disabled={i === visibleSubEntities.length - 1}
                       aria-label="Descendre cette sous-entité"
-                      className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                      className="p-1 text-foreground-subtle hover:text-foreground disabled:opacity-30"
                     >
-                      <ChevronDown className="h-3 w-3" />
+                      <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 )}

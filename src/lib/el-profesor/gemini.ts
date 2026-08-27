@@ -25,6 +25,20 @@ import {
   buildBlockFlagFixPrompt,
   buildNotionSynthesisPrompt,
 } from "@/lib/el-profesor/prompts";
+// Shared with the Claude batch path (anthropic.ts) — Gemini's responseSchema
+// constrains shape but, on a large/complex chapter, can still occasionally
+// double-encode a big array as its own JSON string (e.g. a whole
+// `sub_entities` array coming back as a string starting with "[") instead of
+// a native array value; these normalizers recover that case for both
+// providers instead of letting it crash downstream (untyped Gemini output
+// was previously cast straight to ExtractionResult with no validation at all).
+import { normalizeExtractionResult, normalizeComplementaryResult } from "@/lib/el-profesor/anthropic";
+// Re-exported below (not just imported) since several other files still
+// import BLOCK_TYPES from this module — kept in its own file alongside
+// anthropic.ts (see block-types.ts's doc comment) specifically to avoid a
+// circular import now that this file also depends on anthropic.ts above.
+import { BLOCK_TYPES } from "@/lib/el-profesor/block-types";
+export { BLOCK_TYPES };
 import type {
   ComplementaryResult,
   ExtractionResult,
@@ -48,18 +62,6 @@ const MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models
 // the settings row (see getElProfesorGeminiModel in dal.ts); this constant
 // only seeds that row's default and covers the case where it's missing.
 export const EL_PROFESOR_GEMINI_MODEL_DEFAULT = "gemini-flash-latest";
-
-export const BLOCK_TYPES: BlockType[] = [
-  "definition_mecanisme",
-  "valeurs_seuils",
-  "tableau_comparatif",
-  "protocole_paliers",
-  "mnemotechnique",
-  "perle_clinique",
-  "piege_erreur",
-  "formule",
-  "texte_libre",
-];
 
 const CITATION_SCHEMA = {
   type: "OBJECT",
@@ -574,7 +576,7 @@ export async function extractChapterContent(
   onRawResponse?: (text: string) => void
 ): Promise<ExtractionResult> {
   const result = await callGeminiWithFile(apiKey, model, file, buildExtractionPrompt(chapterTitle), EXTRACTION_RESPONSE_SCHEMA, onRawResponse);
-  return result as ExtractionResult;
+  return normalizeExtractionResult(result);
 }
 
 /** Gap-fill pass: given what's already extracted, generate only what's missing. */
@@ -588,7 +590,7 @@ export async function extractComplementaryContent(
 ): Promise<ComplementaryResult> {
   const prompt = buildComplementaryPrompt(chapterTitle, coverageSummaryJson);
   const result = await callGeminiWithFile(apiKey, model, file, prompt, COMPLEMENTARY_RESPONSE_SCHEMA, onRawResponse);
-  return result as ComplementaryResult;
+  return normalizeComplementaryResult(result);
 }
 
 /**
@@ -748,10 +750,10 @@ export async function extractChapterContentFromTextWithRotation(
 ): Promise<{ extraction: ExtractionResult; apiKey: string; model: string; rawResponseText: string | null }> {
   const instructions = buildTextExtractionPrompt(chapterTitle, sourceText);
   let rawResponseText: string | null = null;
-  const { result, apiKey, model } = await textRotation<ExtractionResult>(config, instructions, EXTRACTION_RESPONSE_SCHEMA, (text) => {
+  const { result, apiKey, model } = await textRotation<unknown>(config, instructions, EXTRACTION_RESPONSE_SCHEMA, (text) => {
     rawResponseText = text;
   });
-  return { extraction: result, apiKey, model, rawResponseText };
+  return { extraction: normalizeExtractionResult(result), apiKey, model, rawResponseText };
 }
 
 /**

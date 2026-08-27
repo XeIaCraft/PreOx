@@ -227,12 +227,130 @@ export async function clearFicheSuperseded(ficheId: string): Promise<ActionState
   return { success: "Fiche réactivée." };
 }
 
-/** Reorders the notions list itself (requested 2026-08-26) — swaps this notion's manual position with its previous/next sibling. No-op at either end. */
+export async function renameNotion(notionId: string, name: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const trimmed = name.trim();
+  if (!trimmed) return { error: "Le nom ne peut pas être vide." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_notions").update({ name: trimmed }).eq("id", notionId);
+  if (error) return { error: error.code === "23505" ? "Une notion porte déjà ce nom." : "Impossible de renommer cette notion." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Notion renommée." };
+}
+
+/**
+ * Notion categories (requested 2026-08-26) — a flat, manually-ordered
+ * grouping for the notion list, same "purely organizational, no AI"
+ * pattern as every other manual-order tool in this module. Deleting a
+ * category never deletes its notions (the FK is `on delete set null`) —
+ * they just fall back to "sans catégorie".
+ */
+export async function createNotionCategory(name: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const trimmed = name.trim();
+  if (!trimmed) return { error: "Le nom ne peut pas être vide." };
+
+  const supabase = await createClient();
+  const { data: last } = await supabase.from("el_profesor_notion_categories").select("position").order("position", { ascending: false }).limit(1).maybeSingle();
+  const position = (last?.position ?? -1) + 1;
+  const { error } = await supabase.from("el_profesor_notion_categories").insert({ name: trimmed, position });
+  if (error) return { error: error.code === "23505" ? "Une catégorie porte déjà ce nom." : "Impossible de créer cette catégorie." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Catégorie créée." };
+}
+
+export async function renameNotionCategory(categoryId: string, name: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const trimmed = name.trim();
+  if (!trimmed) return { error: "Le nom ne peut pas être vide." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_notion_categories").update({ name: trimmed }).eq("id", categoryId);
+  if (error) return { error: error.code === "23505" ? "Une catégorie porte déjà ce nom." : "Impossible de renommer cette catégorie." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Catégorie renommée." };
+}
+
+export async function deleteNotionCategory(categoryId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_notion_categories").delete().eq("id", categoryId);
+  if (error) return { error: "Impossible de supprimer cette catégorie." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Catégorie supprimée — ses notions restent, désormais sans catégorie." };
+}
+
+/** Assigns (or clears, with `categoryId: null`) a notion's category. */
+export async function assignNotionCategory(notionId: string, categoryId: string | null): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_notions").update({ category_id: categoryId }).eq("id", notionId);
+  if (error) return { error: "Impossible d'assigner cette catégorie." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Catégorie mise à jour." };
+}
+
+/** Reorders the category list itself — swaps this category's manual position with its previous/next sibling. No-op at either end. */
+export async function moveNotionCategory(categoryId: string, direction: "up" | "down"): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: categories } = await supabase.from("el_profesor_notion_categories").select("id, position").order("position", { ascending: true });
+  const list = categories ?? [];
+  const index = list.findIndex((c) => c.id === categoryId);
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (index === -1 || targetIndex < 0 || targetIndex >= list.length) {
+    return { success: "OK" };
+  }
+
+  const current = list[index];
+  const target = list[targetIndex];
+  const [error1, error2] = await Promise.all([
+    supabase.from("el_profesor_notion_categories").update({ position: target.position }).eq("id", current.id).then((r) => r.error),
+    supabase.from("el_profesor_notion_categories").update({ position: current.position }).eq("id", target.id).then((r) => r.error),
+  ]);
+  if (error1 || error2) return { error: "Impossible de réordonner cette catégorie." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Catégorie déplacée." };
+}
+
+/**
+ * Reorders the notions list itself (requested 2026-08-26) — swaps this
+ * notion's manual position with its previous/next sibling *within the same
+ * category* (including "sans catégorie" as its own group) — scoping to the
+ * global list instead would let a swap land on a notion from a different
+ * category, invisible in the grouped display and confusing to click. No-op
+ * at either end.
+ */
 export async function moveNotion(notionId: string, direction: "up" | "down"): Promise<ActionState> {
   await requireElProfesorAdmin();
   const supabase = await createClient();
 
-  const { data: notions } = await supabase.from("el_profesor_notions").select("id, position").order("position", { ascending: true });
+  const { data: self } = await supabase.from("el_profesor_notions").select("category_id").eq("id", notionId).maybeSingle();
+  if (!self) return { error: "Notion introuvable." };
+
+  let query = supabase.from("el_profesor_notions").select("id, position").order("position", { ascending: true });
+  query = self.category_id ? query.eq("category_id", self.category_id) : query.is("category_id", null);
+  const { data: notions } = await query;
   const list = notions ?? [];
   const index = list.findIndex((n) => n.id === notionId);
   const targetIndex = direction === "up" ? index - 1 : index + 1;

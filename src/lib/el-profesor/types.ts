@@ -160,6 +160,14 @@ export type Notion = {
   id: string;
   name: string;
   createdAt: string;
+  categoryId: string | null;
+};
+
+/** Admin-defined grouping for the notion list (requested 2026-08-26) — one flat level, manually named and ordered, no AI involvement. */
+export type NotionCategory = {
+  id: string;
+  name: string;
+  position: number;
 };
 
 /** One fiche linked to a notion, with enough book/chapter context to tell cross-book links apart at a glance. */

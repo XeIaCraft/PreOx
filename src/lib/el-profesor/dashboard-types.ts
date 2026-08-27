@@ -13,7 +13,7 @@ import type {
   DueBlockEntry,
   NotionReadiness,
 } from "@/lib/el-profesor/dal";
-import type { Flashcard, NotionSummary, NotionRecommendation, DoseCalculator } from "@/lib/el-profesor/types";
+import type { Flashcard, NotionSummary, NotionRecommendation, DoseCalculator, NotionCategory } from "@/lib/el-profesor/types";
 import type { ElProfesorBatchJobRow } from "@/lib/supabase/types";
 
 /**
@@ -70,6 +70,7 @@ export interface DashboardAiConfigData {
  */
 export interface DashboardNotionViewData {
   notions: NotionSummary[];
+  categories: NotionCategory[];
   readiness: Record<string, NotionReadiness>;
   recommendations: Record<string, NotionRecommendation[]>;
   doseCalculators: Record<string, DoseCalculator[]>;

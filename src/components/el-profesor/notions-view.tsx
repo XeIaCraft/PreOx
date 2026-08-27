@@ -28,6 +28,7 @@ import { Select } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { MergeFichesForm } from "@/components/el-profesor/merge-fiches-form";
 import { RenameFicheButton } from "@/components/el-profesor/inline-rename-fiche";
+import { RenameNotionButton } from "@/components/el-profesor/rename-notion-button";
 import {
   categorizeChapterNotions,
   detectContradictionsForNotion,
@@ -41,6 +42,11 @@ import {
   deleteDoseCalculator,
   moveNotion,
   moveNotionFiche,
+  createNotionCategory,
+  renameNotionCategory,
+  deleteNotionCategory,
+  assignNotionCategory,
+  moveNotionCategory,
 } from "@/app/apps/el-profesor/actions/notions";
 import {
   checkNotionForUpdatesFromText,
@@ -57,6 +63,7 @@ import type {
   CrossBookDuplicateFlashcards,
   SupersededFicheEntry,
   NotionUpdateProposal,
+  NotionCategory,
 } from "@/lib/el-profesor/types";
 
 // Mirrors MAX_ARTICLE_BYTES in actions/notion-updates.ts — checked here too so an
@@ -436,6 +443,166 @@ function DoseCalculatorsManager({
   );
 }
 
+/** Inline rename for one category row — same pattern as RenameNotionButton, kept local since it edits a plain local `editing` row state rather than a standalone card. */
+function CategoryNameEditor({ category, onChanged }: { category: NotionCategory; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(category.name);
+
+  function handleSave() {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === category.name) {
+      setEditing(false);
+      return;
+    }
+    startTransition(async () => {
+      const result = await renameNotionCategory(category.id, trimmed);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        setEditing(false);
+        onChanged();
+      }
+    });
+  }
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSave();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          disabled={isPending}
+          className="rounded-[var(--radius-sm)] border border-border bg-surface px-1.5 py-0.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        />
+        <button type="button" onClick={handleSave} disabled={isPending || !value.trim()} aria-label="Enregistrer" className="text-success disabled:opacity-40">
+          <Check className="h-3 w-3" />
+        </button>
+        <button type="button" onClick={() => setEditing(false)} disabled={isPending} aria-label="Annuler" className="text-foreground-subtle">
+          <X className="h-3 w-3" />
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setValue(category.name);
+        setEditing(true);
+      }}
+      className="text-xs font-medium uppercase tracking-wide text-foreground-subtle hover:text-foreground"
+    >
+      {category.name}
+    </button>
+  );
+}
+
+/**
+ * Admin management for notion categories (requested 2026-08-26) — create,
+ * rename, reorder, delete. Purely organizational, no AI involvement, same
+ * as every other manual-order tool in this module. Assigning a notion to a
+ * category happens on that notion's own card (see NotionCard below), not
+ * here — this widget only manages the category list itself.
+ */
+function CategoryManager({ categories, onChanged }: { categories: NotionCategory[]; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [newName, setNewName] = useState("");
+
+  function handleCreate() {
+    if (!newName.trim()) return;
+    startTransition(async () => {
+      const result = await createNotionCategory(newName);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        setNewName("");
+        onChanged();
+      }
+    });
+  }
+
+  function handleMove(categoryId: string, direction: "up" | "down") {
+    startTransition(async () => {
+      const result = await moveNotionCategory(categoryId, direction);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  function handleDelete(categoryId: string) {
+    if (!confirm("Supprimer cette catégorie ? Ses notions resteront, simplement sans catégorie.")) return;
+    startTransition(async () => {
+      const result = await deleteNotionCategory(categoryId);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  return (
+    <div className="mb-4 rounded-[var(--radius-md)] border border-border bg-surface-muted/50 p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-foreground-subtle">Catégories</p>
+      {categories.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {categories.map((cat, i) => (
+            <li key={cat.id} className="flex items-center gap-1.5">
+              <span className="flex shrink-0 flex-col">
+                <button
+                  type="button"
+                  onClick={() => handleMove(cat.id, "up")}
+                  disabled={isPending || i === 0}
+                  aria-label="Monter cette catégorie"
+                  className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                >
+                  <ChevronUp className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMove(cat.id, "down")}
+                  disabled={isPending || i === categories.length - 1}
+                  aria-label="Descendre cette catégorie"
+                  className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </span>
+              <CategoryNameEditor category={cat} onChanged={onChanged} />
+              <button
+                type="button"
+                onClick={() => handleDelete(cat.id)}
+                disabled={isPending}
+                className="text-foreground-subtle hover:text-danger"
+                aria-label="Supprimer cette catégorie"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-2 flex items-center gap-1.5">
+        <input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+          placeholder="Nouvelle catégorie (ex. Pharmacologie)"
+          disabled={isPending}
+          className="w-56 rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        />
+        <Button variant="ghost" size="sm" onClick={handleCreate} disabled={isPending || !newName.trim()} className="h-6 px-2 text-xs">
+          <Plus className="h-3 w-3" /> Ajouter
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function SupersededFicheRow({ entry, onChanged }: { entry: SupersededFicheEntry; onChanged: () => void }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -648,9 +815,180 @@ function NotionUpdateProposalCard({ proposal, onChanged }: { proposal: NotionUpd
   );
 }
 
+/**
+ * One notion's admin card — extracted (2026-08-26, alongside notion
+ * categories) from what used to be an inline block in NotionsView's own
+ * render, so it can be rendered once per category group instead of once
+ * for the whole flat list. `index`/`siblingCount` are scoped to whichever
+ * group this card is actually rendered inside (its category, or "sans
+ * catégorie") — moveNotion itself already reorders within that same scope
+ * server-side, so this keeps the up/down disabled state consistent with
+ * what a click would actually do.
+ */
+function NotionCard({
+  notion,
+  fiches,
+  index,
+  siblingCount,
+  categories,
+  recommendations,
+  doseCalculators,
+  isDetecting,
+  detectingNotionId,
+  onDetect,
+  onCompareToSource,
+  onChanged,
+}: {
+  notion: NotionSummary["notion"];
+  fiches: NotionSummary["fiches"];
+  index: number;
+  siblingCount: number;
+  categories: NotionCategory[];
+  recommendations: NotionRecommendation[];
+  doseCalculators: DoseCalculatorEntry[];
+  isDetecting: boolean;
+  detectingNotionId: string | null;
+  onDetect: (notionId: string) => void;
+  onCompareToSource: (notion: { id: string; name: string }) => void;
+  onChanged: () => void;
+}) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
+
+  function handleMoveNotion(direction: "up" | "down") {
+    startTransition(async () => {
+      const result = await moveNotion(notion.id, direction);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  function handleMoveFiche(ficheId: string, direction: "up" | "down") {
+    startTransition(async () => {
+      const result = await moveNotionFiche(notion.id, ficheId, direction);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  function handleAssignCategory(categoryId: string) {
+    startTransition(async () => {
+      const result = await assignNotionCategory(notion.id, categoryId || null);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  return (
+    <div className="rounded-[var(--radius-md)] border border-border p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <span className="flex shrink-0 flex-col">
+            <button
+              type="button"
+              onClick={() => handleMoveNotion("up")}
+              disabled={isPending || index === 0}
+              aria-label="Monter cette notion"
+              className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+            >
+              <ChevronUp className="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMoveNotion("down")}
+              disabled={isPending || index === siblingCount - 1}
+              aria-label="Descendre cette notion"
+              className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+            >
+              <ChevronDown className="h-3 w-3" />
+            </button>
+          </span>
+          <Link href={`/apps/el-profesor/notions/${notion.id}`} className="font-medium text-foreground hover:underline">
+            {notion.name}
+          </Link>
+          <RenameNotionButton notionId={notion.id} currentName={notion.name} onRenamed={onChanged} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="neutral">
+            {fiches.length} fiche{fiches.length > 1 ? "s" : ""}
+            {distinctBooks > 1 ? ` · ${distinctBooks} livres` : ""}
+          </Badge>
+          {categories.length > 0 && (
+            <Select
+              value={notion.categoryId ?? ""}
+              onChange={(e) => handleAssignCategory(e.target.value)}
+              disabled={isPending}
+              className="max-w-[160px] text-xs"
+              aria-label="Catégorie de cette notion"
+            >
+              <option value="">Sans catégorie</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
+            </Select>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => onDetect(notion.id)}
+            disabled={isDetecting || fiches.length < 2}
+            title={fiches.length < 2 ? "Il faut au moins 2 fiches liées" : "Compare chaque paire de fiches liées à cette notion"}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {isDetecting && detectingNotionId === notion.id ? "Analyse…" : "Détecter les contradictions"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onCompareToSource({ id: notion.id, name: notion.name })}
+            title="Comparer cette notion à un article ou à une réponse d'un outil de littérature médicale"
+          >
+            <FileSearch className="h-3.5 w-3.5" /> Comparer à une source
+          </Button>
+        </div>
+      </div>
+      <ul className="mt-2 space-y-1 text-xs text-foreground-subtle">
+        {fiches.map((f, i) => (
+          <li key={f.ficheId} className="flex items-center gap-1.5">
+            <span className="flex shrink-0 flex-col">
+              <button
+                type="button"
+                onClick={() => handleMoveFiche(f.ficheId, "up")}
+                disabled={i === 0}
+                aria-label="Monter cette fiche"
+                className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+              >
+                <ChevronUp className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleMoveFiche(f.ficheId, "down")}
+                disabled={i === fiches.length - 1}
+                aria-label="Descendre cette fiche"
+                className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+              >
+                <ChevronDown className="h-3 w-3" />
+              </button>
+            </span>
+            <FicheRef fiche={f} />
+            <RenameFicheButton ficheId={f.ficheId} currentTitle={f.ficheTitle} onRenamed={onChanged} />
+          </li>
+        ))}
+      </ul>
+      {fiches.length >= 2 && <MergeFichesForm fiches={fiches} onChanged={onChanged} />}
+      <RecommendationsManager notionId={notion.id} recommendations={recommendations} onChanged={onChanged} />
+      <DoseCalculatorsManager notionId={notion.id} calculators={doseCalculators} onChanged={onChanged} />
+    </div>
+  );
+}
+
 export function NotionsView({
   chapters,
   notionSummaries,
+  categories,
   recommendations,
   doseCalculators,
   contradictions,
@@ -660,6 +998,7 @@ export function NotionsView({
 }: {
   chapters: { id: string; title: string; bookTitle: string }[];
   notionSummaries: NotionSummary[];
+  categories: NotionCategory[];
   recommendations: Record<string, NotionRecommendation[]>;
   doseCalculators: Record<string, DoseCalculatorEntry[]>;
   contradictions: Contradiction[];
@@ -671,7 +1010,6 @@ export function NotionsView({
   const { toast } = useToast();
   const [isCategorizing, startCategorizing] = useTransition();
   const [isDetecting, startDetecting] = useTransition();
-  const [, startMovingFiche] = useTransition();
   const [selectedChapterId, setSelectedChapterId] = useState(chapters[0]?.id ?? "");
   const [detectingNotionId, setDetectingNotionId] = useState<string | null>(null);
   const [updateCheckNotion, setUpdateCheckNotion] = useState<{ id: string; name: string } | null>(null);
@@ -703,22 +1041,6 @@ export function NotionsView({
 
   function refresh() {
     router.refresh();
-  }
-
-  function handleMoveNotion(notionId: string, direction: "up" | "down") {
-    startMovingFiche(async () => {
-      const result = await moveNotion(notionId, direction);
-      if (result.error) toast(result.error, { variant: "error" });
-      else refresh();
-    });
-  }
-
-  function handleMoveFiche(notionId: string, ficheId: string, direction: "up" | "down") {
-    startMovingFiche(async () => {
-      const result = await moveNotionFiche(notionId, ficheId, direction);
-      if (result.error) toast(result.error, { variant: "error" });
-      else refresh();
-    });
   }
 
   const pending = contradictions.filter((c) => c.status === "pending");
@@ -785,99 +1107,67 @@ export function NotionsView({
 
       <div className="mt-8">
         <p className="mb-2 text-sm font-medium text-foreground">Notions ({notionSummaries.length})</p>
+        <CategoryManager categories={categories} onChanged={refresh} />
         {notionSummaries.length === 0 ? (
           <p className="text-sm text-foreground-subtle">Aucune notion pour l&apos;instant — catégorisez un premier chapitre ci-dessus.</p>
         ) : (
-          <div className="space-y-3">
-            {notionSummaries.map(({ notion, fiches }, i) => {
-              const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
+          <div className="space-y-6">
+            {categories.map((cat) => {
+              const items = notionSummaries.filter((s) => s.notion.categoryId === cat.id);
+              if (items.length === 0) return null;
               return (
-                <div key={notion.id} className="rounded-[var(--radius-md)] border border-border p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="flex shrink-0 flex-col">
-                        <button
-                          type="button"
-                          onClick={() => handleMoveNotion(notion.id, "up")}
-                          disabled={i === 0}
-                          aria-label="Monter cette notion"
-                          className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
-                        >
-                          <ChevronUp className="h-3 w-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleMoveNotion(notion.id, "down")}
-                          disabled={i === notionSummaries.length - 1}
-                          aria-label="Descendre cette notion"
-                          className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
-                        >
-                          <ChevronDown className="h-3 w-3" />
-                        </button>
-                      </span>
-                      <Link href={`/apps/el-profesor/notions/${notion.id}`} className="font-medium text-foreground hover:underline">
-                        {notion.name}
-                      </Link>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="neutral">
-                        {fiches.length} fiche{fiches.length > 1 ? "s" : ""}
-                        {distinctBooks > 1 ? ` · ${distinctBooks} livres` : ""}
-                      </Badge>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleDetect(notion.id)}
-                        disabled={isDetecting || fiches.length < 2}
-                        title={fiches.length < 2 ? "Il faut au moins 2 fiches liées" : "Compare chaque paire de fiches liées à cette notion"}
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        {isDetecting && detectingNotionId === notion.id ? "Analyse…" : "Détecter les contradictions"}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setUpdateCheckNotion({ id: notion.id, name: notion.name })}
-                        title="Comparer cette notion à un article ou à une réponse d'un outil de littérature médicale"
-                      >
-                        <FileSearch className="h-3.5 w-3.5" /> Comparer à une source
-                      </Button>
-                    </div>
-                  </div>
-                  <ul className="mt-2 space-y-1 text-xs text-foreground-subtle">
-                    {fiches.map((f, i) => (
-                      <li key={f.ficheId} className="flex items-center gap-1.5">
-                        <span className="flex shrink-0 flex-col">
-                          <button
-                            type="button"
-                            onClick={() => handleMoveFiche(notion.id, f.ficheId, "up")}
-                            disabled={i === 0}
-                            aria-label="Monter cette fiche"
-                            className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
-                          >
-                            <ChevronUp className="h-3 w-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleMoveFiche(notion.id, f.ficheId, "down")}
-                            disabled={i === fiches.length - 1}
-                            aria-label="Descendre cette fiche"
-                            className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
-                          >
-                            <ChevronDown className="h-3 w-3" />
-                          </button>
-                        </span>
-                        <FicheRef fiche={f} />
-                        <RenameFicheButton ficheId={f.ficheId} currentTitle={f.ficheTitle} onRenamed={refresh} />
-                      </li>
+                <div key={cat.id}>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-foreground-subtle">{cat.name}</p>
+                  <div className="space-y-3">
+                    {items.map(({ notion, fiches }, i) => (
+                      <NotionCard
+                        key={notion.id}
+                        notion={notion}
+                        fiches={fiches}
+                        index={i}
+                        siblingCount={items.length}
+                        categories={categories}
+                        recommendations={recommendations[notion.id] ?? []}
+                        doseCalculators={doseCalculators[notion.id] ?? []}
+                        isDetecting={isDetecting}
+                        detectingNotionId={detectingNotionId}
+                        onDetect={handleDetect}
+                        onCompareToSource={setUpdateCheckNotion}
+                        onChanged={refresh}
+                      />
                     ))}
-                  </ul>
-                  {fiches.length >= 2 && <MergeFichesForm fiches={fiches} onChanged={refresh} />}
-                  <RecommendationsManager notionId={notion.id} recommendations={recommendations[notion.id] ?? []} onChanged={refresh} />
-                  <DoseCalculatorsManager notionId={notion.id} calculators={doseCalculators[notion.id] ?? []} onChanged={refresh} />
+                  </div>
                 </div>
               );
             })}
+            {(() => {
+              const uncategorized = notionSummaries.filter((s) => !s.notion.categoryId);
+              if (uncategorized.length === 0) return null;
+              return (
+                <div>
+                  {categories.length > 0 && <p className="mb-2 text-xs font-medium uppercase tracking-wide text-foreground-subtle">Sans catégorie</p>}
+                  <div className="space-y-3">
+                    {uncategorized.map(({ notion, fiches }, i) => (
+                      <NotionCard
+                        key={notion.id}
+                        notion={notion}
+                        fiches={fiches}
+                        index={i}
+                        siblingCount={uncategorized.length}
+                        categories={categories}
+                        recommendations={recommendations[notion.id] ?? []}
+                        doseCalculators={doseCalculators[notion.id] ?? []}
+                        isDetecting={isDetecting}
+                        detectingNotionId={detectingNotionId}
+                        onDetect={handleDetect}
+                        onCompareToSource={setUpdateCheckNotion}
+                        onChanged={refresh}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

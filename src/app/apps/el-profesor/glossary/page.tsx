@@ -1,6 +1,7 @@
 import {
   requireElProfesorAccess,
   getGlossary,
+  getNotionCategories,
   getNotionReadiness,
   getNotionRecommendations,
   getDoseCalculators,
@@ -12,7 +13,8 @@ export default async function GlossaryPage() {
   const profile = await requireElProfesorAccess();
   const notions = await getGlossary();
   const notionIds = notions.map((n) => n.notion.id);
-  const [readiness, recommendations, doseCalculators, caseCounts] = await Promise.all([
+  const [categories, readiness, recommendations, doseCalculators, caseCounts] = await Promise.all([
+    getNotionCategories(),
     getNotionReadiness(profile.id, notions),
     getNotionRecommendations(notionIds),
     getDoseCalculators(notionIds),
@@ -22,6 +24,7 @@ export default async function GlossaryPage() {
   return (
     <GlossaryView
       notions={notions}
+      categories={categories}
       readiness={readiness}
       recommendations={recommendations}
       doseCalculators={doseCalculators}

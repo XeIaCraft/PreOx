@@ -2,6 +2,7 @@ import {
   requireElProfesorAdmin,
   getLibrary,
   getNotionSummaries,
+  getNotionCategories,
   getNotionRecommendations,
   getDoseCalculators,
   getContradictions,
@@ -15,9 +16,10 @@ import { ToastProvider } from "@/components/ui/toast";
 export default async function NotionsPage() {
   await requireElProfesorAdmin();
 
-  const [books, notionSummaries, contradictions, crossBookDuplicates, supersededFiches, notionUpdateProposals] = await Promise.all([
+  const [books, notionSummaries, categories, contradictions, crossBookDuplicates, supersededFiches, notionUpdateProposals] = await Promise.all([
     getLibrary(),
     getNotionSummaries(),
+    getNotionCategories(),
     getContradictions(),
     getCrossBookFlashcardDuplicates(),
     getSupersededFiches(),
@@ -37,6 +39,7 @@ export default async function NotionsPage() {
       <NotionsView
         chapters={chapters}
         notionSummaries={notionSummaries}
+        categories={categories}
         recommendations={recommendations}
         doseCalculators={doseCalculators}
         contradictions={contradictions}

@@ -511,6 +511,14 @@ export type ElProfesorNotionRow = {
   id: string;
   name: string;
   position: number;
+  category_id: string | null;
+  created_at: string;
+};
+
+export type ElProfesorNotionCategoryRow = {
+  id: string;
+  name: string;
+  position: number;
   created_at: string;
 };
 
@@ -890,6 +898,12 @@ export type Database = {
         Row: ElProfesorNotionRow;
         Insert: Partial<ElProfesorNotionRow> & { name: string };
         Update: Partial<ElProfesorNotionRow>;
+        Relationships: [];
+      };
+      el_profesor_notion_categories: {
+        Row: ElProfesorNotionCategoryRow;
+        Insert: Partial<ElProfesorNotionCategoryRow> & { name: string };
+        Update: Partial<ElProfesorNotionCategoryRow>;
         Relationships: [];
       };
       el_profesor_notion_links: {

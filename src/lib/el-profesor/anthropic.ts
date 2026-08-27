@@ -10,7 +10,7 @@ import {
   buildContradictionCheckPrompt,
   buildNotionUpdateCheckPrompt,
 } from "@/lib/el-profesor/prompts";
-import { BLOCK_TYPES } from "./gemini";
+import { BLOCK_TYPES } from "./block-types";
 import { assertAiSpendCapNotExceeded } from "./ai-spend-cap";
 import type {
   BlockType,
@@ -439,10 +439,33 @@ export async function getClaudeBatchResults(
 // normalizers instead walk the raw shape and default every missing/
 // malformed array to `[]` (dropping only the one malformed item, not the
 // whole batch result) before it's trusted as one of those types.
+//
+// Also used from gemini.ts (2026-08-26) — Gemini's responseSchema
+// constrains *shape* but a model can still occasionally double-encode a
+// large array as its own JSON string instead of a native array value (seen
+// on a large chapter: `"sub_entities": "[\n{...}]"` instead of a real
+// array) — coerceArray recovers that case for both providers instead of
+// silently discarding the whole result (which used to surface as either a
+// hard crash on the untyped Gemini path, or "extraction vide" on Claude's).
+
+/** Recovers an array field a model sent back double-encoded as its own JSON string, before giving up and defaulting to `[]`. */
+function coerceArray(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // fall through to []
+    }
+  }
+  return [];
+}
 
 function normalizeCitations(raw: unknown): Citation[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((c): c is Citation => !!c && typeof c === "object" && typeof (c as Citation).page === "number" && typeof (c as Citation).quote === "string");
+  return coerceArray(raw).filter(
+    (c): c is Citation => !!c && typeof c === "object" && typeof (c as Citation).page === "number" && typeof (c as Citation).quote === "string"
+  );
 }
 
 function normalizeBlock(raw: unknown): ExtractedFicheBlock | null {
@@ -470,8 +493,8 @@ function normalizeFiche(raw: unknown): ExtractedFiche {
   const f = (raw ?? {}) as Record<string, unknown>;
   return {
     title: typeof f.title === "string" ? f.title : "",
-    blocks: Array.isArray(f.blocks) ? f.blocks.map(normalizeBlock).filter((b): b is ExtractedFicheBlock => b !== null) : [],
-    flashcards: Array.isArray(f.flashcards) ? f.flashcards.map(normalizeFlashcard).filter((c): c is ExtractedFlashcard => c !== null) : [],
+    blocks: coerceArray(f.blocks).map(normalizeBlock).filter((b): b is ExtractedFicheBlock => b !== null),
+    flashcards: coerceArray(f.flashcards).map(normalizeFlashcard).filter((c): c is ExtractedFlashcard => c !== null),
   };
 }
 
@@ -484,27 +507,25 @@ function normalizeSubEntity(raw: unknown): ExtractedSubEntity | null {
 
 export function normalizeExtractionResult(raw: unknown): ExtractionResult {
   const r = (raw ?? {}) as Record<string, unknown>;
-  const subEntities = Array.isArray(r.sub_entities) ? r.sub_entities.map(normalizeSubEntity).filter((s): s is ExtractedSubEntity => s !== null) : [];
+  const subEntities = coerceArray(r.sub_entities).map(normalizeSubEntity).filter((s): s is ExtractedSubEntity => s !== null);
   return { sub_entities: subEntities, estimated_remaining_passes: typeof r.estimated_remaining_passes === "number" ? r.estimated_remaining_passes : 0 };
 }
 
 export function normalizeComplementaryResult(raw: unknown): ComplementaryResult {
   const r = (raw ?? {}) as Record<string, unknown>;
-  const additions = Array.isArray(r.additions_for_existing)
-    ? r.additions_for_existing
-        .map((raw): ComplementaryAddition | null => {
-          if (!raw || typeof raw !== "object") return null;
-          const a = raw as Record<string, unknown>;
-          if (typeof a.sub_entity_name !== "string") return null;
-          return {
-            sub_entity_name: a.sub_entity_name,
-            blocks: Array.isArray(a.blocks) ? a.blocks.map(normalizeBlock).filter((b): b is ExtractedFicheBlock => b !== null) : [],
-            flashcards: Array.isArray(a.flashcards) ? a.flashcards.map(normalizeFlashcard).filter((c): c is ExtractedFlashcard => c !== null) : [],
-          };
-        })
-        .filter((a): a is ComplementaryAddition => a !== null)
-    : [];
-  const newSubEntities = Array.isArray(r.new_sub_entities) ? r.new_sub_entities.map(normalizeSubEntity).filter((s): s is ExtractedSubEntity => s !== null) : [];
+  const additions = coerceArray(r.additions_for_existing)
+    .map((raw): ComplementaryAddition | null => {
+      if (!raw || typeof raw !== "object") return null;
+      const a = raw as Record<string, unknown>;
+      if (typeof a.sub_entity_name !== "string") return null;
+      return {
+        sub_entity_name: a.sub_entity_name,
+        blocks: coerceArray(a.blocks).map(normalizeBlock).filter((b): b is ExtractedFicheBlock => b !== null),
+        flashcards: coerceArray(a.flashcards).map(normalizeFlashcard).filter((c): c is ExtractedFlashcard => c !== null),
+      };
+    })
+    .filter((a): a is ComplementaryAddition => a !== null);
+  const newSubEntities = coerceArray(r.new_sub_entities).map(normalizeSubEntity).filter((s): s is ExtractedSubEntity => s !== null);
   return {
     additions_for_existing: additions,
     new_sub_entities: newSubEntities,

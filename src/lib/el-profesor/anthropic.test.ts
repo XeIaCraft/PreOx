@@ -47,6 +47,22 @@ describe("normalizeExtractionResult", () => {
     expect(normalizeExtractionResult(undefined)).toEqual({ sub_entities: [], estimated_remaining_passes: 0 });
     expect(normalizeExtractionResult({})).toEqual({ sub_entities: [], estimated_remaining_passes: 0 });
   });
+
+  // Regression test for the 2026-08-26 bug report: sub_entities came back
+  // double-encoded as a JSON string (`"sub_entities": "[\n{\n\"name\": ..."`)
+  // instead of a real array — the old Array.isArray check silently dropped
+  // this to [], which then tripped the "extraction vide" guard even though
+  // the model's response genuinely contained the full result.
+  it("recovers sub_entities double-encoded as a JSON string instead of a real array", () => {
+    const encoded = JSON.stringify([{ name: "Jonction neuromusculaire", summary: "s", fiche: { title: "t", blocks: [], flashcards: [] } }]);
+    const result = normalizeExtractionResult({ sub_entities: encoded, estimated_remaining_passes: 0 });
+    expect(result.sub_entities.map((s) => s.name)).toEqual(["Jonction neuromusculaire"]);
+  });
+
+  it("still defaults to [] when the string isn't valid JSON at all", () => {
+    const result = normalizeExtractionResult({ sub_entities: "not json", estimated_remaining_passes: 0 });
+    expect(result.sub_entities).toEqual([]);
+  });
 });
 
 describe("normalizeComplementaryResult", () => {

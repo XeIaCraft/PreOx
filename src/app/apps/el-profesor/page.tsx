@@ -41,6 +41,7 @@ import {
   getRecommendedNextBook,
   getDueBlocksForUser,
   getGlossary,
+  getNotionCategories,
   getNotionReadiness,
   getNotionRecommendations,
   getDoseCalculators,
@@ -118,13 +119,14 @@ async function loadSecondaryDashboardData(
 async function loadNotionViewData(profileId: string): Promise<DashboardNotionViewData> {
   const notions = await getGlossary();
   const notionIds = notions.map((n) => n.notion.id);
-  const [readiness, recommendations, doseCalculators, caseCounts] = await Promise.all([
+  const [categories, readiness, recommendations, doseCalculators, caseCounts] = await Promise.all([
+    getNotionCategories(),
     getNotionReadiness(profileId, notions),
     getNotionRecommendations(notionIds),
     getDoseCalculators(notionIds),
     getCaseJournalCountsByNotion(profileId, notionIds),
   ]);
-  return { notions, readiness, recommendations, doseCalculators, caseCounts };
+  return { notions, categories, readiness, recommendations, doseCalculators, caseCounts };
 }
 
 async function loadAiConfigData(): Promise<DashboardAiConfigData> {

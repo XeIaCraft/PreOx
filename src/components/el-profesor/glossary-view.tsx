@@ -19,10 +19,11 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { RenameFicheButton } from "@/components/el-profesor/inline-rename-fiche";
+import { RenameNotionButton } from "@/components/el-profesor/rename-notion-button";
 import { MergeFichesForm } from "@/components/el-profesor/merge-fiches-form";
 import { moveNotion, moveNotionFiche } from "@/app/apps/el-profesor/actions/notions";
 import { useToast } from "@/components/ui/toast";
-import type { NotionSummary, NotionRecommendation, DoseCalculator as DoseCalculatorEntry } from "@/lib/el-profesor/types";
+import type { NotionSummary, NotionRecommendation, DoseCalculator as DoseCalculatorEntry, NotionCategory } from "@/lib/el-profesor/types";
 import type { NotionReadiness } from "@/lib/el-profesor/dal";
 
 // Notion cards can list many fiches (a well-covered notion easily reaches
@@ -180,6 +181,7 @@ function NotionFicheList({ notionId, fiches, isAdmin, onChanged }: { notionId: s
 
 export function NotionList({
   notions,
+  categories = [],
   readiness,
   recommendations,
   doseCalculators,
@@ -187,6 +189,8 @@ export function NotionList({
   isAdmin = false,
 }: {
   notions: NotionSummary[];
+  /** Display-only grouping — category management (create/rename/reorder/delete) lives on the admin /notions page only. */
+  categories?: NotionCategory[];
   readiness: Record<string, NotionReadiness>;
   recommendations: Record<string, NotionRecommendation[]>;
   doseCalculators: Record<string, DoseCalculatorEntry[]>;
@@ -209,9 +213,24 @@ export function NotionList({
     });
   }
 
+  const groups: { key: string; label: string | null; items: NotionSummary[] }[] = [];
+  if (categories.length > 0) {
+    for (const cat of categories) {
+      const items = notions.filter((s) => s.notion.categoryId === cat.id);
+      if (items.length > 0) groups.push({ key: cat.id, label: cat.name, items });
+    }
+    const uncategorized = notions.filter((s) => !s.notion.categoryId);
+    if (uncategorized.length > 0) groups.push({ key: "uncategorized", label: "Sans catégorie", items: uncategorized });
+  } else {
+    groups.push({ key: "all", label: null, items: notions });
+  }
+
   return (
-    <div className="space-y-3">
-      {notions.map(({ notion, fiches }, i) => {
+    <div className="space-y-6">
+      {groups.map((group) => (
+        <div key={group.key}>
+          {group.label && <p className="mb-2 text-xs font-medium uppercase tracking-wide text-foreground-subtle">{group.label}</p>}
+          <div className="space-y-3">{group.items.map(({ notion, fiches }, i) => {
         const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
         const r = readiness[notion.id];
         const tier = r && r.total > 0 ? readinessTier(r.readinessPct) : null;
@@ -235,7 +254,7 @@ export function NotionList({
                     <button
                       type="button"
                       onClick={() => handleMoveNotion(notion.id, "down")}
-                      disabled={i === notions.length - 1}
+                      disabled={i === group.items.length - 1}
                       aria-label="Descendre cette notion"
                       className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
                     >
@@ -246,6 +265,7 @@ export function NotionList({
                 <Link href={`/apps/el-profesor/notions/${notion.id}`} className="font-medium text-foreground hover:underline">
                   {notion.name}
                 </Link>
+                {isAdmin && <RenameNotionButton notionId={notion.id} currentName={notion.name} onRenamed={refresh} />}
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="neutral">
@@ -310,13 +330,16 @@ export function NotionList({
             {notionDoseCalculators.length > 0 && <DoseCalculatorSection calculators={notionDoseCalculators} />}
           </div>
         );
-      })}
+      })}</div>
+        </div>
+      ))}
     </div>
   );
 }
 
 export function GlossaryView({
   notions,
+  categories = [],
   readiness,
   recommendations,
   doseCalculators,
@@ -324,6 +347,7 @@ export function GlossaryView({
   isAdmin = false,
 }: {
   notions: NotionSummary[];
+  categories?: NotionCategory[];
   readiness: Record<string, NotionReadiness>;
   recommendations: Record<string, NotionRecommendation[]>;
   doseCalculators: Record<string, DoseCalculatorEntry[]>;
@@ -367,7 +391,7 @@ export function GlossaryView({
         <p className="mt-6 text-sm text-foreground-subtle">Aucun résultat pour « {query} ».</p>
       ) : (
         <div className="mt-6">
-          <NotionList notions={filtered} readiness={readiness} recommendations={recommendations} doseCalculators={doseCalculators} caseCounts={caseCounts} isAdmin={isAdmin} />
+          <NotionList notions={filtered} categories={categories} readiness={readiness} recommendations={recommendations} doseCalculators={doseCalculators} caseCounts={caseCounts} isAdmin={isAdmin} />
         </div>
       )}
     </div>
