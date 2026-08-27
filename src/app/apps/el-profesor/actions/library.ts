@@ -127,7 +127,13 @@ export async function uploadBookCover(bookId: string, imageBase64: string, mimeT
     // Surface the real Supabase Storage error (bucket missing, RLS denial,
     // payload rejected...) instead of a generic message that hid the
     // actual cause and made this near-impossible to diagnose remotely.
-    return { error: err instanceof GeminiError ? err.message : "Échec de l'envoi de l'image." };
+    // Covers both a GeminiError from uploadPublicImage's own { error }
+    // check AND an outright thrown exception from the storage client
+    // itself (network failure, an unexpected SDK error...) — the earlier
+    // "err instanceof GeminiError" check missed that second case and fell
+    // through to a generic message with no real cause visible.
+    const message = err instanceof Error ? err.message : "erreur inconnue";
+    return { error: `Échec de l'envoi de l'image : ${message}` };
   }
 
   const supabase = await createClient();

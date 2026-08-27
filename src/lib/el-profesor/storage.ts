@@ -16,7 +16,11 @@ const SIGNED_URL_TTL_SECONDS = 60 * 10;
 export async function uploadPublicImage(bucket: string, path: string, bytes: Uint8Array, mimeType: string): Promise<string> {
   const supabase = await createClient();
   const { error } = await supabase.storage.from(bucket).upload(path, bytes, { contentType: mimeType, upsert: true });
-  if (error) throw new GeminiError(`Échec de l'envoi de l'image : ${error.message}`);
+  // Unprefixed — callers add their own "Échec de l'envoi de l'image : "
+  // context, and also apply the same prefix to an outright thrown
+  // exception from the storage client itself (not this { error } path),
+  // so keeping it here would double it for one of the two cases.
+  if (error) throw new GeminiError(error.message);
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
   return data.publicUrl;
 }
