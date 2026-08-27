@@ -836,6 +836,46 @@ export async function removeFlashcardImage(flashcardId: string): Promise<ActionS
   return { success: "Image retirée." };
 }
 
+/**
+ * Attaches an illustration to a fiche block (2026-08-27) — extends the
+ * image support already on flashcards (item 23) to fiche blocks in
+ * general, in a dedicated bucket. Manual upload only, never AI-generated —
+ * the notion synthesis later reuses this verbatim on any synthesized block
+ * that draws from an illustrated source block (see generateNotionSynthesis
+ * in actions/notions.ts), it never generates its own.
+ */
+export async function uploadFicheBlockImage(blockId: string, imageBase64: string, mimeType: string, alt?: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const bytes = Buffer.from(imageBase64, "base64");
+  if (bytes.byteLength > MAX_FLASHCARD_IMAGE_BYTES) return { error: "Image trop lourde (5 Mo maximum)." };
+
+  const ext = mimeType.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "png";
+  const path = `${blockId}-${Date.now()}.${ext}`;
+
+  let publicUrl: string;
+  try {
+    publicUrl = await uploadPublicImage("el-profesor-block-images", path, bytes, mimeType);
+  } catch {
+    return { error: "Échec de l'envoi de l'image." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_fiche_blocks").update({ image_url: publicUrl, image_alt: alt?.trim() || null }).eq("id", blockId);
+  if (error) return { error: "Image envoyée, mais impossible de l'enregistrer." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Image ajoutée au bloc." };
+}
+
+export async function removeFicheBlockImage(blockId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_fiche_blocks").update({ image_url: null, image_alt: null }).eq("id", blockId);
+  if (error) return { error: "Impossible de retirer l'image." };
+  revalidatePath("/apps/el-profesor");
+  return { success: "Image retirée." };
+}
+
 /** Proposes a mnemonic as a new draft block on the same fiche, for a block that isn't itself a mnemonic. Never overwrites the source block. */
 export async function suggestMnemonicForBlock(blockId: string): Promise<ActionState> {
   const profile = await requireElProfesorAdmin();

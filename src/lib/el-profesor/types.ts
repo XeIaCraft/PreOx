@@ -97,6 +97,9 @@ export type FicheBlock = {
   status: ContentStatus;
   /** Piste 2026-08-24 ("mode urgence / bloc") — hand-flagged by an admin on already-published content, never AI-set. Surfaces the block in the emergency quick-reference view. */
   isEmergency: boolean;
+  /** Illustration/schéma associé (2026-08-27, extension du support déjà présent sur les flashcards, item 23) — capturé depuis le PDF source ou envoyé manuellement, jamais généré par IA. */
+  imageUrl: string | null;
+  imageAlt: string | null;
 };
 
 /** Alternate phrasing of a flashcard's front (item 47) — the back never varies, only how the question is asked. */
@@ -210,6 +213,9 @@ export type NotionSynthesisBlock = {
   citations: SynthesisCitation[];
   /** Distinct fiches this block draws from — used to render "sources" badges without re-deriving from citations. */
   sourceFicheIds: string[];
+  /** Reused verbatim from a contributing source block's own image (never generated for the synthesis itself — see generateNotionSynthesis in actions/notions.ts). */
+  imageUrl: string | null;
+  imageAlt: string | null;
 };
 
 export type NotionSynthesisStatus = "draft" | "published";

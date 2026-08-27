@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Plus, Trash2, ChevronUp, ChevronDown, History, Lightbulb, Siren } from "lucide-react";
+import { useRef, useState, useTransition } from "react";
+import { Plus, Trash2, ChevronUp, ChevronDown, History, Lightbulb, Siren, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -12,13 +12,18 @@ import {
   getFicheBlockHistory,
   suggestMnemonicForBlock,
   setBlockEmergency,
+  uploadFicheBlockImage,
+  removeFicheBlockImage,
 } from "@/app/apps/el-profesor/actions/extraction";
 import { FlagsList } from "@/components/el-profesor/flags-list";
 import { EditableCitations } from "@/components/el-profesor/editable-citations";
 import { suggestFlagFix } from "@/app/apps/el-profesor/actions/flags";
 import { useToast } from "@/components/ui/toast";
+import { fileToBase64 } from "@/lib/client-file";
 import type { Citation, FicheBlock, Flag, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
 import type { ContentLogEntry } from "@/lib/el-profesor/content-log";
+
+const MAX_BLOCK_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /** Lazily-loaded edit history — fetched only once the admin actually opens the <details>, since most blocks are never inspected. */
 export function EditHistory({ targetId, fetcher }: { targetId: string; fetcher: (id: string) => Promise<ContentLogEntry[]> }) {
@@ -234,6 +239,8 @@ export function BlockEditor({
   const [isPending, startTransition] = useTransition();
   const [content, setContent] = useState(block.content);
   const [citations, setCitations] = useState(block.citations);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   function handleSave() {
     startTransition(async () => {
@@ -263,6 +270,35 @@ export function BlockEditor({
   function handleToggleEmergency() {
     startTransition(async () => {
       const result = await setBlockEmergency(block.id, !block.isEmergency);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  function handleImageSelected(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast("Seules les images sont acceptées.", { variant: "error" });
+      return;
+    }
+    if (file.size > MAX_BLOCK_IMAGE_BYTES) {
+      toast("Image trop lourde (5 Mo maximum).", { variant: "error" });
+      return;
+    }
+    setUploadingImage(true);
+    fileToBase64(file)
+      .then((base64) => uploadFicheBlockImage(block.id, base64, file.type))
+      .then((result) => {
+        if (result.error) toast(result.error, { variant: "error" });
+        else onChanged();
+      })
+      .catch(() => toast("Échec de l'envoi de l'image.", { variant: "error" }))
+      .finally(() => setUploadingImage(false));
+  }
+
+  function handleRemoveImage() {
+    startTransition(async () => {
+      const result = await removeFicheBlockImage(block.id);
       if (result.error) toast(result.error, { variant: "error" });
       else onChanged();
     });
@@ -348,6 +384,32 @@ export function BlockEditor({
             rows={4}
             className="w-full rounded-[var(--radius-sm)] border border-border bg-surface p-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
           />
+        )}
+      </div>
+
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            handleImageSelected(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+        {block.imageUrl ? (
+          <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a local asset */}
+            <img src={block.imageUrl} alt={block.imageAlt ?? ""} className="h-16 w-16 rounded-[var(--radius-sm)] border border-border object-cover" />
+            <Button variant="ghost" size="sm" onClick={handleRemoveImage} disabled={isPending}>
+              <X className="h-3.5 w-3.5" /> Retirer l&apos;image
+            </Button>
+          </div>
+        ) : (
+          <Button variant="secondary" size="sm" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage}>
+            <Upload className="h-3.5 w-3.5" /> {uploadingImage ? "Envoi…" : "Ajouter une illustration"}
+          </Button>
         )}
       </div>
 

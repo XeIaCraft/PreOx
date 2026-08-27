@@ -513,7 +513,16 @@ export async function generateNotionSynthesis(notionId: string): Promise<ActionS
 
     const blockById = new Map(sourceBlocks.map((b) => [b.sourceBlockId, b]));
     let orderIndex = 0;
-    const resolvedBlocks: { order_index: number; section_title: string; block_type: string; content: BlockContent; citations: SynthesisCitation[]; source_fiche_ids: string[] }[] = [];
+    const resolvedBlocks: {
+      order_index: number;
+      section_title: string;
+      block_type: string;
+      content: BlockContent;
+      citations: SynthesisCitation[];
+      source_fiche_ids: string[];
+      image_url: string | null;
+      image_alt: string | null;
+    }[] = [];
     for (const section of rawSections) {
       const sectionTitle = typeof section.title === "string" ? section.title.trim() : "";
       if (!sectionTitle || !Array.isArray(section.blocks)) continue;
@@ -528,7 +537,20 @@ export async function generateNotionSynthesis(notionId: string): Promise<ActionS
         // it rather than persist a block with fabricated provenance.
         if (citations.length === 0) continue;
         const sourceFicheIds = [...new Set(contributing.map((b) => b.ficheId))];
-        resolvedBlocks.push({ order_index: orderIndex++, section_title: sectionTitle, block_type: rb.block_type, content: rb.content, citations, source_fiche_ids: sourceFicheIds });
+        // Illustrations (2026-08-27) are never generated for the synthesis
+        // itself — only reused verbatim from a contributing source block
+        // that already has one, first match wins.
+        const illustrated = contributing.find((b) => b.imageUrl);
+        resolvedBlocks.push({
+          order_index: orderIndex++,
+          section_title: sectionTitle,
+          block_type: rb.block_type,
+          content: rb.content,
+          citations,
+          source_fiche_ids: sourceFicheIds,
+          image_url: illustrated?.imageUrl ?? null,
+          image_alt: illustrated?.imageAlt ?? null,
+        });
       }
     }
 
@@ -577,6 +599,8 @@ export async function generateNotionSynthesis(notionId: string): Promise<ActionS
         content: b.content as unknown as BlockContent as never,
         citations: b.citations as unknown as SynthesisCitation[] as never,
         source_fiche_ids: b.source_fiche_ids,
+        image_url: b.image_url,
+        image_alt: b.image_alt,
       }))
     );
     if (insertError) return { error: "Synthèse générée mais échec de l'enregistrement des blocs." };

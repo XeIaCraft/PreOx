@@ -326,6 +326,8 @@ export type ElProfesorFicheBlockRow = {
   needs_review: boolean;
   status: ElProfesorContentStatus;
   is_emergency: boolean;
+  image_url: string | null;
+  image_alt: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -553,6 +555,8 @@ export type ElProfesorNotionSynthesisBlockRow = {
   content: Json;
   citations: Json;
   source_fiche_ids: string[];
+  image_url: string | null;
+  image_alt: string | null;
   created_at: string;
 };
 

@@ -43,6 +43,8 @@ export default async function SharedFichePage({ params }: { params: Promise<{ to
     needsReview: b.needs_review,
     status: b.status,
     isEmergency: b.is_emergency,
+    imageUrl: b.image_url,
+    imageAlt: b.image_alt,
   }));
 
   const bookRow = book as ElProfesorBookRow | null;

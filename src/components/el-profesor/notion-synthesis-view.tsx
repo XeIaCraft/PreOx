@@ -26,6 +26,8 @@ function SynthesisBlockCard({ block }: { block: NotionSynthesisBlock }) {
     needsReview: false,
     status: "published" as const,
     isEmergency: false,
+    imageUrl: block.imageUrl,
+    imageAlt: block.imageAlt,
   } satisfies FicheBlock;
 
   const sources = [...new Map(block.citations.map((c) => [`${c.chapterId}`, c])).values()];
@@ -38,6 +40,14 @@ function SynthesisBlockCard({ block }: { block: NotionSynthesisBlock }) {
       <div className="mt-2">
         <BlockBody block={asFicheBlock} fontScale="md" />
       </div>
+      {block.imageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element -- reused verbatim from a source fiche block's own upload (Supabase Storage public URL), not a Next-optimizable asset.
+        <img
+          src={block.imageUrl}
+          alt={block.imageAlt ?? ""}
+          className="mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain"
+        />
+      )}
       {sources.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border pt-2">
           {sources.map((s) => (

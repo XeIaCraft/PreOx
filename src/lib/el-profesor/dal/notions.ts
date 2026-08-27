@@ -591,6 +591,8 @@ export interface SynthesisSourceBlock {
   blockType: string;
   text: string;
   citations: SynthesisCitation[];
+  imageUrl: string | null;
+  imageAlt: string | null;
 }
 
 /** Fiches eligible to feed a notion's synthesis: linked, published, and not merged/superseded into another fiche — same "active content" filter the rest of the module already applies. */
@@ -653,6 +655,8 @@ export async function getSynthesisSourceBlocks(notionId: string): Promise<{ fich
         bookTitle: ctx.bookTitle,
         chapterTitle: ctx.chapterTitle,
       })),
+      imageUrl: block.imageUrl,
+      imageAlt: block.imageAlt,
     });
   });
 
@@ -698,6 +702,8 @@ export async function getNotionSynthesis(notionId: string): Promise<NotionSynthe
       content: r.content as unknown as BlockContent,
       citations: (r.citations as unknown as SynthesisCitation[]) ?? [],
       sourceFicheIds: r.source_fiche_ids ?? [],
+      imageUrl: r.image_url,
+      imageAlt: r.image_alt,
     })),
   };
 }

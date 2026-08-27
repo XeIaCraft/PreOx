@@ -411,6 +411,14 @@ export function FicheViewer({
               <div className="mt-2">
                 <BlockBody block={block} fontScale={fontScale} />
               </div>
+              {block.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded content, arbitrary origin (Supabase Storage public URL), not a Next-optimizable local/known-domain asset.
+                <img
+                  src={block.imageUrl}
+                  alt={block.imageAlt ?? ""}
+                  className="mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain"
+                />
+              )}
               <CitationChips citations={block.citations} onClick={onCitationClick} />
               {blockReviewStates && (
                 <div className="mt-2 flex justify-end border-t border-border pt-2">

@@ -115,6 +115,8 @@ function toFicheBlock(row: ElProfesorFicheBlockRow): FicheBlock {
     needsReview: row.needs_review,
     status: row.status,
     isEmergency: row.is_emergency,
+    imageUrl: row.image_url,
+    imageAlt: row.image_alt,
   };
 }
 
