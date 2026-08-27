@@ -62,7 +62,9 @@ export function AddBookDialog({
         if (result.error) toast(result.error, { variant: "error" });
         else onSaved();
       })
-      .catch(() => toast("Échec de l'envoi de l'image.", { variant: "error" }))
+      .catch((err) =>
+        toast(err instanceof Error ? `Échec de l'envoi de l'image : ${err.message}` : "Échec de l'envoi de l'image.", { variant: "error" })
+      )
       .finally(() => setUploadingCover(false));
   }
 

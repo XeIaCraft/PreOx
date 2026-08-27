@@ -365,7 +365,9 @@ export function FlashcardEditor({
         if (result.error) toast(result.error, { variant: "error" });
         else onChanged();
       })
-      .catch(() => toast("Échec de l'envoi de l'image.", { variant: "error" }))
+      .catch((err) =>
+        toast(err instanceof Error ? `Échec de l'envoi de l'image : ${err.message}` : "Échec de l'envoi de l'image.", { variant: "error" })
+      )
       .finally(() => setUploadingImage(false));
   }
 
