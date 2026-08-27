@@ -501,6 +501,74 @@ function salvageTruncatedObjectArray(raw: string): unknown[] {
   return items;
 }
 
+/** Appends however many `}` are needed to balance a chunk's brace count (ignoring braces inside quoted strings) — used by salvageObjectArrayByKey below to repair an object that's missing its own closing brace(s), as opposed to genuinely truncated content. */
+function closeUnbalancedBraces(chunk: string): string {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (const ch of chunk) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") depth--;
+  }
+  return depth > 0 ? chunk + "}".repeat(depth) : chunk;
+}
+
+/**
+ * Salvages complete top-level objects from a JSON-array-shaped string even
+ * when an object BOUNDARY was malformed, not just cut short — found
+ * 2026-08-27 on a real chapter's sub_entities: the string had a sub-entity
+ * object missing its own final `}` right before the next sub-entity's `{`
+ * started (Claude self-serializing this string by hand, not through a real
+ * JSON.stringify, occasionally miscounts nesting on a document this long).
+ * salvageTruncatedObjectArray's plain brace-depth walk can't recover from
+ * this: depth never returns to 0 after the missing brace, so it silently
+ * folds every subsequent sub-entity into what it thinks is still the first
+ * one, and salvages nothing.
+ *
+ * This instead exploits a structural guarantee: every element of the
+ * arrays this is used for starts with a known key (`"name"` for
+ * sub_entities/new_sub_entities, `"sub_entity_name"` for
+ * additions_for_existing — see ExtractedSubEntity/ComplementaryAddition).
+ * It finds every occurrence of that key as an element-boundary marker,
+ * slices the string between consecutive markers, closes off however many
+ * braces that slice is short by, and parses each slice independently — so
+ * one malformed boundary costs only the element before it, not everything
+ * after.
+ */
+function salvageObjectArrayByKey(raw: string, keyName: string): unknown[] {
+  const trimmed = raw.trim();
+  const startPattern = new RegExp(`\\{\\s*"${keyName}"\\s*:`, "g");
+  const starts: number[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = startPattern.exec(trimmed))) starts.push(match.index);
+  if (starts.length === 0) return [];
+
+  const items: unknown[] = [];
+  for (let i = 0; i < starts.length; i++) {
+    const from = starts[i];
+    const to = i + 1 < starts.length ? starts[i + 1] : trimmed.length;
+    const chunk = trimmed
+      .slice(from, to)
+      .trim()
+      .replace(/,\s*$/, "")
+      .replace(/\]\s*$/, "")
+      .trim();
+    try {
+      items.push(JSON.parse(closeUnbalancedBraces(chunk)));
+    } catch {
+      // Genuinely unrecoverable chunk (e.g. cut off mid-string) — skip just this one.
+    }
+  }
+  return items;
+}
+
 /**
  * True when `raw[key]` is a string that had to be salvaged rather than
  * cleanly parsed — i.e. it was double-encoded AND truncated, so coerceArray
@@ -531,6 +599,34 @@ export function coerceArray(raw: unknown): unknown[] {
     } catch {
       const salvaged = salvageTruncatedObjectArray(raw);
       if (salvaged.length > 0) return salvaged;
+    }
+  }
+  return [];
+}
+
+/**
+ * Same recovery as coerceArray, but for an array whose every element is
+ * known to start with a specific key — use this instead of coerceArray for
+ * sub_entities/new_sub_entities (`"name"`) and additions_for_existing
+ * (`"sub_entity_name"`), since a malformed *boundary* between elements
+ * (not just truncation) is recoverable here but not with plain brace-depth
+ * salvage — see salvageObjectArrayByKey's doc comment for the real-world
+ * case this fixes. Tries, in order: a clean full parse, boundary-based
+ * salvage (handles a missing brace at an element boundary), then the
+ * plainer truncation salvage (handles a clean cut mid-array) — whichever
+ * recovers something first wins.
+ */
+export function coerceKeyedObjectArray(raw: unknown, keyName: string): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      const byBoundary = salvageObjectArrayByKey(raw, keyName);
+      if (byBoundary.length > 0) return byBoundary;
+      const byTruncation = salvageTruncatedObjectArray(raw);
+      if (byTruncation.length > 0) return byTruncation;
     }
   }
   return [];
@@ -581,13 +677,13 @@ function normalizeSubEntity(raw: unknown): ExtractedSubEntity | null {
 
 export function normalizeExtractionResult(raw: unknown): ExtractionResult {
   const r = (raw ?? {}) as Record<string, unknown>;
-  const subEntities = coerceArray(r.sub_entities).map(normalizeSubEntity).filter((s): s is ExtractedSubEntity => s !== null);
+  const subEntities = coerceKeyedObjectArray(r.sub_entities, "name").map(normalizeSubEntity).filter((s): s is ExtractedSubEntity => s !== null);
   return { sub_entities: subEntities, estimated_remaining_passes: typeof r.estimated_remaining_passes === "number" ? r.estimated_remaining_passes : 0 };
 }
 
 export function normalizeComplementaryResult(raw: unknown): ComplementaryResult {
   const r = (raw ?? {}) as Record<string, unknown>;
-  const additions = coerceArray(r.additions_for_existing)
+  const additions = coerceKeyedObjectArray(r.additions_for_existing, "sub_entity_name")
     .map((raw): ComplementaryAddition | null => {
       if (!raw || typeof raw !== "object") return null;
       const a = raw as Record<string, unknown>;
@@ -599,7 +695,7 @@ export function normalizeComplementaryResult(raw: unknown): ComplementaryResult 
       };
     })
     .filter((a): a is ComplementaryAddition => a !== null);
-  const newSubEntities = coerceArray(r.new_sub_entities).map(normalizeSubEntity).filter((s): s is ExtractedSubEntity => s !== null);
+  const newSubEntities = coerceKeyedObjectArray(r.new_sub_entities, "name").map(normalizeSubEntity).filter((s): s is ExtractedSubEntity => s !== null);
   return {
     additions_for_existing: additions,
     new_sub_entities: newSubEntities,

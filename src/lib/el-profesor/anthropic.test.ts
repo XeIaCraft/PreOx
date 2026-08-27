@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeExtractionResult, normalizeComplementaryResult, coerceArray, wasArrayFieldTruncated } from "./anthropic";
+import { normalizeExtractionResult, normalizeComplementaryResult, coerceArray, coerceKeyedObjectArray, wasArrayFieldTruncated } from "./anthropic";
 
 // Regression test for the 2026-08-25 bug report: a Claude batch item came
 // back "succeeded" but with a required array (blocks/flashcards/citations/
@@ -64,6 +64,15 @@ describe("normalizeExtractionResult", () => {
     expect(result.sub_entities).toEqual([]);
   });
 
+  it("recovers every sub-entity end-to-end when the encoded string has a missing brace at a boundary (not truncated)", () => {
+    const first = { name: "Jonction neuromusculaire", summary: "s1", fiche: { title: "t1", blocks: [], flashcards: [] } };
+    const second = { name: "Curares dépolarisants", summary: "s2", fiche: { title: "t2", blocks: [], flashcards: [] } };
+    const firstMissingBrace = JSON.stringify(first).replace(/}$/, "");
+    const encoded = `[${firstMissingBrace},${JSON.stringify(second)}]`;
+    const result = normalizeExtractionResult({ sub_entities: encoded, estimated_remaining_passes: 0 });
+    expect(result.sub_entities.map((s) => s.name)).toEqual([first.name, second.name]);
+  });
+
   // Regression test for the 2026-08-27 report: a chapter's sub_entities came
   // back double-encoded (as above) AND cut short mid-string — encoding the
   // whole array as one big escaped string roughly doubles its token cost,
@@ -82,6 +91,45 @@ describe("normalizeExtractionResult", () => {
   it("salvages nothing when even the first element is incomplete", () => {
     const result = normalizeExtractionResult({ sub_entities: '[{"name": "Cut off before closing', estimated_remaining_passes: 0 });
     expect(result.sub_entities).toEqual([]);
+  });
+});
+
+describe("coerceKeyedObjectArray", () => {
+  // Regression test for the 2026-08-27 report (with the user's own raw
+  // response pasted in and hand-traced): sub_entities double-encoded as a
+  // string, but NOT truncated — the string was complete, yet still failed
+  // JSON.parse ("Expected double-quoted property name") because the first
+  // sub-entity was missing its own closing "}" right before the second
+  // one's "{" started. Plain brace-depth salvage (coerceArray) recovers
+  // nothing here: depth never returns to 0 after the missing brace, so
+  // every later sub-entity gets folded into what looks like still-open
+  // nesting. coerceKeyedObjectArray must recover all of them by splitting
+  // on the "name" key instead.
+  it("recovers every sub-entity when one is missing its closing brace before the next starts", () => {
+    const first = { name: "Jonction neuromusculaire", summary: "s1", fiche: { title: "t1", blocks: [], flashcards: [] } };
+    const second = { name: "Curares dépolarisants", summary: "s2", fiche: { title: "t2", blocks: [], flashcards: [] } };
+    const third = { name: "Curares non dépolarisants", summary: "s3", fiche: { title: "t3", blocks: [], flashcards: [] } };
+    // Drop the LAST "}" of `first` (the one closing the sub-entity object
+    // itself, not the one closing its "fiche") before the comma — exactly
+    // the shape found in the real report.
+    const firstMissingBrace = JSON.stringify(first).replace(/}$/, "");
+    const malformed = `[${firstMissingBrace},${JSON.stringify(second)},${JSON.stringify(third)}]`;
+
+    // Sanity check: plain brace-depth salvage really does fail on this input.
+    expect(coerceArray(malformed)).toEqual([]);
+
+    const recovered = coerceKeyedObjectArray(malformed, "name");
+    expect(recovered.map((s) => (s as { name: string }).name)).toEqual([first.name, second.name, third.name]);
+  });
+
+  it("still recovers via plain truncation salvage when the array is cleanly cut short (no boundary markers left)", () => {
+    const raw = `[{"name":"A","summary":"s"},{"name":"B","summary":"cut off mid-str`;
+    const recovered = coerceKeyedObjectArray(raw, "name");
+    expect(recovered).toEqual([{ name: "A", summary: "s" }]);
+  });
+
+  it("returns [] when nothing at all is recoverable", () => {
+    expect(coerceKeyedObjectArray("not json at all", "name")).toEqual([]);
   });
 });
 

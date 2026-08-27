@@ -14,7 +14,7 @@ import {
   BLOCK_TYPES,
 } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
-import { coerceArray, wasArrayFieldTruncated } from "@/lib/el-profesor/anthropic";
+import { coerceKeyedObjectArray, wasArrayFieldTruncated } from "@/lib/el-profesor/anthropic";
 import { getChapterContent, getFlashcardVariantStats, type FlashcardVariantStat } from "@/lib/el-profesor/dal";
 import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-profesor/content-log";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
@@ -358,19 +358,21 @@ function parseImportedExtraction(raw: string): { extraction: ExtractionResult; w
   } catch {
     throw new GeminiError("JSON invalide — vérifiez que vous avez bien copié toute la réponse, sans texte avant ou après.");
   }
-  // coerceArray recovers the case where a model (or a hand-paste from one)
-  // sent sub_entities double-encoded as its own JSON string instead of a
-  // real array, and — since that encoding can push a large chapter's
-  // response past the provider's output ceiling — salvages whatever
-  // complete sub-entities exist even in a truncated string rather than
-  // losing all of them (see coerceArray/salvageTruncatedObjectArray's doc
-  // comments in anthropic.ts). Applied here too so this parser and the
-  // "réessayer depuis l'historique" button (which reuses it via
+  // coerceKeyedObjectArray recovers the case where a model (or a hand-paste
+  // from one) sent sub_entities double-encoded as its own JSON string
+  // instead of a real array — whether the string is genuinely cut short
+  // (salvaged up to the truncation point) or just has a malformed object
+  // boundary somewhere in the middle (salvaged per sub-entity, keyed on
+  // "name" — see salvageObjectArrayByKey's doc comment in anthropic.ts for
+  // the real case this fixes: Claude dropping one closing brace between
+  // two sub-entities on a long chapter). Applied here too so this parser
+  // and the "réessayer depuis l'historique" button (which reuses it via
   // importChapterContent) can both recover from it. A string value that
   // fails a clean JSON.parse but still yields elements via salvage means
-  // the response was genuinely cut short — flagged below so the caller can
-  // warn that a "Compléter l'extraction" pass is likely needed afterward.
-  const subEntitiesRaw = coerceArray((parsed as { sub_entities?: unknown } | null)?.sub_entities);
+  // something was recovered rather than received cleanly — flagged below
+  // so the caller can warn that a "Compléter l'extraction" pass may be
+  // worth running afterward just in case something was missed.
+  const subEntitiesRaw = coerceKeyedObjectArray((parsed as { sub_entities?: unknown } | null)?.sub_entities, "name");
   if (subEntitiesRaw.length === 0) {
     throw new GeminiError("Le JSON doit contenir un tableau « sub_entities » non vide.");
   }
@@ -482,7 +484,7 @@ export async function importChapterContent(chapterId: string, rawJson: string): 
 
     revalidatePath("/apps/el-profesor");
     const truncationNote = wasTruncated
-      ? ` Attention : la réponse importée était tronquée (probablement coupée avant la fin) — seules les ${extraction.sub_entities.length} sous-entité(s) complète(s) ont été récupérées, la suite du chapitre manque. Lancez « Compléter l'extraction » pour combler le reste.`
+      ? ` Note : la réponse importée avait un format inhabituel (${extraction.sub_entities.length} sous-entité(s) récupérée(s) après reconstruction) — vérifiez que rien ne manque, ou lancez « Compléter l'extraction » par précaution.`
       : "";
     return { success: `Contenu importé. Chaque élément est marqué « à vérifier » — relisez-le avant publication.${truncationNote}` };
   } catch (err) {

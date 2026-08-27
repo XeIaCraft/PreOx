@@ -136,11 +136,13 @@ async function applyBatchResult(
     await correctCitationsIfPossible(admin, target.chapterId, extraction, "extraction");
     const flags = allNeedReviewFlags(extraction);
     await persistExtraction(admin, target.chapterId, extraction, flags);
-    // A truncated-but-salvaged sub_entities array (see coerceArray/
-    // salvageTruncatedObjectArray) still "succeeds" here — recorded with a
-    // note rather than silently, since coverage is likely incomplete.
+    // A salvaged sub_entities array (see coerceKeyedObjectArray and its doc
+    // comments) still "succeeds" here — recorded with a note rather than
+    // silently, since it came from a malformed response and coverage isn't
+    // guaranteed (could be a clean truncation, or a malformed element
+    // boundary fully recovered — either way, worth a second look).
     const truncationNote = wasArrayFieldTruncated(result.output, "sub_entities")
-      ? `Réponse tronquée — ${extraction.sub_entities.length} sous-entité(s) complète(s) récupérée(s), la suite du chapitre manque. Relancez « Compléter l'extraction ».`
+      ? `Réponse reconstruite après un format inhabituel — ${extraction.sub_entities.length} sous-entité(s) récupérée(s). Vérifiez la couverture, ou relancez « Compléter l'extraction » par précaution.`
       : null;
     await insertExtractionJob(admin, {
       chapterId: target.chapterId,
@@ -179,7 +181,7 @@ async function applyBatchResult(
     const addedCount = await persistComplementaryAdditions(admin, target.chapterId, complementary, existingContentForPrompt);
     const complementaryTruncationNote =
       wasArrayFieldTruncated(result.output, "additions_for_existing") || wasArrayFieldTruncated(result.output, "new_sub_entities")
-        ? "Réponse tronquée — seuls les ajouts complets avant la coupure ont été récupérés. Relancez « Compléter l'extraction »."
+        ? "Réponse reconstruite après un format inhabituel — vérifiez la couverture des ajouts, ou relancez « Compléter l'extraction » par précaution."
         : null;
     await insertExtractionJob(admin, {
       chapterId: target.chapterId,
