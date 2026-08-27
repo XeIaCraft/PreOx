@@ -760,8 +760,11 @@ export async function uploadFlashcardImage(flashcardId: string, imageBase64: str
   let publicUrl: string;
   try {
     publicUrl = await uploadPublicImage("el-profesor-flashcard-images", path, bytes, mimeType);
-  } catch {
-    return { error: "Échec de l'envoi de l'image." };
+  } catch (err) {
+    // Surface the real Supabase Storage error (bucket missing, RLS denial,
+    // payload rejected...) instead of a generic message that hid the
+    // actual cause and made this near-impossible to diagnose remotely.
+    return { error: err instanceof GeminiError ? err.message : "Échec de l'envoi de l'image." };
   }
 
   const supabase = await createClient();
@@ -868,8 +871,11 @@ export async function uploadFicheBlockImage(blockId: string, imageBase64: string
   let publicUrl: string;
   try {
     publicUrl = await uploadPublicImage("el-profesor-block-images", path, bytes, mimeType);
-  } catch {
-    return { error: "Échec de l'envoi de l'image." };
+  } catch (err) {
+    // Surface the real Supabase Storage error (bucket missing, RLS denial,
+    // payload rejected...) instead of a generic message that hid the
+    // actual cause and made this near-impossible to diagnose remotely.
+    return { error: err instanceof GeminiError ? err.message : "Échec de l'envoi de l'image." };
   }
 
   const supabase = await createClient();
