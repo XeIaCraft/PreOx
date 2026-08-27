@@ -29,14 +29,19 @@
  * tokens that same call also spends (never negligible for this module's
  * detailed structured output).
  *
- * Deliberately NOT framed as "switch to Claude" in the UI: per the user's
- * own usage (2026-08-27), Claude reliably extracts noticeably fewer
- * fiches/flashcards per pass than Gemini on the same content, so it rarely
- * reaches full coverage in one pass the way Gemini does on a chapter this
- * size — trading a quota-failure risk for a "Compléter jusqu'à couverture"
- * chore isn't a strict win. The card badge (board.tsx) surfaces the risk
- * and names both mitigations (Claude, or splitting the chapter into
- * shorter PDFs to stay on Gemini) without picking one for the admin.
+ * The card badge (board.tsx) does flatly recommend Claude when this budget
+ * is exceeded: per the user's own usage (2026-08-27), Claude reliably
+ * reaches full coverage in one pass, noticeably more often than Gemini does
+ * — even on short chapters (~15 pages), well below this budget's own
+ * threshold — so there's no real coverage trade-off pulling back toward
+ * Gemini here. That said, this module's own single-pass coverage gap
+ * between the two providers is an empirical observation from this app's
+ * actual prompts/schema, not something sourced from Google's docs the way
+ * the token-budget math above is — it isn't reflected in
+ * GEMINI_FREE_TIER_SAFE_PAGE_BUDGET (that threshold is strictly about the
+ * hard per-minute token wall, not general thoroughness), so a short chapter
+ * under the budget can still need several "Compléter jusqu'à couverture"
+ * passes on Gemini without the badge ever firing.
  */
 export const GEMINI_PDF_TOKENS_PER_PAGE = 560;
 export const GEMINI_FREE_TIER_TPM = 250_000;

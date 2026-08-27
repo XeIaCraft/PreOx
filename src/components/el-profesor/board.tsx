@@ -1104,10 +1104,10 @@ export function ElProfesorBoard({
                         )}
                         {isAdmin && aiProvider === "gemini" && chapter.pdfPageCount != null && exceedsGeminiFreeTierBudget(chapter.pdfPageCount) && (
                           <Badge
-                            variant="accent"
-                            title="Ce chapitre dépasse le budget de tokens/minute du palier gratuit Gemini pour un seul appel d'extraction : risque d'échec par quota. Claude évite cet échec mais couvre en général moins de notions par passe — prévoyez plusieurs « Compléter jusqu'à couverture » si vous basculez dessus, ou envisagez de diviser ce chapitre en PDF plus courts pour rester sur Gemini."
+                            variant="danger"
+                            title="Ce chapitre dépasse le budget de tokens/minute du palier gratuit Gemini pour un seul appel d'extraction — passez sur Claude depuis Réglages IA avant d'extraire ce chapitre pour éviter un échec par quota."
                           >
-                            <Coins className="h-3 w-3" /> Risque de quota Gemini
+                            <Coins className="h-3 w-3" /> Claude recommandé
                           </Badge>
                         )}
                         {isAdmin && needsReview > 0 && <Badge variant="accent">{needsReview} à vérifier</Badge>}
