@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, Copy, Check } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,18 @@ const STATUS_LABEL: Record<ExtractionJobHistoryEntry["status"], string> = {
 function EntryDetails({ entry, chapterId, onRetried }: { entry: ExtractionJobHistoryEntry; chapterId: string; onRetried: () => void }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
+  const [copied, setCopied] = useState(false);
+
+  function handleCopyRawResponse() {
+    if (!entry.rawResponse) return;
+    navigator.clipboard
+      .writeText(entry.rawResponse)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => toast("Impossible de copier automatiquement — sélectionnez et copiez le texte manuellement.", { variant: "error" }));
+  }
 
   function handleRetry() {
     if (!entry.rawResponse) return;
@@ -58,7 +70,19 @@ function EntryDetails({ entry, chapterId, onRetried }: { entry: ExtractionJobHis
       )}
       {entry.rawResponse && (
         <details className="mt-2">
-          <summary className="cursor-pointer text-xs font-medium text-foreground-muted">Réponse brute reçue</summary>
+          <summary className="flex cursor-pointer items-center justify-between gap-2 text-xs font-medium text-foreground-muted">
+            Réponse brute reçue
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                handleCopyRawResponse();
+              }}
+              className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-border-strong px-1.5 py-0.5 text-[11px] font-normal text-foreground-subtle hover:text-foreground"
+            >
+              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />} {copied ? "Copié !" : "Copier"}
+            </button>
+          </summary>
           <pre className="mt-1.5 max-h-64 overflow-auto whitespace-pre-wrap rounded-[var(--radius-sm)] bg-surface-muted p-2 text-xs">
             {entry.rawResponse}
           </pre>
