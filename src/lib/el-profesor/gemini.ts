@@ -182,7 +182,11 @@ const NOTION_SYNTHESIS_SCHEMA = {
       items: {
         type: "OBJECT",
         properties: {
-          title: { type: "STRING", description: "Titre court de la section (ex. \"Définition et mécanisme\", \"Valeurs de référence\", \"Prise en charge\")." },
+          title: {
+            type: "STRING",
+            description:
+              "Nom du sujet couvert par cette section (ex. \"Suxaméthonium\", \"Rocuronium\") — jamais un type d'information comme \"Définitions\" ou \"Valeurs\", qui mélangerait plusieurs sujets dans la même section.",
+          },
           blocks: {
             type: "ARRAY",
             items: {
@@ -952,9 +956,15 @@ export interface RawNotionSynthesisSection {
 /**
  * Real cross-book fusion (requested 2026-08-26, restructured into titled
  * sections 2026-08-27 after feedback that a flat block list read as an
- * incoherent dump) — reads every published block across the library that
- * treats a given notion and rewrites it as one deduplicated fiche, grouped
- * into named sections (the synthesis equivalent of a fiche's sub-entities),
+ * incoherent dump, then corrected same-day again after a second report:
+ * the first section-titling attempt grouped sections by INFO TYPE
+ * ("Définitions", "Valeurs"...) across every subject in the notion, which
+ * reads even worse than the flat dump when a notion spans several distinct
+ * subjects — the prompt now requires one section per SUBJECT (a drug, a
+ * device...), each internally covering its own definition/values/practice,
+ * never a type-of-information section spanning several subjects) — reads
+ * every published block across the library that treats a given notion and
+ * rewrites it as one deduplicated fiche, grouped into subject sections,
  * citing back to the exact source blocks it drew from (resolved to real
  * citations by the caller — see buildNotionSynthesisPrompt's doc comment,
  * and normalizeNotionSynthesis in actions/notions.ts for the defensive
