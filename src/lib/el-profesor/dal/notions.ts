@@ -80,6 +80,12 @@ export async function linkFicheToNotion(notionId: string, ficheId: string, clien
   await supabase.from("el_profesor_notion_links").upsert({ notion_id: notionId, fiche_id: ficheId, position }, { onConflict: "notion_id,fiche_id" });
 }
 
+/** Unlinks a fiche from a notion (manual correction to the AI-categorized or auto-linked grouping) — a no-op if not linked. Never touches the fiche or notion themselves. */
+export async function unlinkFicheFromNotion(notionId: string, ficheId: string): Promise<void> {
+  const supabase = await createClient();
+  await supabase.from("el_profesor_notion_links").delete().eq("notion_id", notionId).eq("fiche_id", ficheId);
+}
+
 export interface EmergencyBlockEntry {
   block: FicheBlock;
   ficheId: string;

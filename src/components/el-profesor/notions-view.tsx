@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -42,6 +42,8 @@ import {
   deleteDoseCalculator,
   moveNotion,
   moveNotionFiche,
+  addFicheToNotion,
+  removeFicheFromNotion,
   createNotionCategory,
   renameNotionCategory,
   deleteNotionCategory,
@@ -54,6 +56,7 @@ import {
   applyNotionUpdateProposal,
   dismissNotionUpdateProposal,
 } from "@/app/apps/el-profesor/actions/notion-updates";
+import { searchLibrary, type SearchResult } from "@/app/apps/el-profesor/actions/search";
 import { useToast } from "@/components/ui/toast";
 import type {
   NotionSummary,
@@ -825,6 +828,96 @@ function NotionUpdateProposalCard({ proposal, onChanged }: { proposal: NotionUpd
  * server-side, so this keeps the up/down disabled state consistent with
  * what a click would actually do.
  */
+/**
+ * Manual escape hatch to the AI categorization pass (requested 2026-08-27)
+ * — searches the whole published library (same searchLibrary as the
+ * standalone search bar) and adds the picked fiche to this notion on click.
+ * Deliberately not a multi-select: the notion pages this feeds tend to see
+ * one correction at a time, and a single-pick flow stays simple to close
+ * after each add rather than juggling a pending selection.
+ */
+function AddFicheToNotionForm({ notionId, existingFicheIds, onChanged }: { notionId: string; existingFicheIds: string[]; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [open, setOpen] = useState(false);
+  const [isSearching, startSearchTransition] = useTransition();
+  const [isAdding, startAddTransition] = useTransition();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  function handleChange(value: string) {
+    setQuery(value);
+    setOpen(true);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (value.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    debounceRef.current = setTimeout(() => {
+      startSearchTransition(async () => {
+        const found = await searchLibrary(value);
+        setResults(found.filter((r) => !existingFicheIds.includes(r.ficheId)));
+      });
+    }, 250);
+  }
+
+  function handleAdd(ficheId: string) {
+    startAddTransition(async () => {
+      const result = await addFicheToNotion(notionId, ficheId);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        setQuery("");
+        setResults([]);
+        setOpen(false);
+        onChanged();
+      }
+    });
+  }
+
+  return (
+    <div ref={containerRef} className="relative mt-2">
+      <input
+        value={query}
+        onChange={(e) => handleChange(e.target.value)}
+        onFocus={() => setOpen(true)}
+        disabled={isAdding}
+        placeholder="Ajouter une fiche à cette notion…"
+        className="w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2.5 py-1.5 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      />
+      {open && query.trim().length >= 2 && (
+        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-[var(--radius-md)] border border-border bg-surface shadow-lg">
+          {isSearching && <p className="px-3 py-2 text-xs text-foreground-subtle">Recherche…</p>}
+          {!isSearching && results.length === 0 && <p className="px-3 py-2 text-xs text-foreground-subtle">Aucun résultat.</p>}
+          {!isSearching &&
+            results.map((r) => (
+              <button
+                key={r.ficheId}
+                type="button"
+                onClick={() => handleAdd(r.ficheId)}
+                disabled={isAdding}
+                className="block w-full border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-muted disabled:opacity-50"
+              >
+                <p className="text-xs font-medium text-foreground">{r.ficheTitle}</p>
+                <p className="text-[11px] text-foreground-subtle">
+                  {r.bookTitle} — {r.chapterTitle}
+                </p>
+              </button>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NotionCard({
   notion,
   fiches,
@@ -867,6 +960,15 @@ function NotionCard({
   function handleMoveFiche(ficheId: string, direction: "up" | "down") {
     startTransition(async () => {
       const result = await moveNotionFiche(notion.id, ficheId, direction);
+      if (result.error) toast(result.error, { variant: "error" });
+      else onChanged();
+    });
+  }
+
+  function handleRemoveFiche(ficheId: string, ficheTitle: string) {
+    if (!confirm(`Retirer « ${ficheTitle} » de cette notion ? La fiche elle-même n'est pas supprimée.`)) return;
+    startTransition(async () => {
+      const result = await removeFicheFromNotion(notion.id, ficheId);
       if (result.error) toast(result.error, { variant: "error" });
       else onChanged();
     });
@@ -975,9 +1077,20 @@ function NotionCard({
             </span>
             <FicheRef fiche={f} />
             <RenameFicheButton ficheId={f.ficheId} currentTitle={f.ficheTitle} onRenamed={onChanged} />
+            <button
+              type="button"
+              onClick={() => handleRemoveFiche(f.ficheId, f.ficheTitle)}
+              disabled={isPending}
+              aria-label="Retirer cette fiche de la notion"
+              title="Retirer de la notion"
+              className="ml-auto shrink-0 text-foreground-subtle hover:text-danger disabled:opacity-30"
+            >
+              <X className="h-3 w-3" />
+            </button>
           </li>
         ))}
       </ul>
+      <AddFicheToNotionForm notionId={notion.id} existingFicheIds={fiches.map((f) => f.ficheId)} onChanged={onChanged} />
       {fiches.length >= 2 && <MergeFichesForm fiches={fiches} onChanged={onChanged} />}
       <RecommendationsManager notionId={notion.id} recommendations={recommendations} onChanged={onChanged} />
       <DoseCalculatorsManager notionId={notion.id} calculators={doseCalculators} onChanged={onChanged} />

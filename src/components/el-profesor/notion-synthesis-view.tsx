@@ -68,6 +68,17 @@ function groupBlocksBySection(blocks: NotionSynthesisBlock[]): { title: string; 
   return sections;
 }
 
+/** Every distinct book/chapter a section's blocks actually cite, for the "Sources de cette section" footer requested 2026-08-27 — beyond the per-block chips, a reader wants to know at a glance which books fed a whole section. */
+function sectionSources(blocks: NotionSynthesisBlock[]): { chapterId: string; bookTitle: string; chapterTitle: string }[] {
+  const byChapter = new Map<string, { chapterId: string; bookTitle: string; chapterTitle: string }>();
+  for (const block of blocks) {
+    for (const c of block.citations) {
+      if (!byChapter.has(c.chapterId)) byChapter.set(c.chapterId, { chapterId: c.chapterId, bookTitle: c.bookTitle, chapterTitle: c.chapterTitle });
+    }
+  }
+  return [...byChapter.values()];
+}
+
 export function NotionSynthesisView({
   notionId,
   notionName,
@@ -190,16 +201,32 @@ export function NotionSynthesisView({
 
       {synthesis && synthesis.blocks.length > 0 ? (
         <div className="mt-5 space-y-6">
-          {groupBlocksBySection(synthesis.blocks).map(({ title, blocks }) => (
-            <div key={title}>
-              <h2 className="font-serif-display text-lg font-medium text-foreground">{title}</h2>
-              <div className="mt-2 space-y-3">
-                {blocks.map((block) => (
-                  <SynthesisBlockCard key={block.id} block={block} />
-                ))}
+          {groupBlocksBySection(synthesis.blocks).map(({ title, blocks }) => {
+            const sources = sectionSources(blocks);
+            return (
+              <div key={title}>
+                <h2 className="font-serif-display text-lg font-medium text-foreground">{title}</h2>
+                <div className="mt-2 space-y-3">
+                  {blocks.map((block) => (
+                    <SynthesisBlockCard key={block.id} block={block} />
+                  ))}
+                </div>
+                {sources.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-foreground-subtle">
+                    <span>Sources de cette section :</span>
+                    {sources.map((s, i) => (
+                      <span key={s.chapterId}>
+                        <Link href={`/apps/el-profesor/chapters/${s.chapterId}`} className="hover:text-primary-strong hover:underline">
+                          {s.bookTitle} — {s.chapterTitle}
+                        </Link>
+                        {i < sources.length - 1 ? "," : ""}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <p className="mt-6 text-sm text-foreground-subtle">

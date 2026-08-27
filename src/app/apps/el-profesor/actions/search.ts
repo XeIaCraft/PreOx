@@ -9,6 +9,7 @@ export interface SearchResult {
   bookTitle: string;
   subEntityId: string;
   subEntityName: string;
+  ficheId: string;
   ficheTitle: string;
 }
 
@@ -96,6 +97,7 @@ export async function searchLibrary(query: string, bookId?: string): Promise<Sea
       bookTitle: bookTitleById.get(chapter.book_id) ?? "",
       subEntityId: sub.id,
       subEntityName: sub.name,
+      ficheId: fiche.id,
       ficheTitle: fiche.title,
     });
   }

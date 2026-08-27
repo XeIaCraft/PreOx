@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { RotateCcw } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
-import { getExtractionJobHistory, type ExtractionJobHistoryEntry } from "@/app/apps/el-profesor/actions/extraction";
+import { Button } from "@/components/ui/button";
+import { getExtractionJobHistory, importChapterContent, type ExtractionJobHistoryEntry } from "@/app/apps/el-profesor/actions/extraction";
+import { useToast } from "@/components/ui/toast";
 
 const STATUS_VARIANT: Record<ExtractionJobHistoryEntry["status"], "success" | "danger" | "neutral"> = {
   succeeded: "success",
@@ -20,7 +23,22 @@ const STATUS_LABEL: Record<ExtractionJobHistoryEntry["status"], string> = {
 };
 
 /** One request/response pair, collapsed by default since raw_response can be very long (a full chapter's worth of JSON). */
-function EntryDetails({ entry }: { entry: ExtractionJobHistoryEntry }) {
+function EntryDetails({ entry, chapterId, onRetried }: { entry: ExtractionJobHistoryEntry; chapterId: string; onRetried: () => void }) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+
+  function handleRetry() {
+    if (!entry.rawResponse) return;
+    startTransition(async () => {
+      const result = await importChapterContent(chapterId, entry.rawResponse!);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Contenu réappliqué.", { variant: "success" });
+        onRetried();
+      }
+    });
+  }
+
   return (
     <li className="rounded-[var(--radius-sm)] border border-border p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -49,11 +67,22 @@ function EntryDetails({ entry }: { entry: ExtractionJobHistoryEntry }) {
       {!entry.requestPrompt && !entry.rawResponse && (
         <p className="mt-1.5 text-xs text-foreground-subtle">Aucun détail de requête enregistré pour cette tentative.</p>
       )}
+      {entry.rawResponse && (
+        <div className="mt-2 border-t border-border pt-2">
+          <Button variant="secondary" size="sm" onClick={handleRetry} disabled={isPending}>
+            <RotateCcw className="h-3.5 w-3.5" /> {isPending ? "Réessai…" : "Réessayer depuis cette réponse"}
+          </Button>
+          <p className="mt-1 text-[11px] text-foreground-subtle">
+            Réanalyse cette réponse déjà reçue sans refaire d&apos;appel IA — utile quand la réponse contenait en fait du contenu
+            exploitable mais que l&apos;analyse a échoué (ex. format inattendu déjà corrigé depuis).
+          </p>
+        </div>
+      )}
     </li>
   );
 }
 
-export function ExtractionHistoryDialog({ chapterId, chapterTitle, onClose }: { chapterId: string; chapterTitle: string; onClose: () => void }) {
+export function ExtractionHistoryDialog({ chapterId, chapterTitle, onClose, onRetried }: { chapterId: string; chapterTitle: string; onClose: () => void; onRetried: () => void }) {
   const [entries, setEntries] = useState<ExtractionJobHistoryEntry[] | null>(null);
 
   useEffect(() => {
@@ -72,7 +101,7 @@ export function ExtractionHistoryDialog({ chapterId, chapterTitle, onClose }: { 
       {entries !== null && entries.length > 0 && (
         <ul className="space-y-3">
           {entries.map((entry) => (
-            <EntryDetails key={entry.id} entry={entry} />
+            <EntryDetails key={entry.id} entry={entry} chapterId={chapterId} onRetried={onRetried} />
           ))}
         </ul>
       )}

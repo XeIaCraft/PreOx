@@ -14,6 +14,7 @@ import {
   BLOCK_TYPES,
 } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
+import { coerceArray } from "@/lib/el-profesor/anthropic";
 import { getChapterContent, getFlashcardVariantStats, type FlashcardVariantStat } from "@/lib/el-profesor/dal";
 import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-profesor/content-log";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
@@ -81,6 +82,16 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
 
   let geminiFileName: string | null = null;
   let apiKey = "";
+  // Captured as soon as each path gets its response back, so the catch
+  // block below can still log a useful request/response pair even when the
+  // failure is the "zero sub-entities" throw right after — mirrors the
+  // .debug pattern batch-poll.ts already uses for the Claude batch path
+  // (extractionFailure), which this synchronous Gemini path didn't have:
+  // without it, a recoverable-looking-but-empty response (e.g. the
+  // double-encoded-JSON bug fixed in coerceArray) was lost, leaving nothing
+  // for the "réessayer depuis cette réponse" button to work from.
+  let debugRequestPrompt: string | null = null;
+  let debugRawResponse: string | null = null;
 
   try {
     let extraction: ExtractionResult;
@@ -100,6 +111,8 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
       );
       extraction = textExtraction;
       const textRequestPrompt = buildTextExtractionPrompt(chapter.title, chapter.source_text ?? "");
+      debugRequestPrompt = textRequestPrompt;
+      debugRawResponse = textRawResponse;
       if (extraction.sub_entities.length === 0) {
         // A real chapter always has something extractable — an empty result
         // here means the call silently produced nothing usable (found
@@ -144,6 +157,8 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
     apiKey = winningKey;
     geminiFileName = file.name;
     const pdfRequestPrompt = buildExtractionPrompt(chapter.title);
+    debugRequestPrompt = pdfRequestPrompt;
+    debugRawResponse = pdfRawResponse;
 
     if (extraction.sub_entities.length === 0) {
       // Same reasoning as the Word/PowerPoint path above — a chapter with
@@ -189,7 +204,14 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
   } catch (err) {
     const message = err instanceof GeminiError ? err.message : "Échec de l'extraction du chapitre.";
     await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
-    await insertExtractionJob(supabase, { chapterId, status: "failed", error: message, provider: "gemini" });
+    await insertExtractionJob(supabase, {
+      chapterId,
+      status: "failed",
+      error: message,
+      provider: "gemini",
+      requestPrompt: debugRequestPrompt,
+      rawResponse: debugRawResponse,
+    });
     return { error: message };
   } finally {
     if (geminiFileName) await deleteGeminiFile(apiKey, geminiFileName);
@@ -336,8 +358,14 @@ function parseImportedExtraction(raw: string): ExtractionResult {
   } catch {
     throw new GeminiError("JSON invalide — vérifiez que vous avez bien copié toute la réponse, sans texte avant ou après.");
   }
-  const subEntitiesRaw = (parsed as { sub_entities?: unknown } | null)?.sub_entities;
-  if (!Array.isArray(subEntitiesRaw) || subEntitiesRaw.length === 0) {
+  // coerceArray recovers the case where a model (or a hand-paste from one)
+  // sent sub_entities double-encoded as its own JSON string instead of a
+  // real array — same defense as normalizeExtractionResult (see coerceArray's
+  // doc comment in anthropic.ts), applied here too so this parser and the
+  // "réessayer depuis l'historique" button (which reuses it via
+  // importChapterContent) can both recover from it.
+  const subEntitiesRaw = coerceArray((parsed as { sub_entities?: unknown } | null)?.sub_entities);
+  if (subEntitiesRaw.length === 0) {
     throw new GeminiError("Le JSON doit contenir un tableau « sub_entities » non vide.");
   }
 

@@ -1397,7 +1397,15 @@ export function ElProfesorBoard({
         />
       )}
       {modal?.type === "extraction_history" && (
-        <ExtractionHistoryDialog chapterId={modal.chapterId} chapterTitle={modal.chapterTitle} onClose={() => setModal(null)} />
+        <ExtractionHistoryDialog
+          chapterId={modal.chapterId}
+          chapterTitle={modal.chapterTitle}
+          onClose={() => setModal(null)}
+          onRetried={() => {
+            setModal(null);
+            refresh();
+          }}
+        />
       )}
       {modal?.type === "archive_book" && (
         <Modal title="Archiver ce livre ?" onClose={() => setModal(null)} size="sm">

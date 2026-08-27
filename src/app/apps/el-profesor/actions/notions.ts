@@ -11,6 +11,7 @@ import {
   getAllNotionNames,
   findOrCreateNotion,
   linkFicheToNotion,
+  unlinkFicheFromNotion,
   getNotionSummaries,
   getSynthesisSourceBlocks,
 } from "@/lib/el-profesor/dal";
@@ -240,6 +241,37 @@ export async function renameNotion(notionId: string, name: string): Promise<Acti
   revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Notion renommée." };
+}
+
+/**
+ * Manual correction to a notion's grouping (requested 2026-08-27 — the AI
+ * categorization pass is a useful first draft but "il y a beaucoup de
+ * mouvement et rename à faire pour faire ce que j'ai en tête" needs a
+ * direct escape hatch, not another AI call). Appends at the end of the
+ * notion's manual fiche order — same no-op-if-already-linked behavior as
+ * the AI categorization path (see linkFicheToNotion).
+ */
+export async function addFicheToNotion(notionId: string, ficheId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  await linkFicheToNotion(notionId, ficheId);
+
+  revalidatePath(`/apps/el-profesor/notions/${notionId}`);
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Fiche ajoutée à la notion." };
+}
+
+/** Removes a fiche from a notion without touching the fiche itself — the inverse of addFicheToNotion. */
+export async function removeFicheFromNotion(notionId: string, ficheId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  await unlinkFicheFromNotion(notionId, ficheId);
+
+  revalidatePath(`/apps/el-profesor/notions/${notionId}`);
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Fiche retirée de la notion." };
 }
 
 /**
