@@ -28,6 +28,15 @@
  * below reserves headroom for the prompt, extraction schema, and response
  * tokens that same call also spends (never negligible for this module's
  * detailed structured output).
+ *
+ * Deliberately NOT framed as "switch to Claude" in the UI: per the user's
+ * own usage (2026-08-27), Claude reliably extracts noticeably fewer
+ * fiches/flashcards per pass than Gemini on the same content, so it rarely
+ * reaches full coverage in one pass the way Gemini does on a chapter this
+ * size — trading a quota-failure risk for a "Compléter jusqu'à couverture"
+ * chore isn't a strict win. The card badge (board.tsx) surfaces the risk
+ * and names both mitigations (Claude, or splitting the chapter into
+ * shorter PDFs to stay on Gemini) without picking one for the admin.
  */
 export const GEMINI_PDF_TOKENS_PER_PAGE = 560;
 export const GEMINI_FREE_TIER_TPM = 250_000;
