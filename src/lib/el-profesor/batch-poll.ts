@@ -9,6 +9,7 @@ import {
   getClaudeBatchResults,
   normalizeExtractionResult,
   normalizeComplementaryResult,
+  wasArrayFieldTruncated,
   type ClaudeBatchResult,
 } from "@/lib/el-profesor/anthropic";
 import { persistExtraction, persistComplementaryAdditions, allNeedReviewFlags, buildCoverageSummary } from "@/lib/el-profesor/extraction-persist";
@@ -135,6 +136,12 @@ async function applyBatchResult(
     await correctCitationsIfPossible(admin, target.chapterId, extraction, "extraction");
     const flags = allNeedReviewFlags(extraction);
     await persistExtraction(admin, target.chapterId, extraction, flags);
+    // A truncated-but-salvaged sub_entities array (see coerceArray/
+    // salvageTruncatedObjectArray) still "succeeds" here — recorded with a
+    // note rather than silently, since coverage is likely incomplete.
+    const truncationNote = wasArrayFieldTruncated(result.output, "sub_entities")
+      ? `Réponse tronquée — ${extraction.sub_entities.length} sous-entité(s) complète(s) récupérée(s), la suite du chapitre manque. Relancez « Compléter l'extraction ».`
+      : null;
     await insertExtractionJob(admin, {
       chapterId: target.chapterId,
       status: "succeeded",
@@ -143,6 +150,7 @@ async function applyBatchResult(
       model,
       requestPrompt,
       rawResponse,
+      error: truncationNote,
     });
     await admin
       .from("el_profesor_chapters")
@@ -169,6 +177,10 @@ async function applyBatchResult(
     }
     await correctCitationsIfPossible(admin, target.chapterId, complementary, "complementary");
     const addedCount = await persistComplementaryAdditions(admin, target.chapterId, complementary, existingContentForPrompt);
+    const complementaryTruncationNote =
+      wasArrayFieldTruncated(result.output, "additions_for_existing") || wasArrayFieldTruncated(result.output, "new_sub_entities")
+        ? "Réponse tronquée — seuls les ajouts complets avant la coupure ont été récupérés. Relancez « Compléter l'extraction »."
+        : null;
     await insertExtractionJob(admin, {
       chapterId: target.chapterId,
       status: "succeeded",
@@ -177,6 +189,7 @@ async function applyBatchResult(
       model,
       requestPrompt,
       rawResponse,
+      error: complementaryTruncationNote,
     });
 
     const remaining = complementary.estimated_remaining_passes;

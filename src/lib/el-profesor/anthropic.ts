@@ -448,7 +448,80 @@ export async function getClaudeBatchResults(
 // silently discarding the whole result (which used to surface as either a
 // hard crash on the untyped Gemini path, or "extraction vide" on Claude's).
 
-/** Recovers an array field a model sent back double-encoded as its own JSON string, before giving up and defaulting to `[]`. */
+/**
+ * Salvages as many complete top-level JSON objects as possible from a
+ * string that should be a JSON array of objects but was cut off mid-way —
+ * found 2026-08-27 on a large chapter: double-encoding sub_entities as its
+ * own JSON string (see coerceArray below) roughly doubles that field's
+ * token cost, which can push a content-heavy chapter's response past the
+ * provider's max_tokens ceiling (already at the documented maximum — see
+ * submitClaudeBatch — so this isn't a "raise the limit" fix) and truncate
+ * the string mid-structure. A hard JSON.parse failure on the whole string
+ * used to mean losing every sub-entity, including the ones that finished
+ * fine before the cut. This walks the string tracking brace depth
+ * (ignoring braces inside quoted strings, respecting backslash escapes) and
+ * parses each complete top-level `{...}` individually, discarding only the
+ * one genuinely-incomplete trailing element.
+ */
+function salvageTruncatedObjectArray(raw: string): unknown[] {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("[")) return [];
+
+  const items: unknown[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 1; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        try {
+          items.push(JSON.parse(trimmed.slice(start, i + 1)));
+        } catch {
+          // Malformed even though bracket-balanced (rare) — skip just this element.
+        }
+        start = -1;
+      }
+    }
+  }
+  return items;
+}
+
+/**
+ * True when `raw[key]` is a string that had to be salvaged rather than
+ * cleanly parsed — i.e. it was double-encoded AND truncated, so coerceArray
+ * recovered only the complete elements before the cut. Callers that accept
+ * a salvaged array (batch-poll.ts's applyBatchResult, parseImportedExtraction
+ * in actions/extraction.ts) use this to warn the admin that coverage is
+ * likely incomplete, since a silent partial success is exactly the kind of
+ * thing this module tries hard never to produce.
+ */
+export function wasArrayFieldTruncated(raw: unknown, key: string): boolean {
+  const v = (raw as Record<string, unknown> | null | undefined)?.[key];
+  if (typeof v !== "string") return false;
+  try {
+    JSON.parse(v);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** Recovers an array field a model sent back double-encoded as its own JSON string (fully, or salvaged up to a truncation point), before giving up and defaulting to `[]`. */
 export function coerceArray(raw: unknown): unknown[] {
   if (Array.isArray(raw)) return raw;
   if (typeof raw === "string") {
@@ -456,7 +529,8 @@ export function coerceArray(raw: unknown): unknown[] {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
     } catch {
-      // fall through to []
+      const salvaged = salvageTruncatedObjectArray(raw);
+      if (salvaged.length > 0) return salvaged;
     }
   }
   return [];

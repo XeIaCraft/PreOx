@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeExtractionResult, normalizeComplementaryResult } from "./anthropic";
+import { normalizeExtractionResult, normalizeComplementaryResult, coerceArray, wasArrayFieldTruncated } from "./anthropic";
 
 // Regression test for the 2026-08-25 bug report: a Claude batch item came
 // back "succeeded" but with a required array (blocks/flashcards/citations/
@@ -62,6 +62,51 @@ describe("normalizeExtractionResult", () => {
   it("still defaults to [] when the string isn't valid JSON at all", () => {
     const result = normalizeExtractionResult({ sub_entities: "not json", estimated_remaining_passes: 0 });
     expect(result.sub_entities).toEqual([]);
+  });
+
+  // Regression test for the 2026-08-27 report: a chapter's sub_entities came
+  // back double-encoded (as above) AND cut short mid-string — encoding the
+  // whole array as one big escaped string roughly doubles its token cost,
+  // which can push a content-heavy chapter past the provider's max output
+  // ceiling. The old coerceArray gave up entirely on a JSON.parse failure,
+  // losing every sub-entity including the ones that finished fine before the
+  // cut — this recovers those instead of failing "extraction vide" again.
+  it("salvages complete sub_entities from a string truncated mid-array", () => {
+    const first = { name: "Jonction neuromusculaire", summary: "s1", fiche: { title: "t1", blocks: [], flashcards: [] } };
+    const second = { name: "Curares dépolarisants", summary: "s2", fiche: { title: "t2", blocks: [], flashcards: [] } };
+    const truncated = `[${JSON.stringify(first)},${JSON.stringify(second)},{"name": "Curares non dépolarisants", "summary": "cut off mid-str`;
+    const result = normalizeExtractionResult({ sub_entities: truncated, estimated_remaining_passes: 0 });
+    expect(result.sub_entities.map((s) => s.name)).toEqual(["Jonction neuromusculaire", "Curares dépolarisants"]);
+  });
+
+  it("salvages nothing when even the first element is incomplete", () => {
+    const result = normalizeExtractionResult({ sub_entities: '[{"name": "Cut off before closing', estimated_remaining_passes: 0 });
+    expect(result.sub_entities).toEqual([]);
+  });
+});
+
+describe("coerceArray", () => {
+  it("returns a native array unchanged", () => {
+    expect(coerceArray([1, 2, 3])).toEqual([1, 2, 3]);
+  });
+
+  it("salvages complete objects and drops a trailing truncated one, preserving order", () => {
+    const raw = '[{"a":1},{"b":{"nested":"value with \\"quotes\\" and } braces { inside"}},{"c":"incomple';
+    expect(coerceArray(raw)).toEqual([{ a: 1 }, { b: { nested: 'value with "quotes" and } braces { inside' } }]);
+  });
+});
+
+describe("wasArrayFieldTruncated", () => {
+  it("is false for a native array field", () => {
+    expect(wasArrayFieldTruncated({ sub_entities: [{ name: "x" }] }, "sub_entities")).toBe(false);
+  });
+
+  it("is false for a string field that parses cleanly as an array", () => {
+    expect(wasArrayFieldTruncated({ sub_entities: JSON.stringify([{ name: "x" }]) }, "sub_entities")).toBe(false);
+  });
+
+  it("is true for a string field that fails to parse (truncated)", () => {
+    expect(wasArrayFieldTruncated({ sub_entities: '[{"name": "cut off' }, "sub_entities")).toBe(true);
   });
 });
 

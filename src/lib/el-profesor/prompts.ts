@@ -24,6 +24,22 @@ const LANGUAGE_RULE = `
 Langue : rédige tout le contenu que tu génères (noms de sous-entités, titres de fiche, texte des blocs, questions et réponses des flashcards) exclusivement en FRANÇAIS, quelle que soit la langue du document source (même s'il est en anglais ou dans une autre langue) — traduis fidèlement en conservant la terminologie médicale standard, ne recopie jamais tel quel un passage en langue étrangère en dehors d'une citation. Seules les "citations" (le champ "quote") restent verbatim dans la langue exacte du texte source, car elles doivent correspondre mot pour mot au passage cité.
 `.trim();
 
+// Added 2026-08-27 after a recurring failure on content-heavy chapters:
+// the model sometimes serializes a large array field (sub_entities,
+// additions_for_existing...) as its own JSON string instead of a native
+// array in the tool call — this roughly doubles that field's token cost
+// (every quote/newline needs escaping) and can push a genuinely large
+// chapter past the provider's own output ceiling, truncating the response
+// mid-structure. coerceArray (anthropic.ts) already recovers a *complete*
+// double-encoded string and salvages whatever complete elements exist in a
+// *truncated* one, but preventing the double-encoding in the first place
+// avoids the truncation risk altogether — this is a best-effort nudge, not
+// a guarantee (tool-use schemas constrain shape but aren't rigidly
+// enforced), so the salvage path stays in place as the real safety net.
+const STRICT_ARRAY_FORMAT_RULE = `
+Format strict : chaque champ de type tableau (ex. "sub_entities", "blocks", "flashcards", "additions_for_existing", "new_sub_entities") doit être un VRAI tableau JSON natif dans ta réponse — jamais une chaîne de caractères contenant du JSON sérialisé (même entre guillemets avec des \\n), quelle que soit la taille du contenu.
+`.trim();
+
 const FLASHCARD_QUALITY_DOC = `
 Couverture : génère AUTANT DE FLASHCARDS QUE NÉCESSAIRE pour couvrir tout ce qui, dans les blocs déjà extraits, est réellement testable ou utile à la décision clinique — pas un nombre fixe, pas une seule carte générique par sous-entité. Une sous-entité riche et nuancée mérite beaucoup de cartes ; une sous-entité pauvre en mérite peu. N'invente rien pour atteindre un quota, et ne fusionne jamais deux faits distincts dans une carte vague — une carte = une idée testable et sans ambiguïté.
 
@@ -72,6 +88,8 @@ Repère aussi les schémas/images du document : si une page proche de cette flas
 
 4. Indique enfin "estimated_remaining_passes" : ton estimation honnête du nombre de passes de complément supplémentaires ("Compléter l'extraction", qui relit le PDF pour combler les trous) probablement encore nécessaires pour une couverture quasi-exhaustive de ce chapitre. Base-toi sur la longueur/densité réelle du chapitre et sur ce que tu sens avoir pu couvrir en une seule lecture — 0 si le chapitre est court/simple et que tu es confiant d'avoir tout couvert, un chiffre plus élevé (2, 3...) pour un chapitre long ou très dense où une seule passe ne peut raisonnablement pas tout capter.
 
+${STRICT_ARRAY_FORMAT_RULE}
+
 Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
 `.trim();
 }
@@ -117,6 +135,8 @@ ${FLASHCARD_QUALITY_DOC}
 Chaque flashcard : une question précise et sans ambiguïté au recto ("front"), la réponse exacte attendue au verso ("back"), et sa/ses citation(s) source (même règle : "page": 0, "quote" verbatim). Ne remplis jamais "suggested_image_page"/"suggested_image_hint" pour ce document — il n'y a pas de fichier source à capturer.
 
 4. Indique enfin "estimated_remaining_passes" : ce document n'a pas de passe de complément possible (pas de fichier à relire) — réponds toujours 0.
+
+${STRICT_ARRAY_FORMAT_RULE}
 
 Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
 `.trim();
@@ -198,6 +218,8 @@ ${FLASHCARD_QUALITY_DOC}
 Mêmes règles strictes que pour l'extraction initiale : chaque bloc et chaque flashcard doit citer verbatim (page + texte exact) le passage du livre qui le fonde, les tableaux comparatifs vont dans un vrai tableau, les protocoles par paliers dans une liste d'étapes structurée. Même règle aussi pour "suggested_image_page"/"suggested_image_hint" sur une flashcard : seulement quand un schéma/image proche aiderait vraiment, jamais par défaut.
 
 Indique enfin "estimated_remaining_passes" : ta nouvelle estimation, APRÈS cette passe de complément, du nombre de passes encore probablement nécessaires pour une couverture quasi-exhaustive — 0 si tu es maintenant confiant que le chapitre est couvert dans son ensemble.
+
+${STRICT_ARRAY_FORMAT_RULE}
 
 Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
 `.trim();

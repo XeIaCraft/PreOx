@@ -14,7 +14,7 @@ import {
   BLOCK_TYPES,
 } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
-import { coerceArray } from "@/lib/el-profesor/anthropic";
+import { coerceArray, wasArrayFieldTruncated } from "@/lib/el-profesor/anthropic";
 import { getChapterContent, getFlashcardVariantStats, type FlashcardVariantStat } from "@/lib/el-profesor/dal";
 import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-profesor/content-log";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
@@ -351,7 +351,7 @@ function isCitationArray(v: unknown): v is Citation[] {
  * guarantee, so every field is checked defensively with a specific error
  * pointing at what's wrong, rather than crashing on a malformed shape.
  */
-function parseImportedExtraction(raw: string): ExtractionResult {
+function parseImportedExtraction(raw: string): { extraction: ExtractionResult; wasTruncated: boolean } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(stripCodeFence(raw));
@@ -360,14 +360,21 @@ function parseImportedExtraction(raw: string): ExtractionResult {
   }
   // coerceArray recovers the case where a model (or a hand-paste from one)
   // sent sub_entities double-encoded as its own JSON string instead of a
-  // real array — same defense as normalizeExtractionResult (see coerceArray's
-  // doc comment in anthropic.ts), applied here too so this parser and the
+  // real array, and — since that encoding can push a large chapter's
+  // response past the provider's output ceiling — salvages whatever
+  // complete sub-entities exist even in a truncated string rather than
+  // losing all of them (see coerceArray/salvageTruncatedObjectArray's doc
+  // comments in anthropic.ts). Applied here too so this parser and the
   // "réessayer depuis l'historique" button (which reuses it via
-  // importChapterContent) can both recover from it.
+  // importChapterContent) can both recover from it. A string value that
+  // fails a clean JSON.parse but still yields elements via salvage means
+  // the response was genuinely cut short — flagged below so the caller can
+  // warn that a "Compléter l'extraction" pass is likely needed afterward.
   const subEntitiesRaw = coerceArray((parsed as { sub_entities?: unknown } | null)?.sub_entities);
   if (subEntitiesRaw.length === 0) {
     throw new GeminiError("Le JSON doit contenir un tableau « sub_entities » non vide.");
   }
+  const wasTruncated = wasArrayFieldTruncated(parsed, "sub_entities");
 
   const sub_entities: ExtractedSubEntity[] = subEntitiesRaw.map((subRaw, i) => {
     const sub = (subRaw ?? {}) as Record<string, unknown>;
@@ -419,7 +426,7 @@ function parseImportedExtraction(raw: string): ExtractionResult {
   const estimatedRaw = (parsed as { estimated_remaining_passes?: unknown } | null)?.estimated_remaining_passes;
   const estimated_remaining_passes = typeof estimatedRaw === "number" && Number.isFinite(estimatedRaw) ? estimatedRaw : 0;
 
-  return { sub_entities, estimated_remaining_passes };
+  return { extraction: { sub_entities, estimated_remaining_passes }, wasTruncated };
 }
 
 /**
@@ -440,8 +447,9 @@ export async function importChapterContent(chapterId: string, rawJson: string): 
   if (chapter.status === "extracting") return { error: "Une extraction est déjà en cours pour ce chapitre." };
 
   let extraction: ExtractionResult;
+  let wasTruncated: boolean;
   try {
-    extraction = parseImportedExtraction(rawJson);
+    ({ extraction, wasTruncated } = parseImportedExtraction(rawJson));
   } catch (err) {
     return { error: err instanceof GeminiError ? err.message : "JSON invalide." };
   }
@@ -473,7 +481,10 @@ export async function importChapterContent(chapterId: string, rawJson: string): 
       .eq("id", chapterId);
 
     revalidatePath("/apps/el-profesor");
-    return { success: "Contenu importé. Chaque élément est marqué « à vérifier » — relisez-le avant publication." };
+    const truncationNote = wasTruncated
+      ? ` Attention : la réponse importée était tronquée (probablement coupée avant la fin) — seules les ${extraction.sub_entities.length} sous-entité(s) complète(s) ont été récupérées, la suite du chapitre manque. Lancez « Compléter l'extraction » pour combler le reste.`
+      : "";
+    return { success: `Contenu importé. Chaque élément est marqué « à vérifier » — relisez-le avant publication.${truncationNote}` };
   } catch (err) {
     const message = err instanceof GeminiError ? err.message : "Échec de l'import.";
     await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
