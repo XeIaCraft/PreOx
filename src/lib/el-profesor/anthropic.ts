@@ -449,7 +449,7 @@ export async function getClaudeBatchResults(
 // hard crash on the untyped Gemini path, or "extraction vide" on Claude's).
 
 /** Recovers an array field a model sent back double-encoded as its own JSON string, before giving up and defaulting to `[]`. */
-function coerceArray(raw: unknown): unknown[] {
+export function coerceArray(raw: unknown): unknown[] {
   if (Array.isArray(raw)) return raw;
   if (typeof raw === "string") {
     try {

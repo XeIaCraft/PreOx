@@ -473,36 +473,62 @@ export async function generateNotionSynthesis(notionId: string): Promise<ActionS
   }
 
   try {
-    const { blocks: rawBlocks, model } = await generateNotionSynthesisContent(
+    const { sections: rawSections, model } = await generateNotionSynthesisContent(
       config,
       notion.name,
       sourceBlocks.map((b) => ({ id: b.sourceBlockId, bookTitle: b.bookTitle, chapterTitle: b.chapterTitle, ficheTitle: b.ficheTitle, blockType: b.blockType, text: b.text }))
     );
 
     const blockById = new Map(sourceBlocks.map((b) => [b.sourceBlockId, b]));
-    const resolvedBlocks = rawBlocks
-      .filter((rb) => BLOCK_TYPES.includes(rb.block_type) && rb.content && typeof rb.content === "object" && Array.isArray(rb.source_block_ids))
-      .map((rb, i) => {
+    let orderIndex = 0;
+    const resolvedBlocks: { order_index: number; section_title: string; block_type: string; content: BlockContent; citations: SynthesisCitation[]; source_fiche_ids: string[] }[] = [];
+    for (const section of rawSections) {
+      const sectionTitle = typeof section.title === "string" ? section.title.trim() : "";
+      if (!sectionTitle || !Array.isArray(section.blocks)) continue;
+      for (const rb of section.blocks) {
+        if (!BLOCK_TYPES.includes(rb.block_type) || !rb.content || typeof rb.content !== "object" || !Array.isArray(rb.source_block_ids)) continue;
         const contributing = rb.source_block_ids
           .map((id) => blockById.get(id))
           .filter((b): b is SynthesisSourceBlock => Boolean(b));
         const citations: SynthesisCitation[] = contributing.flatMap((b) => b.citations);
+        // A block the model claimed but that resolves to zero real source
+        // citations means every source_block_id it gave was invalid — drop
+        // it rather than persist a block with fabricated provenance.
+        if (citations.length === 0) continue;
         const sourceFicheIds = [...new Set(contributing.map((b) => b.ficheId))];
-        return { order_index: i, block_type: rb.block_type, content: rb.content, citations, source_fiche_ids: sourceFicheIds };
-      })
-      // A block the model claimed but that resolves to zero real source
-      // citations means every source_block_id it gave was invalid — drop
-      // it rather than persist a block with fabricated provenance.
-      .filter((b) => b.citations.length > 0);
+        resolvedBlocks.push({ order_index: orderIndex++, section_title: sectionTitle, block_type: rb.block_type, content: rb.content, citations, source_fiche_ids: sourceFicheIds });
+      }
+    }
 
     if (resolvedBlocks.length === 0) {
       throw new GeminiError("La synthèse générée n'a produit aucun bloc exploitable (citations introuvables) — réessayez.");
     }
 
+    // Exhaustiveness check (2026-08-27, in response to "on ne doit pas avoir
+    // de perte d'informations") — never trust the model's own coverage
+    // claim: recompute, from the source_block_ids it actually resolved,
+    // which of the source blocks it was given were never cited by any
+    // synthesis block. Surfaced to the admin rather than silently dropped.
+    const citedSourceBlockIds = new Set(
+      rawSections.flatMap((s) => (Array.isArray(s.blocks) ? s.blocks : [])).flatMap((b) => (Array.isArray(b.source_block_ids) ? b.source_block_ids : []))
+    );
+    const uncoveredSources = sourceBlocks
+      .filter((b) => !citedSourceBlockIds.has(b.sourceBlockId))
+      .map((b) => ({ ficheId: b.ficheId, ficheTitle: b.ficheTitle, bookTitle: b.bookTitle, chapterTitle: b.chapterTitle }));
+
     const { data: synthesisRow, error: upsertError } = await supabase
       .from("el_profesor_notion_syntheses")
       .upsert(
-        { notion_id: notionId, status: "draft", source_fiche_ids: ficheIds, model, generated_at: new Date().toISOString(), generated_by: profile.id, error: null },
+        {
+          notion_id: notionId,
+          status: "draft",
+          source_fiche_ids: ficheIds,
+          model,
+          generated_at: new Date().toISOString(),
+          generated_by: profile.id,
+          error: null,
+          uncovered_sources: uncoveredSources as unknown as never,
+        },
         { onConflict: "notion_id" }
       )
       .select("id")
@@ -514,6 +540,7 @@ export async function generateNotionSynthesis(notionId: string): Promise<ActionS
       resolvedBlocks.map((b) => ({
         synthesis_id: synthesisRow.id,
         order_index: b.order_index,
+        section_title: b.section_title,
         block_type: b.block_type,
         content: b.content as unknown as BlockContent as never,
         citations: b.citations as unknown as SynthesisCitation[] as never,
@@ -526,7 +553,8 @@ export async function generateNotionSynthesis(notionId: string): Promise<ActionS
     revalidatePath("/apps/el-profesor/notions");
     revalidatePath("/apps/el-profesor/glossary");
     revalidatePath("/apps/el-profesor");
-    return { success: `Synthèse générée (${resolvedBlocks.length} bloc(s)) — à relire avant publication.` };
+    const coverageNote = uncoveredSources.length > 0 ? ` — ${uncoveredSources.length} source(s) non reprise(s), à vérifier` : "";
+    return { success: `Synthèse générée (${resolvedBlocks.length} bloc(s))${coverageNote} — à relire avant publication.` };
   } catch (err) {
     const message = err instanceof GeminiError ? err.message : "Échec de la génération de la synthèse.";
     await supabase.from("el_profesor_notion_syntheses").upsert({ notion_id: notionId, source_fiche_ids: ficheIds, error: message }, { onConflict: "notion_id" });

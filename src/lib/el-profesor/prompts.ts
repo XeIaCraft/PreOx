@@ -534,17 +534,20 @@ Voici tous les blocs de contenu déjà extraits et publiés, dans toute la bibli
 
 ${body}
 
-Ta tâche : rédige UNE SEULE fiche de synthèse qui couvre cette notion en lisant chaque information UNE SEULE FOIS au lieu de la revoir livre par livre, en respectant ces règles strictes :
+Ta tâche : rédige UN VRAI CHAPITRE de synthèse sur cette notion — pas un empilement de fiches, un texte structuré et agréable à lire comme un chapitre de livre de référence, organisé en SECTIONS TITRÉES (l'équivalent, pour une synthèse, des sous-entités d'une extraction normale). Respecte ces règles strictes :
 
-1. Si plusieurs blocs disent la même chose (même en termes différents), fusionne-les en un seul bloc de synthèse — ne répète jamais un fait déjà couvert par un bloc de synthèse précédent.
-2. Si un bloc source apporte un détail complémentaire propre à un livre (absent des autres), garde-le — soit comme nuance dans un bloc existant, soit comme bloc à part si le sujet diffère assez — ne perds jamais une information réellement utile sous prétexte de dédupliquer.
-3. Types de blocs disponibles, mêmes règles de contenu qu'une extraction normale :
+1. Découpe la synthèse en plusieurs sections, chacune avec un titre court et précis (ex. "Définition et mécanisme", "Valeurs de référence", "Prise en charge / protocole", "Pièges et perles cliniques") — jamais une section unique fourre-tout, et jamais un titre générique du style "Synthèse" ou "Informations". Choisis les titres à partir du contenu réel, pas d'un gabarit fixe.
+2. Ordonne les sections comme le ferait un chapitre de référence : d'abord ce qui pose les bases (définition, mécanisme, physiopathologie), puis les données concrètes (valeurs, seuils, comparatifs), puis l'application pratique (protocoles, conduite à tenir), et enfin les repères de mémorisation ou de vigilance (pièges, perles, mnémotechniques) — jamais un ordre arbitraire ou calqué sur l'ordre des livres sources.
+3. Dans chaque section, si plusieurs blocs disent la même chose (même en termes différents), fusionne-les en un seul bloc de synthèse — ne répète jamais un fait déjà couvert par un bloc de synthèse précédent, dans cette section ou une autre.
+4. Si un bloc source apporte un détail complémentaire propre à un livre (absent des autres), garde-le — soit comme nuance dans un bloc existant, soit comme bloc à part si le sujet diffère assez — ne perds jamais une information réellement utile sous prétexte de dédupliquer.
+5. Types de blocs disponibles, mêmes règles de contenu qu'une extraction normale :
 ${BLOCK_TYPES_DOC}
 Ne fusionne jamais deux blocs sources de nature différente (ex. un tableau comparatif et une définition) dans un seul bloc de synthèse — ce sont deux blocs distincts, même s'ils traitent du même sous-thème.
-4. Si deux blocs sources se contredisent factuellement sur un point précis (valeur numérique différente, conduite à tenir opposée), ne tranche PAS toi-même lequel a raison : garde les deux formulations dans le même bloc de synthèse en signalant explicitement la divergence (« Selon [nom du livre A] ... alors que selon [nom du livre B] ... »).
-5. N'INVENTE RIEN : chaque bloc de synthèse doit être fondé UNIQUEMENT sur les blocs sources listés ci-dessus, jamais sur tes propres connaissances. Pour CHAQUE bloc de synthèse que tu écris, indique dans "source_block_ids" la liste complète des identifiants entre crochets des blocs sources qui l'ont nourri (ex. ["b3", "b7"]) — utilise tous les blocs sources pertinents pour ce point précis, pas seulement le premier trouvé, et n'omets aucun bloc source que tu as effectivement utilisé.
+6. Si deux blocs sources se contredisent factuellement sur un point précis (valeur numérique différente, conduite à tenir opposée), ne tranche PAS toi-même lequel a raison : garde les deux formulations dans le même bloc de synthèse en signalant explicitement la divergence (« Selon [nom du livre A] ... alors que selon [nom du livre B] ... »).
+7. EXHAUSTIVITÉ — AUCUNE PERTE D'INFORMATION : chaque bloc source listé ci-dessus doit être repris par au moins un bloc de synthèse, quelque part dans une section. Avant de répondre, repasse mentalement la liste complète des identifiants [b1], [b2], [b3]... et vérifie qu'aucun n'est absent de tous les "source_block_ids" de ta réponse — un bloc source qui n'apporte vraiment rien d'utile (redondance totale déjà couverte ailleurs) doit quand même apparaître dans le "source_block_ids" du bloc de synthèse qui couvre ce même fait, jamais être simplement omis.
+8. N'INVENTE RIEN : chaque bloc de synthèse doit être fondé UNIQUEMENT sur les blocs sources listés ci-dessus, jamais sur tes propres connaissances. Pour CHAQUE bloc de synthèse que tu écris, indique dans "source_block_ids" la liste complète des identifiants entre crochets des blocs sources qui l'ont nourri (ex. ["b3", "b7"]) — utilise tous les blocs sources pertinents pour ce point précis, pas seulement le premier trouvé, et n'omets aucun bloc source que tu as effectivement utilisé.
 
-Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
+Réponds uniquement avec le JSON demandé (un tableau "sections", chacune avec "title" et "blocks"), structuré exactement selon le schéma fourni.
 `.trim();
 }
 

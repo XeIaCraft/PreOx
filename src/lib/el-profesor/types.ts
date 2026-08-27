@@ -202,6 +202,8 @@ export type SynthesisCitation = Citation & {
 export type NotionSynthesisBlock = {
   id: string;
   orderIndex: number;
+  /** Titled section this block belongs to (the synthesis equivalent of a fiche's sub-entities) — never empty, see buildNotionSynthesisPrompt. */
+  sectionTitle: string;
   blockType: BlockType;
   content: BlockContent;
   /** Every citation here comes from an actual source block the AI cited — never invented, see buildNotionSynthesisPrompt. */
@@ -212,6 +214,14 @@ export type NotionSynthesisBlock = {
 
 export type NotionSynthesisStatus = "draft" | "published";
 
+/** One source block the last generation was given but that no synthesis block ended up citing — surfaced so an admin can catch information loss instead of it passing unnoticed. */
+export type UncoveredSynthesisSource = {
+  ficheId: string;
+  ficheTitle: string;
+  bookTitle: string;
+  chapterTitle: string;
+};
+
 export type NotionSynthesis = {
   notionId: string;
   status: NotionSynthesisStatus;
@@ -221,6 +231,7 @@ export type NotionSynthesis = {
   error: string | null;
   /** True when the notion's currently-eligible source fiches (published, not merged/obsolete) differ from what the last generation actually read — a sign an admin should regenerate. */
   isStale: boolean;
+  uncoveredSources: UncoveredSynthesisSource[];
 };
 
 /** Manual link to an official guideline source (HAS, SPILF, société savante...) attached to a notion — never AI-generated, see the migration comment. */

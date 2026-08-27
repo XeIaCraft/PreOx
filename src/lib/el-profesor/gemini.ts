@@ -32,7 +32,7 @@ import {
 // a native array value; these normalizers recover that case for both
 // providers instead of letting it crash downstream (untyped Gemini output
 // was previously cast straight to ExtractionResult with no validation at all).
-import { normalizeExtractionResult, normalizeComplementaryResult } from "@/lib/el-profesor/anthropic";
+import { normalizeExtractionResult, normalizeComplementaryResult, coerceArray } from "@/lib/el-profesor/anthropic";
 // Re-exported below (not just imported) since several other files still
 // import BLOCK_TYPES from this module — kept in its own file alongside
 // anthropic.ts (see block-types.ts's doc comment) specifically to avoid a
@@ -177,24 +177,34 @@ const COMPLEMENTARY_RESPONSE_SCHEMA = {
 const NOTION_SYNTHESIS_SCHEMA = {
   type: "OBJECT",
   properties: {
-    blocks: {
+    sections: {
       type: "ARRAY",
       items: {
         type: "OBJECT",
         properties: {
-          block_type: { type: "STRING", enum: BLOCK_TYPES },
-          content: BLOCK_CONTENT_SCHEMA,
-          source_block_ids: {
+          title: { type: "STRING", description: "Titre court de la section (ex. \"Définition et mécanisme\", \"Valeurs de référence\", \"Prise en charge\")." },
+          blocks: {
             type: "ARRAY",
-            items: { type: "STRING" },
-            description: "Identifiants entre crochets (ex. \"b3\") des blocs sources qui ont nourri ce bloc de synthèse.",
+            items: {
+              type: "OBJECT",
+              properties: {
+                block_type: { type: "STRING", enum: BLOCK_TYPES },
+                content: BLOCK_CONTENT_SCHEMA,
+                source_block_ids: {
+                  type: "ARRAY",
+                  items: { type: "STRING" },
+                  description: "Identifiants entre crochets (ex. \"b3\") des blocs sources qui ont nourri ce bloc de synthèse.",
+                },
+              },
+              required: ["block_type", "content", "source_block_ids"],
+            },
           },
         },
-        required: ["block_type", "content", "source_block_ids"],
+        required: ["title", "blocks"],
       },
     },
   },
-  required: ["blocks"],
+  required: ["sections"],
 };
 
 const SELECTION_RESPONSE_SCHEMA = {
@@ -934,23 +944,50 @@ export interface RawNotionSynthesisBlock {
   source_block_ids: string[];
 }
 
+export interface RawNotionSynthesisSection {
+  title: string;
+  blocks: RawNotionSynthesisBlock[];
+}
+
 /**
- * Real cross-book fusion (requested 2026-08-26) — reads every published
- * block across the library that treats a given notion and rewrites it as
- * one deduplicated fiche, citing back to the exact source blocks it drew
- * from (resolved to real citations by the caller — see
- * buildNotionSynthesisPrompt's doc comment, and normalizeNotionSynthesis
- * in actions/notions.ts for the defensive parsing). Rotates on quota/capacity
- * errors like every other text-only call.
+ * Real cross-book fusion (requested 2026-08-26, restructured into titled
+ * sections 2026-08-27 after feedback that a flat block list read as an
+ * incoherent dump) — reads every published block across the library that
+ * treats a given notion and rewrites it as one deduplicated fiche, grouped
+ * into named sections (the synthesis equivalent of a fiche's sub-entities),
+ * citing back to the exact source blocks it drew from (resolved to real
+ * citations by the caller — see buildNotionSynthesisPrompt's doc comment,
+ * and normalizeNotionSynthesis in actions/notions.ts for the defensive
+ * parsing). Rotates on quota/capacity errors like every other text-only call.
  */
 export async function generateNotionSynthesisContent(
   config: GeminiRotationConfig,
   notionName: string,
   sourceBlocks: { id: string; bookTitle: string; chapterTitle: string; ficheTitle: string; blockType: string; text: string }[]
-): Promise<{ blocks: RawNotionSynthesisBlock[]; model: string }> {
+): Promise<{ sections: RawNotionSynthesisSection[]; model: string }> {
   const instructions = buildNotionSynthesisPrompt(notionName, sourceBlocks);
-  const { result, model } = await textRotation<{ blocks: RawNotionSynthesisBlock[] }>(config, instructions, NOTION_SYNTHESIS_SCHEMA);
-  return { blocks: result.blocks, model };
+  const { result, model } = await textRotation<unknown>(config, instructions, NOTION_SYNTHESIS_SCHEMA);
+  const sections = normalizeNotionSynthesisSections(result);
+  return { sections, model };
+}
+
+/** Same double-encoded-array defense as normalizeExtractionResult (see coerceArray's doc comment), applied to the section/block/source_block_ids arrays a synthesis call can return. */
+function normalizeNotionSynthesisSections(raw: unknown): RawNotionSynthesisSection[] {
+  const obj = raw as { sections?: unknown } | null | undefined;
+  return coerceArray(obj?.sections).map((s) => {
+    const section = s as { title?: unknown; blocks?: unknown };
+    return {
+      title: typeof section.title === "string" ? section.title : "",
+      blocks: coerceArray(section.blocks).map((b) => {
+        const block = b as { block_type?: unknown; content?: unknown; source_block_ids?: unknown };
+        return {
+          block_type: block.block_type as BlockType,
+          content: block.content as BlockContent,
+          source_block_ids: coerceArray(block.source_block_ids).filter((id): id is string => typeof id === "string"),
+        };
+      }),
+    };
+  });
 }
 
 export async function verifyExtraction(

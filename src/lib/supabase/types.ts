@@ -539,6 +539,7 @@ export type ElProfesorNotionSynthesisRow = {
   generated_at: string | null;
   generated_by: string | null;
   error: string | null;
+  uncovered_sources: Json;
   created_at: string;
   updated_at: string;
 };
@@ -547,6 +548,7 @@ export type ElProfesorNotionSynthesisBlockRow = {
   id: string;
   synthesis_id: string;
   order_index: number;
+  section_title: string | null;
   block_type: string;
   content: Json;
   citations: Json;

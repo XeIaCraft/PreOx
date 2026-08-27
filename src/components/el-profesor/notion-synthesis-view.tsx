@@ -56,6 +56,18 @@ function SynthesisBlockCard({ block }: { block: NotionSynthesisBlock }) {
   );
 }
 
+/** Groups synthesis blocks under their section headings, preserving orderIndex — blocks keep the section boundaries the generation call assigned rather than being re-sorted alphabetically. */
+function groupBlocksBySection(blocks: NotionSynthesisBlock[]): { title: string; blocks: NotionSynthesisBlock[] }[] {
+  const sections: { title: string; blocks: NotionSynthesisBlock[] }[] = [];
+  for (const block of blocks) {
+    const title = block.sectionTitle || "Autres éléments";
+    const last = sections[sections.length - 1];
+    if (last && last.title === title) last.blocks.push(block);
+    else sections.push({ title, blocks: [block] });
+  }
+  return sections;
+}
+
 export function NotionSynthesisView({
   notionId,
   notionName,
@@ -159,10 +171,34 @@ export function NotionSynthesisView({
         </p>
       )}
 
+      {isAdmin && synthesis && synthesis.uncoveredSources.length > 0 && (
+        <div className="mt-3 rounded-[var(--radius-sm)] border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+          <p className="flex items-center gap-1.5 font-medium">
+            <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+            {synthesis.uncoveredSources.length} source{synthesis.uncoveredSources.length > 1 ? "s" : ""} non reprise
+            {synthesis.uncoveredSources.length > 1 ? "s" : ""} dans la synthèse — à vérifier avant publication (perte d&apos;information possible) :
+          </p>
+          <ul className="mt-1.5 space-y-0.5 pl-5">
+            {synthesis.uncoveredSources.map((s, i) => (
+              <li key={i} className="list-disc">
+                {s.ficheTitle} — {s.bookTitle} / {s.chapterTitle}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {synthesis && synthesis.blocks.length > 0 ? (
-        <div className="mt-5 space-y-3">
-          {synthesis.blocks.map((block) => (
-            <SynthesisBlockCard key={block.id} block={block} />
+        <div className="mt-5 space-y-6">
+          {groupBlocksBySection(synthesis.blocks).map(({ title, blocks }) => (
+            <div key={title}>
+              <h2 className="font-serif-display text-lg font-medium text-foreground">{title}</h2>
+              <div className="mt-2 space-y-3">
+                {blocks.map((block) => (
+                  <SynthesisBlockCard key={block.id} block={block} />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       ) : (
