@@ -38,6 +38,8 @@ import {
   ChevronRight,
   History,
   MoreVertical,
+  FileText,
+  Coins,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -73,6 +75,7 @@ import {
   type DashboardViewMode,
 } from "@/lib/el-profesor/local-prefs";
 import { formatUsd } from "@/lib/el-profesor/ai-pricing";
+import { exceedsGeminiFreeTierBudget } from "@/lib/el-profesor/gemini-quota";
 import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts, ChapterMasteryPercentile, ElProfesorAiProvider } from "@/lib/el-profesor/dal";
 import type { ChapterStatus } from "@/lib/el-profesor/types";
 import type { DashboardSecondaryData, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
@@ -1088,10 +1091,23 @@ export function ElProfesorBoard({
                         )}
                         <p className="font-medium text-foreground">{chapter.title}</p>
                       </div>
-                      <div className="flex shrink-0 gap-1.5">
+                      <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
                         {chapter.sourceKind !== "pdf" && (
                           <Badge variant="neutral" title="Importé depuis Word/PowerPoint — pas de PDF source ni de citations par page">
                             {chapter.sourceKind === "docx" ? "Word" : "PowerPoint"}
+                          </Badge>
+                        )}
+                        {chapter.sourceKind === "pdf" && chapter.pdfPageCount != null && (
+                          <Badge variant="neutral">
+                            <FileText className="h-3 w-3" /> {chapter.pdfPageCount} page{chapter.pdfPageCount > 1 ? "s" : ""}
+                          </Badge>
+                        )}
+                        {isAdmin && aiProvider === "gemini" && chapter.pdfPageCount != null && exceedsGeminiFreeTierBudget(chapter.pdfPageCount) && (
+                          <Badge
+                            variant="danger"
+                            title="Ce chapitre dépasse le budget de tokens/minute du palier gratuit Gemini pour un seul appel d'extraction — passez sur Claude depuis Réglages IA avant d'extraire ce chapitre pour éviter un échec par quota."
+                          >
+                            <Coins className="h-3 w-3" /> Claude recommandé
                           </Badge>
                         )}
                         {isAdmin && needsReview > 0 && <Badge variant="accent">{needsReview} à vérifier</Badge>}
