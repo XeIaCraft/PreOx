@@ -487,7 +487,19 @@ export function PdfViewer({
       <div
         ref={scrollRef}
         className="relative flex-1 overflow-auto bg-surface-muted p-3"
-        style={onSelection ? { touchAction: "pan-y" } : undefined}
+        // captureMode must win over onSelection's "pan-y": the drag-rectangle
+        // overlay below already sets touch-action:none on itself, but that
+        // alone left the scroll container (this element, its ancestor) at
+        // pan-y whenever both onSelection and onCapture are passed together
+        // (every current caller passes both) — per spec the *used*
+        // touch-action for a touch is the intersection of the target's and
+        // every ancestor's value, and browsers are inconsistent enough
+        // about that intersection on mobile that the container's own
+        // vertical-pan allowance could still swallow the drag as a scroll
+        // instead of a capture-rectangle gesture (found 2026-08-27: capture
+        // reported broken specifically on mobile). Setting it here too
+        // removes any dependency on that intersection behaving correctly.
+        style={captureMode ? { touchAction: "none" } : onSelection ? { touchAction: "pan-y" } : undefined}
       >
         {loading && (
           <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center gap-3">
