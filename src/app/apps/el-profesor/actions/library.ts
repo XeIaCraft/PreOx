@@ -292,3 +292,17 @@ export async function moveChapter(chapterId: string, direction: "up" | "down"): 
   revalidatePath("/apps/el-profesor");
   return { success: "Chapitre déplacé." };
 }
+
+/** Renames a chapter — counterpart of renameFiche/renameNotion. */
+export async function renameChapter(chapterId: string, title: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const trimmed = title.trim();
+  if (!trimmed) return { error: "Le titre du chapitre est obligatoire." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_chapters").update({ title: trimmed }).eq("id", chapterId);
+  if (error) return { error: "Impossible de renommer ce chapitre." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Chapitre renommé." };
+}

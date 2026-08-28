@@ -56,6 +56,7 @@ import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog"
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { SplitBookDialog } from "@/components/el-profesor/dialogs/split-book-dialog";
 import { SplitChapterDialog } from "@/components/el-profesor/dialogs/split-chapter-dialog";
+import { RenameChapterButton } from "@/components/el-profesor/rename-chapter-button";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
 import { LibraryStats } from "@/components/el-profesor/learning-widgets";
@@ -1141,7 +1142,10 @@ export function ElProfesorBoard({
                             className="mt-1 h-4 w-4 shrink-0"
                           />
                         )}
-                        <p className="font-medium text-foreground">{chapter.title}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-medium text-foreground">{chapter.title}</p>
+                          {isAdmin && <RenameChapterButton chapterId={chapter.id} currentTitle={chapter.title} onRenamed={refresh} />}
+                        </div>
                       </div>
                       <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
                         {chapter.sourceKind !== "pdf" && (
