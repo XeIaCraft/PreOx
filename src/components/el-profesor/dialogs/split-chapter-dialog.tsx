@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { AlertTriangle, Sparkles, Plus, ClipboardPaste, Copy } from "lucide-react";
+import { AlertTriangle, Sparkles, Plus, ClipboardPaste, Copy, Download } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { suggestChapterSplit, splitChapterIntoParts } from "@/app/apps/el-profesor/actions/split-chapter";
+import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { computeTargetSplitPartCount } from "@/lib/el-profesor/chapter-quality";
 import { validateChapterSplitRanges } from "@/lib/el-profesor/chapter-split-ranges";
 import { RangeRow } from "@/components/el-profesor/dialogs/range-row";
@@ -84,9 +85,21 @@ export function SplitChapterDialog({
   const { toast } = useToast();
   const [isSuggesting, startSuggesting] = useTransition();
   const [isSaving, startSaving] = useTransition();
+  const [isDownloading, setIsDownloading] = useState(false);
   const [rows, setRows] = useState<Row[]>(() => naiveSplitRows(chapter.pdfPageCount, computeTargetSplitPartCount(chapter.pdfPageCount), chapter.title));
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState("");
+
+  async function handleDownloadPdf() {
+    setIsDownloading(true);
+    const result = await getChapterPdfUrl(chapter.id);
+    setIsDownloading(false);
+    if (result.error || !result.url) {
+      toast(result.error ?? "Impossible de générer le lien vers le PDF.", { variant: "error" });
+      return;
+    }
+    window.open(result.url, "_blank", "noopener,noreferrer");
+  }
 
   function handleSuggest() {
     startSuggesting(async () => {
@@ -156,7 +169,7 @@ export function SplitChapterDialog({
     });
   }
 
-  const isPending = isSuggesting || isSaving;
+  const isPending = isSuggesting || isSaving || isDownloading;
   const hasContent = chapter.status !== "pending" && chapter.status !== "failed";
 
   return (
@@ -183,6 +196,15 @@ export function SplitChapterDialog({
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setShowImport((v) => !v)} disabled={isPending}>
             <ClipboardPaste className="h-3.5 w-3.5" /> Importer une liste (JSON)
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDownloadPdf}
+            disabled={isPending}
+            title="Télécharger le PDF de ce chapitre pour repérer vous-même les bonnes coupures (ex. si la suggestion IA échoue sur un gros chapitre)"
+          >
+            <Download className="h-3.5 w-3.5" /> {isDownloading ? "…" : "Télécharger le PDF"}
           </Button>
         </div>
 

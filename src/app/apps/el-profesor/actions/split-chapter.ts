@@ -92,8 +92,18 @@ export async function suggestChapterSplit(
   let pageTexts: string[];
   try {
     pageTexts = await extractPdfPageTexts(bytes);
-  } catch {
-    return { error: "Échec de la lecture du texte du PDF — fichier corrompu, ou trop volumineux pour être lu à temps. Utilisez le découpage manuel ci-dessous.", pageCount, targetPartCount };
+  } catch (err) {
+    // Surfaces the real pdfjs failure instead of a single generic message
+    // for every possible cause — the previous wording ("corrompu, ou trop
+    // volumineux") turned out to fire even on a 31-page chapter, which
+    // isn't explained by either of those, so the real message is needed to
+    // actually diagnose it rather than guess again.
+    const detail = err instanceof Error ? err.message : String(err);
+    return {
+      error: `Échec de la lecture du texte du PDF (${detail}). Utilisez le découpage manuel ci-dessous, ou téléchargez le PDF pour le diviser vous-même.`,
+      pageCount,
+      targetPartCount,
+    };
   }
 
   try {
