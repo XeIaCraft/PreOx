@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare, ChevronLeft, ChevronRight } from "lucide-react";
 import { QuizMode } from "@/components/el-profesor/quiz-mode";
 import { MindMapDialog } from "@/components/el-profesor/mind-map-dialog";
 import { Button } from "@/components/ui/button";
@@ -101,6 +101,10 @@ export function ChapterView({
   const [printTarget, setPrintTarget] = useState<"single" | "chapter">("single");
   const [quizOpen, setQuizOpen] = useState(false);
   const [mindMapOpen, setMindMapOpen] = useState(false);
+  // Mobile/tablet "browse all fiches" sheet (requested 2026-08-28 — the
+  // cramped horizontal-scroll pill row below lg made the chapter's other
+  // fiches all but invisible). Desktop keeps its always-visible sidebar list.
+  const [ficheListOpen, setFicheListOpen] = useState(false);
   const [contributingFlashcard, setContributingFlashcard] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   // Item 37 of the backlog: this page (already visited) is served from the
@@ -239,6 +243,16 @@ export function ChapterView({
   );
 
   const swipeStartX = useRef<number | null>(null);
+  const currentFicheIndex = withFiche.findIndex((s) => s.id === selectedId);
+
+  // Shared prev/next-with-bounds — used by the swipe gesture below, the
+  // mobile page-turn buttons, and (previously duplicated) nowhere else.
+  function goToFiche(direction: 1 | -1) {
+    if (currentFicheIndex === -1) return;
+    const nextIndex = currentFicheIndex + direction;
+    if (nextIndex < 0 || nextIndex >= withFiche.length) return;
+    setSelectedId(withFiche[nextIndex].id);
+  }
 
   function handleContentPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.pointerType !== "touch") return;
@@ -251,10 +265,7 @@ export function ChapterView({
     if (e.pointerType !== "touch" || startX === null) return;
     const dx = e.clientX - startX;
     if (Math.abs(dx) < 60) return;
-    const index = withFiche.findIndex((s) => s.id === selectedId);
-    if (index === -1) return;
-    if (dx < 0 && index < withFiche.length - 1) setSelectedId(withFiche[index + 1].id);
-    else if (dx > 0 && index > 0) setSelectedId(withFiche[index - 1].id);
+    goToFiche(dx < 0 ? 1 : -1);
   }
 
   const FONT_SCALE_ORDER: FontScale[] = ["sm", "md", "lg"];
@@ -522,19 +533,74 @@ export function ChapterView({
         </div>
       </div>
 
+      {/* Below lg: a compact "page turn" bar (prev/next + a tap target that
+          opens the full list as a sheet) instead of the desktop sidebar —
+          requested 2026-08-28, the old horizontal-scroll pill row made a
+          chapter's other fiches all but invisible/undiscoverable on
+          mobile. lg+ keeps the always-visible sidebar list below. */}
+      {!focusMode && withFiche.length > 0 && (
+        <div className="mb-3 flex items-center gap-1.5 print:hidden lg:hidden">
+          <Button variant="ghost" size="icon" onClick={() => goToFiche(-1)} disabled={currentFicheIndex <= 0} aria-label="Fiche précédente">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <button
+            type="button"
+            onClick={() => setFicheListOpen(true)}
+            className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full border border-border bg-surface px-3 py-2 text-sm"
+          >
+            {selected && bookmarks.has(selected.id) && <Star className="h-3 w-3 shrink-0 fill-accent text-accent" />}
+            <span className="truncate font-medium text-foreground">{selected?.name ?? "Sélectionner une entrée"}</span>
+            <span className="shrink-0 text-xs tabular-nums text-foreground-subtle">
+              {currentFicheIndex + 1}/{withFiche.length}
+            </span>
+          </button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => goToFiche(1)}
+            disabled={currentFicheIndex === -1 || currentFicheIndex >= withFiche.length - 1}
+            aria-label="Fiche suivante"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
+      {ficheListOpen && (
+        <Modal title={`Fiches de ce chapitre (${withFiche.length})`} onClose={() => setFicheListOpen(false)} size="md">
+          <div className="-m-4 max-h-[70vh] overflow-y-auto">
+            {withFiche.map((sub, i) => (
+              <button
+                key={sub.id}
+                type="button"
+                onClick={() => {
+                  setSelectedId(sub.id);
+                  setFicheListOpen(false);
+                }}
+                className={`flex w-full items-center gap-2 border-b border-border px-4 py-3 text-left text-sm last:border-b-0 ${
+                  sub.id === selectedId ? "bg-primary-tint text-primary-strong" : "text-foreground-muted hover:bg-surface-muted"
+                }`}
+              >
+                <span className="shrink-0 text-xs tabular-nums text-foreground-subtle">{i + 1}</span>
+                {bookmarks.has(sub.id) && <Star className="h-3 w-3 shrink-0 fill-accent text-accent" />}
+                <span className="truncate">{sub.name}</span>
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
+
       <div className={`min-h-0 flex-1 gap-4 lg:grid lg:overflow-hidden ${focusMode ? "lg:grid-cols-1" : "lg:grid-cols-[220px_1fr_1fr]"}`}>
         <div
-          className={`-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 print:hidden lg:mx-0 lg:mb-0 lg:flex-col lg:overflow-y-auto lg:overflow-x-visible lg:rounded-[var(--radius-lg)] lg:border lg:border-border lg:bg-surface lg:p-2 lg:px-2 lg:pb-2 ${focusMode ? "hidden" : ""}`}
+          className={`hidden print:hidden lg:flex lg:flex-col lg:gap-1 lg:overflow-y-auto lg:rounded-[var(--radius-lg)] lg:border lg:border-border lg:bg-surface lg:p-2 ${focusMode ? "lg:hidden" : ""}`}
         >
           {withFiche.map((sub) => (
             <button
               key={sub.id}
               type="button"
               onClick={() => setSelectedId(sub.id)}
-              className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-sm transition-colors lg:block lg:w-full lg:shrink lg:whitespace-normal lg:rounded-[var(--radius-sm)] lg:px-3 lg:py-2 lg:text-left ${
-                sub.id === selectedId
-                  ? "bg-primary-tint text-primary-strong"
-                  : "bg-surface-muted text-foreground-muted lg:bg-transparent lg:hover:bg-surface-muted"
+              className={`block w-full rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm transition-colors ${
+                sub.id === selectedId ? "bg-primary-tint text-primary-strong" : "text-foreground-muted hover:bg-surface-muted"
               }`}
             >
               {bookmarks.has(sub.id) && <Star className="mr-1 inline h-3 w-3 fill-accent text-accent" />}

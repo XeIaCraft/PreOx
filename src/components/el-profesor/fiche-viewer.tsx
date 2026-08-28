@@ -18,7 +18,6 @@ import {
   ThumbsUp,
   RotateCcw,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { FlagButton } from "@/components/el-profesor/flag-button";
 import { markBlockReviewed } from "@/app/apps/el-profesor/actions/block-review";
 import type { BlockReviewState } from "@/lib/el-profesor/dal";
@@ -392,18 +391,23 @@ export function FicheViewer({
       )}
       {summary && <p className={`mt-1 text-foreground-subtle ${SUMMARY_TEXT_SIZE[fontScale]}`}>{summary}</p>}
       <BlockNav blocks={blocks} />
-      <div className="mt-4 space-y-4">
+      {/* Flowing, book-like reading column (requested 2026-08-28 — a boxed
+          card per block read as a stack of disconnected widgets, not a
+          page) — a single divided list instead of one bordered/padded box
+          per block. The block-type label is still a stable, consistent
+          landmark (per-block icon + small-caps heading), it's just no
+          longer boxed in. */}
+      <div className="mt-5 divide-y divide-border">
         {blocks.map((block) => {
           const meta = BLOCK_META[block.blockType];
           const Icon = meta.icon;
           return (
-            <div key={block.id} id={`fiche-block-${block.id}`} className="scroll-mt-14 rounded-[var(--radius-md)] border border-border p-4">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+            <div key={block.id} id={`fiche-block-${block.id}`} className="scroll-mt-14 py-4 first:pt-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-foreground-subtle">
                   <Icon className="h-3.5 w-3.5" /> {meta.label}
                 </span>
                 <div className="flex items-center gap-2">
-                  {block.needsReview && <Badge variant="accent">À vérifier</Badge>}
                   <CopyBlockButton block={block} />
                   <FlagButton targetType="block" targetId={block.id} />
                 </div>
@@ -421,14 +425,14 @@ export function FicheViewer({
               )}
               <CitationChips citations={block.citations} onClick={onCitationClick} />
               {blockReviewStates && (
-                <div className="mt-2 flex justify-end border-t border-border pt-2">
+                <div className="mt-2 flex justify-end">
                   <BlockRereadControl blockId={block.id} initialState={blockReviewStates[block.id]} />
                 </div>
               )}
             </div>
           );
         })}
-        {blocks.length === 0 && <p className="text-sm text-foreground-subtle">Aucun contenu pour cette fiche.</p>}
+        {blocks.length === 0 && <p className="py-4 text-sm text-foreground-subtle">Aucun contenu pour cette fiche.</p>}
       </div>
     </div>
   );
