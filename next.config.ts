@@ -4,6 +4,18 @@ const nextConfig: NextConfig = {
   // Don't advertise the framework in responses — no functional benefit to
   // a would-be attacker knowing, but no reason to hand it out either.
   poweredByHeader: false,
+  // pdfjs-dist (server-side text extraction, pdf-text.ts) does its own
+  // dynamic import of pdf.worker.mjs relative to its own package directory
+  // when running in Node without a real Worker (its "fake worker"
+  // fallback). Bundling it into a serverless function's traced output
+  // breaks that relative resolution — found 2026-08-28 via "Setting up
+  // fake worker failed: Cannot find module '.../pdf.worker.mjs'" on the
+  // new per-chapter split's AI-suggestion call, even on a 32-page chapter
+  // (so not a timeout/size issue, a packaging one). Marking it external
+  // keeps it (and its worker file) served straight from node_modules at
+  // runtime instead of being bundled, which is Next's own documented fix
+  // for this exact class of library.
+  serverExternalPackages: ["pdfjs-dist"],
   experimental: {
     // Default is 1MB — raised to 8MB for importChapterContent's hand-pasted
     // extraction JSON, then to 50MB (2026-08-24) because "Diviser un PDF"
