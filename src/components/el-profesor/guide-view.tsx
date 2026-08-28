@@ -69,6 +69,8 @@ import {
   Calculator,
   PenSquare,
   AlertTriangle,
+  Menu,
+  PanelRightOpen,
 } from "lucide-react";
 
 function IconRow({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
@@ -140,17 +142,24 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
             génération de contenu.
           </p>
           <p className="font-medium text-foreground">Barre du haut</p>
+          <p>
+            En dessous d&apos;une certaine largeur d&apos;écran, le guide, le tutoriel, le glossaire, le journal de cas et les cartes
+            exclues (ainsi que les entrées admin ci-dessous) se regroupent dans un seul menu{" "}
+            <Menu className="inline h-3.5 w-3.5 align-text-bottom" /> pour ne pas surcharger l&apos;écran — les mêmes fonctions, juste
+            rangées.
+          </p>
           <ul className="space-y-1.5">
-            <IconRow icon={Siren}>
-              Mode urgence — accès rapide, hors ligne une fois consulté, aux protocoles de crise marqués comme tels par un admin sur du
-              contenu déjà relu et publié (jamais généré à la volée).
-            </IconRow>
             <IconRow icon={HelpCircle}>Revoir le tutoriel de bienvenue.</IconRow>
             <IconRow icon={BookOpen}>Glossaire des notions (voir plus bas).</IconRow>
             <IconRow icon={NotebookPen}>Votre journal de cas cliniques, strictement privé, relié librement aux notions du glossaire.</IconRow>
             <IconRow icon={BellOff}>Vos flashcards que vous avez exclues de la révision.</IconRow>
             {isAdmin && (
               <>
+                <IconRow icon={EyeOff}>
+                  Vue admin / vue utilisateur — bascule votre propre session pour prévisualiser El Profesor exactement comme le
+                  verrait un utilisateur normal (contenu brouillon masqué, outils de génération IA cachés), sans créer de second
+                  compte.
+                </IconRow>
                 <IconRow icon={Tag}>Notions et contradictions entre livres (admin).</IconRow>
                 <IconRow icon={Gauge}>Tableau de bord qualité — doublons, fiches incomplètes (admin).</IconRow>
                 <IconRow icon={Archive}>Livres archivés (admin).</IconRow>
@@ -159,7 +168,13 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
               </>
             )}
           </ul>
-          <p className="font-medium text-foreground">Widgets de progression</p>
+          <p className="font-medium text-foreground">En haut de page</p>
+          <ul className="space-y-1.5">
+            <IconRow icon={ArrowLeft}>Reprendre la lecture — reprend exactement où vous en étiez.</IconRow>
+            <IconRow icon={Sparkles}>Carte du jour — une flashcard mise en avant, à retourner directement depuis le tableau de bord.</IconRow>
+            <IconRow icon={Search}>Recherche dans toute la bibliothèque, et dans vos notes personnelles.</IconRow>
+          </ul>
+          <p className="font-medium text-foreground">En bas de page — stats et régularité</p>
           <ul className="space-y-1.5">
             <IconRow icon={Flame}>Série de jours consécutifs de révision.</IconRow>
             <IconRow icon={Target}>Objectif hebdomadaire de régularité, et objectif quotidien de cartes (cliquable pour changer 10/15/20/30).</IconRow>
@@ -178,7 +193,9 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
               Alerte de péremption — chapitres déjà maîtrisés dont des cartes sont en retard de plus de 60 jours sur leur échéance : le
               risque d&apos;oubli y est le plus élevé.
             </IconRow>
-            <IconRow icon={Sparkles}>Synthèse IA à la demande de vos points faibles récurrents.</IconRow>
+            <IconRow icon={Sparkles}>
+              Synthèse IA à la demande de vos points faibles récurrents — apparaît dès que vous avez au moins une carte difficile.
+            </IconRow>
           </ul>
           {isAdmin && (
             <>
@@ -245,27 +262,41 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
             <IconRow icon={Minus}>Taille du texte (petit/moyen/grand).</IconRow>
             <IconRow icon={Sun}>Mode confort de lecture (fond sépia).</IconRow>
             <IconRow icon={SpellCheck}>Police adaptée à la dyslexie.</IconRow>
-            <IconRow icon={Link2}>Copier un lien vers cette fiche, ou partager une note personnelle en lecture seule.</IconRow>
-            <IconRow icon={Share2}>Rendre la fiche consultable via un lien public (réversible).</IconRow>
-            <IconRow icon={Printer}>Imprimer la fiche affichée, ou <Files className="inline h-3.5 w-3.5 align-text-bottom" /> tout le chapitre.</IconRow>
-            <IconRow icon={ListChecks}>Mode quiz — QCM généré à partir des flashcards du chapitre (dès 4 cartes publiées).</IconRow>
-            <IconRow icon={Brain}>Carte mentale générée par IA du chapitre (à la demande, jamais enregistrée).</IconRow>
+            <IconRow icon={Printer}>Imprimer la fiche affichée.</IconRow>
             <IconRow icon={Keyboard}>Liste des raccourcis clavier.</IconRow>
             <IconRow icon={Maximize2}>Mode focus, sans distraction.</IconRow>
             <IconRow icon={FileText}>Sur mobile, bascule vers le PDF en plein écran.</IconRow>
           </ul>
           <p>
-            En bas de chaque fiche : des questions-réponses libres entre utilisateurs (<MessageCircle className="inline h-3.5 w-3.5 align-text-bottom" />),
-            des fiches liées partageant la même notion, et des outils IA ponctuels — <Languages className="inline h-3.5 w-3.5 align-text-bottom" /> traduire,{" "}
-            <Stethoscope className="inline h-3.5 w-3.5 align-text-bottom" /> cas clinique d&apos;entraînement,{" "}
-            <ListChecks className="inline h-3.5 w-3.5 align-text-bottom" /> questions type examen.
+            En bas de chaque fiche : des questions-réponses libres entre utilisateurs (
+            <MessageCircle className="inline h-3.5 w-3.5 align-text-bottom" />).
           </p>
+          {isAdmin && (
+            <>
+              <p className="font-medium text-foreground">Outils admin sur une fiche</p>
+              <p>
+                Pour l&apos;instant réservés à l&apos;admin — pas de génération de contenu par IA côté utilisateur :
+              </p>
+              <ul className="space-y-1.5">
+                <IconRow icon={Link2}>Copier un lien vers cette fiche.</IconRow>
+                <IconRow icon={Share2}>Rendre la fiche consultable via un lien public (réversible).</IconRow>
+                <IconRow icon={Files}>Imprimer tout le chapitre.</IconRow>
+                <IconRow icon={ListChecks}>Mode quiz — QCM généré à partir des flashcards du chapitre (dès 4 cartes publiées).</IconRow>
+                <IconRow icon={Brain}>Carte mentale générée par IA du chapitre (à la demande, jamais enregistrée).</IconRow>
+                <IconRow icon={Languages}>Traduire la fiche à la volée (jamais enregistrée).</IconRow>
+                <IconRow icon={Stethoscope}>Générer un cas clinique d&apos;entraînement à partir de la fiche.</IconRow>
+                <IconRow icon={ListChecks}>Générer des questions type concours à partir de la fiche.</IconRow>
+              </ul>
+            </>
+          )}
         </Section>
 
         <Section id="pdf" title="Le PDF et la couverture" icon={FileText}>
           <p>
-            Sur ordinateur, le PDF du chapitre s&apos;affiche à côté de la fiche. Cliquer sur une citation « p. X » dans une fiche
-            ouvre directement la bonne page et le bon passage.
+            Sur tablette et ordinateur, le PDF du chapitre est rétracté par défaut pour laisser toute la place à la fiche —{" "}
+            <PanelRightOpen className="inline h-3.5 w-3.5 align-text-bottom" /> l&apos;affiche à côté d&apos;un clic, et il se
+            rouvre automatiquement dès que vous cliquez sur une citation « p. X » dans une fiche, directement à la bonne page et au
+            bon passage.
           </p>
           <ul className="space-y-1.5">
             <IconRow icon={ChevronLeft}>Navigation page par page, ou numéro de page directement.</IconRow>
@@ -312,11 +343,9 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
           </p>
           <p>
             Plusieurs modes : révision du jour par chapitre (uniquement les cartes dues), révision libre (tout le chapitre, plafonnée
-            par défaut pour rester raisonnable), révision globale (mélange tous les chapitres dus — la pratique entrelacée retient
-            mieux qu&apos;un chapitre isolé), carnet d&apos;erreurs (vos cartes les plus difficiles), révision par thème depuis le
-            glossaire, et <Timer className="inline h-3.5 w-3.5 align-text-bottom" /> examen blanc chronométré (bouton sur chaque
-            chapitre) — toutes les flashcards publiées, mélangées, sous un compte à rebours ; comme la révision libre, jamais pris en
-            compte dans la planification.
+            par défaut pour rester raisonnable, jamais prise en compte dans la planification), révision globale (mélange tous les
+            chapitres dus — la pratique entrelacée retient mieux qu&apos;un chapitre isolé), carnet d&apos;erreurs (vos cartes les plus
+            difficiles), et révision par thème depuis le glossaire.
           </p>
         </Section>
 
@@ -392,7 +421,8 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
               <IconRow icon={EyeOff}>Convertir une flashcard en texte à trous (cloze) directement depuis son éditeur.</IconRow>
               <IconRow icon={Siren}>
                 Marquer un bloc comme référence d&apos;urgence — sur du contenu déjà relu et publié uniquement, aucune nouvelle
-                génération ; visible ensuite depuis le mode urgence par tous les utilisateurs.
+                génération. Le mode urgence qui les rassemblait a été retiré du tableau de bord d&apos;El Profesor pour rejoindre un
+                module dédié ; le marquage reste possible en attendant.
               </IconRow>
               <IconRow icon={Upload}>
                 Importer un contenu généré ailleurs (ex. Claude.ai) — copiez le prompt fourni, collez le JSON obtenu en retour ; les
