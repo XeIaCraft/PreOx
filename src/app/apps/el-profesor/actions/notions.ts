@@ -228,6 +228,36 @@ export async function clearFicheSuperseded(ficheId: string): Promise<ActionState
   return { success: "Fiche réactivée." };
 }
 
+/**
+ * Manual, empty-shell notion creation (requested 2026-08-28 — "je peux pas
+ * créer de notion, il faudrait") — every notion up to now only ever came
+ * into being as a side effect of AI categorization (findOrCreateNotion,
+ * used by categorizeChapterNotions). This is the direct escape hatch: an
+ * admin who already knows a cross-book theme deserves its own notion
+ * doesn't have to wait for AI to happen to name it the same way, or tag a
+ * fiche to it first. Fiches are still added afterward the normal way
+ * (addFicheToNotion, or the AI categorization pass).
+ */
+export async function createNotion(name: string, categoryId: string | null = null): Promise<ActionState & { notionId?: string }> {
+  await requireElProfesorAdmin();
+  const trimmed = name.trim();
+  if (!trimmed) return { error: "Le nom ne peut pas être vide." };
+
+  const supabase = await createClient();
+  const { data: last } = await supabase.from("el_profesor_notions").select("position").order("position", { ascending: false }).limit(1).maybeSingle();
+  const position = (last?.position ?? -1) + 1;
+  const { data: created, error } = await supabase
+    .from("el_profesor_notions")
+    .insert({ name: trimmed, position, category_id: categoryId })
+    .select("id")
+    .maybeSingle();
+  if (error || !created) return { error: error?.code === "23505" ? "Une notion porte déjà ce nom." : "Impossible de créer cette notion." };
+
+  revalidatePath("/apps/el-profesor/notions");
+  revalidatePath("/apps/el-profesor");
+  return { success: "Notion créée — ajoutez-y des fiches depuis leur page.", notionId: created.id };
+}
+
 export async function renameNotion(notionId: string, name: string): Promise<ActionState> {
   await requireElProfesorAdmin();
   const trimmed = name.trim();

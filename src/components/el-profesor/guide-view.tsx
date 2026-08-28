@@ -380,6 +380,7 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
           </p>
           {isAdmin && (
             <ul className="space-y-1.5">
+              <IconRow icon={Plus}>Créer une notion manuellement, vide au départ — utile pour nommer un thème avant même qu&apos;une fiche y soit rattachée.</IconRow>
               <IconRow icon={Tag}>Catégoriser automatiquement les fiches d&apos;un chapitre par notion.</IconRow>
               <IconRow icon={Sparkles}>
                 Générer (ou régénérer) la synthèse d&apos;une notion, depuis sa propre page — reste en brouillon jusqu&apos;à ce que

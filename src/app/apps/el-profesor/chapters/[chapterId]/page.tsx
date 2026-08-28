@@ -1,5 +1,12 @@
 import { notFound } from "next/navigation";
-import { requireElProfesorAccess, getChapterContent, getBookmarkedSubEntityIds, getReadingPosition, getBlockReviewStates } from "@/lib/el-profesor/dal";
+import {
+  requireElProfesorAccess,
+  getChapterContent,
+  getBookmarkedSubEntityIds,
+  getReadingPosition,
+  getBlockReviewStates,
+  getAdjacentChapters,
+} from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { getEffectiveIsAdmin } from "@/lib/el-profesor/preview-mode";
 import { ChapterView } from "@/components/el-profesor/chapter-view";
@@ -21,10 +28,11 @@ export default async function ChapterPage({
   const { data: chapter } = await supabase.from("el_profesor_chapters").select("*").eq("id", chapterId).single();
   if (!chapter || chapter.status !== "published") notFound();
 
-  const [subEntities, bookmarkedIds, readingPosition] = await Promise.all([
+  const [subEntities, bookmarkedIds, readingPosition, adjacentChapters] = await Promise.all([
     getChapterContent(chapterId, false),
     getBookmarkedSubEntityIds(profile.id),
     entity ? Promise.resolve(null) : getReadingPosition(profile.id),
+    getAdjacentChapters(chapter.book_id, chapterId, false),
   ]);
 
   const blockIds = subEntities.flatMap((s) => s.fiche?.blocks.map((b) => b.id) ?? []);
@@ -47,6 +55,8 @@ export default async function ChapterPage({
         sourceText={chapter.source_text}
         blockReviewStates={blockReviewStates}
         isAdmin={isAdmin}
+        prevChapter={adjacentChapters.prev}
+        nextChapter={adjacentChapters.next}
       />
     </ToastProvider>
   );

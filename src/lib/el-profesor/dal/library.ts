@@ -331,6 +331,43 @@ export async function getBookTableOfContents(bookId: string, userId: string, inc
   return { book: toBook(bookRow), chapters: tocChapters };
 }
 
+export interface AdjacentChapterEntry {
+  chapterId: string;
+  chapterTitle: string;
+  /** First (going forward) or last (going backward) sub-entity with a published fiche in that chapter — null if the chapter has no fiche yet, in which case there's nowhere to land. */
+  entrySubEntityId: string | null;
+}
+
+/**
+ * The book's chapter immediately before/after the current one, plus which
+ * sub-entity to land on — piste 2026-08-28 ("le chapitre change avec swipe
+ * à droite et gauche" on the "livre" reading layout), so swiping past the
+ * last/first fiche of the current chapter can continue straight into the
+ * neighboring chapter instead of just stopping dead at the boundary.
+ */
+export async function getAdjacentChapters(bookId: string, currentChapterId: string, includeUnpublished: boolean): Promise<{ prev: AdjacentChapterEntry | null; next: AdjacentChapterEntry | null }> {
+  const supabase = await createClient();
+  const { data: chapterRows } = await supabase
+    .from("el_profesor_chapters")
+    .select("id, title, status, order_index")
+    .eq("book_id", bookId)
+    .order("order_index", { ascending: true });
+  const chapters = (chapterRows ?? []).filter((c) => includeUnpublished || c.status === "published");
+  const currentIndex = chapters.findIndex((c) => c.id === currentChapterId);
+  if (currentIndex === -1) return { prev: null, next: null };
+
+  async function toEntry(chapter: { id: string; title: string } | undefined, fromEnd: boolean): Promise<AdjacentChapterEntry | null> {
+    if (!chapter) return null;
+    const content = await getChapterContent(chapter.id, includeUnpublished);
+    const withFiche = content.filter((s) => s.fiche);
+    const entry = fromEnd ? withFiche[withFiche.length - 1] : withFiche[0];
+    return { chapterId: chapter.id, chapterTitle: chapter.title, entrySubEntityId: entry?.id ?? null };
+  }
+
+  const [prev, next] = await Promise.all([toEntry(chapters[currentIndex - 1], true), toEntry(chapters[currentIndex + 1], false)]);
+  return { prev, next };
+}
+
 // -- Questions/réponses sous une fiche, visibles par tous -------------------
 
 /** All questions + their answers for a fiche, oldest first — item 28 of the backlog. */

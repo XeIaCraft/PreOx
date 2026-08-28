@@ -539,7 +539,9 @@ export function FicheViewer({
                 <img
                   src={block.imageUrl}
                   alt={block.imageAlt ?? ""}
-                  className="mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain"
+                  className={`mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain ${
+                    layout === "livre" && justify ? "mx-auto block" : ""
+                  }`}
                 />
               )}
               {!immersive && <CitationChips citations={block.citations} onClick={onCitationClick} />}

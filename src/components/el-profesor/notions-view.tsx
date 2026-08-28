@@ -44,6 +44,7 @@ import {
   moveNotionFiche,
   addFicheToNotion,
   removeFicheFromNotion,
+  createNotion,
   createNotionCategory,
   renameNotionCategory,
   deleteNotionCategory,
@@ -606,6 +607,61 @@ function CategoryManager({ categories, onChanged }: { categories: NotionCategory
   );
 }
 
+/**
+ * Manual, empty-shell notion creation (requested 2026-08-28 — "je peux pas
+ * créer de notion, il faudrait"). Every notion up to now only ever came
+ * into being as a side effect of AI categorization above — this is the
+ * direct escape hatch for an admin who already knows a theme deserves its
+ * own notion. The new notion starts with no fiches; add them from a
+ * fiche's own page (or run AI categorization, which reuses it by name).
+ */
+function CreateNotionForm({ categories, onCreated }: { categories: NotionCategory[]; onCreated: () => void }) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [name, setName] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+
+  function handleCreate() {
+    if (!name.trim()) return;
+    startTransition(async () => {
+      const result = await createNotion(name, categoryId || null);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "", { variant: "success" });
+        setName("");
+        setCategoryId("");
+        onCreated();
+      }
+    });
+  }
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-[var(--radius-md)] border border-border bg-surface-muted/50 p-3">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+        placeholder="Nouvelle notion (ex. Hyperkaliémie)"
+        disabled={isPending}
+        className="w-56 rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 text-xs placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      />
+      {categories.length > 0 && (
+        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="h-[26px] max-w-[160px] py-0 text-xs">
+          <option value="">Sans catégorie</option>
+          {categories.map((cat) => (
+            <option key={cat.id} value={cat.id}>
+              {cat.name}
+            </option>
+          ))}
+        </Select>
+      )}
+      <Button variant="ghost" size="sm" onClick={handleCreate} disabled={isPending || !name.trim()} className="h-6 px-2 text-xs">
+        <Plus className="h-3 w-3" /> Créer une notion
+      </Button>
+    </div>
+  );
+}
+
 function SupersededFicheRow({ entry, onChanged }: { entry: SupersededFicheEntry; onChanged: () => void }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -1006,7 +1062,7 @@ function NotionCard({
               <ChevronDown className="h-3 w-3" />
             </button>
           </span>
-          <Link href={`/apps/el-profesor/notions/${notion.id}`} className="font-medium text-foreground hover:underline">
+          <Link href={`/apps/el-profesor/notions/${notion.id}`} className="text-sm font-medium text-foreground hover:underline">
             {notion.name}
           </Link>
           <RenameNotionButton notionId={notion.id} currentName={notion.name} onRenamed={onChanged} />
@@ -1221,6 +1277,7 @@ export function NotionsView({
       <div className="mt-8">
         <p className="mb-2 text-sm font-medium text-foreground">Notions ({notionSummaries.length})</p>
         <CategoryManager categories={categories} onChanged={refresh} />
+        <CreateNotionForm categories={categories} onCreated={refresh} />
         {notionSummaries.length === 0 ? (
           <p className="text-sm text-foreground-subtle">Aucune notion pour l&apos;instant — catégorisez un premier chapitre ci-dessus.</p>
         ) : (
@@ -1230,7 +1287,7 @@ export function NotionsView({
               if (items.length === 0) return null;
               return (
                 <div key={cat.id}>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-foreground-subtle">{cat.name}</p>
+                  <p className="mb-2 font-serif-display text-lg font-medium text-foreground">{cat.name}</p>
                   <div className="space-y-3">
                     {items.map(({ notion, fiches }, i) => (
                       <NotionCard
@@ -1258,7 +1315,7 @@ export function NotionsView({
               if (uncategorized.length === 0) return null;
               return (
                 <div>
-                  {categories.length > 0 && <p className="mb-2 text-xs font-medium uppercase tracking-wide text-foreground-subtle">Sans catégorie</p>}
+                  {categories.length > 0 && <p className="mb-2 font-serif-display text-lg font-medium text-foreground">Sans catégorie</p>}
                   <div className="space-y-3">
                     {uncategorized.map(({ notion, fiches }, i) => (
                       <NotionCard

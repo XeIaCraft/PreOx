@@ -230,8 +230,39 @@ export function NotionList({
     <div className="space-y-6">
       {groups.map((group) => (
         <div key={group.key}>
-          {group.label && <p className="mb-2 text-xs font-medium uppercase tracking-wide text-foreground-subtle">{group.label}</p>}
+          {group.label && (
+            // Category = chapter, notion = sub-section (requested 2026-08-28)
+            // — sized as a real heading (matching the book title used one
+            // level up in "Par livre"), not the small eyebrow label this
+            // used to be, so the hierarchy actually reads at a glance.
+            <p className="mb-2 font-serif-display text-lg font-medium text-foreground">{group.label}</p>
+          )}
           <div className="space-y-3">{group.items.map(({ notion, fiches }, i) => {
+        // Non-admin users get the pared-down row only (requested
+        // 2026-08-28) — title linking to the synthesis, and a review
+        // shortcut. Everything else (fiche list, recommendations, dose
+        // calculators, case count) stays one click away on the synthesis
+        // page itself rather than cluttering this list.
+        if (!isAdmin) {
+          return (
+            <div
+              key={notion.id}
+              id={`notion-${notion.id}`}
+              className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-border px-3 py-2.5"
+            >
+              <Link href={`/apps/el-profesor/notions/${notion.id}`} className="min-w-0 flex-1 truncate text-sm font-medium text-foreground hover:underline">
+                {notion.name}
+              </Link>
+              <Link
+                href={`/apps/el-profesor/review?mode=theme&notionId=${notion.id}&name=${encodeURIComponent(notion.name)}`}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary-tint px-2.5 py-1 text-xs font-medium text-primary-strong hover:bg-primary-tint/70"
+              >
+                <GraduationCap className="h-3.5 w-3.5" /> Réviser
+              </Link>
+            </div>
+          );
+        }
+
         const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
         const r = readiness[notion.id];
         const tier = r && r.total > 0 ? readinessTier(r.readinessPct) : null;
@@ -263,7 +294,7 @@ export function NotionList({
                     </button>
                   </span>
                 )}
-                <Link href={`/apps/el-profesor/notions/${notion.id}`} className="font-medium text-foreground hover:underline">
+                <Link href={`/apps/el-profesor/notions/${notion.id}`} className="text-sm font-medium text-foreground hover:underline">
                   {notion.name}
                 </Link>
                 {isAdmin && <RenameNotionButton notionId={notion.id} currentName={notion.name} onRenamed={refresh} />}

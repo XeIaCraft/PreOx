@@ -42,7 +42,7 @@ import {
   type FontScale,
   type FicheLayout,
 } from "@/lib/el-profesor/local-prefs";
-import type { SubEntityWithFiche, BlockReviewState } from "@/lib/el-profesor/dal";
+import type { SubEntityWithFiche, BlockReviewState, AdjacentChapterEntry } from "@/lib/el-profesor/dal";
 import type { Citation, ChapterSourceKind } from "@/lib/el-profesor/types";
 
 /** Read-only fallback for a chapter sourced from Word/PowerPoint (item 5 of the backlog) — no PDF to render, so citations only ever show as plain quoted text and there's no page to jump to. */
@@ -157,6 +157,8 @@ function ImmersiveFicheReader({
   blockReviewStates,
   ficheIndex,
   ficheCount,
+  hasPrevChapter,
+  hasNextChapter,
   onCitationClick,
   onGoToFiche,
   onOpenFicheList,
@@ -171,6 +173,9 @@ function ImmersiveFicheReader({
   blockReviewStates?: Record<string, BlockReviewState>;
   ficheIndex: number;
   ficheCount: number;
+  /** Whether a neighboring chapter (with somewhere to land) exists — so the "sommaire" dock's Précédente/Suivante don't disable themselves right at this chapter's own boundary when a swipe there would still go somewhere. */
+  hasPrevChapter: boolean;
+  hasNextChapter: boolean;
   onCitationClick: (c: Citation) => void;
   onGoToFiche: (direction: 1 | -1) => void;
   onOpenFicheList: () => void;
@@ -222,7 +227,7 @@ function ImmersiveFicheReader({
         )}
         <h1
           className={`text-balance font-serif-display font-medium leading-tight text-foreground ${
-            layout === "livre" ? "mt-1.5 text-[26px]" : "mt-1 text-[19px]"
+            layout === "livre" ? "mt-1.5 text-[20px]" : "mt-1 text-[19px]"
           }`}
         >
           {fiche.title}
@@ -249,7 +254,7 @@ function ImmersiveFicheReader({
           <button
             type="button"
             onClick={() => onGoToFiche(-1)}
-            disabled={ficheIndex <= 0}
+            disabled={ficheIndex <= 0 && !hasPrevChapter}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] bg-surface-muted px-3 py-2.5 text-sm font-medium text-foreground-muted disabled:opacity-40"
           >
             <ChevronLeft className="h-4 w-4" /> Précédente
@@ -265,7 +270,7 @@ function ImmersiveFicheReader({
           <button
             type="button"
             onClick={() => onGoToFiche(1)}
-            disabled={ficheIndex >= ficheCount - 1}
+            disabled={ficheIndex >= ficheCount - 1 && !hasNextChapter}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] bg-primary px-3 py-2.5 text-sm font-medium text-surface disabled:opacity-40"
           >
             Suivante <ChevronRight className="h-4 w-4" />
@@ -290,6 +295,8 @@ export function ChapterView({
   sourceText = null,
   blockReviewStates,
   isAdmin = false,
+  prevChapter = null,
+  nextChapter = null,
 }: {
   chapterId: string;
   chapterTitle: string;
@@ -300,6 +307,9 @@ export function ChapterView({
   sourceText?: string | null;
   blockReviewStates?: Record<string, BlockReviewState>;
   isAdmin?: boolean;
+  /** The book's neighboring chapters (piste 2026-08-28) — lets prev/next fiche navigation continue straight into the next/previous chapter once it runs out of fiches in this one, instead of just stopping at the boundary. */
+  prevChapter?: AdjacentChapterEntry | null;
+  nextChapter?: AdjacentChapterEntry | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -492,8 +502,16 @@ export function ChapterView({
   function goToFiche(direction: 1 | -1) {
     if (currentFicheIndex === -1) return;
     const nextIndex = currentFicheIndex + direction;
-    if (nextIndex < 0 || nextIndex >= withFiche.length) return;
-    setSelectedId(withFiche[nextIndex].id);
+    if (nextIndex >= 0 && nextIndex < withFiche.length) {
+      setSelectedId(withFiche[nextIndex].id);
+      return;
+    }
+    // At the last/first fiche of this chapter — continue straight into the
+    // neighboring chapter instead of just stopping dead at the boundary.
+    const adjacent = direction === 1 ? nextChapter : prevChapter;
+    if (adjacent?.entrySubEntityId) {
+      router.push(`/apps/el-profesor/chapters/${adjacent.chapterId}?entity=${adjacent.entrySubEntityId}`);
+    }
   }
 
   function handleContentPointerDown(e: React.PointerEvent<HTMLDivElement>) {
@@ -631,6 +649,8 @@ export function ChapterView({
           blockReviewStates={blockReviewStates}
           ficheIndex={currentFicheIndex}
           ficheCount={withFiche.length}
+          hasPrevChapter={Boolean(prevChapter?.entrySubEntityId)}
+          hasNextChapter={Boolean(nextChapter?.entrySubEntityId)}
           onCitationClick={handleCitationClick}
           onGoToFiche={goToFiche}
           onOpenFicheList={() => setFicheListOpen(true)}
@@ -866,7 +886,13 @@ export function ChapterView({
           chrome) with the full-screen ImmersiveFicheReader instead. */}
       {!focusMode && ficheLayout === "actuel" && withFiche.length > 0 && (
         <div className="mb-3 flex items-center gap-1.5 print:hidden lg:hidden">
-          <Button variant="ghost" size="icon" onClick={() => goToFiche(-1)} disabled={currentFicheIndex <= 0} aria-label="Fiche précédente">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => goToFiche(-1)}
+            disabled={currentFicheIndex <= 0 && !prevChapter?.entrySubEntityId}
+            aria-label="Fiche précédente"
+          >
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <button
@@ -884,7 +910,7 @@ export function ChapterView({
             variant="ghost"
             size="icon"
             onClick={() => goToFiche(1)}
-            disabled={currentFicheIndex === -1 || currentFicheIndex >= withFiche.length - 1}
+            disabled={currentFicheIndex === -1 || (currentFicheIndex >= withFiche.length - 1 && !nextChapter?.entrySubEntityId)}
             aria-label="Fiche suivante"
           >
             <ChevronRight className="h-4 w-4" />
