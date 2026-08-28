@@ -14,7 +14,7 @@ import {
   BLOCK_TYPES,
 } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
-import { coerceKeyedObjectArray, wasArrayFieldTruncated } from "@/lib/el-profesor/anthropic";
+import { coerceKeyedObjectArray, wasArrayFieldTruncated, normalizeComplementaryResult } from "@/lib/el-profesor/anthropic";
 import { getChapterContent, getFlashcardVariantStats, type FlashcardVariantStat } from "@/lib/el-profesor/dal";
 import { logContentChange, getContentLog, type ContentLogEntry } from "@/lib/el-profesor/content-log";
 import { blockToPlainText } from "@/lib/el-profesor/block-text";
@@ -33,6 +33,7 @@ import {
 import { submitExtractionBatch, submitComplementaryBatch } from "./batches";
 import type {
   ExtractionResult,
+  ComplementaryResult,
   ExtractedSubEntity,
   ExtractedFicheBlock,
   ExtractedFlashcard,
@@ -491,6 +492,99 @@ export async function importChapterContent(chapterId: string, rawJson: string): 
     const message = err instanceof GeminiError ? err.message : "Échec de l'import.";
     await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
     await insertExtractionJob(supabase, { chapterId, status: "failed", error: message, provider: "external" });
+    return { error: message };
+  }
+}
+
+/**
+ * Validates hand-pasted gap-fill ("Compléter") JSON — same idea as
+ * parseImportedExtraction, but for the additions_for_existing/new_sub_entities
+ * shape instead of sub_entities. Added 2026-08-27: the "Importer" dialog
+ * only ever supported the fresh-extraction shape, so pasting a second-pass
+ * response into it (e.g. asking an external Claude.ai chat to fill the gaps
+ * of an already-imported chapter) failed outright with "sub_entities
+ * manquant".
+ */
+function parseImportedComplementary(raw: string): { complementary: ComplementaryResult; wasTruncated: boolean } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripCodeFence(raw));
+  } catch {
+    throw new GeminiError("JSON invalide — vérifiez que vous avez bien copié toute la réponse, sans texte avant ou après.");
+  }
+  const p = (parsed ?? {}) as Record<string, unknown>;
+  const wasTruncated = wasArrayFieldTruncated(p, "additions_for_existing") || wasArrayFieldTruncated(p, "new_sub_entities");
+
+  const complementary = normalizeComplementaryResult(p);
+  if (complementary.additions_for_existing.length === 0 && complementary.new_sub_entities.length === 0) {
+    throw new GeminiError("Le JSON doit contenir au moins un élément dans « additions_for_existing » ou « new_sub_entities ».");
+  }
+  return { complementary, wasTruncated };
+}
+
+/**
+ * Imports a hand-pasted gap-fill ("Compléter") response — the second-pass
+ * counterpart of importChapterContent, for a chapter that already has
+ * content and just needs the gaps filled by an externally-run model.
+ * Additions are matched to an existing sub-entity by name (same silent-skip
+ * behavior as the automatic complementary pass — see
+ * persistComplementaryAdditions) — a name that doesn't match anything
+ * already in the chapter is dropped rather than guessed at.
+ */
+export async function importComplementaryContent(chapterId: string, rawJson: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: chapter } = await supabase.from("el_profesor_chapters").select("*").eq("id", chapterId).single();
+  if (!chapter) return { error: "Chapitre introuvable." };
+  if (chapter.status === "extracting") return { error: "Une extraction est déjà en cours pour ce chapitre." };
+
+  let complementary: ComplementaryResult;
+  let wasTruncated: boolean;
+  try {
+    ({ complementary, wasTruncated } = parseImportedComplementary(rawJson));
+  } catch (err) {
+    return { error: err instanceof GeminiError ? err.message : "JSON invalide." };
+  }
+
+  try {
+    // includeDrafts: true — matches the automatic gap-fill pass (see
+    // runOneComplementaryPass below). A chapter this is used on is
+    // typically still draft_ready (not yet reviewed/published), so most or
+    // all of its sub-entities would otherwise be invisible to the
+    // name-matching in persistComplementaryAdditions.
+    const existingContent = await getChapterContent(chapterId, true);
+
+    if (chapter.source_kind === "pdf") {
+      const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
+      const pageTexts = await extractPdfPageTextsWithOcr(bytes, chapter.title).catch(() => null);
+      if (pageTexts) correctComplementaryCitations(complementary, pageTexts);
+    }
+
+    const addedCount = await persistComplementaryAdditions(supabase, chapterId, complementary, existingContent);
+
+    await insertExtractionJob(supabase, {
+      chapterId,
+      status: "succeeded",
+      rawOutput: complementary,
+      provider: "external",
+      rawResponse: rawJson,
+    });
+    await supabase.from("el_profesor_chapters").update({ estimated_remaining_passes: complementary.estimated_remaining_passes }).eq("id", chapterId);
+
+    revalidatePath("/apps/el-profesor");
+    const truncationNote = wasTruncated
+      ? " Note : la réponse importée avait un format inhabituel — vérifiez la couverture, ou relancez « Compléter l'extraction » par précaution."
+      : "";
+    const skippedNote =
+      addedCount === 0 && (complementary.additions_for_existing.length > 0 || complementary.new_sub_entities.length > 0)
+        ? " Aucun élément n'a pu être rattaché — vérifiez que les « sub_entity_name » correspondent exactement aux noms déjà utilisés dans ce chapitre."
+        : "";
+    return {
+      success: `${addedCount} élément(s) ajouté(s). Chaque ajout est marqué « à vérifier » — relisez-le avant publication.${truncationNote}${skippedNote}`,
+    };
+  } catch (err) {
+    const message = err instanceof GeminiError ? err.message : "Échec de l'import.";
     return { error: message };
   }
 }

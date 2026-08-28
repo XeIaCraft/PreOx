@@ -688,10 +688,23 @@ export function normalizeComplementaryResult(raw: unknown): ComplementaryResult 
       if (!raw || typeof raw !== "object") return null;
       const a = raw as Record<string, unknown>;
       if (typeof a.sub_entity_name !== "string") return null;
+      // a.new_blocks/a.new_flashcards: tolerated aliases for a hand-pasted
+      // response (the "Importer" dialog's second-pass path) — a free-form
+      // model reply isn't schema-constrained the way the API's own tool/
+      // response schema is, and a real pasted response has been seen naming
+      // these "new_blocks"/"new_flashcards" instead of the canonical
+      // "blocks"/"flashcards". Harmless for the schema-constrained Gemini/
+      // Claude API paths that also call this: their responses only ever
+      // carry the schema's own key names, so a.blocks/a.flashcards are
+      // always already present there and these aliases are never consulted.
       return {
         sub_entity_name: a.sub_entity_name,
-        blocks: coerceArray(a.blocks).map(normalizeBlock).filter((b): b is ExtractedFicheBlock => b !== null),
-        flashcards: coerceArray(a.flashcards).map(normalizeFlashcard).filter((c): c is ExtractedFlashcard => c !== null),
+        blocks: coerceArray(a.blocks ?? a.new_blocks)
+          .map(normalizeBlock)
+          .filter((b): b is ExtractedFicheBlock => b !== null),
+        flashcards: coerceArray(a.flashcards ?? a.new_flashcards)
+          .map(normalizeFlashcard)
+          .filter((c): c is ExtractedFlashcard => c !== null),
       };
     })
     .filter((a): a is ComplementaryAddition => a !== null);

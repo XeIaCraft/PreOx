@@ -185,4 +185,41 @@ describe("normalizeComplementaryResult", () => {
     });
     expect(result.additions_for_existing.map((a) => a.sub_entity_name)).toEqual(["Valid"]);
   });
+
+  it("accepts new_blocks/new_flashcards as aliases for blocks/flashcards (hand-pasted import shape)", () => {
+    // Real shape seen on a hand-pasted gap-fill response (the "Importer"
+    // dialog's second-pass path, added 2026-08-27) — a free-form model
+    // reply isn't schema-constrained, and named these arrays "new_blocks"/
+    // "new_flashcards" instead of the canonical "blocks"/"flashcards".
+    const result = normalizeComplementaryResult({
+      additions_for_existing: [
+        {
+          sub_entity_name: "Neurotransmetteurs adrénergiques",
+          new_blocks: [{ block_type: "texte_libre", content: { text: "..." }, citations: [{ page: 5, quote: "..." }] }],
+          new_flashcards: [{ front: "Q ?", back: "R.", citations: [{ page: 5, quote: "..." }] }],
+        },
+      ],
+      new_sub_entities: [],
+      estimated_remaining_passes: 0,
+    });
+    expect(result.additions_for_existing).toHaveLength(1);
+    expect(result.additions_for_existing[0].blocks).toHaveLength(1);
+    expect(result.additions_for_existing[0].flashcards).toHaveLength(1);
+  });
+
+  it("prefers blocks/flashcards over new_blocks/new_flashcards when both are present", () => {
+    const result = normalizeComplementaryResult({
+      additions_for_existing: [
+        {
+          sub_entity_name: "X",
+          blocks: [{ block_type: "texte_libre", content: { text: "canonical" }, citations: [] }],
+          new_blocks: [{ block_type: "texte_libre", content: { text: "alias" }, citations: [] }],
+        },
+      ],
+      new_sub_entities: [],
+      estimated_remaining_passes: 0,
+    });
+    expect(result.additions_for_existing[0].blocks).toHaveLength(1);
+    expect((result.additions_for_existing[0].blocks[0].content as { text: string }).text).toBe("canonical");
+  });
 });

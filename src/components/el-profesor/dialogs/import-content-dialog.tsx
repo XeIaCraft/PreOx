@@ -4,7 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { Copy, Check, Upload } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { importChapterContent } from "@/app/apps/el-profesor/actions/extraction";
+import { importChapterContent, importComplementaryContent } from "@/app/apps/el-profesor/actions/extraction";
 import { buildExternalImportPrompt } from "@/lib/el-profesor/prompts";
 import { useToast } from "@/components/ui/toast";
 
@@ -44,10 +44,17 @@ export function ImportContentDialog({
       .catch(() => toast("Impossible de copier automatiquement — sélectionnez et copiez le texte manuellement.", { variant: "error" }));
   }
 
+  // Auto-detects which of the two shapes was pasted: a fresh extraction
+  // ("sub_entities") or a gap-fill/"Compléter" pass on a chapter that
+  // already has content ("additions_for_existing"/"new_sub_entities") —
+  // substring checks rather than a full JSON.parse so this still routes
+  // correctly even on a malformed/double-encoded paste that the server's
+  // own salvage logic can still recover from.
   function handleImport() {
     if (!json.trim()) return;
+    const looksComplementary = !/"sub_entities"/.test(json) && /"additions_for_existing"|"new_sub_entities"/.test(json);
     startTransition(async () => {
-      const result = await importChapterContent(chapterId, json);
+      const result = looksComplementary ? await importComplementaryContent(chapterId, json) : await importChapterContent(chapterId, json);
       if (result.error) toast(result.error, { variant: "error" });
       else {
         toast(result.success ?? "Contenu importé.", { variant: "success" });
@@ -59,7 +66,7 @@ export function ImportContentDialog({
   return (
     <Modal
       title="Importer des fiches et flashcards"
-      description="Générez le contenu ailleurs (ex. Claude.ai, avec le PDF du chapitre joint à la main) puis collez le résultat ici — utile si le quota Gemini est épuisé."
+      description="Générez le contenu ailleurs (ex. Claude.ai, avec le PDF du chapitre joint à la main) puis collez le résultat ici — utile si le quota Gemini est épuisé. Fonctionne aussi bien pour une première extraction que pour une passe de complément sur un chapitre déjà importé (le type est détecté automatiquement d'après le JSON collé)."
       onClose={onClose}
       size="lg"
     >
