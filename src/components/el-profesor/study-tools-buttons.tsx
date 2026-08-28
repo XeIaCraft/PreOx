@@ -15,8 +15,24 @@ function ficheText(blocks: FicheBlock[]): string {
   return blocks.map((b) => blockToPlainText(b.blockType, b.content)).join("\n\n");
 }
 
-/** "Traduire" and "Cas clinique" — items 12 and 13 of the backlog, both ephemeral (never persisted). */
-export function StudyToolsButtons({ ficheTitle, subEntityName, blocks }: { ficheTitle: string; subEntityName: string; blocks: FicheBlock[] }) {
+/**
+ * "Traduire" and "Cas clinique" — items 12 and 13 of the backlog, both
+ * ephemeral (never persisted). `onOpen` (piste 2026-08-28) lets the fiche's
+ * options menu close itself the moment one of these opens its own modal,
+ * so the two never visually stack.
+ */
+export function StudyToolsButtons({
+  ficheTitle,
+  subEntityName,
+  blocks,
+  onOpen,
+}: {
+  ficheTitle: string;
+  subEntityName: string;
+  blocks: FicheBlock[];
+  /** Called right before a tool's own modal opens — omit for the original standalone icon-row usage. */
+  onOpen?: () => void;
+}) {
   const [openTool, setOpenTool] = useState<"translate" | "case" | "exam" | null>(null);
   const [language, setLanguage] = useState(TRANSLATION_LANGUAGES[0]);
   const [loading, setLoading] = useState(false);
@@ -36,11 +52,13 @@ export function StudyToolsButtons({ ficheTitle, subEntityName, blocks }: { fiche
   }
 
   function openTranslate() {
+    onOpen?.();
     setOpenTool("translate");
     runTranslation(language);
   }
 
   function openCase() {
+    onOpen?.();
     setOpenTool("case");
     setLoading(true);
     setError(null);
@@ -53,6 +71,7 @@ export function StudyToolsButtons({ ficheTitle, subEntityName, blocks }: { fiche
   }
 
   function openExam() {
+    onOpen?.();
     setOpenTool("exam");
     setLoading(true);
     setError(null);
@@ -66,14 +85,14 @@ export function StudyToolsButtons({ ficheTitle, subEntityName, blocks }: { fiche
 
   return (
     <>
-      <Button variant="ghost" size="icon" className="hidden sm:inline-flex" onClick={openTranslate} aria-label="Traduire cette fiche" title="Traduire cette fiche">
-        <Languages className="h-4 w-4" />
+      <Button variant="ghost" size="sm" className="w-full justify-start" onClick={openTranslate}>
+        <Languages className="h-3.5 w-3.5" /> Traduire cette fiche
       </Button>
-      <Button variant="ghost" size="icon" className="hidden sm:inline-flex" onClick={openCase} aria-label="Générer un cas clinique" title="Générer un cas clinique d'entraînement">
-        <Stethoscope className="h-4 w-4" />
+      <Button variant="ghost" size="sm" className="w-full justify-start" onClick={openCase}>
+        <Stethoscope className="h-3.5 w-3.5" /> Cas clinique d&apos;entraînement
       </Button>
-      <Button variant="ghost" size="icon" className="hidden sm:inline-flex" onClick={openExam} aria-label="Générer des questions type concours" title="Générer des questions type concours">
-        <ListChecks className="h-4 w-4" />
+      <Button variant="ghost" size="sm" className="w-full justify-start" onClick={openExam}>
+        <ListChecks className="h-3.5 w-3.5" /> Questions type concours
       </Button>
 
       {openTool === "translate" && (

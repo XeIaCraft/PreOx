@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, LayoutTemplate, LayoutList, BookOpenText, ListTree } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, LayoutTemplate, LayoutList, BookOpenText, ListTree, SlidersHorizontal, AlignJustify, Check } from "lucide-react";
 import { QuizMode } from "@/components/el-profesor/quiz-mode";
 import { MindMapDialog } from "@/components/el-profesor/mind-map-dialog";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,8 @@ import {
   setReadingComfort,
   getDyslexicFont,
   setDyslexicFont,
+  getTextJustify,
+  setTextJustify,
   getFicheLayout,
   setFicheLayout,
   type FontScale,
@@ -105,6 +107,32 @@ function FicheLayoutPicker({ value, onChange, onClose }: { value: FicheLayout; o
   );
 }
 
+/** A single on/off row inside FicheOptionsMenu — active state shown via a filled icon color plus a trailing check, not just a background tint (needs to read at a glance in a scrollable list of otherwise-identical rows). */
+function OptionToggleRow({
+  icon: Icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-between gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm text-foreground hover:bg-surface-muted"
+    >
+      <span className="flex items-center gap-2">
+        <Icon className={`h-4 w-4 ${active ? "text-primary-strong" : "text-foreground-subtle"}`} /> {label}
+      </span>
+      {active && <Check className="h-4 w-4 shrink-0 text-primary-strong" />}
+    </button>
+  );
+}
+
 /**
  * Mobile-only full-screen immersive reader for "livre"/"sommaire" (piste
  * 2026-08-28, round 2 — the first pass kept these layouts nested inside
@@ -125,6 +153,7 @@ function ImmersiveFicheReader({
   fiche,
   summary,
   fontScale,
+  justify,
   blockReviewStates,
   ficheIndex,
   ficheCount,
@@ -138,6 +167,7 @@ function ImmersiveFicheReader({
   fiche: NonNullable<SubEntityWithFiche["fiche"]>;
   summary?: string;
   fontScale: FontScale;
+  justify: boolean;
   blockReviewStates?: Record<string, BlockReviewState>;
   ficheIndex: number;
   ficheCount: number;
@@ -205,6 +235,7 @@ function ImmersiveFicheReader({
           blocks={fiche.blocks}
           onCitationClick={onCitationClick}
           fontScale={fontScale}
+          justify={justify}
           layout={layout}
           blockReviewStates={blockReviewStates}
           immersive
@@ -290,8 +321,14 @@ export function ChapterView({
   const [fontScale, setFontScaleState] = useState<FontScale>(() => getFontScale() ?? "md");
   const [readingComfort, setReadingComfortState] = useState(() => getReadingComfort());
   const [dyslexicFont, setDyslexicFontState] = useState(() => getDyslexicFont());
+  const [textJustify, setTextJustifyState] = useState(() => getTextJustify());
   const [ficheLayout, setFicheLayoutState] = useState<FicheLayout>(() => getFicheLayout());
   const [layoutPickerOpen, setLayoutPickerOpen] = useState(false);
+  // Every secondary fiche control (format toggles, admin tools, print,
+  // shortcuts…) grouped behind one trigger (piste 2026-08-28, round 2) —
+  // the icon row this replaces had grown to 15+ buttons, most of them
+  // silently hidden below sm/md and so completely unreachable on mobile.
+  const [optionsMenuOpen, setOptionsMenuOpen] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [bookmarks, setBookmarks] = useState(() => new Set(bookmarkedIds ?? []));
   const [bookmarkPending, setBookmarkPending] = useState(false);
@@ -497,6 +534,14 @@ export function ChapterView({
     });
   }
 
+  function toggleTextJustify() {
+    setTextJustifyState((prev) => {
+      const next = !prev;
+      setTextJustify(next);
+      return next;
+    });
+  }
+
   function chooseFicheLayout(layout: FicheLayout) {
     setFicheLayoutState(layout);
     setFicheLayout(layout);
@@ -582,6 +627,7 @@ export function ChapterView({
           fiche={selected.fiche}
           summary={selected.summary}
           fontScale={fontScale}
+          justify={textJustify}
           blockReviewStates={blockReviewStates}
           ficheIndex={currentFicheIndex}
           ficheCount={withFiche.length}
@@ -609,60 +655,6 @@ export function ChapterView({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setLayoutPickerOpen(true)}
-            aria-label="Mise en page de la fiche"
-            title="Mise en page de la fiche (actuelle / livre / sommaire d'abord)"
-          >
-            <LayoutTemplate className="h-4 w-4" />
-          </Button>
-          <div className="hidden items-center gap-0.5 rounded-full border border-border sm:flex">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => adjustFontScale(-1)}
-              disabled={fontScale === "sm"}
-              aria-label="Réduire le texte des fiches"
-              title="Réduire le texte"
-            >
-              <Minus className="h-3 w-3" />
-            </Button>
-            <span className="text-[10px] font-medium text-foreground-subtle">Aa</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => adjustFontScale(1)}
-              disabled={fontScale === "lg"}
-              aria-label="Agrandir le texte des fiches"
-              title="Agrandir le texte"
-            >
-              <Plus className="h-3 w-3" />
-            </Button>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`hidden sm:inline-flex ${readingComfort ? "text-accent" : ""}`}
-            onClick={toggleReadingComfort}
-            aria-label={readingComfort ? "Désactiver le mode lecture confort" : "Activer le mode lecture confort (sépia)"}
-            title="Mode lecture confort (sépia)"
-          >
-            <Sun className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`hidden sm:inline-flex ${dyslexicFont ? "text-accent" : ""}`}
-            onClick={toggleDyslexicFont}
-            aria-label={dyslexicFont ? "Désactiver la police adaptée dyslexie" : "Activer la police adaptée dyslexie"}
-            title="Police adaptée dyslexie (Atkinson Hyperlegible)"
-          >
-            <SpellCheck className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
             onClick={handleToggleBookmark}
             disabled={!selectedId}
             aria-label={selectedId && bookmarks.has(selectedId) ? "Retirer des favoris" : "Ajouter aux favoris"}
@@ -673,104 +665,8 @@ export function ChapterView({
           <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)} aria-label="Rechercher dans la bibliothèque">
             <Search className="h-4 w-4" />
           </Button>
-          {isAdmin && (
-            <Button variant="ghost" size="icon" onClick={handleCopyLink} aria-label="Copier le lien de cette fiche" title="Copier le lien">
-              <Link2 className="h-4 w-4" />
-            </Button>
-          )}
-          {isAdmin && selected?.fiche && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleShare}
-              aria-label={selected.fiche.shareToken ? "Fiche partagée publiquement (cliquer pour copier / désactiver)" : "Partager cette fiche"}
-              title={selected.fiche.shareToken ? "Partagée publiquement — cliquer pour copier le lien, re-cliquer pour désactiver" : "Partager cette fiche (lien public en lecture seule)"}
-              className={selected.fiche.shareToken ? "text-primary-strong" : ""}
-            >
-              <Share2 className="h-4 w-4" />
-            </Button>
-          )}
-          {isAdmin && selected?.fiche && (
-            <StudyToolsButtons ficheTitle={selected.fiche.title} subEntityName={selected.name} blocks={selected.fiche.blocks} />
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden sm:inline-flex"
-            onClick={() => window.print()}
-            aria-label="Imprimer cette fiche"
-            title="Imprimer cette fiche"
-          >
-            <Printer className="h-4 w-4" />
-          </Button>
-          {isAdmin && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden sm:inline-flex"
-              onClick={handlePrintChapter}
-              aria-label="Imprimer tout le chapitre"
-              title="Imprimer tout le chapitre"
-            >
-              <Files className="h-4 w-4" />
-            </Button>
-          )}
-          {isAdmin && publishedFlashcards.length >= 4 && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden sm:inline-flex"
-              onClick={() => setQuizOpen(true)}
-              aria-label="Mode quiz"
-              title="Mode quiz (questions à choix multiples)"
-            >
-              <ListChecks className="h-4 w-4" />
-            </Button>
-          )}
-          {isAdmin && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden sm:inline-flex"
-              onClick={() => setMindMapOpen(true)}
-              aria-label="Carte mentale du chapitre"
-              title="Carte mentale du chapitre (générée par IA)"
-            >
-              <Brain className="h-4 w-4" />
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden sm:inline-flex"
-            onClick={() => setShortcutsOpen(true)}
-            aria-label="Raccourcis clavier"
-            title="Raccourcis clavier (?)"
-          >
-            <Keyboard className="h-4 w-4" />
-          </Button>
-          {pdfUrl && (
-            <a
-              href={pdfUrl}
-              download
-              target="_blank"
-              rel="noreferrer"
-              title="Télécharger le PDF"
-              aria-label="Télécharger le PDF"
-              className="hidden h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-foreground-muted hover:bg-surface-muted hover:text-foreground sm:inline-flex"
-            >
-              <Download className="h-4 w-4" />
-            </a>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden md:inline-flex"
-            onClick={() => setFocusMode((v) => !v)}
-            aria-label={focusMode ? "Quitter le mode lecture" : "Mode lecture (masquer les panneaux)"}
-            title={focusMode ? "Quitter le mode lecture" : "Mode lecture"}
-          >
-            {focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          <Button variant="ghost" size="icon" onClick={() => setOptionsMenuOpen(true)} aria-label="Options de la fiche" title="Options de la fiche">
+            <SlidersHorizontal className="h-4 w-4" />
           </Button>
           <Button
             variant={pdfPanelOpen ? "secondary" : "ghost"}
@@ -787,6 +683,179 @@ export function ChapterView({
           </Button>
         </div>
       </div>
+
+      {/* Every other fiche control, grouped behind the SlidersHorizontal
+          trigger above (piste 2026-08-28, round 2) — this used to be a
+          15+ icon row where most icons were `hidden sm:/md:inline-flex`
+          and so entirely unreachable on mobile. Now reachable at every
+          breakpoint, same as the dashboard's own HeaderMenu. */}
+      {optionsMenuOpen && (
+        <Modal title="Options de la fiche" onClose={() => setOptionsMenuOpen(false)} size="sm">
+          <div className="-m-4 flex flex-col gap-0.5 p-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
+              onClick={() => {
+                setOptionsMenuOpen(false);
+                setLayoutPickerOpen(true);
+              }}
+            >
+              <LayoutTemplate className="h-3.5 w-3.5" /> Mise en page de la fiche
+            </Button>
+
+            <div className="flex items-center justify-between px-3 py-2 text-sm text-foreground">
+              <span>Taille du texte</span>
+              <div className="flex items-center gap-0.5 rounded-full border border-border">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => adjustFontScale(-1)}
+                  disabled={fontScale === "sm"}
+                  aria-label="Réduire le texte des fiches"
+                  title="Réduire le texte"
+                >
+                  <Minus className="h-3 w-3" />
+                </Button>
+                <span className="text-[10px] font-medium text-foreground-subtle">Aa</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => adjustFontScale(1)}
+                  disabled={fontScale === "lg"}
+                  aria-label="Agrandir le texte des fiches"
+                  title="Agrandir le texte"
+                >
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+
+            <OptionToggleRow icon={AlignJustify} label="Texte justifié" active={textJustify} onClick={toggleTextJustify} />
+            <OptionToggleRow icon={Sun} label="Lecture confort (sépia)" active={readingComfort} onClick={toggleReadingComfort} />
+            <OptionToggleRow icon={SpellCheck} label="Police adaptée dyslexie" active={dyslexicFont} onClick={toggleDyslexicFont} />
+            <OptionToggleRow
+              icon={focusMode ? Minimize2 : Maximize2}
+              label="Mode lecture (masquer les panneaux)"
+              active={focusMode}
+              onClick={() => setFocusMode((v) => !v)}
+            />
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
+              onClick={() => {
+                setOptionsMenuOpen(false);
+                setShortcutsOpen(true);
+              }}
+            >
+              <Keyboard className="h-3.5 w-3.5" /> Raccourcis clavier
+            </Button>
+            {pdfUrl && (
+              <a
+                href={pdfUrl}
+                download
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setOptionsMenuOpen(false)}
+                className="flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm text-foreground hover:bg-surface-muted"
+              >
+                <Download className="h-3.5 w-3.5 text-foreground-subtle" /> Télécharger le PDF
+              </a>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
+              onClick={() => {
+                setOptionsMenuOpen(false);
+                window.print();
+              }}
+            >
+              <Printer className="h-3.5 w-3.5" /> Imprimer cette fiche
+            </Button>
+
+            {isAdmin && <div className="my-1 border-t border-border" />}
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => {
+                  setOptionsMenuOpen(false);
+                  handleCopyLink();
+                }}
+              >
+                <Link2 className="h-3.5 w-3.5" /> Copier le lien de cette fiche
+              </Button>
+            )}
+            {isAdmin && selected?.fiche && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`w-full justify-start ${selected.fiche.shareToken ? "text-primary-strong" : ""}`}
+                onClick={() => {
+                  setOptionsMenuOpen(false);
+                  handleShare();
+                }}
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                {selected.fiche.shareToken ? "Partagée — copier / désactiver le lien" : "Partager cette fiche"}
+              </Button>
+            )}
+            {isAdmin && selected?.fiche && (
+              <StudyToolsButtons
+                ficheTitle={selected.fiche.title}
+                subEntityName={selected.name}
+                blocks={selected.fiche.blocks}
+                onOpen={() => setOptionsMenuOpen(false)}
+              />
+            )}
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => {
+                  setOptionsMenuOpen(false);
+                  handlePrintChapter();
+                }}
+              >
+                <Files className="h-3.5 w-3.5" /> Imprimer tout le chapitre
+              </Button>
+            )}
+            {isAdmin && publishedFlashcards.length >= 4 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => {
+                  setOptionsMenuOpen(false);
+                  setQuizOpen(true);
+                }}
+              >
+                <ListChecks className="h-3.5 w-3.5" /> Mode quiz
+              </Button>
+            )}
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => {
+                  setOptionsMenuOpen(false);
+                  setMindMapOpen(true);
+                }}
+              >
+                <Brain className="h-3.5 w-3.5" /> Carte mentale du chapitre
+              </Button>
+            )}
+          </div>
+        </Modal>
+      )}
 
       {/* Below lg: a compact "page turn" bar (prev/next + a tap target that
           opens the full list as a sheet) instead of the desktop sidebar —
@@ -909,6 +978,7 @@ export function ChapterView({
                     blocks={selected.fiche.blocks}
                     onCitationClick={handleCitationClick}
                     fontScale={fontScale}
+                    justify={textJustify}
                     layout={ficheLayout}
                     blockReviewStates={blockReviewStates}
                     superseded={

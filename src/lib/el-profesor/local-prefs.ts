@@ -90,6 +90,15 @@ export function setDyslexicFont(enabled: boolean) {
   setItem("dyslexic-font", enabled ? "1" : "0");
 }
 
+/** Justified body text for fiche paragraphs (piste 2026-08-28) — opt-in, off by default since justification can widen inter-word gaps on narrow columns. */
+export function getTextJustify(): boolean {
+  return getItem("text-justify") === "1";
+}
+
+export function setTextJustify(enabled: boolean) {
+  setItem("text-justify", enabled ? "1" : "0");
+}
+
 const DEFAULT_DAILY_GOAL = 15;
 
 export function getDailyGoal(): number {

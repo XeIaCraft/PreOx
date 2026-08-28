@@ -27,12 +27,9 @@ import {
   ClipboardCheck,
   SearchCheck,
   Zap,
-  Minus,
-  Sun,
-  SpellCheck,
+  SlidersHorizontal,
   Link2,
   Share2,
-  Printer,
   Files,
   ListChecks,
   Brain,
@@ -257,14 +254,13 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
               « À revoir bientôt »/<ThumbsUp className="inline h-3.5 w-3.5 align-text-bottom" /> « je m&apos;en souviens encore » — une
               répétition espacée à l&apos;échelle du bloc, indépendante des flashcards.
             </IconRow>
-            <IconRow icon={Star}>Mettre le livre/chapitre en favori.</IconRow>
-            <IconRow icon={Minus}>Taille du texte (petit/moyen/grand).</IconRow>
-            <IconRow icon={Sun}>Mode confort de lecture (fond sépia).</IconRow>
-            <IconRow icon={SpellCheck}>Police adaptée à la dyslexie.</IconRow>
-            <IconRow icon={Printer}>Imprimer la fiche affichée.</IconRow>
-            <IconRow icon={Keyboard}>Liste des raccourcis clavier.</IconRow>
-            <IconRow icon={Maximize2}>Mode focus, sans distraction.</IconRow>
-            <IconRow icon={FileText}>Sur mobile, bascule vers le PDF en plein écran.</IconRow>
+            <IconRow icon={Star}>Mettre le livre/chapitre en favori — reste directement dans la barre du haut.</IconRow>
+            <IconRow icon={SlidersHorizontal}>
+              Options de la fiche (piste 2026-08-28) — regroupe tout le reste dans une même fenêtre pour ne pas surcharger la barre :
+              mise en page (actuelle/livre/sommaire), taille du texte, texte justifié, confort de lecture (sépia), police adaptée
+              dyslexie, mode focus, raccourcis clavier, téléchargement et impression, ainsi que les outils admin ci-dessous.
+            </IconRow>
+            <IconRow icon={FileText}>Afficher/masquer le PDF source (plein écran sur mobile).</IconRow>
           </ul>
           <p>
             En bas de chaque fiche : des questions-réponses libres entre utilisateurs (
@@ -272,7 +268,7 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
           </p>
           {isAdmin && (
             <>
-              <p className="font-medium text-foreground">Outils admin sur une fiche</p>
+              <p className="font-medium text-foreground">Outils admin (dans le menu Options)</p>
               <p>
                 Pour l&apos;instant réservés à l&apos;admin — pas de génération de contenu par IA côté utilisateur :
               </p>

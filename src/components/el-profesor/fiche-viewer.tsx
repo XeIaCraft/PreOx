@@ -189,7 +189,18 @@ function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?
   );
 }
 
-export function BlockBody({ block, fontScale, serif = false }: { block: FicheBlock; fontScale: FontScale; serif?: boolean }) {
+export function BlockBody({
+  block,
+  fontScale,
+  serif = false,
+  justify = false,
+}: {
+  block: FicheBlock;
+  fontScale: FontScale;
+  serif?: boolean;
+  /** Justified body text (piste 2026-08-28) — only meaningful on the flowing free-text paragraph below; tables and protocol steps ignore it, their lines are too short for justification to do anything but add ragged gaps. */
+  justify?: boolean;
+}) {
   if (block.blockType === "tableau_comparatif") {
     const content = block.content as TableBlockContent;
     const headers = content.headers ?? [];
@@ -263,7 +274,9 @@ export function BlockBody({ block, fontScale, serif = false }: { block: FicheBlo
 
   const content = block.content as TextBlockContent;
   return (
-    <p className={`whitespace-pre-wrap leading-relaxed text-foreground-muted ${BODY_TEXT_SIZE[fontScale]} ${serif ? "font-serif-display" : ""}`}>
+    <p
+      className={`whitespace-pre-wrap leading-relaxed text-foreground-muted ${BODY_TEXT_SIZE[fontScale]} ${serif ? "font-serif-display" : ""} ${justify ? "text-justify [-webkit-hyphens:auto] [hyphens:auto]" : ""}`}
+    >
       {content.text}
     </p>
   );
@@ -429,12 +442,15 @@ export function FicheViewer({
   blockReviewStates,
   layout = "actuel",
   immersive = false,
+  justify = false,
 }: {
   title: string;
   summary?: string;
   blocks: FicheBlock[];
   onCitationClick?: (c: Citation) => void;
   fontScale?: FontScale;
+  /** Justified body text (piste 2026-08-28) — a per-reader preference, off by default. */
+  justify?: boolean;
   /** Set when this fiche was merged/replaced (items 52/56) — shows a warning banner instead of hiding the content outright. */
   superseded?: { reason: "duplicate" | "outdated"; note: string };
   /** Per-block spaced-repetition state (item 16) — omitted in read-only contexts (print, share links, admin review) where there's no signed-in reader to track. */
@@ -516,7 +532,7 @@ export function FicheViewer({
                 )}
               </div>
               <div className={`mt-2 ${isPearlInLivre ? "italic" : ""}`}>
-                <BlockBody block={block} fontScale={fontScale} serif={layout === "livre"} />
+                <BlockBody block={block} fontScale={fontScale} serif={layout === "livre"} justify={justify} />
               </div>
               {block.imageUrl && (
                 // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded content, arbitrary origin (Supabase Storage public URL), not a Next-optimizable local/known-domain asset.
@@ -526,7 +542,7 @@ export function FicheViewer({
                   className="mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain"
                 />
               )}
-              <CitationChips citations={block.citations} onClick={onCitationClick} />
+              {!immersive && <CitationChips citations={block.citations} onClick={onCitationClick} />}
               {!immersive && blockReviewStates && (
                 <div className="mt-2 flex justify-end">
                   <BlockRereadControl blockId={block.id} initialState={blockReviewStates[block.id]} />
