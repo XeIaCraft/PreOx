@@ -163,7 +163,7 @@ function MoreActionsMenu({ children }: { children: React.ReactNode }) {
 
 /**
  * Mobile-only collapse of the dashboard header's secondary navigation
- * (guide, tutoriel, glossaire, journal, cartes exclues, plus the
+ * (guide, tutoriel, journal, cartes exclues, plus the
  * admin-only notions/qualité/archivés/réglages) into a single overflow
  * menu — requested 2026-08-28 ("catastrophique et inutilisable" on
  * mobile, the un-collapsed icon row wrapped across 3 lines). The desktop
@@ -209,11 +209,6 @@ function HeaderMenu({
             <Button variant="ghost" size="sm" className="w-full justify-start" onClick={onOpenTour}>
               <HelpCircle className="h-3.5 w-3.5" /> Revoir le tutoriel
             </Button>
-            <Link href="/apps/el-profesor/glossary">
-              <Button variant="ghost" size="sm" className="w-full justify-start">
-                <BookOpen className="h-3.5 w-3.5" /> Glossaire des notions
-              </Button>
-            </Link>
             <Link href="/apps/el-profesor/journal">
               <Button variant="ghost" size="sm" className="w-full justify-start">
                 <NotebookPen className="h-3.5 w-3.5" /> Mon journal de cas
@@ -821,11 +816,6 @@ export function ElProfesorBoard({
             <Button variant="ghost" size="icon" onClick={() => setTourOpen(true)} aria-label="Revoir le tutoriel" title="Revoir le tutoriel">
               <HelpCircle className="h-4 w-4" />
             </Button>
-            <Link href="/apps/el-profesor/glossary">
-              <Button variant="ghost" size="icon" aria-label="Glossaire des notions" title="Glossaire des notions">
-                <BookOpen className="h-4 w-4" />
-              </Button>
-            </Link>
             <Link href="/apps/el-profesor/journal">
               <Button variant="ghost" size="icon" aria-label="Mon journal de cas" title="Mon journal de cas">
                 <NotebookPen className="h-4 w-4" />

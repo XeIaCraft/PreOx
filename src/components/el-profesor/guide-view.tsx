@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   GraduationCap,
   HelpCircle,
-  BookOpen,
   BellOff,
   Tag,
   Gauge,
@@ -99,7 +98,7 @@ const TOC: { id: string; label: string }[] = [
   { id: "pdf", label: "Le PDF et la couverture" },
   { id: "revision", label: "Réviser (répétition espacée)" },
   { id: "recherche", label: "Rechercher" },
-  { id: "notions", label: "Notions et glossaire" },
+  { id: "notions", label: "Notions" },
   { id: "admin", label: "Fonctions admin" },
   { id: "perso", label: "Raccourcis et personnalisation" },
 ];
@@ -139,19 +138,19 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
         <Section id="tableau-de-bord" title="Tableau de bord" icon={GraduationCap}>
           <p>
             La page d&apos;accueil du module liste vos livres, vos widgets de progression, et — si vous êtes admin — les outils de
-            génération de contenu.
+            génération de contenu. Une bascule « Par livre / Par notion » change le regroupement de cette liste : par livre (classique),
+            ou par notion transversale (voir la section Notions plus bas).
           </p>
           <p className="font-medium text-foreground">Barre du haut</p>
           <p>
-            En dessous d&apos;une certaine largeur d&apos;écran, le guide, le tutoriel, le glossaire, le journal de cas et les cartes
-            exclues (ainsi que les entrées admin ci-dessous) se regroupent dans un seul menu{" "}
+            En dessous d&apos;une certaine largeur d&apos;écran, le guide, le tutoriel, le journal de cas et les cartes exclues (ainsi
+            que les entrées admin ci-dessous) se regroupent dans un seul menu{" "}
             <Menu className="inline h-3.5 w-3.5 align-text-bottom" /> pour ne pas surcharger l&apos;écran — les mêmes fonctions, juste
             rangées.
           </p>
           <ul className="space-y-1.5">
             <IconRow icon={HelpCircle}>Revoir le tutoriel de bienvenue.</IconRow>
-            <IconRow icon={BookOpen}>Glossaire des notions (voir plus bas).</IconRow>
-            <IconRow icon={NotebookPen}>Votre journal de cas cliniques, strictement privé, relié librement aux notions du glossaire.</IconRow>
+            <IconRow icon={NotebookPen}>Votre journal de cas cliniques, strictement privé, relié librement aux notions (voir plus bas).</IconRow>
             <IconRow icon={BellOff}>Vos flashcards que vous avez exclues de la révision.</IconRow>
             {isAdmin && (
               <>
@@ -345,7 +344,7 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
             Plusieurs modes : révision du jour par chapitre (uniquement les cartes dues), révision libre (tout le chapitre, plafonnée
             par défaut pour rester raisonnable, jamais prise en compte dans la planification), révision globale (mélange tous les
             chapitres dus — la pratique entrelacée retient mieux qu&apos;un chapitre isolé), carnet d&apos;erreurs (vos cartes les plus
-            difficiles), et révision par thème depuis le glossaire.
+            difficiles), et révision par thème depuis la vue « Par notion ».
           </p>
         </Section>
 
@@ -359,7 +358,7 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
           </p>
         </Section>
 
-        <Section id="notions" title="Notions et glossaire" icon={Tag}>
+        <Section id="notions" title="Notions" icon={Tag}>
           <p>
             Une « notion » regroupe les fiches de plusieurs livres qui traitent du même sujet (ex. « hyperkaliémie »). Cliquez sur son
             nom pour ouvrir sa <strong>synthèse</strong> : une fiche unique, réécrite par IA à partir de tout le contenu publié sur ce
@@ -370,7 +369,7 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
             particulier.
           </p>
           <p>
-            Le glossaire (accessible à tous) liste ces notions avec un raccourci{" "}
+            La vue « Par notion » du tableau de bord (accessible à tous) liste ces notions avec un raccourci{" "}
             <GraduationCap className="inline h-3.5 w-3.5 align-text-bottom" /> pour réviser directement ce thème (flashcards
             mélangées de tous les livres liés), un badge « Prêt / À consolider / Fragile » qui estime votre préparation à partir des
             flashcards déjà maîtrisées, et un compteur <NotebookPen className="inline h-3.5 w-3.5 align-text-bottom" /> vers vos cas

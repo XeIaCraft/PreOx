@@ -753,7 +753,7 @@ export async function extractChapterComplementary(chapterId: string, options?: {
 /**
  * Renames a fiche's title (requested 2026-08-26) — the reader-facing name
  * shown in FicheViewer, the admin-review header, and every fiche listing
- * (notion view, glossary).
+ * (notion view on the dashboard).
  */
 export async function renameFiche(ficheId: string, title: string): Promise<ActionState> {
   await requireElProfesorAdmin();
@@ -766,7 +766,6 @@ export async function renameFiche(ficheId: string, title: string): Promise<Actio
 
   revalidatePath("/apps/el-profesor");
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   return { success: "Fiche renommée." };
 }
 

@@ -1,12 +1,10 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  ArrowLeft,
   BookOpen,
-  Search,
   GraduationCap,
   ExternalLink,
   Landmark,
@@ -336,67 +334,6 @@ export function NotionList({
       })}</div>
         </div>
       ))}
-    </div>
-  );
-}
-
-export function GlossaryView({
-  notions,
-  categories = [],
-  readiness,
-  recommendations,
-  doseCalculators,
-  caseCounts,
-  isAdmin = false,
-}: {
-  notions: NotionSummary[];
-  categories?: NotionCategory[];
-  readiness: Record<string, NotionReadiness>;
-  recommendations: Record<string, NotionRecommendation[]>;
-  doseCalculators: Record<string, DoseCalculatorEntry[]>;
-  caseCounts: Record<string, number>;
-  isAdmin?: boolean;
-}) {
-  const [query, setQuery] = useState("");
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return notions;
-    return notions.filter(
-      ({ notion, fiches }) =>
-        notion.name.toLowerCase().includes(q) || fiches.some((f) => f.ficheTitle.toLowerCase().includes(q))
-    );
-  }, [notions, query]);
-
-  return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <Link href="/apps/el-profesor" className="mb-4 inline-flex items-center gap-1.5 text-sm text-foreground-subtle hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> Retour à la bibliothèque
-      </Link>
-      <h1 className="font-serif-display text-2xl font-medium text-foreground">Glossaire</h1>
-      <p className="mt-1 text-sm text-foreground-muted">
-        Les notions transversales repérées à travers les livres, avec les fiches où chacune est traitée.
-      </p>
-
-      <div className="relative mt-5">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-subtle" />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Rechercher une notion ou une fiche…"
-          className="w-full rounded-[var(--radius-md)] border border-border bg-surface py-2 pl-9 pr-3 text-sm placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-        />
-      </div>
-
-      {notions.length === 0 ? (
-        <p className="mt-6 text-sm text-foreground-subtle">Aucune notion transversale pour l&apos;instant.</p>
-      ) : filtered.length === 0 ? (
-        <p className="mt-6 text-sm text-foreground-subtle">Aucun résultat pour « {query} ».</p>
-      ) : (
-        <div className="mt-6">
-          <NotionList notions={filtered} categories={categories} readiness={readiness} recommendations={recommendations} doseCalculators={doseCalculators} caseCounts={caseCounts} isAdmin={isAdmin} />
-        </div>
-      )}
     </div>
   );
 }

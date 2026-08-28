@@ -305,8 +305,8 @@ export function NotionSynthesisView({
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <Link href="/apps/el-profesor/glossary" className="mb-4 inline-flex items-center gap-1.5 text-sm text-foreground-subtle hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> Retour au glossaire
+      <Link href="/apps/el-profesor" className="mb-4 inline-flex items-center gap-1.5 text-sm text-foreground-subtle hover:text-foreground">
+        <ArrowLeft className="h-4 w-4" /> Retour à la bibliothèque
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-3">

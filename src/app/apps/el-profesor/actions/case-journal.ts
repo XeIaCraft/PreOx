@@ -34,7 +34,7 @@ export async function addCaseJournalEntry(title: string, body: string, notionId:
   if (error) return { error: "Impossible d'enregistrer ce cas." };
 
   revalidatePath("/apps/el-profesor/journal");
-  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
   return { success: "Cas ajouté à votre journal." };
 }
 
@@ -52,7 +52,7 @@ export async function updateCaseJournalEntry(id: string, title: string, body: st
   if (error) return { error: "Impossible de mettre à jour ce cas." };
 
   revalidatePath("/apps/el-profesor/journal");
-  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
   return { success: "Cas mis à jour." };
 }
 
@@ -63,6 +63,6 @@ export async function deleteCaseJournalEntry(id: string): Promise<ActionState> {
   if (error) return { error: "Impossible de supprimer ce cas." };
 
   revalidatePath("/apps/el-profesor/journal");
-  revalidatePath("/apps/el-profesor/glossary");
+  revalidatePath("/apps/el-profesor");
   return { success: "Cas supprimé." };
 }

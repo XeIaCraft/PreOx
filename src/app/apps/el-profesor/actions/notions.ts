@@ -238,7 +238,6 @@ export async function renameNotion(notionId: string, name: string): Promise<Acti
   if (error) return { error: error.code === "23505" ? "Une notion porte déjà ce nom." : "Impossible de renommer cette notion." };
 
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Notion renommée." };
 }
@@ -257,7 +256,6 @@ export async function addFicheToNotion(notionId: string, ficheId: string): Promi
 
   revalidatePath(`/apps/el-profesor/notions/${notionId}`);
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Fiche ajoutée à la notion." };
 }
@@ -269,7 +267,6 @@ export async function removeFicheFromNotion(notionId: string, ficheId: string): 
 
   revalidatePath(`/apps/el-profesor/notions/${notionId}`);
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Fiche retirée de la notion." };
 }
@@ -293,7 +290,6 @@ export async function createNotionCategory(name: string): Promise<ActionState> {
   if (error) return { error: error.code === "23505" ? "Une catégorie porte déjà ce nom." : "Impossible de créer cette catégorie." };
 
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Catégorie créée." };
 }
@@ -308,7 +304,6 @@ export async function renameNotionCategory(categoryId: string, name: string): Pr
   if (error) return { error: error.code === "23505" ? "Une catégorie porte déjà ce nom." : "Impossible de renommer cette catégorie." };
 
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Catégorie renommée." };
 }
@@ -320,7 +315,6 @@ export async function deleteNotionCategory(categoryId: string): Promise<ActionSt
   if (error) return { error: "Impossible de supprimer cette catégorie." };
 
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Catégorie supprimée — ses notions restent, désormais sans catégorie." };
 }
@@ -333,7 +327,6 @@ export async function assignNotionCategory(notionId: string, categoryId: string 
   if (error) return { error: "Impossible d'assigner cette catégorie." };
 
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Catégorie mise à jour." };
 }
@@ -360,7 +353,6 @@ export async function moveNotionCategory(categoryId: string, direction: "up" | "
   if (error1 || error2) return { error: "Impossible de réordonner cette catégorie." };
 
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Catégorie déplacée." };
 }
@@ -399,7 +391,6 @@ export async function moveNotion(notionId: string, direction: "up" | "down"): Pr
   if (error1 || error2) return { error: "Impossible de réordonner cette notion." };
 
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Notion déplacée." };
 }
@@ -434,7 +425,6 @@ export async function moveNotionFiche(notionId: string, ficheId: string, directi
   if (error1 || error2) return { error: "Impossible de réordonner cette fiche." };
 
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Fiche déplacée." };
 }
@@ -607,7 +597,6 @@ export async function generateNotionSynthesis(notionId: string): Promise<ActionS
 
     revalidatePath(`/apps/el-profesor/notions/${notionId}`);
     revalidatePath("/apps/el-profesor/notions");
-    revalidatePath("/apps/el-profesor/glossary");
     revalidatePath("/apps/el-profesor");
     const coverageNote = uncoveredSources.length > 0 ? ` — ${uncoveredSources.length} source(s) non reprise(s), à vérifier` : "";
     return { success: `Synthèse générée (${resolvedBlocks.length} bloc(s))${coverageNote} — à relire avant publication.` };
@@ -624,7 +613,6 @@ export async function publishNotionSynthesis(notionId: string): Promise<ActionSt
   const { error } = await supabase.from("el_profesor_notion_syntheses").update({ status: "published" }).eq("notion_id", notionId);
   if (error) return { error: "Impossible de publier la synthèse." };
   revalidatePath(`/apps/el-profesor/notions/${notionId}`);
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Synthèse publiée." };
 }
@@ -635,7 +623,6 @@ export async function unpublishNotionSynthesis(notionId: string): Promise<Action
   const { error } = await supabase.from("el_profesor_notion_syntheses").update({ status: "draft" }).eq("notion_id", notionId);
   if (error) return { error: "Impossible de repasser la synthèse en brouillon." };
   revalidatePath(`/apps/el-profesor/notions/${notionId}`);
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Synthèse repassée en brouillon." };
 }
@@ -654,7 +641,6 @@ export async function updateNotionSynthesisBlockContent(blockId: string, content
   const { error } = await supabase.from("el_profesor_notion_synthesis_blocks").update({ content: content as never }).eq("id", blockId);
   if (error) return { error: "Impossible de mettre à jour ce bloc." };
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Bloc mis à jour." };
 }
@@ -693,7 +679,6 @@ export async function moveNotionSynthesisBlock(blockId: string, direction: "up" 
   ]);
   if (error1 || error2) return { error: "Impossible de réordonner ce bloc." };
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "OK" };
 }
@@ -705,7 +690,6 @@ export async function deleteNotionSynthesisBlock(blockId: string): Promise<Actio
   const { error } = await supabase.from("el_profesor_notion_synthesis_blocks").delete().eq("id", blockId);
   if (error) return { error: "Impossible de supprimer ce bloc." };
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   revalidatePath("/apps/el-profesor");
   return { success: "Bloc supprimé." };
 }
@@ -736,7 +720,6 @@ export async function addNotionRecommendation(notionId: string, title: string, u
   if (error) return { error: "Impossible d'enregistrer cette recommandation." };
 
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   return { success: "Recommandation ajoutée." };
 }
 
@@ -747,7 +730,6 @@ export async function deleteNotionRecommendation(id: string): Promise<ActionStat
   if (error) return { error: "Impossible de supprimer cette recommandation." };
 
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   return { success: "Recommandation supprimée." };
 }
 
@@ -787,7 +769,6 @@ export async function addDoseCalculator(
   if (error) return { error: "Impossible d'enregistrer ce calculateur." };
 
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   return { success: "Calculateur ajouté." };
 }
 
@@ -798,6 +779,5 @@ export async function deleteDoseCalculator(id: string): Promise<ActionState> {
   if (error) return { error: "Impossible de supprimer ce calculateur." };
 
   revalidatePath("/apps/el-profesor/notions");
-  revalidatePath("/apps/el-profesor/glossary");
   return { success: "Calculateur supprimé." };
 }
