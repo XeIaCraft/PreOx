@@ -658,6 +658,23 @@ export async function unpublishNotionSynthesis(notionId: string): Promise<Action
 }
 
 /**
+ * Wipes a synthesis out entirely (requested 2026-08-28 — distinct from
+ * "Régénérer", which already deletes+reinserts blocks under the hood: this
+ * gives the admin an explicit way to clear a broken/stale synthesis without
+ * immediately paying for a new AI call). Deleting the parent row is enough
+ * — el_profesor_notion_synthesis_blocks.synthesis_id is `on delete cascade`.
+ */
+export async function deleteNotionSynthesis(notionId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("el_profesor_notion_syntheses").delete().eq("notion_id", notionId);
+  if (error) return { error: "Impossible de supprimer la synthèse." };
+  revalidatePath(`/apps/el-profesor/notions/${notionId}`);
+  revalidatePath("/apps/el-profesor");
+  return { success: "Synthèse supprimée." };
+}
+
+/**
  * Manual polish on an AI-generated synthesis block (requested 2026-08-27 —
  * regenerating the whole synthesis to fix one wording is wasteful once the
  * structure is otherwise right). Only the content is editable — citations

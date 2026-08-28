@@ -46,6 +46,7 @@ export default async function ChapterPage({
   return (
     <ToastProvider>
       <ChapterView
+        key={chapterId}
         chapterId={chapterId}
         chapterTitle={chapter.title}
         subEntities={subEntities}

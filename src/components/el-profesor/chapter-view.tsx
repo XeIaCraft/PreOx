@@ -57,7 +57,7 @@ function SourceTextPanel({ text }: { text: string | null }) {
   );
 }
 
-const FICHE_LAYOUT_OPTIONS: { id: FicheLayout; label: string; description: string; icon: React.ComponentType<{ className?: string }> }[] = [
+export const FICHE_LAYOUT_OPTIONS: { id: FicheLayout; label: string; description: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "actuel", label: "Actuelle", description: "La mise en page d'aujourd'hui — blocs avec icône et en-tête.", icon: LayoutList },
   { id: "livre", label: "Livre", description: "Lecture continue façon chapitre, sans encadrés, texte en serif.", icon: BookOpenText },
   {
@@ -69,7 +69,7 @@ const FICHE_LAYOUT_OPTIONS: { id: FicheLayout; label: string; description: strin
 ];
 
 /** Reader-facing choice between the three fiche reading layouts (piste 2026-08-28, after mocking up 4 mobile directions). */
-function FicheLayoutPicker({ value, onChange, onClose }: { value: FicheLayout; onChange: (layout: FicheLayout) => void; onClose: () => void }) {
+export function FicheLayoutPicker({ value, onChange, onClose }: { value: FicheLayout; onChange: (layout: FicheLayout) => void; onClose: () => void }) {
   return (
     <Modal title="Mise en page de la fiche" onClose={onClose} size="sm">
       <div className="-m-4 flex flex-col gap-2 p-2">
@@ -108,7 +108,7 @@ function FicheLayoutPicker({ value, onChange, onClose }: { value: FicheLayout; o
 }
 
 /** A single on/off row inside FicheOptionsMenu — active state shown via a filled icon color plus a trailing check, not just a background tint (needs to read at a glance in a scrollable list of otherwise-identical rows). */
-function OptionToggleRow({
+export function OptionToggleRow({
   icon: Icon,
   label,
   active,
@@ -207,9 +207,14 @@ function ImmersiveFicheReader({
         }
       >
         <div className="flex items-center justify-between gap-2">
-          <button type="button" onClick={onOpenFicheList} className="flex items-center gap-1 text-xs font-semibold text-foreground-subtle">
-            <ChevronLeft className="h-3.5 w-3.5" /> Chapitre
-          </button>
+          <div className="flex items-center gap-3">
+            <Link href="/apps/el-profesor" className="flex items-center gap-1 text-xs font-semibold text-foreground-subtle" aria-label="Retour à la bibliothèque">
+              <ArrowLeft className="h-3.5 w-3.5" />
+            </Link>
+            <button type="button" onClick={onOpenFicheList} className="flex items-center gap-1 text-xs font-semibold text-foreground-subtle">
+              <ChevronLeft className="h-3.5 w-3.5" /> Chapitre
+            </button>
+          </div>
           <button
             type="button"
             onClick={onOpenLayoutPicker}

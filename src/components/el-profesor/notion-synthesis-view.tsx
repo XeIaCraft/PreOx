@@ -1,13 +1,32 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Sparkles, Check, Undo2, TriangleAlert, BookOpen, ChevronUp, ChevronDown, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Sparkles,
+  Check,
+  Undo2,
+  TriangleAlert,
+  BookOpen,
+  ChevronUp,
+  ChevronDown,
+  Trash2,
+  SlidersHorizontal,
+  LayoutTemplate,
+  Minus,
+  Plus,
+  AlignJustify,
+  Sun,
+  SpellCheck,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Modal } from "@/components/ui/modal";
 import { BlockBody, BLOCK_META } from "@/components/el-profesor/fiche-viewer";
 import { TableEditor, ProtocolEditor, IS_TEXT_BLOCK } from "@/components/el-profesor/block-editor";
+import { FicheLayoutPicker, OptionToggleRow } from "@/components/el-profesor/chapter-view";
 import {
   generateNotionSynthesis,
   publishNotionSynthesis,
@@ -15,8 +34,23 @@ import {
   updateNotionSynthesisBlockContent,
   moveNotionSynthesisBlock,
   deleteNotionSynthesisBlock,
+  deleteNotionSynthesis,
 } from "@/app/apps/el-profesor/actions/notions";
 import { useToast } from "@/components/ui/toast";
+import {
+  getFontScale,
+  setFontScale,
+  getTextJustify,
+  setTextJustify,
+  getReadingComfort,
+  setReadingComfort,
+  getDyslexicFont,
+  setDyslexicFont,
+  getFicheLayout,
+  setFicheLayout,
+  type FontScale,
+  type FicheLayout,
+} from "@/lib/el-profesor/local-prefs";
 import type {
   NotionSynthesis,
   NotionSynthesisBlock,
@@ -28,7 +62,17 @@ import type {
 } from "@/lib/el-profesor/types";
 
 /** One synthesized block, with a "sources" footer instead of FicheViewer's normal per-citation chips — a synthesis block can draw on several books' own PDFs at once, so there's no single page to jump to. */
-function SynthesisBlockCard({ block }: { block: NotionSynthesisBlock }) {
+function SynthesisBlockCard({
+  block,
+  fontScale,
+  serif,
+  justify,
+}: {
+  block: NotionSynthesisBlock;
+  fontScale: FontScale;
+  serif: boolean;
+  justify: boolean;
+}) {
   const meta = BLOCK_META[block.blockType];
   const Icon = meta.icon;
   // FicheViewer's BlockBody only ever reads blockType/content — the rest of this shape is irrelevant here.
@@ -54,14 +98,14 @@ function SynthesisBlockCard({ block }: { block: NotionSynthesisBlock }) {
         <Icon className="h-3.5 w-3.5" /> {meta.label}
       </span>
       <div className="mt-2">
-        <BlockBody block={asFicheBlock} fontScale="md" />
+        <BlockBody block={asFicheBlock} fontScale={fontScale} serif={serif} justify={justify} />
       </div>
       {block.imageUrl && (
         // eslint-disable-next-line @next/next/no-img-element -- reused verbatim from a source fiche block's own upload (Supabase Storage public URL), not a Next-optimizable asset.
         <img
           src={block.imageUrl}
           alt={block.imageAlt ?? ""}
-          className="mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain"
+          className={`mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain ${serif && justify ? "mx-auto block" : ""}`}
         />
       )}
       {sources.length > 0 && (
@@ -100,11 +144,15 @@ function SynthesisBlockEditor({
   isFirst,
   isLast,
   onChanged,
+  serif,
+  justify,
 }: {
   block: NotionSynthesisBlock;
   isFirst: boolean;
   isLast: boolean;
   onChanged: () => void;
+  serif: boolean;
+  justify: boolean;
 }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -196,7 +244,7 @@ function SynthesisBlockEditor({
         <img
           src={block.imageUrl}
           alt={block.imageAlt ?? ""}
-          className="mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain"
+          className={`mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain ${serif && justify ? "mx-auto block" : ""}`}
         />
       )}
 
@@ -263,9 +311,53 @@ export function NotionSynthesisView({
   const router = useRouter();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
+  const [fontScale, setFontScaleState] = useState<FontScale>(() => getFontScale() ?? "md");
+  const [textJustify, setTextJustifyState] = useState(() => getTextJustify());
+  const [readingComfort, setReadingComfortState] = useState(() => getReadingComfort());
+  const [dyslexicFont, setDyslexicFontState] = useState(() => getDyslexicFont());
+  const [ficheLayout, setFicheLayoutState] = useState<FicheLayout>(() => getFicheLayout());
+  const [layoutPickerOpen, setLayoutPickerOpen] = useState(false);
+  const [optionsMenuOpen, setOptionsMenuOpen] = useState(false);
 
   function refresh() {
     startTransition(() => router.refresh());
+  }
+
+  const FONT_SCALE_ORDER: FontScale[] = ["sm", "md", "lg"];
+  function adjustFontScale(direction: 1 | -1) {
+    const nextIndex = Math.min(FONT_SCALE_ORDER.length - 1, Math.max(0, FONT_SCALE_ORDER.indexOf(fontScale) + direction));
+    const next = FONT_SCALE_ORDER[nextIndex];
+    setFontScaleState(next);
+    setFontScale(next);
+  }
+
+  function toggleTextJustify() {
+    setTextJustifyState((prev) => {
+      const next = !prev;
+      setTextJustify(next);
+      return next;
+    });
+  }
+
+  function toggleReadingComfort() {
+    setReadingComfortState((prev) => {
+      const next = !prev;
+      setReadingComfort(next);
+      return next;
+    });
+  }
+
+  function toggleDyslexicFont() {
+    setDyslexicFontState((prev) => {
+      const next = !prev;
+      setDyslexicFont(next);
+      return next;
+    });
+  }
+
+  function chooseFicheLayout(layout: FicheLayout) {
+    setFicheLayoutState(layout);
+    setFicheLayout(layout);
   }
 
   function handleGenerate() {
@@ -301,7 +393,20 @@ export function NotionSynthesisView({
     });
   }
 
+  function handleDelete() {
+    if (!confirm("Supprimer définitivement cette synthèse ? Elle pourra être régénérée depuis zéro ensuite.")) return;
+    startTransition(async () => {
+      const result = await deleteNotionSynthesis(notionId);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Synthèse supprimée.", { variant: "success" });
+        router.refresh();
+      }
+    });
+  }
+
   const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
+  const sections = synthesis ? groupBlocksBySection(synthesis.blocks) : [];
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
@@ -317,9 +422,16 @@ export function NotionSynthesisView({
             {distinctBooks > 1 ? ` · ${distinctBooks} livres` : ""}
           </p>
         </div>
-        {synthesis && (
-          <Badge variant={synthesis.status === "published" ? "success" : "accent"}>{synthesis.status === "published" ? "Synthèse publiée" : "Brouillon"}</Badge>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {synthesis && (
+            <Badge variant={synthesis.status === "published" ? "success" : "accent"}>{synthesis.status === "published" ? "Synthèse publiée" : "Brouillon"}</Badge>
+          )}
+          {synthesis && synthesis.blocks.length > 0 && (
+            <Button variant="ghost" size="icon" onClick={() => setOptionsMenuOpen(true)} aria-label="Options de lecture" title="Options de lecture">
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {isAdmin && (
@@ -337,11 +449,69 @@ export function NotionSynthesisView({
               <Undo2 className="h-3.5 w-3.5" /> Repasser en brouillon
             </Button>
           )}
+          {synthesis && (
+            <Button variant="danger" size="sm" onClick={handleDelete} disabled={isPending}>
+              <Trash2 className="h-3.5 w-3.5" /> Supprimer la synthèse
+            </Button>
+          )}
           <span className="text-xs text-foreground-subtle">
             Relit tout le contenu publié de cette notion et le réécrit en une seule fiche dédupliquée — coûte un appel IA.
           </span>
         </div>
       )}
+
+      {optionsMenuOpen && (
+        <Modal title="Options de lecture" onClose={() => setOptionsMenuOpen(false)} size="sm">
+          <div className="-m-4 flex flex-col gap-0.5 p-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
+              onClick={() => {
+                setOptionsMenuOpen(false);
+                setLayoutPickerOpen(true);
+              }}
+            >
+              <LayoutTemplate className="h-3.5 w-3.5" /> Mise en page de la synthèse
+            </Button>
+
+            <div className="flex items-center justify-between px-3 py-2 text-sm text-foreground">
+              <span>Taille du texte</span>
+              <div className="flex items-center gap-0.5 rounded-full border border-border">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => adjustFontScale(-1)}
+                  disabled={fontScale === "sm"}
+                  aria-label="Réduire le texte"
+                  title="Réduire le texte"
+                >
+                  <Minus className="h-3 w-3" />
+                </Button>
+                <span className="text-[10px] font-medium text-foreground-subtle">Aa</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => adjustFontScale(1)}
+                  disabled={fontScale === "lg"}
+                  aria-label="Agrandir le texte"
+                  title="Agrandir le texte"
+                >
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+
+            <OptionToggleRow icon={AlignJustify} label="Texte justifié" active={textJustify} onClick={toggleTextJustify} />
+            <OptionToggleRow icon={Sun} label="Lecture confort (sépia)" active={readingComfort} onClick={toggleReadingComfort} />
+            <OptionToggleRow icon={SpellCheck} label="Police adaptée dyslexie" active={dyslexicFont} onClick={toggleDyslexicFont} />
+          </div>
+        </Modal>
+      )}
+
+      {layoutPickerOpen && <FicheLayoutPicker value={ficheLayout} onChange={chooseFicheLayout} onClose={() => setLayoutPickerOpen(false)} />}
 
       {synthesis?.isStale && (
         <p className="mt-3 flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-accent/40 bg-accent-tint px-3 py-2 text-xs text-accent">
@@ -368,43 +538,78 @@ export function NotionSynthesisView({
       )}
 
       {synthesis && synthesis.blocks.length > 0 ? (
-        <div className="mt-5 space-y-6">
-          {groupBlocksBySection(synthesis.blocks).map(({ title, blocks }) => {
-            const sources = sectionSources(blocks);
-            return (
-              <div key={title}>
-                <h2 className="font-serif-display text-lg font-medium text-foreground">{title}</h2>
-                <div className="mt-2 space-y-3">
-                  {blocks.map((block, i) =>
-                    isAdmin ? (
-                      <SynthesisBlockEditor
-                        key={block.id}
-                        block={block}
-                        isFirst={i === 0}
-                        isLast={i === blocks.length - 1}
-                        onChanged={refresh}
-                      />
-                    ) : (
-                      <SynthesisBlockCard key={block.id} block={block} />
-                    )
+        <div className="mt-5">
+          {ficheLayout === "sommaire" && sections.length > 1 && (
+            <div className="sticky top-0 z-10 -mx-4 mb-4 flex gap-1.5 overflow-x-auto bg-background px-4 py-2">
+              {sections.map((section, i) => (
+                <a
+                  key={`${section.title}-${i}`}
+                  href={`#synthesis-section-${i}`}
+                  className="shrink-0 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
+                >
+                  {section.title}
+                </a>
+              ))}
+            </div>
+          )}
+          <div
+            className="space-y-6"
+            style={
+              {
+                ...(readingComfort
+                  ? {
+                      "--background": "#f4ecd8",
+                      "--surface": "#f4ecd8",
+                      "--surface-muted": "#ece0c6",
+                      "--foreground": "#3b3226",
+                      "--foreground-muted": "#5a4d3a",
+                      "--foreground-subtle": "#7a6c54",
+                      "--border": "#ddceac",
+                    }
+                  : {}),
+                ...(dyslexicFont ? { fontFamily: "var(--font-dyslexic)" } : {}),
+              } as CSSProperties
+            }
+          >
+            {sections.map(({ title, blocks }, sectionIndex) => {
+              const sources = sectionSources(blocks);
+              return (
+                <div key={title} id={`synthesis-section-${sectionIndex}`} className="scroll-mt-16">
+                  <h2 className="font-serif-display text-lg font-medium text-foreground">{title}</h2>
+                  <div className="mt-2 space-y-3">
+                    {blocks.map((block, i) =>
+                      isAdmin ? (
+                        <SynthesisBlockEditor
+                          key={block.id}
+                          block={block}
+                          isFirst={i === 0}
+                          isLast={i === blocks.length - 1}
+                          onChanged={refresh}
+                          serif={ficheLayout === "livre"}
+                          justify={textJustify}
+                        />
+                      ) : (
+                        <SynthesisBlockCard key={block.id} block={block} fontScale={fontScale} serif={ficheLayout === "livre"} justify={textJustify} />
+                      )
+                    )}
+                  </div>
+                  {sources.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-foreground-subtle">
+                      <span>Sources de cette section :</span>
+                      {sources.map((s, i) => (
+                        <span key={s.chapterId}>
+                          <Link href={`/apps/el-profesor/chapters/${s.chapterId}`} className="hover:text-primary-strong hover:underline">
+                            {s.bookTitle} — {s.chapterTitle}
+                          </Link>
+                          {i < sources.length - 1 ? "," : ""}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
-                {sources.length > 0 && (
-                  <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-foreground-subtle">
-                    <span>Sources de cette section :</span>
-                    {sources.map((s, i) => (
-                      <span key={s.chapterId}>
-                        <Link href={`/apps/el-profesor/chapters/${s.chapterId}`} className="hover:text-primary-strong hover:underline">
-                          {s.bookTitle} — {s.chapterTitle}
-                        </Link>
-                        {i < sources.length - 1 ? "," : ""}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       ) : (
         <p className="mt-6 text-sm text-foreground-subtle">
