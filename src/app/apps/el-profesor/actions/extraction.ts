@@ -295,6 +295,39 @@ export async function resetStuckExtraction(chapterId: string): Promise<ActionSta
   return { error: "Ce chapitre n'est pas en cours d'extraction." };
 }
 
+/**
+ * Wipes a chapter's generated content (sub-entities, fiches, blocks,
+ * flashcards, review history — everything cascading from
+ * el_profesor_sub_entities.chapter_id) so it can be re-extracted from
+ * scratch, WITHOUT deleting the chapter row itself or its source PDF —
+ * the lighter counterpart of deleteChapter, requested 2026-08-28 for when
+ * a chapter's extraction came out badly (e.g. right after splitting it, or
+ * after switching provider) and starting over is simpler than manually
+ * fixing everything during review.
+ */
+export async function resetChapterContent(chapterId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: chapter } = await supabase.from("el_profesor_chapters").select("status").eq("id", chapterId).single();
+  if (!chapter) return { error: "Chapitre introuvable." };
+  if (chapter.status === "extracting" || chapter.status === "queued") {
+    return { error: "Une extraction est en cours pour ce chapitre — attendez qu'elle se termine, ou réinitialisez-la d'abord si elle semble bloquée." };
+  }
+
+  const { error: deleteError } = await supabase.from("el_profesor_sub_entities").delete().eq("chapter_id", chapterId);
+  if (deleteError) return { error: "Impossible de supprimer le contenu de ce chapitre." };
+
+  const { error: updateError } = await supabase
+    .from("el_profesor_chapters")
+    .update({ status: "pending", extraction_error: null, estimated_remaining_passes: null })
+    .eq("id", chapterId);
+  if (updateError) return { error: "Contenu supprimé, mais impossible de réinitialiser le statut du chapitre — réinitialisez-le manuellement." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Contenu du chapitre supprimé — relancez l'extraction quand vous êtes prêt." };
+}
+
 export interface ExtractionJobHistoryEntry {
   id: string;
   status: "pending" | "running" | "succeeded" | "failed";

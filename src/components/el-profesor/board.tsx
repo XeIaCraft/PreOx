@@ -40,6 +40,7 @@ import {
   MoreVertical,
   FileText,
   Coins,
+  Eraser,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -60,7 +61,7 @@ import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-se
 import { LibraryStats } from "@/components/el-profesor/learning-widgets";
 import { DashboardSecondaryWidgets, DashboardWidgetsSkeleton } from "@/components/el-profesor/dashboard-secondary-widgets";
 import { deleteBook, deleteChapter, moveBook, moveChapter } from "@/app/apps/el-profesor/actions/library";
-import { extractChapter, extractChapterComplementary, resetStuckExtraction } from "@/app/apps/el-profesor/actions/extraction";
+import { extractChapter, extractChapterComplementary, resetStuckExtraction, resetChapterContent } from "@/app/apps/el-profesor/actions/extraction";
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
 import { ExtractionHistoryDialog } from "@/components/el-profesor/dialogs/extraction-history-dialog";
@@ -242,6 +243,7 @@ type ModalState =
     }
   | { type: "delete_book"; bookId: string; title: string; chapterCount: number }
   | { type: "delete_chapter"; chapterId: string; title: string; flashcardCount: number }
+  | { type: "reset_chapter_content"; chapterId: string; title: string; flashcardCount: number }
   | { type: "gemini_settings" }
   | { type: "search_book"; bookId: string; bookTitle: string }
   | { type: "search_notes" }
@@ -675,6 +677,20 @@ export function ElProfesorBoard({
       setPendingId(null);
       if (result.error) toast(result.error, { variant: "error" });
       else {
+        setModal(null);
+        refresh();
+      }
+    });
+  }
+
+  function confirmResetChapterContent(chapterId: string) {
+    setPendingId(chapterId);
+    startTransition(async () => {
+      const result = await resetChapterContent(chapterId);
+      setPendingId(null);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Contenu supprimé.", { variant: "success" });
         setModal(null);
         refresh();
       }
@@ -1352,6 +1368,24 @@ export function ElProfesorBoard({
                                 <Scissors className="h-3.5 w-3.5" /> Diviser ce chapitre
                               </Button>
                             )}
+                          {(chapter.status === "draft_ready" || chapter.status === "published" || chapter.status === "failed") && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full justify-start text-danger"
+                              onClick={() =>
+                                setModal({
+                                  type: "reset_chapter_content",
+                                  chapterId: chapter.id,
+                                  title: chapter.title,
+                                  flashcardCount: masteryCounts[chapter.id]?.total ?? 0,
+                                })
+                              }
+                              title="Supprime tout le contenu généré (fiches, flashcards) pour ce chapitre, en gardant le chapitre et son PDF, afin de relancer l'extraction depuis zéro"
+                            >
+                              <Eraser className="h-3.5 w-3.5" /> Vider le contenu
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1471,6 +1505,24 @@ export function ElProfesorBoard({
           ]}
           isPending={isPending}
           onConfirm={() => confirmDeleteChapter(modal.chapterId)}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.type === "reset_chapter_content" && (
+        <ConfirmDeleteDialog
+          title="Vider le contenu de ce chapitre ?"
+          itemName={modal.title}
+          introText={`Le contenu généré de « ${modal.title} » va être supprimé définitivement (le chapitre et son PDF source sont conservés), avec :`}
+          consequences={[
+            "Toutes les fiches et blocs générés pour ce chapitre",
+            modal.flashcardCount > 0
+              ? `${modal.flashcardCount} flashcard${modal.flashcardCount > 1 ? "s" : ""} et leur historique de révision`
+              : "Les flashcards associées et leur historique de révision",
+          ]}
+          confirmLabel="Vider le contenu"
+          pendingLabel="Suppression…"
+          isPending={isPending}
+          onConfirm={() => confirmResetChapterContent(modal.chapterId)}
           onClose={() => setModal(null)}
         />
       )}

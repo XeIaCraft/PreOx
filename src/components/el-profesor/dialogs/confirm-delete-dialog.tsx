@@ -7,14 +7,23 @@ import { Button } from "@/components/ui/button";
 export function ConfirmDeleteDialog({
   title,
   itemName,
+  introText,
   consequences,
+  confirmLabel = "Supprimer définitivement",
+  pendingLabel = "Suppression…",
   isPending,
   onConfirm,
   onClose,
 }: {
   title: string;
   itemName: string;
+  /** Overrides the default "« {itemName} » va être supprimé définitivement, avec :" sentence — for a confirmation that isn't literally deleting itemName itself (e.g. wiping a chapter's content but keeping the chapter). */
+  introText?: string;
   consequences: string[];
+  /** Confirm button label when idle. Defaults to "Supprimer définitivement" — override for a non-deletion destructive action. */
+  confirmLabel?: string;
+  /** Confirm button label while pending. Defaults to "Suppression…". */
+  pendingLabel?: string;
   isPending: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -26,9 +35,7 @@ export function ConfirmDeleteDialog({
           <AlertTriangle className="h-4.5 w-4.5" />
         </span>
         <div className="space-y-2">
-          <p className="text-sm text-foreground">
-            « {itemName} » va être supprimé définitivement, avec :
-          </p>
+          <p className="text-sm text-foreground">{introText ?? `« ${itemName} » va être supprimé définitivement, avec :`}</p>
           <ul className="list-disc space-y-1 pl-4 text-sm text-foreground-muted">
             {consequences.map((c, i) => (
               <li key={i}>{c}</li>
@@ -43,7 +50,7 @@ export function ConfirmDeleteDialog({
           Annuler
         </Button>
         <Button variant="danger" onClick={onConfirm} disabled={isPending}>
-          {isPending ? "Suppression…" : "Supprimer définitivement"}
+          {isPending ? pendingLabel : confirmLabel}
         </Button>
       </div>
     </Modal>
