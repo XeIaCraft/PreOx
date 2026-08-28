@@ -1,6 +1,7 @@
 import { requireElProfesorAccess, getCaseJournalEntries, getGlossary } from "@/lib/el-profesor/dal";
 import { CaseJournalView } from "@/components/el-profesor/case-journal-view";
 import { DalLoadError } from "@/components/el-profesor/dal-load-error";
+import { RenderErrorBoundary } from "@/components/el-profesor/render-error-boundary";
 
 async function loadJournalData() {
   const [entries, notionSummaries] = await Promise.all([getCaseJournalEntries(), getGlossary()]);
@@ -25,5 +26,9 @@ export default async function CaseJournalPage({ searchParams }: { searchParams: 
   }
 
   if (!data) return <DalLoadError title="Journal de cas" error={loadError} />;
-  return <CaseJournalView entries={data.entries} notions={data.notions} filterNotionId={notionId ?? null} />;
+  return (
+    <RenderErrorBoundary fallbackTitle="Journal de cas">
+      <CaseJournalView entries={data.entries} notions={data.notions} filterNotionId={notionId ?? null} />
+    </RenderErrorBoundary>
+  );
 }
