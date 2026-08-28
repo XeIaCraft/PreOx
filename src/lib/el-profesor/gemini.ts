@@ -19,6 +19,7 @@ import {
   buildExamQuestionsPrompt,
   buildMindMapPrompt,
   buildChapterSplitPrompt,
+  buildChapterInternalSplitPrompt,
   buildPageOcrPrompt,
   buildLeechRewordingPrompt,
   buildFlashcardFlagFixPrompt,
@@ -350,6 +351,24 @@ const CHAPTER_SPLIT_SCHEMA = {
     },
   },
   required: ["chapters"],
+};
+
+const CHAPTER_INTERNAL_SPLIT_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    parts: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          title: { type: "STRING" },
+          start_page: { type: "INTEGER" },
+        },
+        required: ["title", "start_page"],
+      },
+    },
+  },
+  required: ["parts"],
 };
 
 const PAGE_OCR_SCHEMA = {
@@ -900,6 +919,26 @@ export async function detectChapterBoundaries(config: GeminiRotationConfig, page
   const instructions = buildChapterSplitPrompt(pageTexts);
   const { result } = await textRotation<{ chapters: { title: string; start_page: number }[] }>(config, instructions, CHAPTER_SPLIT_SCHEMA);
   return result.chapters.map((c) => ({ title: c.title, startPage: c.start_page }));
+}
+
+/**
+ * AI-assisted split-point suggestion for one existing chapter's own PDF
+ * (per-chapter "Diviser ce chapitre", added 2026-08-28 — see
+ * buildChapterInternalSplitPrompt's doc comment for why this needs its own
+ * prompt rather than reusing detectChapterBoundaries/buildChapterSplitPrompt:
+ * opposite granularity, internal subsection/paragraph boundaries rather than
+ * chapter starts). Always Gemini, same one-shot-interactive-helper rationale
+ * as detectChapterBoundaries. Rotates on quota/capacity errors.
+ */
+export async function suggestChapterSplitPoints(
+  config: GeminiRotationConfig,
+  chapterTitle: string,
+  pageTexts: string[],
+  targetPartCount: number
+): Promise<{ title: string; startPage: number }[]> {
+  const instructions = buildChapterInternalSplitPrompt(chapterTitle, pageTexts, targetPartCount);
+  const { result } = await textRotation<{ parts: { title: string; start_page: number }[] }>(config, instructions, CHAPTER_INTERNAL_SPLIT_SCHEMA);
+  return result.parts.map((p) => ({ title: p.title, startPage: p.start_page }));
 }
 
 /** Assigns 1-3 cross-book "notion" tags to a fiche's content, reusing existing notion names when they fit. Rotates on quota/capacity errors. */

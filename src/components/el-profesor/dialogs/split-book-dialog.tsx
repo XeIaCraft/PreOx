@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Sparkles, Plus, Trash2, ClipboardPaste, Copy } from "lucide-react";
+import { Sparkles, Plus, ClipboardPaste, Copy } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
+import { Label } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { getBookPdfPageCount, suggestBookChapters, splitBookIntoChapters } from "@/app/apps/el-profesor/actions/split-book";
 import { uploadPdfDirect } from "@/lib/el-profesor/client-pdf-upload";
+import { RangeRow } from "@/components/el-profesor/dialogs/range-row";
 
 interface Row {
   title: string;
@@ -255,23 +256,14 @@ export function SplitBookDialog({
 
             <div className="max-h-80 space-y-2 overflow-y-auto">
               {rows.map((row, i) => (
-                <div key={i} className="flex items-end gap-2 rounded-[var(--radius-sm)] border border-border p-2">
-                  <div className="flex-1 space-y-1">
-                    <Label>Titre</Label>
-                    <Input value={row.title} onChange={(e) => updateRow(i, { title: e.target.value })} placeholder="Titre du chapitre" />
-                  </div>
-                  <div className="w-20 space-y-1">
-                    <Label>Page début</Label>
-                    <Input type="number" min={1} value={row.startPage} onChange={(e) => updateRow(i, { startPage: e.target.value })} />
-                  </div>
-                  <div className="w-20 space-y-1">
-                    <Label>Page fin</Label>
-                    <Input type="number" min={1} value={row.endPage} onChange={(e) => updateRow(i, { endPage: e.target.value })} />
-                  </div>
-                  <Button variant="ghost" size="icon" onClick={() => removeRow(i)} aria-label="Retirer ce chapitre">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
+                <RangeRow
+                  key={i}
+                  title={row.title}
+                  startPage={row.startPage}
+                  endPage={row.endPage}
+                  onChange={(patch) => updateRow(i, patch)}
+                  onRemove={() => removeRow(i)}
+                />
               ))}
             </div>
 

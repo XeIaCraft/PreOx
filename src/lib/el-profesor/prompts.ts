@@ -453,6 +453,39 @@ Réponds uniquement avec le JSON demandé (un tableau "chapters", chaque éléme
 }
 
 /**
+ * AI-assisted split-point suggestion for the per-chapter "Diviser ce
+ * chapitre" tool (added 2026-08-28, after single-pass extraction quality
+ * was found to degrade past ~20 pages) — unlike buildChapterSplitPrompt
+ * above (which finds CHAPTER boundaries in a whole book and explicitly
+ * excludes internal subsections), this is the opposite granularity: it
+ * looks for natural boundaries INSIDE one existing chapter so it can be cut
+ * into several shorter chapters. The admin reviews/edits every suggestion
+ * before anything is actually split.
+ */
+export function buildChapterInternalSplitPrompt(chapterTitle: string, pageTexts: string[], targetPartCount: number): string {
+  const pages = pageTexts
+    .map((text, i) => `--- Page ${i + 1} ---\n${text.trim().slice(0, 300) || "(page vide ou image scannée)"}`)
+    .join("\n\n");
+  return `
+Voici le texte extrait de chaque page d'un chapitre médical au format PDF, intitulé « ${chapterTitle} » (un court extrait par page, pour repérer sa structure interne) :
+
+${pages}
+
+Ce chapitre est trop long pour être traité de façon fiable en une seule fois par l'IA d'extraction — il doit être divisé en ${targetPartCount} parties distinctes, chacune redevenant un chapitre à part entière. Ta tâche : identifie ${targetPartCount - 1} points de coupure à l'intérieur de ce chapitre.
+
+Règle impérative, plus importante que tout le reste : chaque coupure doit tomber sur une frontière naturelle du texte — au minimum un début de nouveau paragraphe, idéalement le début d'une sous-partie ou d'un sous-titre repérable dans les extraits. Ne coupe JAMAIS au milieu d'un paragraphe, d'un tableau, d'une liste, d'une figure ou de sa légende, ou d'un protocole en plusieurs étapes. Si la frontière naturelle la plus proche d'une répartition égale se trouve plusieurs pages plus loin qu'un découpage parfaitement équilibré, privilégie systématiquement la frontière naturelle.
+
+Objectif secondaire (seulement une fois la règle ci-dessus respectée) : répartis les pages de façon à peu près équilibrée entre les ${targetPartCount} parties.
+
+Pour chaque partie, donne :
+- "title" : un titre court, si possible dérivé du sous-titre/de la sous-partie qui commence à cette page ; sinon « ${chapterTitle} (partie N) ».
+- "start_page" : le numéro de la PREMIÈRE page (1-indexé, "Page N" ci-dessus) où cette partie commence. La première partie commence toujours à la page 1.
+
+Réponds uniquement avec le JSON demandé (un tableau "parts", trié par "start_page" croissant, exactement ${targetPartCount} éléments, le premier avec "start_page": 1), structuré exactement selon le schéma fourni.
+`.trim();
+}
+
+/**
  * OCR fallback for pages pdfjs's text layer couldn't extract (scanned or
  * photographed pages) — item "OCR des PDF scannés" of the pistes
  * d'amélioration 2026-08-24. Only asked for the specific pages that came

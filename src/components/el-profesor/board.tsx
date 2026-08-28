@@ -54,6 +54,7 @@ import { DashboardNotionView, DashboardNotionViewSkeleton } from "@/components/e
 import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog";
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { SplitBookDialog } from "@/components/el-profesor/dialogs/split-book-dialog";
+import { SplitChapterDialog } from "@/components/el-profesor/dialogs/split-chapter-dialog";
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
 import { LibraryStats } from "@/components/el-profesor/learning-widgets";
@@ -76,6 +77,7 @@ import {
 } from "@/lib/el-profesor/local-prefs";
 import { formatUsd } from "@/lib/el-profesor/ai-pricing";
 import { exceedsGeminiFreeTierBudget } from "@/lib/el-profesor/gemini-quota";
+import { exceedsQualitySplitThreshold, MIN_PAGES_TO_SPLIT } from "@/lib/el-profesor/chapter-quality";
 import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts, ChapterMasteryPercentile, ElProfesorAiProvider } from "@/lib/el-profesor/dal";
 import type { ChapterStatus } from "@/lib/el-profesor/types";
 import type { DashboardSecondaryData, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
@@ -234,6 +236,10 @@ type ModalState =
   | { type: "edit_book"; book: { id: string; title: string; author: string | null; edition: string | null; theme: string | null } }
   | { type: "upload_chapter"; bookId: string; nextOrder: number }
   | { type: "split_book"; bookId: string; nextOrder: number }
+  | {
+      type: "split_chapter";
+      chapter: { id: string; bookId: string; title: string; orderIndex: number; pdfPageCount: number; status: ChapterStatus };
+    }
   | { type: "delete_book"; bookId: string; title: string; chapterCount: number }
   | { type: "delete_chapter"; chapterId: string; title: string; flashcardCount: number }
   | { type: "gemini_settings" }
@@ -1110,6 +1116,14 @@ export function ElProfesorBoard({
                             <Coins className="h-3 w-3" /> Claude recommandé
                           </Badge>
                         )}
+                        {isAdmin && chapter.sourceKind === "pdf" && chapter.pdfPageCount != null && exceedsQualitySplitThreshold(chapter.pdfPageCount) && (
+                          <Badge
+                            variant="accent"
+                            title="Chapitre long — la qualité d'extraction en une seule passe se dégrade au-delà d'une vingtaine de pages, quel que soit le fournisseur IA. Diviser ce chapitre en parties plus courtes (menu ⋯) est recommandé avant extraction."
+                          >
+                            <Scissors className="h-3 w-3" /> Diviser recommandé
+                          </Badge>
+                        )}
                         {isAdmin && needsReview > 0 && <Badge variant="accent">{needsReview} à vérifier</Badge>}
                         <Badge variant={STATUS_VARIANT[chapter.status]}>{STATUS_LABEL[chapter.status]}</Badge>
                       </div>
@@ -1282,6 +1296,32 @@ export function ElProfesorBoard({
                               <History className="h-3.5 w-3.5" /> Historique IA
                             </Button>
                           )}
+                          {chapter.sourceKind === "pdf" &&
+                            chapter.status !== "extracting" &&
+                            chapter.status !== "queued" &&
+                            (chapter.pdfPageCount ?? 0) >= MIN_PAGES_TO_SPLIT && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-start"
+                                onClick={() =>
+                                  setModal({
+                                    type: "split_chapter",
+                                    chapter: {
+                                      id: chapter.id,
+                                      bookId: book.id,
+                                      title: chapter.title,
+                                      orderIndex: chapter.orderIndex,
+                                      pdfPageCount: chapter.pdfPageCount!,
+                                      status: chapter.status,
+                                    },
+                                  })
+                                }
+                                title="Diviser ce chapitre en plusieurs chapitres plus courts, à une coupure naturelle (sous-partie ou paragraphe)"
+                              >
+                                <Scissors className="h-3.5 w-3.5" /> Diviser ce chapitre
+                              </Button>
+                            )}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1356,6 +1396,16 @@ export function ElProfesorBoard({
         <SplitBookDialog
           bookId={modal.bookId}
           nextOrder={modal.nextOrder}
+          onClose={() => setModal(null)}
+          onSaved={() => {
+            setModal(null);
+            refresh();
+          }}
+        />
+      )}
+      {modal?.type === "split_chapter" && (
+        <SplitChapterDialog
+          chapter={modal.chapter}
           onClose={() => setModal(null)}
           onSaved={() => {
             setModal(null);

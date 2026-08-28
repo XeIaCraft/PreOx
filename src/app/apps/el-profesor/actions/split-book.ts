@@ -6,7 +6,7 @@ import { requireElProfesorAdmin, getElProfesorGeminiConfig } from "@/lib/el-prof
 import { createClient } from "@/lib/supabase/server";
 import { uploadChapterPdf, deleteChapterPdf, downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import { extractPdfPageTexts } from "@/lib/el-profesor/pdf-text";
-import { splitPdfByRanges, getPdfPageCount } from "@/lib/el-profesor/pdf-split";
+import { splitPdfByRanges, getPdfPageCount, MAX_PAGES_FOR_AI_DETECTION } from "@/lib/el-profesor/pdf-split";
 import { detectChapterBoundaries } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
 
@@ -41,16 +41,6 @@ export interface ChapterRange {
   startPage: number;
   endPage: number;
 }
-
-// Per-page excerpts sent in one prompt (buildChapterSplitPrompt) — bounded
-// so the request stays a single reasonably-sized Gemini call; a book past
-// this falls back to manual mode (start/end page per chapter, no AI call).
-// Raised 2026-08-25 (700 → 2000): even at 2000 pages the prompt is only
-// ~200k tokens (300 chars/page cap), comfortably inside Gemini Flash's 1M
-// context window — the real ceiling this guards against is request
-// duration, not context size, and 2000 pages covers essentially any
-// single-volume book.
-const MAX_PAGES_FOR_AI_DETECTION = 2000;
 
 export async function getBookPdfPageCount(storagePath: string): Promise<ActionState & { pageCount?: number }> {
   await requireElProfesorAdmin();
