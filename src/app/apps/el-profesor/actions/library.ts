@@ -260,3 +260,35 @@ export async function deleteChapter(chapterId: string): Promise<ActionState> {
   revalidatePath("/apps/el-profesor");
   return { success: "Chapitre supprimé." };
 }
+
+/** Swaps this chapter's order_index with the previous/next chapter of the SAME book (mirrors moveBook above) — admin-only reordering on the dashboard. */
+export async function moveChapter(chapterId: string, direction: "up" | "down"): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: chapter } = await supabase.from("el_profesor_chapters").select("book_id").eq("id", chapterId).single();
+  if (!chapter) return { error: "Chapitre introuvable." };
+
+  const { data: chapters } = await supabase
+    .from("el_profesor_chapters")
+    .select("id, order_index")
+    .eq("book_id", chapter.book_id)
+    .order("order_index", { ascending: true });
+  const list = chapters ?? [];
+  const index = list.findIndex((c) => c.id === chapterId);
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (index === -1 || targetIndex < 0 || targetIndex >= list.length) {
+    return { success: "OK" };
+  }
+
+  const target = list[targetIndex];
+  const current = list[index];
+  const [error1, error2] = await Promise.all([
+    supabase.from("el_profesor_chapters").update({ order_index: target.order_index }).eq("id", current.id).then((r) => r.error),
+    supabase.from("el_profesor_chapters").update({ order_index: current.order_index }).eq("id", target.id).then((r) => r.error),
+  ]);
+  if (error1 || error2) return { error: "Impossible de réordonner ce chapitre." };
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "Chapitre déplacé." };
+}

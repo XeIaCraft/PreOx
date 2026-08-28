@@ -59,7 +59,7 @@ import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-de
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
 import { LibraryStats } from "@/components/el-profesor/learning-widgets";
 import { DashboardSecondaryWidgets, DashboardWidgetsSkeleton } from "@/components/el-profesor/dashboard-secondary-widgets";
-import { deleteBook, deleteChapter, moveBook } from "@/app/apps/el-profesor/actions/library";
+import { deleteBook, deleteChapter, moveBook, moveChapter } from "@/app/apps/el-profesor/actions/library";
 import { extractChapter, extractChapterComplementary, resetStuckExtraction } from "@/app/apps/el-profesor/actions/extraction";
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
@@ -547,6 +547,14 @@ export function ElProfesorBoard({
   function handleMoveBook(bookId: string, direction: "up" | "down") {
     startTransition(async () => {
       const result = await moveBook(bookId, direction);
+      if (result.error) toast(result.error, { variant: "error" });
+      else refresh();
+    });
+  }
+
+  function handleMoveChapter(chapterId: string, direction: "up" | "down") {
+    startTransition(async () => {
+      const result = await moveChapter(chapterId, direction);
       if (result.error) toast(result.error, { variant: "error" });
       else refresh();
     });
@@ -1073,7 +1081,7 @@ export function ElProfesorBoard({
             <ChapterProgressComparison chapters={publishedChapters} masteryCounts={masteryCounts} />
 
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {book.chapters.map((chapter) => {
+              {book.chapters.map((chapter, chapterIndex) => {
                 const due = dueCounts[chapter.id] ?? 0;
                 const needsReview = needsReviewCounts[chapter.id] ?? 0;
                 const busy = isPending && pendingId === chapter.id;
@@ -1086,6 +1094,28 @@ export function ElProfesorBoard({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-2">
+                        {isAdmin && (
+                          <div className="flex flex-col">
+                            <button
+                              type="button"
+                              onClick={() => handleMoveChapter(chapter.id, "up")}
+                              disabled={chapterIndex === 0 || isPending}
+                              aria-label="Monter ce chapitre"
+                              className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                            >
+                              <ChevronUp className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveChapter(chapter.id, "down")}
+                              disabled={chapterIndex === book.chapters.length - 1 || isPending}
+                              aria-label="Descendre ce chapitre"
+                              className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
+                            >
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
                         {bulkSelectable && (
                           <input
                             type="checkbox"
