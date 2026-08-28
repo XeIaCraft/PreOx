@@ -1147,8 +1147,8 @@ export function ElProfesorBoard({
                     key={chapter.id}
                     className={`rounded-[var(--radius-lg)] border p-4 ${selected ? "border-primary bg-primary-tint/30" : "border-border bg-surface"}`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-start gap-2">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="flex min-w-0 items-start gap-2">
                         {isAdmin && (
                           <div className="flex flex-col">
                             <button

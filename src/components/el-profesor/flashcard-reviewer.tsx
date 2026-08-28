@@ -155,7 +155,7 @@ const COMPLETION_MESSAGES = [
 export function FlashcardReviewer({
   chapterId,
   source,
-  cards,
+  cards: cardsProp,
   cappedFrom,
   badgeLabel,
   emptyMessage,
@@ -183,6 +183,18 @@ export function FlashcardReviewer({
   const backHref = chapterId ? `/apps/el-profesor/chapters/${chapterId}` : "/apps/el-profesor";
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
+  // Frozen once per session mount, same "picked once" idiom as
+  // completionMessage/variantByCardId below — deliberately NOT the live
+  // `cardsProp`. submitReview/undoReview/excludeFlashcardFromReviews all
+  // call revalidatePath, which (per Next's Server Actions model) reseeds
+  // *this* route's Server Component tree with fresh props a beat after the
+  // action resolves — not just the dashboard revalidatePath names. Reading
+  // the live prop here raced that reseed against the local index++ below:
+  // the card would advance locally, then get silently swapped again a
+  // moment later when the reseeded (differently-ordered) array landed at
+  // the same index. Freezing the set removes that second, uncontrolled
+  // source of truth.
+  const [cards] = useState(() => cardsProp);
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   // Mandatory self-assessment step inserted before every reveal (piste

@@ -154,10 +154,13 @@ function NotionFicheList({ notionId, fiches, isAdmin, onChanged }: { notionId: s
                 </button>
               </span>
             )}
-            <Link href={`/apps/el-profesor/chapters/${f.chapterId}`} className="inline-flex min-w-0 items-center gap-1 hover:underline">
+            <Link
+              href={`/apps/el-profesor/chapters/${f.chapterId}`}
+              className="inline-flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 hover:underline"
+            >
               <BookOpen className="h-3 w-3 shrink-0" />
-              <span className="truncate font-medium text-foreground">{f.ficheTitle}</span>
-              <span className="shrink-0">
+              <span className="min-w-0 truncate font-medium text-foreground">{f.ficheTitle}</span>
+              <span className="min-w-0">
                 — {f.bookTitle} / {f.chapterTitle}
               </span>
             </Link>
