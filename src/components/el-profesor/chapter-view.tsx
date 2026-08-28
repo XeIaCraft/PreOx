@@ -105,6 +105,150 @@ function FicheLayoutPicker({ value, onChange, onClose }: { value: FicheLayout; o
   );
 }
 
+/**
+ * Mobile-only full-screen immersive reader for "livre"/"sommaire" (piste
+ * 2026-08-28, round 2 — the first pass kept these layouts nested inside
+ * the normal chrome-full page: hub header, chapter-view toolbar, sidebar
+ * — which read as nothing close to the mockups shown beforehand). Covers
+ * the whole viewport (including the hub header above it) and deliberately
+ * drops every secondary control — confirmed explicitly ("les fonctions ne
+ * sont plus visibles, c'est voulu") in favor of maximizing reading
+ * surface. Only kept beyond the mockups: a small top-right icon back to
+ * the layout picker, the sole way out of this shell once it's the saved
+ * preference. Desktop (lg+) never renders this — it keeps the full grid
+ * with layout-flavored FicheViewer body styling only, since the mockups
+ * were explicitly a mobile redesign.
+ */
+function ImmersiveFicheReader({
+  chapterTitle,
+  layout,
+  fiche,
+  summary,
+  fontScale,
+  blockReviewStates,
+  ficheIndex,
+  ficheCount,
+  onCitationClick,
+  onGoToFiche,
+  onOpenFicheList,
+  onOpenLayoutPicker,
+}: {
+  chapterTitle: string;
+  layout: "livre" | "sommaire";
+  fiche: NonNullable<SubEntityWithFiche["fiche"]>;
+  summary?: string;
+  fontScale: FontScale;
+  blockReviewStates?: Record<string, BlockReviewState>;
+  ficheIndex: number;
+  ficheCount: number;
+  onCitationClick: (c: Citation) => void;
+  onGoToFiche: (direction: 1 | -1) => void;
+  onOpenFicheList: () => void;
+  onOpenLayoutPicker: () => void;
+}) {
+  const swipeStartX = useRef<number | null>(null);
+
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.pointerType !== "touch") return;
+    swipeStartX.current = e.clientX;
+  }
+
+  function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const startX = swipeStartX.current;
+    swipeStartX.current = null;
+    if (e.pointerType !== "touch" || startX === null) return;
+    const dx = e.clientX - startX;
+    if (Math.abs(dx) < 60) return;
+    onGoToFiche(dx < 0 ? 1 : -1);
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex flex-col bg-background print:hidden lg:hidden">
+      <div
+        className={
+          layout === "livre"
+            ? "sticky top-0 z-10 shrink-0 bg-[linear-gradient(var(--background)_62%,transparent)] px-5 pb-3 pt-4"
+            : "shrink-0 px-5 pb-2 pt-4"
+        }
+      >
+        <div className="flex items-center justify-between gap-2">
+          <button type="button" onClick={onOpenFicheList} className="flex items-center gap-1 text-xs font-semibold text-foreground-subtle">
+            <ChevronLeft className="h-3.5 w-3.5" /> Chapitre
+          </button>
+          <button
+            type="button"
+            onClick={onOpenLayoutPicker}
+            aria-label="Mise en page de la fiche"
+            title="Mise en page de la fiche"
+            className="rounded-full p-1.5 text-foreground-subtle hover:bg-surface-muted hover:text-foreground"
+          >
+            <LayoutTemplate className="h-4 w-4" />
+          </button>
+        </div>
+        {layout === "livre" && (
+          <p className="mt-3 truncate text-[11px] font-semibold uppercase tracking-wide text-foreground-subtle">
+            {chapterTitle} · {ficheIndex + 1} / {ficheCount}
+          </p>
+        )}
+        <h1
+          className={`text-balance font-serif-display font-medium leading-tight text-foreground ${
+            layout === "livre" ? "mt-1.5 text-[26px]" : "mt-1 text-[19px]"
+          }`}
+        >
+          {fiche.title}
+        </h1>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" onPointerDown={handlePointerDown} onPointerUp={handlePointerUp}>
+        <FicheViewer
+          title={fiche.title}
+          summary={summary}
+          blocks={fiche.blocks}
+          onCitationClick={onCitationClick}
+          fontScale={fontScale}
+          layout={layout}
+          blockReviewStates={blockReviewStates}
+          immersive
+          superseded={
+            fiche.supersededByFicheId ? { reason: fiche.supersededReason ?? "outdated", note: fiche.supersededNote } : undefined
+          }
+        />
+      </div>
+      {layout === "sommaire" ? (
+        <div className="flex shrink-0 gap-2 border-t border-border bg-surface px-4 py-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))]">
+          <button
+            type="button"
+            onClick={() => onGoToFiche(-1)}
+            disabled={ficheIndex <= 0}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] bg-surface-muted px-3 py-2.5 text-sm font-medium text-foreground-muted disabled:opacity-40"
+          >
+            <ChevronLeft className="h-4 w-4" /> Précédente
+          </button>
+          <button
+            type="button"
+            onClick={onOpenFicheList}
+            aria-label="Toutes les fiches de ce chapitre"
+            className="shrink-0 rounded-[var(--radius-md)] bg-surface-muted px-3 py-2.5 text-xs font-medium tabular-nums text-foreground-subtle"
+          >
+            {ficheIndex + 1}/{ficheCount}
+          </button>
+          <button
+            type="button"
+            onClick={() => onGoToFiche(1)}
+            disabled={ficheIndex >= ficheCount - 1}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] bg-primary px-3 py-2.5 text-sm font-medium text-surface disabled:opacity-40"
+          >
+            Suivante <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+        <div className="h-[3px] shrink-0 bg-surface-muted">
+          <div className="h-full bg-primary transition-[width]" style={{ width: `${((ficheIndex + 1) / Math.max(1, ficheCount)) * 100}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChapterView({
   chapterId,
   chapterTitle,
@@ -431,6 +575,22 @@ export function ChapterView({
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col px-4 py-4 sm:px-6 md:h-[calc(100vh-4rem)]">
+      {!focusMode && ficheLayout !== "actuel" && selected?.fiche && (
+        <ImmersiveFicheReader
+          chapterTitle={chapterTitle}
+          layout={ficheLayout}
+          fiche={selected.fiche}
+          summary={selected.summary}
+          fontScale={fontScale}
+          blockReviewStates={blockReviewStates}
+          ficheIndex={currentFicheIndex}
+          ficheCount={withFiche.length}
+          onCitationClick={handleCitationClick}
+          onGoToFiche={goToFiche}
+          onOpenFicheList={() => setFicheListOpen(true)}
+          onOpenLayoutPicker={() => setLayoutPickerOpen(true)}
+        />
+      )}
       {isOffline && (
         <div className="mb-2 rounded-[var(--radius-sm)] border border-accent/40 bg-accent-tint px-3 py-1.5 text-center text-xs text-accent print:hidden">
           Hors ligne — vous consultez une version déjà enregistrée de ce chapitre. Les fonctionnalités nécessitant une connexion (IA, révision, PDF) peuvent ne pas répondre.
@@ -632,11 +792,10 @@ export function ChapterView({
           opens the full list as a sheet) instead of the desktop sidebar —
           requested 2026-08-28, the old horizontal-scroll pill row made a
           chapter's other fiches all but invisible/undiscoverable on
-          mobile. lg+ keeps the always-visible sidebar list below. The
-          "sommaire" layout replaces this top bar with a docked bar at the
-          bottom of the page instead (rendered further down) — fiche
-          navigation is its most-used control, worth the thumb reach. */}
-      {!focusMode && ficheLayout !== "sommaire" && withFiche.length > 0 && (
+          mobile. lg+ keeps the always-visible sidebar list below. "livre"
+          and "sommaire" replace this bar (and the rest of this page's
+          chrome) with the full-screen ImmersiveFicheReader instead. */}
+      {!focusMode && ficheLayout === "actuel" && withFiche.length > 0 && (
         <div className="mb-3 flex items-center gap-1.5 print:hidden lg:hidden">
           <Button variant="ghost" size="icon" onClick={() => goToFiche(-1)} disabled={currentFicheIndex <= 0} aria-label="Fiche précédente">
             <ChevronLeft className="h-4 w-4" />
@@ -888,38 +1047,6 @@ export function ChapterView({
         />
       )}
 
-      {/* "Sommaire d'abord" layout: fiche-to-fiche navigation docked at the
-          bottom of the page instead of the compact top bar — it's the
-          single most-used control in this layout, so it stays within
-          thumb reach at all times rather than requiring a reach up. */}
-      {!focusMode && ficheLayout === "sommaire" && withFiche.length > 0 && (
-        <div className="sticky bottom-0 z-20 -mx-4 mt-3 flex gap-2 border-t border-border bg-surface px-4 py-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))] print:hidden sm:-mx-6 sm:px-6 lg:hidden">
-          <button
-            type="button"
-            onClick={() => goToFiche(-1)}
-            disabled={currentFicheIndex <= 0}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] bg-surface-muted px-3 py-2.5 text-sm font-medium text-foreground-muted disabled:opacity-40"
-          >
-            <ChevronLeft className="h-4 w-4" /> Précédente
-          </button>
-          <button
-            type="button"
-            onClick={() => setFicheListOpen(true)}
-            aria-label="Toutes les fiches de ce chapitre"
-            className="shrink-0 rounded-[var(--radius-md)] bg-surface-muted px-3 py-2.5 text-xs font-medium tabular-nums text-foreground-subtle"
-          >
-            {currentFicheIndex + 1}/{withFiche.length}
-          </button>
-          <button
-            type="button"
-            onClick={() => goToFiche(1)}
-            disabled={currentFicheIndex === -1 || currentFicheIndex >= withFiche.length - 1}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] bg-primary px-3 py-2.5 text-sm font-medium text-surface disabled:opacity-40"
-          >
-            Suivante <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      )}
     </div>
   );
 }

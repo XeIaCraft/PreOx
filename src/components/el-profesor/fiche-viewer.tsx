@@ -428,6 +428,7 @@ export function FicheViewer({
   superseded,
   blockReviewStates,
   layout = "actuel",
+  immersive = false,
 }: {
   title: string;
   summary?: string;
@@ -448,16 +449,27 @@ export function FicheViewer({
    * links, admin review) simply omit this and get "actuel".
    */
   layout?: FicheLayout;
+  /**
+   * Set only by the mobile full-screen immersive shell (piste 2026-08-28,
+   * round 2) for "livre"/"sommaire" — the shell renders its own title, so
+   * this suppresses FicheViewer's own title/Écouter/Copier row plus every
+   * per-block secondary control (copy, flag, spaced-repetition), matching
+   * the explicit ask to drop everything but the content itself in these
+   * two layouts.
+   */
+  immersive?: boolean;
 }) {
   return (
     <div>
-      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-        <h3 className="font-serif-display text-xl font-medium text-foreground">{title}</h3>
-        <div className="flex shrink-0 items-center gap-3">
-          <SpeakFicheButton title={title} summary={summary} blocks={blocks} />
-          <CopyFicheButton title={title} summary={summary} blocks={blocks} />
+      {!immersive && (
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+          <h3 className="font-serif-display text-xl font-medium text-foreground">{title}</h3>
+          <div className="flex shrink-0 items-center gap-3">
+            <SpeakFicheButton title={title} summary={summary} blocks={blocks} />
+            <CopyFicheButton title={title} summary={summary} blocks={blocks} />
+          </div>
         </div>
-      </div>
+      )}
       {superseded && (
         <div className="mt-2 rounded-[var(--radius-sm)] border border-accent/40 bg-accent-tint px-3 py-2 text-xs text-accent">
           {superseded.reason === "duplicate"
@@ -486,7 +498,7 @@ export function FicheViewer({
             <div
               key={block.id}
               id={`fiche-block-${block.id}`}
-              className={`scroll-mt-14 py-4 first:pt-0 ${isPearlInLivre ? "border-l-2 border-accent pl-4" : ""}`}
+              className={`scroll-mt-14 first:pt-0 ${immersive ? "py-3.5" : "py-4"} ${isPearlInLivre ? "border-l-2 border-accent pl-4" : ""}`}
             >
               <div className="flex items-center justify-between gap-2">
                 <span
@@ -496,10 +508,12 @@ export function FicheViewer({
                 >
                   <Icon className="h-3.5 w-3.5" /> {meta.label}
                 </span>
-                <div className="flex items-center gap-2">
-                  <CopyBlockButton block={block} />
-                  <FlagButton targetType="block" targetId={block.id} />
-                </div>
+                {!immersive && (
+                  <div className="flex items-center gap-2">
+                    <CopyBlockButton block={block} />
+                    <FlagButton targetType="block" targetId={block.id} />
+                  </div>
+                )}
               </div>
               <div className={`mt-2 ${isPearlInLivre ? "italic" : ""}`}>
                 <BlockBody block={block} fontScale={fontScale} serif={layout === "livre"} />
@@ -513,7 +527,7 @@ export function FicheViewer({
                 />
               )}
               <CitationChips citations={block.citations} onClick={onCitationClick} />
-              {blockReviewStates && (
+              {!immersive && blockReviewStates && (
                 <div className="mt-2 flex justify-end">
                   <BlockRereadControl blockId={block.id} initialState={blockReviewStates[block.id]} />
                 </div>
