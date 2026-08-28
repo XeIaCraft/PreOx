@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose } from "lucide-react";
 import { QuizMode } from "@/components/el-profesor/quiz-mode";
 import { MindMapDialog } from "@/components/el-profesor/mind-map-dialog";
 import { Button } from "@/components/ui/button";
@@ -105,6 +105,12 @@ export function ChapterView({
   // cramped horizontal-scroll pill row below lg made the chapter's other
   // fiches all but invisible). Desktop keeps its always-visible sidebar list.
   const [ficheListOpen, setFicheListOpen] = useState(false);
+  // PDF side panel starts collapsed (requested 2026-08-28) — the fiche is
+  // the primary reading surface; the source PDF is a reference the reader
+  // pulls up on demand, not something that should permanently claim half
+  // the tablet/desktop width. Mobile is unaffected (it already opens the
+  // PDF in its own modal, see pdfModalOpen).
+  const [pdfPanelOpen, setPdfPanelOpen] = useState(false);
   const [contributingFlashcard, setContributingFlashcard] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   // Item 37 of the backlog: this page (already visited) is served from the
@@ -356,6 +362,10 @@ export function ChapterView({
     // into the source instead of leaving the user to find a "voir le PDF" button.
     if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
       setPdfModalOpen(true);
+    } else {
+      // The side panel now starts collapsed (more room for the fiche) — a
+      // citation click still needs to actually reveal the highlighted page.
+      setPdfPanelOpen(true);
     }
   }
 
@@ -434,10 +444,12 @@ export function ChapterView({
           <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)} aria-label="Rechercher dans la bibliothèque">
             <Search className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={handleCopyLink} aria-label="Copier le lien de cette fiche" title="Copier le lien">
-            <Link2 className="h-4 w-4" />
-          </Button>
-          {selected?.fiche && (
+          {isAdmin && (
+            <Button variant="ghost" size="icon" onClick={handleCopyLink} aria-label="Copier le lien de cette fiche" title="Copier le lien">
+              <Link2 className="h-4 w-4" />
+            </Button>
+          )}
+          {isAdmin && selected?.fiche && (
             <Button
               variant="ghost"
               size="icon"
@@ -449,7 +461,7 @@ export function ChapterView({
               <Share2 className="h-4 w-4" />
             </Button>
           )}
-          {selected?.fiche && (
+          {isAdmin && selected?.fiche && (
             <StudyToolsButtons ficheTitle={selected.fiche.title} subEntityName={selected.name} blocks={selected.fiche.blocks} />
           )}
           <Button
@@ -462,17 +474,19 @@ export function ChapterView({
           >
             <Printer className="h-4 w-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden sm:inline-flex"
-            onClick={handlePrintChapter}
-            aria-label="Imprimer tout le chapitre"
-            title="Imprimer tout le chapitre"
-          >
-            <Files className="h-4 w-4" />
-          </Button>
-          {publishedFlashcards.length >= 4 && (
+          {isAdmin && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden sm:inline-flex"
+              onClick={handlePrintChapter}
+              aria-label="Imprimer tout le chapitre"
+              title="Imprimer tout le chapitre"
+            >
+              <Files className="h-4 w-4" />
+            </Button>
+          )}
+          {isAdmin && publishedFlashcards.length >= 4 && (
             <Button
               variant="ghost"
               size="icon"
@@ -484,16 +498,18 @@ export function ChapterView({
               <ListChecks className="h-4 w-4" />
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden sm:inline-flex"
-            onClick={() => setMindMapOpen(true)}
-            aria-label="Carte mentale du chapitre"
-            title="Carte mentale du chapitre (générée par IA)"
-          >
-            <Brain className="h-4 w-4" />
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden sm:inline-flex"
+              onClick={() => setMindMapOpen(true)}
+              aria-label="Carte mentale du chapitre"
+              title="Carte mentale du chapitre (générée par IA)"
+            >
+              <Brain className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -526,6 +542,16 @@ export function ChapterView({
             title={focusMode ? "Quitter le mode lecture" : "Mode lecture"}
           >
             {focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </Button>
+          <Button
+            variant={pdfPanelOpen ? "secondary" : "ghost"}
+            size="icon"
+            className="hidden md:inline-flex"
+            onClick={() => setPdfPanelOpen((v) => !v)}
+            aria-label={pdfPanelOpen ? "Masquer le PDF source" : "Afficher le PDF source"}
+            title={pdfPanelOpen ? "Masquer le PDF source" : "Afficher le PDF source"}
+          >
+            {pdfPanelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
           </Button>
           <Button variant="secondary" size="sm" className="md:hidden" onClick={() => setPdfModalOpen(true)}>
             <FileText className="h-3.5 w-3.5" /> PDF
@@ -590,7 +616,11 @@ export function ChapterView({
         </Modal>
       )}
 
-      <div className={`min-h-0 flex-1 gap-4 lg:grid lg:overflow-hidden ${focusMode ? "lg:grid-cols-1" : "lg:grid-cols-[220px_1fr_1fr]"}`}>
+      <div
+        className={`min-h-0 flex-1 gap-4 lg:grid lg:overflow-hidden ${
+          focusMode ? "lg:grid-cols-1" : pdfPanelOpen ? "lg:grid-cols-[220px_1fr_1fr]" : "lg:grid-cols-[220px_1fr]"
+        }`}
+      >
         <div
           className={`hidden print:hidden lg:flex lg:flex-col lg:gap-1 lg:overflow-y-auto lg:rounded-[var(--radius-lg)] lg:border lg:border-border lg:bg-surface lg:p-2 ${focusMode ? "lg:hidden" : ""}`}
         >
@@ -612,7 +642,7 @@ export function ChapterView({
         {/* Content + PDF: side by side from the md (tablet) breakpoint up, so
             tablets get a real reading view instead of inheriting the mobile
             stack or squeezing into the desktop's 3-column layout. */}
-        <div className={`min-h-0 gap-4 md:grid lg:contents ${focusMode ? "md:grid-cols-1" : "md:grid-cols-2"}`}>
+        <div className={`min-h-0 gap-4 md:grid lg:contents ${focusMode || !pdfPanelOpen ? "md:grid-cols-1" : "md:grid-cols-2"}`}>
           <div className={`relative min-h-0 ${focusMode ? "md:mx-auto md:w-full md:max-w-3xl" : ""}`}>
             <div className="absolute inset-x-0 top-0 z-10 h-0.5 overflow-hidden rounded-t-[var(--radius-lg)] print:hidden">
               <div className="h-full bg-primary transition-[width]" style={{ width: `${scrollProgress}%` }} />
@@ -672,7 +702,9 @@ export function ChapterView({
           </div>
 
           <div
-            className={`relative min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface print:hidden ${focusMode ? "hidden" : "hidden md:block"}`}
+            className={`relative min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface print:hidden ${
+              !focusMode && pdfPanelOpen ? "hidden md:block" : "hidden"
+            }`}
           >
             {sourceKind !== "pdf" ? (
               <SourceTextPanel text={sourceText} />

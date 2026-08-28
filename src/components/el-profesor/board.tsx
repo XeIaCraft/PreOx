@@ -31,7 +31,6 @@ import {
   GitBranch,
   Scissors,
   BookText,
-  Siren,
   NotebookPen,
   RotateCcw,
   ChevronRight,
@@ -62,7 +61,7 @@ import { RenameChapterButton } from "@/components/el-profesor/rename-chapter-but
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
 import { LibraryStats } from "@/components/el-profesor/learning-widgets";
-import { DashboardSecondaryWidgets, DashboardWidgetsSkeleton } from "@/components/el-profesor/dashboard-secondary-widgets";
+import { DashboardDailyCard, DashboardSecondaryWidgets, DashboardWidgetsSkeleton } from "@/components/el-profesor/dashboard-secondary-widgets";
 import { deleteBook, deleteChapter, moveBook, moveChapter } from "@/app/apps/el-profesor/actions/library";
 import { setElProfesorPreviewAsUser } from "@/app/apps/el-profesor/actions/preview";
 import { extractChapter, extractChapterComplementary, resetStuckExtraction, resetChapterContent } from "@/app/apps/el-profesor/actions/extraction";
@@ -104,42 +103,6 @@ function MasteryBar({ counts }: { counts: { total: number; new: number; learning
 }
 
 /** Per-book comparison of how far along each of its chapters is — a quick "where should I focus" glance across a book's chapters. */
-function ChapterProgressComparison({
-  chapters,
-  masteryCounts,
-}: {
-  chapters: BookWithChapters["chapters"];
-  masteryCounts: ChapterMasteryCounts;
-}) {
-  const rows = chapters
-    .map((c) => {
-      const m = masteryCounts[c.id];
-      const pct = m && m.total > 0 ? Math.round((m.acquired / m.total) * 100) : 0;
-      return { chapter: c, pct };
-    })
-    .filter((r) => masteryCounts[r.chapter.id]?.total);
-  if (rows.length < 2) return null;
-
-  return (
-    <div className="mt-3 rounded-[var(--radius-md)] border border-border bg-surface-muted/40 p-3">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">Progression par chapitre</p>
-      <div className="mt-2 space-y-1.5">
-        {rows.map(({ chapter, pct }) => (
-          <div key={chapter.id} className="flex items-center gap-2">
-            <span className="w-32 shrink-0 truncate text-xs text-foreground-muted" title={chapter.title}>
-              {chapter.title}
-            </span>
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-muted">
-              <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
-            </div>
-            <span className="w-9 shrink-0 text-right text-[11px] text-foreground-subtle">{pct}%</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function formatElapsed(ms: number) {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -357,16 +320,8 @@ type ModalState =
   | { type: "import_content"; chapterId: string; chapterTitle: string }
   | { type: "archive_book"; bookId: string; title: string }
   | { type: "new_edition"; book: { id: string; title: string; author: string | null; edition: string | null; theme: string | null } }
-  | { type: "exam_start"; chapterId: string; chapterTitle: string }
   | { type: "extraction_history"; chapterId: string; chapterTitle: string }
   | null;
-
-const EXAM_DURATION_PRESETS = [
-  { label: "10 min", seconds: 10 * 60 },
-  { label: "20 min", seconds: 20 * 60 },
-  { label: "30 min", seconds: 30 * 60 },
-  { label: "45 min", seconds: 45 * 60 },
-];
 
 /**
  * Piste 2026-08-24 ("chargement progressif du tableau de bord") — the
@@ -844,13 +799,6 @@ export function ElProfesorBoard({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/apps/el-profesor/emergency"
-            className="flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger-tint px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger-tint/70"
-            title="Références d'urgence marquées par un administrateur — consultation rapide"
-          >
-            <Siren className="h-3.5 w-3.5" /> Mode urgence
-          </Link>
           {realIsAdmin && (
             <button
               type="button"
@@ -964,12 +912,7 @@ export function ElProfesorBoard({
 
       {books.length > 0 && (
         <Suspense fallback={<DashboardWidgetsSkeleton />}>
-          <DashboardSecondaryWidgets
-            dataPromise={secondaryDataPromise}
-            totalAcquired={totalAcquired}
-            chaptersMastered={chaptersMastered}
-            isAdmin={isAdmin}
-          />
+          <DashboardDailyCard dataPromise={secondaryDataPromise} />
         </Suspense>
       )}
 
@@ -1252,8 +1195,6 @@ export function ElProfesorBoard({
 
             {!collapsed && (
             <>
-            <ChapterProgressComparison chapters={publishedChapters} masteryCounts={masteryCounts} />
-
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {book.chapters.map((chapter, chapterIndex) => {
                 const due = dueCounts[chapter.id] ?? 0;
@@ -1554,20 +1495,13 @@ export function ElProfesorBoard({
                       )}
                     </div>
                     {chapter.status === "published" && (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <div className="mt-1.5">
                         <Link
                           href={`/apps/el-profesor/chapters/${chapter.id}/review?mode=free`}
                           className="text-xs text-foreground-subtle underline hover:text-foreground"
                         >
                           Révision libre
                         </Link>
-                        <button
-                          type="button"
-                          onClick={() => setModal({ type: "exam_start", chapterId: chapter.id, chapterTitle: chapter.title })}
-                          className="text-xs text-foreground-subtle underline hover:text-foreground"
-                        >
-                          Examen blanc
-                        </button>
                       </div>
                     )}
                   </div>
@@ -1580,6 +1514,17 @@ export function ElProfesorBoard({
           );
         })}
       </div>
+      )}
+
+      {books.length > 0 && (
+        <Suspense fallback={<DashboardWidgetsSkeleton />}>
+          <DashboardSecondaryWidgets
+            dataPromise={secondaryDataPromise}
+            totalAcquired={totalAcquired}
+            chaptersMastered={chaptersMastered}
+            isAdmin={isAdmin}
+          />
+        </Suspense>
       )}
 
       {modal?.type === "add_book" && (
@@ -1734,27 +1679,6 @@ export function ElProfesorBoard({
             <Button onClick={() => handleArchiveBook(modal.bookId, modal.title)} disabled={isPending}>
               {isPending ? "…" : "Exporter et archiver"}
             </Button>
-          </div>
-        </Modal>
-      )}
-      {modal?.type === "exam_start" && (
-        <Modal title="Examen blanc" description={modal.chapterTitle} onClose={() => setModal(null)} size="sm">
-          <p className="text-sm text-foreground-muted">
-            Toutes les flashcards publiées du chapitre, mélangées, sous un compte à rebours — la session s&apos;arrête
-            automatiquement au temps écoulé. Comme la révision libre, jamais pris en compte dans la planification.
-          </p>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            {EXAM_DURATION_PRESETS.map((preset) => (
-              <Link
-                key={preset.seconds}
-                href={`/apps/el-profesor/chapters/${modal.chapterId}/review?mode=exam&duration=${preset.seconds}`}
-                onClick={() => setModal(null)}
-              >
-                <Button variant="secondary" className="w-full">
-                  {preset.label}
-                </Button>
-              </Link>
-            ))}
           </div>
         </Modal>
       )}

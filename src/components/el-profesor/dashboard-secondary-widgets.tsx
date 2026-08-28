@@ -34,6 +34,19 @@ export function DashboardWidgetsSkeleton() {
   );
 }
 
+/**
+ * Just today's flashcard — split out from DashboardSecondaryWidgets below
+ * (requested 2026-08-28) so it can render near the top of the dashboard
+ * (next to "Reprendre la lecture" and the search bar) while the heavier
+ * stats/streak/diagnostics widgets move to the bottom of the page. Both
+ * components read the same dataPromise via use() — safe since it's the
+ * same promise reference passed from the server, resolved once.
+ */
+export function DashboardDailyCard({ dataPromise }: { dataPromise: Promise<DashboardSecondaryData> }) {
+  const data = use(dataPromise);
+  return data.dailyCard ? <DailyCard card={data.dailyCard} /> : null;
+}
+
 export function DashboardSecondaryWidgets({
   dataPromise,
   totalAcquired,
@@ -66,7 +79,6 @@ export function DashboardSecondaryWidgets({
 
   return (
     <>
-      {data.dailyCard && <DailyCard card={data.dailyCard} />}
       {data.onThisDayNote && <OnThisDayNoteCard note={data.onThisDayNote} />}
       {data.bookRecommendation && <BookRecommendationCard recommendation={data.bookRecommendation} />}
 
