@@ -2,6 +2,7 @@ import { requireElProfesorAccess, getCaseJournalEntries, getGlossary } from "@/l
 import { CaseJournalView } from "@/components/el-profesor/case-journal-view";
 import { DalLoadError } from "@/components/el-profesor/dal-load-error";
 import { RenderErrorBoundary } from "@/components/el-profesor/render-error-boundary";
+import { ToastProvider } from "@/components/ui/toast";
 
 async function loadJournalData() {
   const [entries, notionSummaries] = await Promise.all([getCaseJournalEntries(), getGlossary()]);
@@ -27,8 +28,10 @@ export default async function CaseJournalPage({ searchParams }: { searchParams: 
 
   if (!data) return <DalLoadError title="Journal de cas" error={loadError} />;
   return (
-    <RenderErrorBoundary fallbackTitle="Journal de cas">
-      <CaseJournalView entries={data.entries} notions={data.notions} filterNotionId={notionId ?? null} />
-    </RenderErrorBoundary>
+    <ToastProvider>
+      <RenderErrorBoundary fallbackTitle="Journal de cas">
+        <CaseJournalView entries={data.entries} notions={data.notions} filterNotionId={notionId ?? null} />
+      </RenderErrorBoundary>
+    </ToastProvider>
   );
 }

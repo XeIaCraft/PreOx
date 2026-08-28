@@ -11,6 +11,7 @@ import { getEffectiveIsAdmin } from "@/lib/el-profesor/preview-mode";
 import { GlossaryView } from "@/components/el-profesor/glossary-view";
 import { DalLoadError } from "@/components/el-profesor/dal-load-error";
 import { RenderErrorBoundary } from "@/components/el-profesor/render-error-boundary";
+import { ToastProvider } from "@/components/ui/toast";
 
 async function loadGlossaryData(profileId: string, realIsAdmin: boolean) {
   const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(realIsAdmin);
@@ -44,16 +45,18 @@ export default async function GlossaryPage() {
 
   if (!data) return <DalLoadError title="Glossaire" error={loadError} />;
   return (
-    <RenderErrorBoundary fallbackTitle="Glossaire">
-      <GlossaryView
-        notions={data.notions}
-        categories={data.categories}
-        readiness={data.readiness}
-        recommendations={data.recommendations}
-        doseCalculators={data.doseCalculators}
-        caseCounts={data.caseCounts}
-        isAdmin={data.isAdmin}
-      />
-    </RenderErrorBoundary>
+    <ToastProvider>
+      <RenderErrorBoundary fallbackTitle="Glossaire">
+        <GlossaryView
+          notions={data.notions}
+          categories={data.categories}
+          readiness={data.readiness}
+          recommendations={data.recommendations}
+          doseCalculators={data.doseCalculators}
+          caseCounts={data.caseCounts}
+          isAdmin={data.isAdmin}
+        />
+      </RenderErrorBoundary>
+    </ToastProvider>
   );
 }
