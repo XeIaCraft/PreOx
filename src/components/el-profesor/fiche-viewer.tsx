@@ -21,6 +21,7 @@ import {
 import { FlagButton } from "@/components/el-profesor/flag-button";
 import { markBlockReviewed } from "@/app/apps/el-profesor/actions/block-review";
 import type { BlockReviewState } from "@/lib/el-profesor/dal";
+import type { FicheLayout } from "@/lib/el-profesor/local-prefs";
 import type { BlockType, Citation, FicheBlock, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
 
 /**
@@ -175,7 +176,7 @@ function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?
   );
 }
 
-export function BlockBody({ block, fontScale }: { block: FicheBlock; fontScale: FontScale }) {
+export function BlockBody({ block, fontScale, serif = false }: { block: FicheBlock; fontScale: FontScale; serif?: boolean }) {
   if (block.blockType === "tableau_comparatif") {
     const content = block.content as TableBlockContent;
     const headers = content.headers ?? [];
@@ -248,14 +249,19 @@ export function BlockBody({ block, fontScale }: { block: FicheBlock; fontScale: 
   }
 
   const content = block.content as TextBlockContent;
-  return <p className={`whitespace-pre-wrap leading-relaxed text-foreground-muted ${BODY_TEXT_SIZE[fontScale]}`}>{content.text}</p>;
+  return (
+    <p className={`whitespace-pre-wrap leading-relaxed text-foreground-muted ${BODY_TEXT_SIZE[fontScale]} ${serif ? "font-serif-display" : ""}`}>
+      {content.text}
+    </p>
+  );
 }
 
-// Quick jump bar to the first block of each distinct type — only worth
-// showing once a fiche has enough blocks that scrolling to find one is a
-// real chore.
-function BlockNav({ blocks }: { blocks: FicheBlock[] }) {
-  if (blocks.length < 6) return null;
+// Quick jump bar to the first block of each distinct type. Normally only
+// worth showing once a fiche has enough blocks that scrolling to find one
+// is a real chore; the "sommaire" layout (piste 2026-08-28) always shows
+// it instead, as the fiche's own at-a-glance table of contents.
+function BlockNav({ blocks, alwaysShow = false }: { blocks: FicheBlock[]; alwaysShow?: boolean }) {
+  if (!alwaysShow && blocks.length < 6) return null;
   const seen = new Set<BlockType>();
   const entries: { type: BlockType; blockId: string }[] = [];
   for (const b of blocks) {
@@ -361,6 +367,7 @@ export function FicheViewer({
   fontScale = "md",
   superseded,
   blockReviewStates,
+  layout = "actuel",
 }: {
   title: string;
   summary?: string;
@@ -371,6 +378,16 @@ export function FicheViewer({
   superseded?: { reason: "duplicate" | "outdated"; note: string };
   /** Per-block spaced-repetition state (item 16) — omitted in read-only contexts (print, share links, admin review) where there's no signed-in reader to track. */
   blockReviewStates?: Record<string, BlockReviewState>;
+  /**
+   * Reader-chosen reading layout (piste 2026-08-28) — "actuel" (default)
+   * matches every existing caller unchanged. "livre" reads block bodies in
+   * the app's serif display face and gives "perle clinique" blocks an
+   * italic pull-quote treatment. "sommaire" always shows the block-type
+   * jump strip (BlockNav) instead of only past 6 blocks. Callers that
+   * don't have a per-reader preference to honor (print, share links,
+   * admin review) simply omit this and get "actuel".
+   */
+  layout?: FicheLayout;
 }) {
   return (
     <div>
@@ -390,7 +407,7 @@ export function FicheViewer({
         </div>
       )}
       {summary && <p className={`mt-1 text-foreground-subtle ${SUMMARY_TEXT_SIZE[fontScale]}`}>{summary}</p>}
-      <BlockNav blocks={blocks} />
+      <BlockNav blocks={blocks} alwaysShow={layout === "sommaire"} />
       {/* Flowing, book-like reading column (requested 2026-08-28 — a boxed
           card per block read as a stack of disconnected widgets, not a
           page) — a single divided list instead of one bordered/padded box
@@ -401,10 +418,22 @@ export function FicheViewer({
         {blocks.map((block) => {
           const meta = BLOCK_META[block.blockType];
           const Icon = meta.icon;
+          // "Livre" gives the perle clinique its own quiet pull-quote
+          // treatment (piste 2026-08-28) — the one block type worth a
+          // visual break from the otherwise unbroken reading column.
+          const isPearlInLivre = layout === "livre" && block.blockType === "perle_clinique";
           return (
-            <div key={block.id} id={`fiche-block-${block.id}`} className="scroll-mt-14 py-4 first:pt-0">
+            <div
+              key={block.id}
+              id={`fiche-block-${block.id}`}
+              className={`scroll-mt-14 py-4 first:pt-0 ${isPearlInLivre ? "border-l-2 border-accent pl-4" : ""}`}
+            >
               <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-foreground-subtle">
+                <span
+                  className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${
+                    isPearlInLivre ? "text-accent" : "text-foreground-subtle"
+                  }`}
+                >
                   <Icon className="h-3.5 w-3.5" /> {meta.label}
                 </span>
                 <div className="flex items-center gap-2">
@@ -412,8 +441,8 @@ export function FicheViewer({
                   <FlagButton targetType="block" targetId={block.id} />
                 </div>
               </div>
-              <div className="mt-2">
-                <BlockBody block={block} fontScale={fontScale} />
+              <div className={`mt-2 ${isPearlInLivre ? "italic" : ""}`}>
+                <BlockBody block={block} fontScale={fontScale} serif={layout === "livre"} />
               </div>
               {block.imageUrl && (
                 // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded content, arbitrary origin (Supabase Storage public URL), not a Next-optimizable local/known-domain asset.

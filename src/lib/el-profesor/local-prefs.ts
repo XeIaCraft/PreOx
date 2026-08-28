@@ -52,6 +52,26 @@ export function setFontScale(scale: FontScale) {
   setItem("font-scale", scale);
 }
 
+/**
+ * Which of the three fiche reading layouts to render (requested
+ * 2026-08-28, after mocking up 4 mobile directions and being asked to
+ * offer the current layout plus two of them as a real user choice) —
+ * "actuel" is today's layout (unchanged), "livre" is the flowing
+ * book-style reading column, "sommaire" adds an always-on block-type
+ * jump strip plus a docked prev/next-fiche bar. Purely cosmetic, so a
+ * per-device localStorage preference is enough — no server round trip.
+ */
+export type FicheLayout = "actuel" | "livre" | "sommaire";
+
+export function getFicheLayout(): FicheLayout {
+  const raw = getItem("fiche-layout");
+  return raw === "livre" || raw === "sommaire" ? raw : "actuel";
+}
+
+export function setFicheLayout(layout: FicheLayout) {
+  setItem("fiche-layout", layout);
+}
+
 /** Reading-comfort mode (sepia background) for the fiche content pane — independent of the site's light/dark theme. */
 export function getReadingComfort(): boolean {
   return getItem("reading-comfort") === "1";

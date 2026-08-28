@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, LayoutTemplate, LayoutList, BookOpenText, ListTree } from "lucide-react";
 import { QuizMode } from "@/components/el-profesor/quiz-mode";
 import { MindMapDialog } from "@/components/el-profesor/mind-map-dialog";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,10 @@ import {
   setReadingComfort,
   getDyslexicFont,
   setDyslexicFont,
+  getFicheLayout,
+  setFicheLayout,
   type FontScale,
+  type FicheLayout,
 } from "@/lib/el-profesor/local-prefs";
 import type { SubEntityWithFiche, BlockReviewState } from "@/lib/el-profesor/dal";
 import type { Citation, ChapterSourceKind } from "@/lib/el-profesor/types";
@@ -49,6 +52,56 @@ function SourceTextPanel({ text }: { text: string | null }) {
       </p>
       <pre className="whitespace-pre-wrap font-sans text-sm text-foreground-muted">{text || "Aucun texte source."}</pre>
     </div>
+  );
+}
+
+const FICHE_LAYOUT_OPTIONS: { id: FicheLayout; label: string; description: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: "actuel", label: "Actuelle", description: "La mise en page d'aujourd'hui — blocs avec icône et en-tête.", icon: LayoutList },
+  { id: "livre", label: "Livre", description: "Lecture continue façon chapitre, sans encadrés, texte en serif.", icon: BookOpenText },
+  {
+    id: "sommaire",
+    label: "Sommaire d'abord",
+    description: "Sommaire des blocs toujours visible en haut, navigation entre fiches ancrée en bas.",
+    icon: ListTree,
+  },
+];
+
+/** Reader-facing choice between the three fiche reading layouts (piste 2026-08-28, after mocking up 4 mobile directions). */
+function FicheLayoutPicker({ value, onChange, onClose }: { value: FicheLayout; onChange: (layout: FicheLayout) => void; onClose: () => void }) {
+  return (
+    <Modal title="Mise en page de la fiche" onClose={onClose} size="sm">
+      <div className="-m-4 flex flex-col gap-2 p-2">
+        {FICHE_LAYOUT_OPTIONS.map((opt) => {
+          const Icon = opt.icon;
+          const active = value === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => {
+                onChange(opt.id);
+                onClose();
+              }}
+              className={`flex items-start gap-3 rounded-[var(--radius-md)] border p-3 text-left transition-colors ${
+                active ? "border-primary bg-primary-tint" : "border-border hover:bg-surface-muted"
+              }`}
+            >
+              <span
+                className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] ${
+                  active ? "bg-primary text-surface" : "bg-surface-muted text-foreground-muted"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+              </span>
+              <span>
+                <span className="block text-sm font-medium text-foreground">{opt.label}</span>
+                <span className="mt-0.5 block text-xs text-foreground-subtle">{opt.description}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </Modal>
   );
 }
 
@@ -93,6 +146,8 @@ export function ChapterView({
   const [fontScale, setFontScaleState] = useState<FontScale>(() => getFontScale() ?? "md");
   const [readingComfort, setReadingComfortState] = useState(() => getReadingComfort());
   const [dyslexicFont, setDyslexicFontState] = useState(() => getDyslexicFont());
+  const [ficheLayout, setFicheLayoutState] = useState<FicheLayout>(() => getFicheLayout());
+  const [layoutPickerOpen, setLayoutPickerOpen] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [bookmarks, setBookmarks] = useState(() => new Set(bookmarkedIds ?? []));
   const [bookmarkPending, setBookmarkPending] = useState(false);
@@ -298,6 +353,11 @@ export function ChapterView({
     });
   }
 
+  function chooseFicheLayout(layout: FicheLayout) {
+    setFicheLayoutState(layout);
+    setFicheLayout(layout);
+  }
+
   function handleContentScroll() {
     const el = contentRef.current;
     if (!el) return;
@@ -386,6 +446,15 @@ export function ChapterView({
           <h1 className="truncate font-serif-display text-lg font-medium text-foreground">{chapterTitle}</h1>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setLayoutPickerOpen(true)}
+            aria-label="Mise en page de la fiche"
+            title="Mise en page de la fiche (actuelle / livre / sommaire d'abord)"
+          >
+            <LayoutTemplate className="h-4 w-4" />
+          </Button>
           <div className="hidden items-center gap-0.5 rounded-full border border-border sm:flex">
             <Button
               variant="ghost"
@@ -563,8 +632,11 @@ export function ChapterView({
           opens the full list as a sheet) instead of the desktop sidebar —
           requested 2026-08-28, the old horizontal-scroll pill row made a
           chapter's other fiches all but invisible/undiscoverable on
-          mobile. lg+ keeps the always-visible sidebar list below. */}
-      {!focusMode && withFiche.length > 0 && (
+          mobile. lg+ keeps the always-visible sidebar list below. The
+          "sommaire" layout replaces this top bar with a docked bar at the
+          bottom of the page instead (rendered further down) — fiche
+          navigation is its most-used control, worth the thumb reach. */}
+      {!focusMode && ficheLayout !== "sommaire" && withFiche.length > 0 && (
         <div className="mb-3 flex items-center gap-1.5 print:hidden lg:hidden">
           <Button variant="ghost" size="icon" onClick={() => goToFiche(-1)} disabled={currentFicheIndex <= 0} aria-label="Fiche précédente">
             <ChevronLeft className="h-4 w-4" />
@@ -678,6 +750,7 @@ export function ChapterView({
                     blocks={selected.fiche.blocks}
                     onCitationClick={handleCitationClick}
                     fontScale={fontScale}
+                    layout={ficheLayout}
                     blockReviewStates={blockReviewStates}
                     superseded={
                       selected.fiche.supersededByFicheId
@@ -782,6 +855,10 @@ export function ChapterView({
 
       {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
 
+      {layoutPickerOpen && (
+        <FicheLayoutPicker value={ficheLayout} onChange={chooseFicheLayout} onClose={() => setLayoutPickerOpen(false)} />
+      )}
+
       {quizOpen && <QuizMode cards={publishedFlashcards} onClose={() => setQuizOpen(false)} />}
       {mindMapOpen && <MindMapDialog chapterId={chapterId} onClose={() => setMindMapOpen(false)} />}
 
@@ -809,6 +886,39 @@ export function ChapterView({
             router.refresh();
           }}
         />
+      )}
+
+      {/* "Sommaire d'abord" layout: fiche-to-fiche navigation docked at the
+          bottom of the page instead of the compact top bar — it's the
+          single most-used control in this layout, so it stays within
+          thumb reach at all times rather than requiring a reach up. */}
+      {!focusMode && ficheLayout === "sommaire" && withFiche.length > 0 && (
+        <div className="sticky bottom-0 z-20 -mx-4 mt-3 flex gap-2 border-t border-border bg-surface px-4 py-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))] print:hidden sm:-mx-6 sm:px-6 lg:hidden">
+          <button
+            type="button"
+            onClick={() => goToFiche(-1)}
+            disabled={currentFicheIndex <= 0}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] bg-surface-muted px-3 py-2.5 text-sm font-medium text-foreground-muted disabled:opacity-40"
+          >
+            <ChevronLeft className="h-4 w-4" /> Précédente
+          </button>
+          <button
+            type="button"
+            onClick={() => setFicheListOpen(true)}
+            aria-label="Toutes les fiches de ce chapitre"
+            className="shrink-0 rounded-[var(--radius-md)] bg-surface-muted px-3 py-2.5 text-xs font-medium tabular-nums text-foreground-subtle"
+          >
+            {currentFicheIndex + 1}/{withFiche.length}
+          </button>
+          <button
+            type="button"
+            onClick={() => goToFiche(1)}
+            disabled={currentFicheIndex === -1 || currentFicheIndex >= withFiche.length - 1}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] bg-primary px-3 py-2.5 text-sm font-medium text-surface disabled:opacity-40"
+          >
+            Suivante <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
       )}
     </div>
   );
