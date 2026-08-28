@@ -187,28 +187,20 @@ function HeaderMenu({
 }) {
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open]);
-
   return (
-    <div className="relative">
-      <Button variant="ghost" size="icon" onClick={() => setOpen((v) => !v)} aria-label="Menu" aria-expanded={open} className="relative">
+    <>
+      <Button variant="ghost" size="icon" onClick={() => setOpen(true)} aria-label="Menu" aria-expanded={open} className="relative">
         <Menu className="h-4 w-4" />
         {isAdmin && !hasGeminiKey && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-danger" />}
       </Button>
       {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
-          <div
-            onClick={() => setOpen(false)}
-            className="absolute right-0 z-20 mt-1 flex w-60 flex-col gap-0.5 rounded-[var(--radius-md)] border border-border bg-surface p-1.5 shadow-lg"
-          >
+        // A corner-anchored dropdown clipped or lopsided against the
+        // viewport edge on narrow screens (reported 2026-08-28) — the
+        // shared Modal (centered on sm+, a bottom sheet below it) is
+        // already used everywhere else in this app for exactly this,
+        // so reusing it sidesteps that whole class of positioning bugs.
+        <Modal title="Menu" onClose={() => setOpen(false)} size="sm">
+          <div className="-m-4 flex flex-col gap-0.5 p-2" onClick={() => setOpen(false)}>
             <Link href="/apps/el-profesor/guide">
               <Button variant="ghost" size="sm" className="w-full justify-start">
                 <BookText className="h-3.5 w-3.5" /> Guide d&apos;utilisation
@@ -258,9 +250,9 @@ function HeaderMenu({
               </>
             )}
           </div>
-        </>
+        </Modal>
       )}
-    </div>
+    </>
   );
 }
 
