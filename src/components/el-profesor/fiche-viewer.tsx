@@ -87,6 +87,19 @@ export const BLOCK_META: Record<BlockType, { label: string; icon: React.Componen
   texte_libre: { label: "Note", icon: FileText },
 };
 
+/** Short under-icon captions for the "sommaire" layout's TOC strip — BLOCK_META's own labels ("Définition / mécanisme", "Tableau comparatif") run too long under a 56px column. */
+const BLOCK_SHORT_LABEL: Record<BlockType, string> = {
+  definition_mecanisme: "Définition",
+  valeurs_seuils: "Seuils",
+  tableau_comparatif: "Tableau",
+  protocole_paliers: "Protocole",
+  mnemotechnique: "Mnémo",
+  perle_clinique: "Perle",
+  piege_erreur: "Piège",
+  formule: "Formule",
+  texte_libre: "Note",
+};
+
 export type FontScale = "sm" | "md" | "lg";
 
 const BODY_TEXT_SIZE: Record<FontScale, string> = {
@@ -256,12 +269,12 @@ export function BlockBody({ block, fontScale, serif = false }: { block: FicheBlo
   );
 }
 
-// Quick jump bar to the first block of each distinct type. Normally only
-// worth showing once a fiche has enough blocks that scrolling to find one
-// is a real chore; the "sommaire" layout (piste 2026-08-28) always shows
-// it instead, as the fiche's own at-a-glance table of contents.
-function BlockNav({ blocks, alwaysShow = false }: { blocks: FicheBlock[]; alwaysShow?: boolean }) {
-  if (!alwaysShow && blocks.length < 6) return null;
+// Quick jump bar to the first block of each distinct type. Only worth
+// showing once a fiche has enough blocks that scrolling to find one is a
+// real chore — the "sommaire" layout uses its own dedicated BlockTocStrip
+// instead, always shown regardless of block count.
+function BlockNav({ blocks }: { blocks: FicheBlock[] }) {
+  if (blocks.length < 6) return null;
   const seen = new Set<BlockType>();
   const entries: { type: BlockType; blockId: string }[] = [];
   for (const b of blocks) {
@@ -289,6 +302,53 @@ function BlockNav({ blocks, alwaysShow = false }: { blocks: FicheBlock[]; always
             className="flex shrink-0 items-center justify-center rounded-full border border-border bg-surface p-1.5 text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
           >
             <Icon className="h-3.5 w-3.5" />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * "Sommaire d'abord" layout's own table of contents (piste 2026-08-28) —
+ * labeled rounded-square icon items, matching the mockup shown to the
+ * user (quatre-lectures.html, concept 3) rather than reusing BlockNav's
+ * plain unlabeled circular buttons, which the user flagged as visually
+ * unrecognizable next to what was promised.
+ */
+function BlockTocStrip({ blocks }: { blocks: FicheBlock[] }) {
+  const seen = new Set<BlockType>();
+  const entries: { type: BlockType; blockId: string }[] = [];
+  for (const b of blocks) {
+    if (!seen.has(b.blockType)) {
+      seen.add(b.blockType);
+      entries.push({ type: b.blockType, blockId: b.id });
+    }
+  }
+  if (entries.length < 2) return null;
+
+  return (
+    <div className="sticky top-0 z-10 -mx-1 mb-3 flex gap-2 overflow-x-auto bg-surface px-1 py-2">
+      {entries.map(({ type, blockId }) => {
+        const meta = BLOCK_META[type];
+        const Icon = meta.icon;
+        return (
+          <button
+            key={type}
+            type="button"
+            onClick={() =>
+              document.getElementById(`fiche-block-${blockId}`)?.scrollIntoView({ behavior: "smooth", block: "start" })
+            }
+            title={meta.label}
+            aria-label={`Aller à : ${meta.label}`}
+            className="flex w-14 shrink-0 flex-col items-center gap-1.5"
+          >
+            <span className="flex h-[38px] w-[38px] items-center justify-center rounded-[var(--radius-md)] border border-border bg-surface text-foreground-muted transition-colors hover:border-primary/50 hover:text-primary-strong">
+              <Icon className="h-[17px] w-[17px]" />
+            </span>
+            <span className="text-center text-[9.5px] font-semibold leading-tight text-foreground-subtle">
+              {BLOCK_SHORT_LABEL[type]}
+            </span>
           </button>
         );
       })}
@@ -382,10 +442,10 @@ export function FicheViewer({
    * Reader-chosen reading layout (piste 2026-08-28) — "actuel" (default)
    * matches every existing caller unchanged. "livre" reads block bodies in
    * the app's serif display face and gives "perle clinique" blocks an
-   * italic pull-quote treatment. "sommaire" always shows the block-type
-   * jump strip (BlockNav) instead of only past 6 blocks. Callers that
-   * don't have a per-reader preference to honor (print, share links,
-   * admin review) simply omit this and get "actuel".
+   * italic pull-quote treatment. "sommaire" swaps in BlockTocStrip, its
+   * own labeled table-of-contents strip, in place of the plain BlockNav.
+   * Callers that don't have a per-reader preference to honor (print, share
+   * links, admin review) simply omit this and get "actuel".
    */
   layout?: FicheLayout;
 }) {
@@ -407,7 +467,7 @@ export function FicheViewer({
         </div>
       )}
       {summary && <p className={`mt-1 text-foreground-subtle ${SUMMARY_TEXT_SIZE[fontScale]}`}>{summary}</p>}
-      <BlockNav blocks={blocks} alwaysShow={layout === "sommaire"} />
+      {layout === "sommaire" ? <BlockTocStrip blocks={blocks} /> : <BlockNav blocks={blocks} />}
       {/* Flowing, book-like reading column (requested 2026-08-28 — a boxed
           card per block read as a stack of disconnected widgets, not a
           page) — a single divided list instead of one bordered/padded box
