@@ -16,6 +16,18 @@ const nextConfig: NextConfig = {
   // runtime instead of being bundled, which is Next's own documented fix
   // for this exact class of library.
   serverExternalPackages: ["pdfjs-dist"],
+  // serverExternalPackages alone got the worker's expected path from
+  // .next/server/chunks/ssr/pdf.worker.mjs (never existed) to
+  // node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs (the right path,
+  // still missing) — Vercel's output file tracing can't see pdfjs-dist's
+  // internal dynamic import of that file (it's constructed at runtime, not
+  // statically analyzable), so the file itself never gets copied into the
+  // deployed function even though the rest of the package does. Force it
+  // in explicitly — Next's own documented pattern for this exact class of
+  // native/runtime asset (their docs use `sharp`/`aws-crt` as examples).
+  outputFileTracingIncludes: {
+    "/*": ["node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+  },
   experimental: {
     // Default is 1MB — raised to 8MB for importChapterContent's hand-pasted
     // extraction JSON, then to 50MB (2026-08-24) because "Diviser un PDF"
