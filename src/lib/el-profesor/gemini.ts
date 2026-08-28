@@ -361,10 +361,9 @@ const CHAPTER_INTERNAL_SPLIT_SCHEMA = {
       items: {
         type: "OBJECT",
         properties: {
-          title: { type: "STRING" },
           start_page: { type: "INTEGER" },
         },
-        required: ["title", "start_page"],
+        required: ["start_page"],
       },
     },
   },
@@ -935,10 +934,10 @@ export async function suggestChapterSplitPoints(
   chapterTitle: string,
   pageTexts: string[],
   targetPartCount: number
-): Promise<{ title: string; startPage: number }[]> {
+): Promise<{ startPage: number }[]> {
   const instructions = buildChapterInternalSplitPrompt(chapterTitle, pageTexts, targetPartCount);
-  const { result } = await textRotation<{ parts: { title: string; start_page: number }[] }>(config, instructions, CHAPTER_INTERNAL_SPLIT_SCHEMA);
-  return result.parts.map((p) => ({ title: p.title, startPage: p.start_page }));
+  const { result } = await textRotation<{ parts: { start_page: number }[] }>(config, instructions, CHAPTER_INTERNAL_SPLIT_SCHEMA);
+  return result.parts.map((p) => ({ startPage: p.start_page }));
 }
 
 /** Assigns 1-3 cross-book "notion" tags to a fiche's content, reusing existing notion names when they fit. Rotates on quota/capacity errors. */

@@ -32,7 +32,6 @@ export interface ActionState {
 }
 
 export interface ChapterSplitSuggestion {
-  title: string;
   startPage: number;
 }
 

@@ -477,9 +477,7 @@ Règle impérative, plus importante que tout le reste : chaque coupure doit tomb
 
 Objectif secondaire (seulement une fois la règle ci-dessus respectée) : répartis les pages de façon à peu près équilibrée entre les ${targetPartCount} parties.
 
-Pour chaque partie, donne :
-- "title" : un titre court, si possible dérivé du sous-titre/de la sous-partie qui commence à cette page ; sinon « ${chapterTitle} (partie N) ».
-- "start_page" : le numéro de la PREMIÈRE page (1-indexé, "Page N" ci-dessus) où cette partie commence. La première partie commence toujours à la page 1.
+Pour chaque partie, donne uniquement "start_page" : le numéro de la PREMIÈRE page (1-indexé, "Page N" ci-dessus) où cette partie commence. La première partie commence toujours à la page 1. Ne propose pas de titre — les parties sont nommées automatiquement ailleurs.
 
 Réponds uniquement avec le JSON demandé (un tableau "parts", trié par "start_page" croissant, exactement ${targetPartCount} éléments, le premier avec "start_page": 1), structuré exactement selon le schéma fourni.
 `.trim();

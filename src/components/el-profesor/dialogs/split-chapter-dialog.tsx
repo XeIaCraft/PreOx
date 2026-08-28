@@ -110,7 +110,7 @@ export function SplitChapterDialog({
         const next = [...result.suggestions].sort((a, b) => a.startPage - b.startPage);
         setRows(
           next.map((s, i) => ({
-            title: s.title.trim() || `${chapter.title} (partie ${i + 1})`,
+            title: `${chapter.title} (partie ${i + 1})`,
             startPage: String(s.startPage),
             endPage: String((i + 1 < next.length ? next[i + 1].startPage - 1 : total) || s.startPage),
           }))
