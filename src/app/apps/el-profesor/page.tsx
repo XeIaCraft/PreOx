@@ -1,4 +1,5 @@
 import { getCurrentProfile } from "@/lib/auth/dal";
+import { getEffectiveIsAdmin } from "@/lib/el-profesor/preview-mode";
 
 // Server Actions invoked from this page (e.g. suggestBookChapters in
 // actions/split-book.ts, which can process up to 2000 pages of a book PDF
@@ -147,7 +148,8 @@ async function loadAiConfigData(): Promise<DashboardAiConfigData> {
 
 export default async function ElProfesorPage() {
   const profile = (await getCurrentProfile())!;
-  const isAdmin = profile.role === "admin";
+  const realIsAdmin = profile.role === "admin";
+  const { effectiveIsAdmin: isAdmin, previewingAsUser } = await getEffectiveIsAdmin(realIsAdmin);
   const [, allLibraryBooks] = await Promise.all([recordAppVisit("el-profesor"), getLibrary()]);
   const libraryBooks = allLibraryBooks.filter((b) => !b.archivedAt);
   // Non-admins never see a chapter still being imported/reviewed — only
@@ -186,6 +188,8 @@ export default async function ElProfesorPage() {
         difficultCounts={difficultCounts}
         globalMastery={globalMastery}
         isAdmin={isAdmin}
+        realIsAdmin={realIsAdmin}
+        previewingAsUser={previewingAsUser}
         hasGeminiKey={hasGeminiKey}
         aiProvider={aiProvider}
         serverResumeChapterId={readingPosition?.chapterId ?? null}

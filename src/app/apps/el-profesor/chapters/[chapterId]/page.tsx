@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireElProfesorAccess, getChapterContent, getBookmarkedSubEntityIds, getReadingPosition, getBlockReviewStates } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
+import { getEffectiveIsAdmin } from "@/lib/el-profesor/preview-mode";
 import { ChapterView } from "@/components/el-profesor/chapter-view";
 import { ToastProvider } from "@/components/ui/toast";
 
@@ -14,6 +15,7 @@ export default async function ChapterPage({
   const profile = await requireElProfesorAccess();
   const { chapterId } = await params;
   const { entity } = await searchParams;
+  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
 
   const supabase = await createClient();
   const { data: chapter } = await supabase.from("el_profesor_chapters").select("*").eq("id", chapterId).single();
@@ -44,7 +46,7 @@ export default async function ChapterPage({
         sourceKind={chapter.source_kind}
         sourceText={chapter.source_text}
         blockReviewStates={blockReviewStates}
-        isAdmin={profile.role === "admin"}
+        isAdmin={isAdmin}
       />
     </ToastProvider>
   );

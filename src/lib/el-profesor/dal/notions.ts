@@ -616,15 +616,21 @@ function sameIdSet(a: string[], b: string[]): boolean {
 }
 
 /**
- * The notion's current synthesis, if any. RLS already hides a draft
- * synthesis from non-admins (see the migration), so this needs no extra
- * visibility check of its own. `isStale` flags when the notion's currently
- * eligible fiches differ from what the last generation actually read —
- * e.g. a new chapter got linked, or one was merged/marked obsolete since.
+ * The notion's current synthesis, if any. `includeDraft` defaults to true
+ * because RLS already hides a draft synthesis from a non-admin's own
+ * session (see the migration) — but a real admin browsing in "preview as
+ * user" mode (preview-mode.ts) still carries admin RLS grants, so that
+ * cookie-driven mode can't rely on RLS alone and must pass `includeDraft:
+ * false` explicitly to see what a normal user would. `isStale` flags when
+ * the notion's currently eligible fiches differ from what the last
+ * generation actually read — e.g. a new chapter got linked, or one was
+ * merged/marked obsolete since.
  */
-export async function getNotionSynthesis(notionId: string): Promise<NotionSynthesis | null> {
+export async function getNotionSynthesis(notionId: string, includeDraft = true): Promise<NotionSynthesis | null> {
   const supabase = await createClient();
-  const { data: synthesisRow } = await supabase.from("el_profesor_notion_syntheses").select("*").eq("notion_id", notionId).maybeSingle();
+  let synthesisQuery = supabase.from("el_profesor_notion_syntheses").select("*").eq("notion_id", notionId);
+  if (!includeDraft) synthesisQuery = synthesisQuery.eq("status", "published");
+  const { data: synthesisRow } = await synthesisQuery.maybeSingle();
   if (!synthesisRow) return null;
 
   const [{ data: blockRows }, eligibleFicheIds] = await Promise.all([

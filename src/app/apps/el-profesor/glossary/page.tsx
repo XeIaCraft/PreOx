@@ -7,10 +7,12 @@ import {
   getDoseCalculators,
   getCaseJournalCountsByNotion,
 } from "@/lib/el-profesor/dal";
+import { getEffectiveIsAdmin } from "@/lib/el-profesor/preview-mode";
 import { GlossaryView } from "@/components/el-profesor/glossary-view";
 
 export default async function GlossaryPage() {
   const profile = await requireElProfesorAccess();
+  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
   const notions = await getGlossary();
   const notionIds = notions.map((n) => n.notion.id);
   const [categories, readiness, recommendations, doseCalculators, caseCounts] = await Promise.all([
@@ -29,7 +31,7 @@ export default async function GlossaryPage() {
       recommendations={recommendations}
       doseCalculators={doseCalculators}
       caseCounts={caseCounts}
-      isAdmin={profile.role === "admin"}
+      isAdmin={isAdmin}
     />
   );
 }

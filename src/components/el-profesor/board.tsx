@@ -41,6 +41,8 @@ import {
   FileText,
   Coins,
   Eraser,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -62,6 +64,7 @@ import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-se
 import { LibraryStats } from "@/components/el-profesor/learning-widgets";
 import { DashboardSecondaryWidgets, DashboardWidgetsSkeleton } from "@/components/el-profesor/dashboard-secondary-widgets";
 import { deleteBook, deleteChapter, moveBook, moveChapter } from "@/app/apps/el-profesor/actions/library";
+import { setElProfesorPreviewAsUser } from "@/app/apps/el-profesor/actions/preview";
 import { extractChapter, extractChapterComplementary, resetStuckExtraction, resetChapterContent } from "@/app/apps/el-profesor/actions/extraction";
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
@@ -367,6 +370,8 @@ export function ElProfesorBoard({
   needsReviewCounts,
   masteryCounts,
   isAdmin,
+  realIsAdmin,
+  previewingAsUser,
   difficultCounts,
   globalMastery,
   hasGeminiKey,
@@ -380,7 +385,12 @@ export function ElProfesorBoard({
   dueCounts: ChapterDueCounts;
   needsReviewCounts: ChapterDueCounts;
   masteryCounts: ChapterMasteryCounts;
+  /** Effective admin-ness — false while a real admin is previewing as a user (see realIsAdmin/previewingAsUser below). Everything else in this component keys off this, not the real role. */
   isAdmin: boolean;
+  /** The signed-in profile's actual role — never affected by the preview toggle. Only this gates rendering the toggle itself. */
+  realIsAdmin: boolean;
+  /** Whether a real admin currently has the "preview as user" cookie set (preview-mode.ts). Only meaningful when realIsAdmin is true. */
+  previewingAsUser: boolean;
   difficultCounts: ChapterDueCounts;
   globalMastery: Record<string, ChapterMasteryPercentile>;
   hasGeminiKey: boolean;
@@ -412,6 +422,7 @@ export function ElProfesorBoard({
   // call by hand doesn't apply (Gemini stays synchronous, one chapter at a time).
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [isBulkPending, startBulkTransition] = useTransition();
+  const [isTogglingPreview, startPreviewTransition] = useTransition();
   // Lazy initializer (client-only read), same pattern used elsewhere for
   // one-time localStorage reads — null on the server, resolved on mount.
   const [resumeChapterId] = useState(() => serverResumeChapterId ?? getLastChapter());
@@ -467,6 +478,14 @@ export function ElProfesorBoard({
 
   function refresh() {
     startTransition(() => router.refresh());
+  }
+
+  function handleTogglePreview() {
+    startPreviewTransition(async () => {
+      const result = await setElProfesorPreviewAsUser(!previewingAsUser);
+      if (result.error) toast(result.error, { variant: "error" });
+      else router.refresh();
+    });
   }
 
   function handleExtract(chapterId: string) {
@@ -752,6 +771,25 @@ export function ElProfesorBoard({
               <BellOff className="h-4 w-4" />
             </Button>
           </Link>
+          {realIsAdmin && (
+            <button
+              type="button"
+              onClick={handleTogglePreview}
+              disabled={isTogglingPreview}
+              aria-pressed={previewingAsUser}
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium disabled:opacity-60 ${
+                previewingAsUser ? "border-accent/40 bg-accent-tint text-accent-strong" : "border-border text-foreground-subtle hover:text-foreground"
+              }`}
+              title={
+                previewingAsUser
+                  ? "Vous prévisualisez El Profesor comme un utilisateur normal — cliquez pour repasser en vue admin"
+                  : "Prévisualiser El Profesor comme le verrait un utilisateur normal, sans créer de compte"
+              }
+            >
+              {previewingAsUser ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+              {previewingAsUser ? "Vue utilisateur" : "Vue admin"}
+            </button>
+          )}
           {isAdmin && (
             <>
               <Link href="/apps/el-profesor/notions">
