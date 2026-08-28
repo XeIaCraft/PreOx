@@ -31,7 +31,6 @@ import {
   GitBranch,
   Scissors,
   BookText,
-  Timer,
   Siren,
   NotebookPen,
   RotateCcw,
@@ -43,6 +42,7 @@ import {
   Eraser,
   Eye,
   EyeOff,
+  Menu,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -191,6 +191,109 @@ function MoreActionsMenu({ children }: { children: React.ReactNode }) {
             className="absolute right-0 z-20 mt-1 flex w-52 flex-col gap-0.5 rounded-[var(--radius-md)] border border-border bg-surface p-1.5 shadow-lg"
           >
             {children}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Mobile-only collapse of the dashboard header's secondary navigation
+ * (guide, tutoriel, glossaire, journal, cartes exclues, plus the
+ * admin-only notions/qualité/archivés/réglages) into a single overflow
+ * menu — requested 2026-08-28 ("catastrophique et inutilisable" on
+ * mobile, the un-collapsed icon row wrapped across 3 lines). The desktop
+ * icon row stays exactly as before (`hidden sm:flex` on its wrapper,
+ * this menu's own trigger `sm:hidden`), so nothing changes above the
+ * `sm` breakpoint. Same open/close/Escape pattern as MoreActionsMenu,
+ * kept as its own small component per this codebase's convention of
+ * duplicating small menu variants rather than parameterizing one
+ * generic component (see RenameChapterButton et al.).
+ */
+function HeaderMenu({
+  isAdmin,
+  hasGeminiKey,
+  onOpenTour,
+  onOpenSettings,
+}: {
+  isAdmin: boolean;
+  hasGeminiKey: boolean;
+  onOpenTour: () => void;
+  onOpenSettings: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
+  return (
+    <div className="relative">
+      <Button variant="ghost" size="icon" onClick={() => setOpen((v) => !v)} aria-label="Menu" aria-expanded={open} className="relative">
+        <Menu className="h-4 w-4" />
+        {isAdmin && !hasGeminiKey && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-danger" />}
+      </Button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
+          <div
+            onClick={() => setOpen(false)}
+            className="absolute right-0 z-20 mt-1 flex w-60 flex-col gap-0.5 rounded-[var(--radius-md)] border border-border bg-surface p-1.5 shadow-lg"
+          >
+            <Link href="/apps/el-profesor/guide">
+              <Button variant="ghost" size="sm" className="w-full justify-start">
+                <BookText className="h-3.5 w-3.5" /> Guide d&apos;utilisation
+              </Button>
+            </Link>
+            <Button variant="ghost" size="sm" className="w-full justify-start" onClick={onOpenTour}>
+              <HelpCircle className="h-3.5 w-3.5" /> Revoir le tutoriel
+            </Button>
+            <Link href="/apps/el-profesor/glossary">
+              <Button variant="ghost" size="sm" className="w-full justify-start">
+                <BookOpen className="h-3.5 w-3.5" /> Glossaire des notions
+              </Button>
+            </Link>
+            <Link href="/apps/el-profesor/journal">
+              <Button variant="ghost" size="sm" className="w-full justify-start">
+                <NotebookPen className="h-3.5 w-3.5" /> Mon journal de cas
+              </Button>
+            </Link>
+            <Link href="/apps/el-profesor/suspended">
+              <Button variant="ghost" size="sm" className="w-full justify-start">
+                <BellOff className="h-3.5 w-3.5" /> Cartes exclues
+              </Button>
+            </Link>
+            {isAdmin && (
+              <>
+                <div className="my-1 border-t border-border" />
+                <Link href="/apps/el-profesor/notions">
+                  <Button variant="ghost" size="sm" className="w-full justify-start">
+                    <Tag className="h-3.5 w-3.5" /> Notions et contradictions
+                  </Button>
+                </Link>
+                <Link href="/apps/el-profesor/quality">
+                  <Button variant="ghost" size="sm" className="w-full justify-start">
+                    <Gauge className="h-3.5 w-3.5" /> Tableau de bord qualité
+                  </Button>
+                </Link>
+                <Link href="/apps/el-profesor/archived">
+                  <Button variant="ghost" size="sm" className="w-full justify-start">
+                    <Archive className="h-3.5 w-3.5" /> Livres archivés
+                  </Button>
+                </Link>
+                <Button variant="ghost" size="sm" className="w-full justify-start" onClick={onOpenSettings}>
+                  <Settings className="h-3.5 w-3.5" />
+                  Réglages IA (Gemini)
+                  {!hasGeminiKey && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-danger" />}
+                </Button>
+              </>
+            )}
           </div>
         </>
       )}
@@ -748,29 +851,6 @@ export function ElProfesorBoard({
           >
             <Siren className="h-3.5 w-3.5" /> Mode urgence
           </Link>
-          <Link href="/apps/el-profesor/guide">
-            <Button variant="ghost" size="icon" aria-label="Guide d'utilisation" title="Guide d'utilisation">
-              <BookText className="h-4 w-4" />
-            </Button>
-          </Link>
-          <Button variant="ghost" size="icon" onClick={() => setTourOpen(true)} aria-label="Revoir le tutoriel" title="Revoir le tutoriel">
-            <HelpCircle className="h-4 w-4" />
-          </Button>
-          <Link href="/apps/el-profesor/glossary">
-            <Button variant="ghost" size="icon" aria-label="Glossaire des notions" title="Glossaire des notions">
-              <BookOpen className="h-4 w-4" />
-            </Button>
-          </Link>
-          <Link href="/apps/el-profesor/journal">
-            <Button variant="ghost" size="icon" aria-label="Mon journal de cas" title="Mon journal de cas">
-              <NotebookPen className="h-4 w-4" />
-            </Button>
-          </Link>
-          <Link href="/apps/el-profesor/suspended">
-            <Button variant="ghost" size="icon" aria-label="Cartes exclues de mes révisions" title="Cartes exclues de mes révisions">
-              <BellOff className="h-4 w-4" />
-            </Button>
-          </Link>
           {realIsAdmin && (
             <button
               type="button"
@@ -790,38 +870,77 @@ export function ElProfesorBoard({
               {previewingAsUser ? "Vue utilisateur" : "Vue admin"}
             </button>
           )}
+
+          {/* Desktop: full icon row, unchanged. Collapsed into HeaderMenu below sm — see that component's doc comment. */}
+          <div className="hidden items-center gap-2 sm:flex">
+            <Link href="/apps/el-profesor/guide">
+              <Button variant="ghost" size="icon" aria-label="Guide d'utilisation" title="Guide d'utilisation">
+                <BookText className="h-4 w-4" />
+              </Button>
+            </Link>
+            <Button variant="ghost" size="icon" onClick={() => setTourOpen(true)} aria-label="Revoir le tutoriel" title="Revoir le tutoriel">
+              <HelpCircle className="h-4 w-4" />
+            </Button>
+            <Link href="/apps/el-profesor/glossary">
+              <Button variant="ghost" size="icon" aria-label="Glossaire des notions" title="Glossaire des notions">
+                <BookOpen className="h-4 w-4" />
+              </Button>
+            </Link>
+            <Link href="/apps/el-profesor/journal">
+              <Button variant="ghost" size="icon" aria-label="Mon journal de cas" title="Mon journal de cas">
+                <NotebookPen className="h-4 w-4" />
+              </Button>
+            </Link>
+            <Link href="/apps/el-profesor/suspended">
+              <Button variant="ghost" size="icon" aria-label="Cartes exclues de mes révisions" title="Cartes exclues de mes révisions">
+                <BellOff className="h-4 w-4" />
+              </Button>
+            </Link>
+            {isAdmin && (
+              <>
+                <Link href="/apps/el-profesor/notions">
+                  <Button variant="ghost" size="icon" aria-label="Notions et contradictions" title="Notions et contradictions">
+                    <Tag className="h-4 w-4" />
+                  </Button>
+                </Link>
+                <Link href="/apps/el-profesor/quality">
+                  <Button variant="ghost" size="icon" aria-label="Tableau de bord qualité" title="Tableau de bord qualité">
+                    <Gauge className="h-4 w-4" />
+                  </Button>
+                </Link>
+                <Link href="/apps/el-profesor/archived">
+                  <Button variant="ghost" size="icon" aria-label="Livres archivés" title="Livres archivés">
+                    <Archive className="h-4 w-4" />
+                  </Button>
+                </Link>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setModal({ type: "gemini_settings" })}
+                  aria-label={hasGeminiKey ? "Réglages IA (Gemini)" : "Réglages IA (Gemini) — clé API manquante"}
+                  title={hasGeminiKey ? "Réglages IA (Gemini)" : "Clé API Gemini manquante — l'extraction échouera"}
+                  className="relative"
+                >
+                  <Settings className="h-4 w-4" />
+                  {!hasGeminiKey && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-danger" />}
+                </Button>
+              </>
+            )}
+          </div>
+
+          <div className="sm:hidden">
+            <HeaderMenu
+              isAdmin={isAdmin}
+              hasGeminiKey={hasGeminiKey}
+              onOpenTour={() => setTourOpen(true)}
+              onOpenSettings={() => setModal({ type: "gemini_settings" })}
+            />
+          </div>
+
           {isAdmin && (
-            <>
-              <Link href="/apps/el-profesor/notions">
-                <Button variant="ghost" size="icon" aria-label="Notions et contradictions" title="Notions et contradictions">
-                  <Tag className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Link href="/apps/el-profesor/quality">
-                <Button variant="ghost" size="icon" aria-label="Tableau de bord qualité" title="Tableau de bord qualité">
-                  <Gauge className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Link href="/apps/el-profesor/archived">
-                <Button variant="ghost" size="icon" aria-label="Livres archivés" title="Livres archivés">
-                  <Archive className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setModal({ type: "gemini_settings" })}
-                aria-label={hasGeminiKey ? "Réglages IA (Gemini)" : "Réglages IA (Gemini) — clé API manquante"}
-                title={hasGeminiKey ? "Réglages IA (Gemini)" : "Clé API Gemini manquante — l'extraction échouera"}
-                className="relative"
-              >
-                <Settings className="h-4 w-4" />
-                {!hasGeminiKey && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-danger" />}
-              </Button>
-              <Button onClick={() => setModal({ type: "add_book" })}>
-                <Plus className="h-4 w-4" /> Ajouter un livre
-              </Button>
-            </>
+            <Button onClick={() => setModal({ type: "add_book" })}>
+              <Plus className="h-4 w-4" /> Ajouter un livre
+            </Button>
           )}
         </div>
       </div>
@@ -1201,7 +1320,7 @@ export function ElProfesorBoard({
                             variant="danger"
                             title="Ce chapitre dépasse le budget de tokens/minute du palier gratuit Gemini pour un seul appel d'extraction — passez sur Claude depuis Réglages IA avant d'extraire ce chapitre pour éviter un échec par quota."
                           >
-                            <Coins className="h-3 w-3" /> Claude recommandé
+                            <Coins className="h-3 w-3" /> Claude
                           </Badge>
                         )}
                         {isAdmin && chapter.sourceKind === "pdf" && chapter.pdfPageCount != null && exceedsQualitySplitThreshold(chapter.pdfPageCount) && (
@@ -1209,7 +1328,7 @@ export function ElProfesorBoard({
                             variant="accent"
                             title="Chapitre long — la qualité d'extraction en une seule passe se dégrade au-delà d'une vingtaine de pages, quel que soit le fournisseur IA. Diviser ce chapitre en parties plus courtes (menu ⋯) est recommandé avant extraction."
                           >
-                            <Scissors className="h-3 w-3" /> Diviser recommandé
+                            <Scissors className="h-3 w-3" /> Diviser
                           </Badge>
                         )}
                         {isAdmin && needsReview > 0 && <Badge variant="accent">{needsReview} à vérifier</Badge>}
@@ -1236,28 +1355,16 @@ export function ElProfesorBoard({
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       {chapter.status === "published" && (
                         <>
-                          <Link href={`/apps/el-profesor/chapters/${chapter.id}`}>
-                            <Button variant="secondary" size="sm">
-                              <BookOpen className="h-3.5 w-3.5" /> Fiches
-                            </Button>
-                          </Link>
                           <Link href={`/apps/el-profesor/chapters/${chapter.id}/review?mode=due`}>
                             <Button size="sm" disabled={due === 0}>
                               {due > 0 ? `Réviser (${due})` : "À jour"}
                             </Button>
                           </Link>
-                          <Link href={`/apps/el-profesor/chapters/${chapter.id}/review?mode=free`}>
-                            <Button variant="ghost" size="sm">
-                              Révision libre
+                          <Link href={`/apps/el-profesor/chapters/${chapter.id}`}>
+                            <Button variant="secondary" size="sm">
+                              <BookOpen className="h-3.5 w-3.5" /> Fiches
                             </Button>
                           </Link>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setModal({ type: "exam_start", chapterId: chapter.id, chapterTitle: chapter.title })}
-                          >
-                            <Timer className="h-3.5 w-3.5" /> Examen blanc
-                          </Button>
                         </>
                       )}
 
@@ -1446,6 +1553,23 @@ export function ElProfesorBoard({
                         </MoreActionsMenu>
                       )}
                     </div>
+                    {chapter.status === "published" && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <Link
+                          href={`/apps/el-profesor/chapters/${chapter.id}/review?mode=free`}
+                          className="text-xs text-foreground-subtle underline hover:text-foreground"
+                        >
+                          Révision libre
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => setModal({ type: "exam_start", chapterId: chapter.id, chapterTitle: chapter.title })}
+                          className="text-xs text-foreground-subtle underline hover:text-foreground"
+                        >
+                          Examen blanc
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
