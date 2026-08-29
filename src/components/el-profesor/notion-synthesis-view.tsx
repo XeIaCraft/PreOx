@@ -505,15 +505,24 @@ export function NotionSynthesisView({
 
       {synthesis && synthesis.blocks.length > 0 ? (
         <div className="mt-5">
-          {/* Sticky section shortcuts (requested 2026-08-29) — the notion
-              title stays visible once the h1 above scrolls away, and the
-              active chip tracks the section currently in view. Each chip
-              is truncated to a fixed width so a long section title never
-              pushes the strip off-screen. */}
-          <div className="sticky top-0 z-10 -mx-4 mb-4 bg-background/95 px-4 pb-2 pt-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-            <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-foreground-subtle">{notionName}</p>
+          {/* Sticky running header (requested 2026-08-29 — "le titre reste
+              en haut sur la fiche, ça c'est le mode livre") — mirrors
+              ImmersiveFicheReader's own "livre" header exactly: a small
+              caps context line (there: chapterTitle · ficheIndex/Count;
+              here: notionName · section index/count), then the CURRENT
+              unit's title pinned large in serif underneath. For a fiche
+              that's the fiche title as you swipe between fiches; here it's
+              the active section's title, tracked by the same scroll-spy
+              that drives the chip strip below it. */}
+          <div className="sticky top-0 z-10 -mx-4 mb-4 bg-background/95 px-4 pb-3 pt-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-foreground-subtle">
+              {notionName} · {activeSection + 1}/{sections.length}
+            </p>
+            <h2 className="mt-1.5 truncate text-balance font-serif-display text-[20px] font-medium leading-tight text-foreground">
+              {sections[activeSection]?.title}
+            </h2>
             {sections.length > 1 && (
-              <div className="mt-1.5 flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="mt-2.5 flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {sections.map((section, i) => (
                   <a
                     key={`${section.title}-${i}`}

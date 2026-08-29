@@ -1,15 +1,26 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { usePathname } from "next/navigation";
 import { MessageSquarePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { submitFeedback } from "@/app/actions/feedback";
 
+// El Profesor's fiche and notion-synthesis reading views (requested
+// 2026-08-29) both pin their own controls to the bottom-right corner —
+// this global widget landed right underneath them there, so it's hidden on
+// those two routes rather than fighting for the same corner.
+const HIDDEN_ON = [/^\/apps\/el-profesor\/chapters\//, /^\/apps\/el-profesor\/notions\/[^/]+/];
+
 export function FeedbackWidget() {
+  const pathname = usePathname();
+  const hidden = pathname != null && HIDDEN_ON.some((re) => re.test(pathname));
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<{ type: "error" | "success"; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  if (hidden) return null;
 
   function handleSubmit() {
     if (!message.trim()) return;
