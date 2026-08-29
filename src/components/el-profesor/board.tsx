@@ -62,6 +62,7 @@ import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-de
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
 import { LibraryStats } from "@/components/el-profesor/learning-widgets";
 import { DashboardDailyCard, DashboardSecondaryWidgets, DashboardWidgetsSkeleton } from "@/components/el-profesor/dashboard-secondary-widgets";
+import { RenderErrorBoundary } from "@/components/el-profesor/render-error-boundary";
 import { deleteBook, deleteChapter, moveBook, moveChapter } from "@/app/apps/el-profesor/actions/library";
 import { setElProfesorPreviewAsUser } from "@/app/apps/el-profesor/actions/preview";
 import { extractChapter, extractChapterComplementary, resetStuckExtraction, resetChapterContent } from "@/app/apps/el-profesor/actions/extraction";
@@ -893,9 +894,11 @@ export function ElProfesorBoard({
       )}
 
       {books.length > 0 && (
-        <Suspense fallback={<DashboardWidgetsSkeleton />}>
-          <DashboardDailyCard dataPromise={secondaryDataPromise} />
-        </Suspense>
+        <RenderErrorBoundary fallbackTitle="Carte du jour" compact>
+          <Suspense fallback={<DashboardWidgetsSkeleton />}>
+            <DashboardDailyCard dataPromise={secondaryDataPromise} />
+          </Suspense>
+        </RenderErrorBoundary>
       )}
 
       {books.length > 0 && (
@@ -1004,9 +1007,11 @@ export function ElProfesorBoard({
 
       {viewMode === "notion" && (
         <div className="mt-6">
-          <Suspense fallback={<DashboardNotionViewSkeleton />}>
-            <DashboardNotionView dataPromise={notionViewDataPromise} isAdmin={isAdmin} />
-          </Suspense>
+          <RenderErrorBoundary fallbackTitle="Notions" compact>
+            <Suspense fallback={<DashboardNotionViewSkeleton />}>
+              <DashboardNotionView dataPromise={notionViewDataPromise} isAdmin={isAdmin} />
+            </Suspense>
+          </RenderErrorBoundary>
         </div>
       )}
 
@@ -1499,14 +1504,16 @@ export function ElProfesorBoard({
       )}
 
       {books.length > 0 && (
-        <Suspense fallback={<DashboardWidgetsSkeleton />}>
-          <DashboardSecondaryWidgets
-            dataPromise={secondaryDataPromise}
-            totalAcquired={totalAcquired}
-            chaptersMastered={chaptersMastered}
-            isAdmin={isAdmin}
-          />
-        </Suspense>
+        <RenderErrorBoundary fallbackTitle="Statistiques d'apprentissage" compact>
+          <Suspense fallback={<DashboardWidgetsSkeleton />}>
+            <DashboardSecondaryWidgets
+              dataPromise={secondaryDataPromise}
+              totalAcquired={totalAcquired}
+              chaptersMastered={chaptersMastered}
+              isAdmin={isAdmin}
+            />
+          </Suspense>
+        </RenderErrorBoundary>
       )}
 
       {modal?.type === "add_book" && (

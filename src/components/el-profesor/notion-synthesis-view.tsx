@@ -285,7 +285,7 @@ export function NotionSynthesisView({
   const [optionsMenuOpen, setOptionsMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const chipRefs = useRef<(HTMLAnchorElement | null)[]>([]);
+  const chipRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
   const sections = synthesis ? groupBlocksBySection(synthesis.blocks) : [];
@@ -401,6 +401,14 @@ export function NotionSynthesisView({
   function goToNotion(direction: 1 | -1) {
     const target = direction === 1 ? nextNotion : prevNotion;
     if (target) router.push(`/apps/el-profesor/notions/${target.notionId}`);
+  }
+
+  // A plain `<a href="#...">` chip pushes a browser-history entry on every
+  // click — "back" would then cycle through past sections instead of
+  // leaving the page. scrollIntoView jumps just as well without touching
+  // history or the URL hash.
+  function scrollToSection(index: number) {
+    sectionRefs.current[index]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   return (
@@ -575,12 +583,13 @@ export function NotionSynthesisView({
             {sections.length > 1 && (
               <div className="mt-2.5 flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {sections.map((section, i) => (
-                  <a
+                  <button
+                    type="button"
                     key={`${section.title}-${i}`}
                     ref={(el) => {
                       chipRefs.current[i] = el;
                     }}
-                    href={`#synthesis-section-${i}`}
+                    onClick={() => scrollToSection(i)}
                     className={`max-w-[45vw] shrink-0 truncate rounded-full border px-3 py-1 text-xs font-medium transition-colors sm:max-w-[220px] ${
                       activeSection === i
                         ? "border-primary bg-primary-tint text-primary-strong"
@@ -588,7 +597,7 @@ export function NotionSynthesisView({
                     }`}
                   >
                     {section.title}
-                  </a>
+                  </button>
                 ))}
               </div>
             )}

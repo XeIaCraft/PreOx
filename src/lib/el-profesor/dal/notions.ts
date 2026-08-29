@@ -281,38 +281,51 @@ export interface AdjacentNotionEntry {
  * last (requested 2026-08-29, for "next notion" arrows on the synthesis
  * page — the same category=chapter/notion=sub-part mental model as the
  * fiche reader's cross-chapter continuation). Scoped to notions with at
- * least one published fiche (getGlossary's own filter) — the same set a
- * reader actually browses; a notion with no published content isn't part
- * of that flow to begin with.
+ * least one published fiche, matching what getGlossary() itself shows —
+ * but computed with plain id-only queries instead of calling getGlossary()
+ * and paying for its full book/chapter context resolution on every fiche
+ * in the library, wasted work for what only needs a name and a position
+ * here (perf pass 2026-08-29).
  */
 export async function getAdjacentNotions(notionId: string): Promise<{ prev: AdjacentNotionEntry | null; next: AdjacentNotionEntry | null }> {
-  const [glossary, categories] = await Promise.all([getGlossary(), getNotionCategories()]);
-  if (glossary.length === 0) return { prev: null, next: null };
+  const supabase = await createClient();
+  const [{ data: notions }, { data: links }, categories] = await Promise.all([
+    supabase.from("el_profesor_notions").select("id, name, category_id").order("position", { ascending: true }),
+    supabase.from("el_profesor_notion_links").select("notion_id, fiche_id"),
+    getNotionCategories(),
+  ]);
+  if (!notions || notions.length === 0 || !links || links.length === 0) return { prev: null, next: null };
 
-  const byCategory = new Map<string, NotionSummary[]>();
-  const uncategorized: NotionSummary[] = [];
-  for (const s of glossary) {
-    if (s.notion.categoryId) {
-      const list = byCategory.get(s.notion.categoryId) ?? [];
-      list.push(s);
-      byCategory.set(s.notion.categoryId, list);
+  const ficheIds = [...new Set(links.map((l) => l.fiche_id))];
+  const { data: publishedFiches } = await supabase.from("el_profesor_fiches").select("id").in("id", ficheIds).eq("status", "published");
+  const publishedIds = new Set((publishedFiches ?? []).map((f) => f.id));
+  const notionIdsWithPublished = new Set(links.filter((l) => publishedIds.has(l.fiche_id)).map((l) => l.notion_id));
+
+  const eligible = notions.filter((n) => notionIdsWithPublished.has(n.id));
+  const byCategory = new Map<string, typeof eligible>();
+  const uncategorized: typeof eligible = [];
+  for (const n of eligible) {
+    if (n.category_id) {
+      const list = byCategory.get(n.category_id) ?? [];
+      list.push(n);
+      byCategory.set(n.category_id, list);
     } else {
-      uncategorized.push(s);
+      uncategorized.push(n);
     }
   }
 
-  const ordered: NotionSummary[] = [];
+  const ordered: typeof eligible = [];
   for (const cat of categories) {
     const items = byCategory.get(cat.id);
     if (items) ordered.push(...items);
   }
   ordered.push(...uncategorized);
 
-  const index = ordered.findIndex((s) => s.notion.id === notionId);
+  const index = ordered.findIndex((n) => n.id === notionId);
   if (index === -1) return { prev: null, next: null };
 
-  function toEntry(s: NotionSummary | undefined): AdjacentNotionEntry | null {
-    return s ? { notionId: s.notion.id, notionName: s.notion.name } : null;
+  function toEntry(n: (typeof eligible)[number] | undefined): AdjacentNotionEntry | null {
+    return n ? { notionId: n.id, notionName: n.name } : null;
   }
   return { prev: toEntry(ordered[index - 1]), next: toEntry(ordered[index + 1]) };
 }
