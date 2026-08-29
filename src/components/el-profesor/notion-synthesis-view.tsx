@@ -289,7 +289,10 @@ export function NotionSynthesisView({
   // past the sticky bar, not just whatever's nearest the viewport center.
   useEffect(() => {
     if (sections.length === 0) return;
-    const STICKY_OFFSET = 108;
+    // HubHeader's own sticky bar (64px, top-16) plus this page's sticky
+    // running-header box (context line + title + chip row) — both pinned
+    // at once, so "passed" means past the combined height, not just ours.
+    const STICKY_OFFSET = 190;
     function handleScroll() {
       let current = 0;
       for (let i = 0; i < sectionRefs.current.length; i++) {
@@ -513,8 +516,16 @@ export function NotionSynthesisView({
               unit's title pinned large in serif underneath. For a fiche
               that's the fiche title as you swipe between fiches; here it's
               the active section's title, tracked by the same scroll-spy
-              that drives the chip strip below it. */}
-          <div className="sticky top-0 z-10 -mx-4 mb-4 bg-background/95 px-4 pb-3 pt-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+              that drives the chip strip below it.
+              top-16 (not top-0!) — unlike the fiche's ImmersiveFicheReader,
+              which is a fixed full-viewport overlay that covers the hub's
+              own header entirely, this page stays in normal flow under
+              HubHeader's own `sticky top-0 z-30` (hub-header.tsx). At
+              top-0 the two sticky elements shared the same origin and the
+              hub header (higher z-index) painted over ours, hiding this
+              bar's top two lines — only the chip row (lower in the box)
+              peeked out below it. */}
+          <div className="sticky top-16 z-10 -mx-4 mb-4 bg-background/95 px-4 pb-3 pt-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
             <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-foreground-subtle">
               {notionName} · {activeSection + 1}/{sections.length}
             </p>
@@ -571,7 +582,7 @@ export function NotionSynthesisView({
                   ref={(el) => {
                     sectionRefs.current[sectionIndex] = el;
                   }}
-                  className="scroll-mt-24"
+                  className="scroll-mt-48"
                 >
                   <h2 className="font-serif-display text-lg font-medium text-foreground">{title}</h2>
                   <div className={isAdmin ? "mt-2 space-y-3" : "mt-2 divide-y divide-border"}>
