@@ -12,6 +12,8 @@ import {
   BookOpen,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Trash2,
   SlidersHorizontal,
   Minus,
@@ -47,6 +49,7 @@ import {
   setDyslexicFont,
   type FontScale,
 } from "@/lib/el-profesor/local-prefs";
+import type { AdjacentNotionEntry } from "@/lib/el-profesor/dal";
 import type {
   NotionSynthesis,
   NotionSynthesisBlock,
@@ -261,12 +264,16 @@ export function NotionSynthesisView({
   synthesis,
   fiches,
   isAdmin,
+  prevNotion = null,
+  nextNotion = null,
 }: {
   notionId: string;
   notionName: string;
   synthesis: NotionSynthesis | null;
   fiches: NotionLinkedFiche[];
   isAdmin: boolean;
+  prevNotion?: AdjacentNotionEntry | null;
+  nextNotion?: AdjacentNotionEntry | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -391,8 +398,41 @@ export function NotionSynthesisView({
     });
   }
 
+  function goToNotion(direction: 1 | -1) {
+    const target = direction === 1 ? nextNotion : prevNotion;
+    if (target) router.push(`/apps/el-profesor/notions/${target.notionId}`);
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
+      {(prevNotion || nextNotion) && (
+        // Small floating round nav buttons (requested 2026-08-29), same
+        // shape and placement as the fiche reader's own chapter-nav
+        // buttons — moves through the same category→notion reading order
+        // as NotionList (glossary-view.tsx), not just alphabetical.
+        <>
+          <button
+            type="button"
+            onClick={() => goToNotion(-1)}
+            disabled={!prevNotion}
+            aria-label="Notion précédente"
+            title={prevNotion ? `Précédent : ${prevNotion.notionName}` : "Notion précédente"}
+            className="fixed bottom-4 left-4 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface/90 text-foreground-subtle shadow-md backdrop-blur transition-opacity disabled:opacity-0"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => goToNotion(1)}
+            disabled={!nextNotion}
+            aria-label="Notion suivante"
+            title={nextNotion ? `Suivant : ${nextNotion.notionName}` : "Notion suivante"}
+            className="fixed bottom-4 right-4 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface/90 text-foreground-subtle shadow-md backdrop-blur transition-opacity disabled:opacity-0"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </>
+      )}
       <Link href="/apps/el-profesor" className="mb-4 inline-flex items-center gap-1.5 text-sm text-foreground-subtle hover:text-foreground">
         <ArrowLeft className="h-4 w-4" /> Retour à la bibliothèque
       </Link>

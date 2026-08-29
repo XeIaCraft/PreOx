@@ -269,6 +269,54 @@ export async function getCaseJournalCountsByNotion(userId: string, notionIds: st
   return result;
 }
 
+export interface AdjacentNotionEntry {
+  notionId: string;
+  notionName: string;
+}
+
+/**
+ * The notion immediately before/after `notionId` in the same reading order
+ * NotionList (glossary-view.tsx) renders: each category in its own manual
+ * order, its notions in their own manual order, then uncategorized notions
+ * last (requested 2026-08-29, for "next notion" arrows on the synthesis
+ * page — the same category=chapter/notion=sub-part mental model as the
+ * fiche reader's cross-chapter continuation). Scoped to notions with at
+ * least one published fiche (getGlossary's own filter) — the same set a
+ * reader actually browses; a notion with no published content isn't part
+ * of that flow to begin with.
+ */
+export async function getAdjacentNotions(notionId: string): Promise<{ prev: AdjacentNotionEntry | null; next: AdjacentNotionEntry | null }> {
+  const [glossary, categories] = await Promise.all([getGlossary(), getNotionCategories()]);
+  if (glossary.length === 0) return { prev: null, next: null };
+
+  const byCategory = new Map<string, NotionSummary[]>();
+  const uncategorized: NotionSummary[] = [];
+  for (const s of glossary) {
+    if (s.notion.categoryId) {
+      const list = byCategory.get(s.notion.categoryId) ?? [];
+      list.push(s);
+      byCategory.set(s.notion.categoryId, list);
+    } else {
+      uncategorized.push(s);
+    }
+  }
+
+  const ordered: NotionSummary[] = [];
+  for (const cat of categories) {
+    const items = byCategory.get(cat.id);
+    if (items) ordered.push(...items);
+  }
+  ordered.push(...uncategorized);
+
+  const index = ordered.findIndex((s) => s.notion.id === notionId);
+  if (index === -1) return { prev: null, next: null };
+
+  function toEntry(s: NotionSummary | undefined): AdjacentNotionEntry | null {
+    return s ? { notionId: s.notion.id, notionName: s.notion.name } : null;
+  }
+  return { prev: toEntry(ordered[index - 1]), next: toEntry(ordered[index + 1]) };
+}
+
 /** Every notion category, in manual order — for grouping the notion list and for the admin assignment dropdown. */
 export async function getNotionCategories(): Promise<NotionCategory[]> {
   const supabase = await createClient();
