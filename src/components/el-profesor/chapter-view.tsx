@@ -238,7 +238,11 @@ function ImmersiveFicheReader({
           {fiche.title}
         </h1>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" onPointerDown={handlePointerDown} onPointerUp={handlePointerUp}>
+      <div
+        className={`min-h-0 flex-1 overflow-y-auto px-5 ${layout === "livre" ? "pb-24" : "pb-6"}`}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+      >
         <FicheViewer
           title={fiche.title}
           summary={summary}
@@ -254,6 +258,35 @@ function ImmersiveFicheReader({
           }
         />
       </div>
+      {layout === "livre" && (
+        // Small floating round nav buttons (requested 2026-08-29) — the
+        // horizontal swipe-to-change-chapter gesture proved unreliable on
+        // real devices (likely fighting the pane's own vertical scroll), so
+        // this is the reliable fallback rather than a replacement: swipe
+        // stays wired above, this is just always-available.
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-between px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <button
+            type="button"
+            onClick={() => onGoToFiche(-1)}
+            disabled={ficheIndex <= 0 && !hasPrevChapter}
+            aria-label="Précédent"
+            title="Précédent"
+            className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface/90 text-foreground-subtle shadow-md backdrop-blur transition-opacity disabled:opacity-0"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onGoToFiche(1)}
+            disabled={ficheIndex >= ficheCount - 1 && !hasNextChapter}
+            aria-label="Suivant"
+            title="Suivant"
+            className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface/90 text-foreground-subtle shadow-md backdrop-blur transition-opacity disabled:opacity-0"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+      )}
       {layout === "sommaire" ? (
         <div className="flex shrink-0 gap-2 border-t border-border bg-surface px-4 py-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))]">
           <button

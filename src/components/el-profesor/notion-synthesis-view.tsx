@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type CSSProperties } from "react";
+import { useState, useTransition, useRef, useEffect, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -14,7 +14,6 @@ import {
   ChevronDown,
   Trash2,
   SlidersHorizontal,
-  LayoutTemplate,
   Minus,
   Plus,
   AlignJustify,
@@ -26,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { BlockBody, BLOCK_META } from "@/components/el-profesor/fiche-viewer";
 import { TableEditor, ProtocolEditor, IS_TEXT_BLOCK } from "@/components/el-profesor/block-editor";
-import { FicheLayoutPicker, OptionToggleRow } from "@/components/el-profesor/chapter-view";
+import { OptionToggleRow } from "@/components/el-profesor/chapter-view";
 import {
   generateNotionSynthesis,
   publishNotionSynthesis,
@@ -46,10 +45,7 @@ import {
   setReadingComfort,
   getDyslexicFont,
   setDyslexicFont,
-  getFicheLayout,
-  setFicheLayout,
   type FontScale,
-  type FicheLayout,
 } from "@/lib/el-profesor/local-prefs";
 import type {
   NotionSynthesis,
@@ -61,18 +57,14 @@ import type {
   TextBlockContent,
 } from "@/lib/el-profesor/types";
 
-/** One synthesized block, with a "sources" footer instead of FicheViewer's normal per-citation chips — a synthesis block can draw on several books' own PDFs at once, so there's no single page to jump to. */
-function SynthesisBlockCard({
-  block,
-  fontScale,
-  serif,
-  justify,
-}: {
-  block: NotionSynthesisBlock;
-  fontScale: FontScale;
-  serif: boolean;
-  justify: boolean;
-}) {
+/**
+ * One synthesized block, in the same flowing "livre" reading style as
+ * FicheViewer's own book layout (requested 2026-08-29 — the boxed-card
+ * look used before "ne correspond pas du tout" to that style). No
+ * per-block source chips here — a reader only ever sees sources once, at
+ * the end of the section (see sectionSources below).
+ */
+function SynthesisBlockCard({ block, fontScale, justify }: { block: NotionSynthesisBlock; fontScale: FontScale; justify: boolean }) {
   const meta = BLOCK_META[block.blockType];
   const Icon = meta.icon;
   // FicheViewer's BlockBody only ever reads blockType/content — the rest of this shape is irrelevant here.
@@ -89,38 +81,23 @@ function SynthesisBlockCard({
     imageUrl: block.imageUrl,
     imageAlt: block.imageAlt,
   } satisfies FicheBlock;
-
-  const sources = [...new Map(block.citations.map((c) => [`${c.chapterId}`, c])).values()];
+  const isPearl = block.blockType === "perle_clinique";
 
   return (
-    <div className="rounded-[var(--radius-md)] border border-border p-4">
-      <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">
+    <div className={`py-3.5 first:pt-0 ${isPearl ? "border-l-2 border-accent pl-4" : ""}`}>
+      <span className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${isPearl ? "text-accent" : "text-foreground-subtle"}`}>
         <Icon className="h-3.5 w-3.5" /> {meta.label}
       </span>
-      <div className="mt-2">
-        <BlockBody block={asFicheBlock} fontScale={fontScale} serif={serif} justify={justify} />
+      <div className={`mt-2 ${isPearl ? "italic" : ""}`}>
+        <BlockBody block={asFicheBlock} fontScale={fontScale} serif justify={justify} />
       </div>
       {block.imageUrl && (
         // eslint-disable-next-line @next/next/no-img-element -- reused verbatim from a source fiche block's own upload (Supabase Storage public URL), not a Next-optimizable asset.
         <img
           src={block.imageUrl}
           alt={block.imageAlt ?? ""}
-          className={`mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain ${serif && justify ? "mx-auto block" : ""}`}
+          className={`mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain ${justify ? "mx-auto block" : ""}`}
         />
-      )}
-      {sources.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border pt-2">
-          {sources.map((s) => (
-            <Link
-              key={s.chapterId}
-              href={`/apps/el-profesor/chapters/${s.chapterId}`}
-              className="rounded-full border border-border-strong px-2.5 py-1 text-xs text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
-              title={`p. ${s.page} — « ${s.quote} »`}
-            >
-              {s.bookTitle}
-            </Link>
-          ))}
-        </div>
       )}
     </div>
   );
@@ -137,21 +114,20 @@ function SynthesisBlockCard({
  * flags/emergency-toggle/mnemonic-suggestion, none of which apply to a
  * synthesis block. Reordering is scoped to the block's own section
  * (moveNotionSynthesisBlock), so it can never cross into another subject's
- * section by accident.
+ * section by accident. Stays a boxed, form-like control (unlike the
+ * flowing read view) since editing needs clear per-block boundaries.
  */
 function SynthesisBlockEditor({
   block,
   isFirst,
   isLast,
   onChanged,
-  serif,
   justify,
 }: {
   block: NotionSynthesisBlock;
   isFirst: boolean;
   isLast: boolean;
   onChanged: () => void;
-  serif: boolean;
   justify: boolean;
 }) {
   const { toast } = useToast();
@@ -159,7 +135,6 @@ function SynthesisBlockEditor({
   const [content, setContent] = useState(block.content);
   const meta = BLOCK_META[block.blockType];
   const Icon = meta.icon;
-  const sources = [...new Map(block.citations.map((c) => [`${c.chapterId}`, c])).values()];
 
   function handleSave() {
     startTransition(async () => {
@@ -244,23 +219,8 @@ function SynthesisBlockEditor({
         <img
           src={block.imageUrl}
           alt={block.imageAlt ?? ""}
-          className={`mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain ${serif && justify ? "mx-auto block" : ""}`}
+          className={`mt-2 max-h-96 w-auto max-w-full rounded-[var(--radius-sm)] border border-border object-contain ${justify ? "mx-auto block" : ""}`}
         />
-      )}
-
-      {sources.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border pt-2">
-          {sources.map((s) => (
-            <Link
-              key={s.chapterId}
-              href={`/apps/el-profesor/chapters/${s.chapterId}`}
-              className="rounded-full border border-border-strong px-2.5 py-1 text-xs text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
-              title={`p. ${s.page} — « ${s.quote} »`}
-            >
-              {s.bookTitle}
-            </Link>
-          ))}
-        </div>
       )}
 
       <div className="mt-2 flex justify-end">
@@ -284,7 +244,7 @@ function groupBlocksBySection(blocks: NotionSynthesisBlock[]): { title: string; 
   return sections;
 }
 
-/** Every distinct book/chapter a section's blocks actually cite, for the "Sources de cette section" footer requested 2026-08-27 — beyond the per-block chips, a reader wants to know at a glance which books fed a whole section. */
+/** Every distinct book/chapter a section's blocks actually cite, for the section's own (sole) sources footer — a reader wants to know at a glance which books fed a whole section, without a chip repeated under every single block. */
 function sectionSources(blocks: NotionSynthesisBlock[]): { chapterId: string; bookTitle: string; chapterTitle: string }[] {
   const byChapter = new Map<string, { chapterId: string; bookTitle: string; chapterTitle: string }>();
   for (const block of blocks) {
@@ -315,9 +275,37 @@ export function NotionSynthesisView({
   const [textJustify, setTextJustifyState] = useState(() => getTextJustify());
   const [readingComfort, setReadingComfortState] = useState(() => getReadingComfort());
   const [dyslexicFont, setDyslexicFontState] = useState(() => getDyslexicFont());
-  const [ficheLayout, setFicheLayoutState] = useState<FicheLayout>(() => getFicheLayout());
-  const [layoutPickerOpen, setLayoutPickerOpen] = useState(false);
   const [optionsMenuOpen, setOptionsMenuOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState(0);
+  const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const chipRefs = useRef<(HTMLAnchorElement | null)[]>([]);
+
+  const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
+  const sections = synthesis ? groupBlocksBySection(synthesis.blocks) : [];
+
+  // Scroll-spy for the sticky section-shortcut strip (requested 2026-08-29
+  // — "la sous partie s'actualise avec la sous partie en cours") — the
+  // active chip is whichever section heading has most recently scrolled
+  // past the sticky bar, not just whatever's nearest the viewport center.
+  useEffect(() => {
+    if (sections.length === 0) return;
+    const STICKY_OFFSET = 108;
+    function handleScroll() {
+      let current = 0;
+      for (let i = 0; i < sectionRefs.current.length; i++) {
+        const el = sectionRefs.current[i];
+        if (el && el.getBoundingClientRect().top - STICKY_OFFSET <= 0) current = i;
+      }
+      setActiveSection(current);
+    }
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [sections.length]);
+
+  useEffect(() => {
+    chipRefs.current[activeSection]?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [activeSection]);
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -353,11 +341,6 @@ export function NotionSynthesisView({
       setDyslexicFont(next);
       return next;
     });
-  }
-
-  function chooseFicheLayout(layout: FicheLayout) {
-    setFicheLayoutState(layout);
-    setFicheLayout(layout);
   }
 
   function handleGenerate() {
@@ -404,9 +387,6 @@ export function NotionSynthesisView({
       }
     });
   }
-
-  const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
-  const sections = synthesis ? groupBlocksBySection(synthesis.blocks) : [];
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
@@ -463,18 +443,6 @@ export function NotionSynthesisView({
       {optionsMenuOpen && (
         <Modal title="Options de lecture" onClose={() => setOptionsMenuOpen(false)} size="sm">
           <div className="-m-4 flex flex-col gap-0.5 p-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start"
-              onClick={() => {
-                setOptionsMenuOpen(false);
-                setLayoutPickerOpen(true);
-              }}
-            >
-              <LayoutTemplate className="h-3.5 w-3.5" /> Mise en page de la synthèse
-            </Button>
-
             <div className="flex items-center justify-between px-3 py-2 text-sm text-foreground">
               <span>Taille du texte</span>
               <div className="flex items-center gap-0.5 rounded-full border border-border">
@@ -511,8 +479,6 @@ export function NotionSynthesisView({
         </Modal>
       )}
 
-      {layoutPickerOpen && <FicheLayoutPicker value={ficheLayout} onChange={chooseFicheLayout} onClose={() => setLayoutPickerOpen(false)} />}
-
       {synthesis?.isStale && (
         <p className="mt-3 flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-accent/40 bg-accent-tint px-3 py-2 text-xs text-accent">
           <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
@@ -539,21 +505,37 @@ export function NotionSynthesisView({
 
       {synthesis && synthesis.blocks.length > 0 ? (
         <div className="mt-5">
-          {ficheLayout === "sommaire" && sections.length > 1 && (
-            <div className="sticky top-0 z-10 -mx-4 mb-4 flex gap-1.5 overflow-x-auto bg-background px-4 py-2">
-              {sections.map((section, i) => (
-                <a
-                  key={`${section.title}-${i}`}
-                  href={`#synthesis-section-${i}`}
-                  className="shrink-0 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
-                >
-                  {section.title}
-                </a>
-              ))}
-            </div>
-          )}
+          {/* Sticky section shortcuts (requested 2026-08-29) — the notion
+              title stays visible once the h1 above scrolls away, and the
+              active chip tracks the section currently in view. Each chip
+              is truncated to a fixed width so a long section title never
+              pushes the strip off-screen. */}
+          <div className="sticky top-0 z-10 -mx-4 mb-4 bg-background/95 px-4 pb-2 pt-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-foreground-subtle">{notionName}</p>
+            {sections.length > 1 && (
+              <div className="mt-1.5 flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {sections.map((section, i) => (
+                  <a
+                    key={`${section.title}-${i}`}
+                    ref={(el) => {
+                      chipRefs.current[i] = el;
+                    }}
+                    href={`#synthesis-section-${i}`}
+                    className={`max-w-[45vw] shrink-0 truncate rounded-full border px-3 py-1 text-xs font-medium transition-colors sm:max-w-[220px] ${
+                      activeSection === i
+                        ? "border-primary bg-primary-tint text-primary-strong"
+                        : "border-border bg-surface text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
+                    }`}
+                  >
+                    {section.title}
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div
-            className="space-y-6"
+            className="space-y-8"
             style={
               {
                 ...(readingComfort
@@ -574,9 +556,16 @@ export function NotionSynthesisView({
             {sections.map(({ title, blocks }, sectionIndex) => {
               const sources = sectionSources(blocks);
               return (
-                <div key={title} id={`synthesis-section-${sectionIndex}`} className="scroll-mt-16">
+                <div
+                  key={title}
+                  id={`synthesis-section-${sectionIndex}`}
+                  ref={(el) => {
+                    sectionRefs.current[sectionIndex] = el;
+                  }}
+                  className="scroll-mt-24"
+                >
                   <h2 className="font-serif-display text-lg font-medium text-foreground">{title}</h2>
-                  <div className="mt-2 space-y-3">
+                  <div className={isAdmin ? "mt-2 space-y-3" : "mt-2 divide-y divide-border"}>
                     {blocks.map((block, i) =>
                       isAdmin ? (
                         <SynthesisBlockEditor
@@ -585,21 +574,20 @@ export function NotionSynthesisView({
                           isFirst={i === 0}
                           isLast={i === blocks.length - 1}
                           onChanged={refresh}
-                          serif={ficheLayout === "livre"}
                           justify={textJustify}
                         />
                       ) : (
-                        <SynthesisBlockCard key={block.id} block={block} fontScale={fontScale} serif={ficheLayout === "livre"} justify={textJustify} />
+                        <SynthesisBlockCard key={block.id} block={block} fontScale={fontScale} justify={textJustify} />
                       )
                     )}
                   </div>
                   {sources.length > 0 && (
-                    <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-foreground-subtle">
-                      <span>Sources de cette section :</span>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] text-foreground-subtle/80">
+                      <span>Sources :</span>
                       {sources.map((s, i) => (
                         <span key={s.chapterId}>
                           <Link href={`/apps/el-profesor/chapters/${s.chapterId}`} className="hover:text-primary-strong hover:underline">
-                            {s.bookTitle} — {s.chapterTitle}
+                            {s.bookTitle}
                           </Link>
                           {i < sources.length - 1 ? "," : ""}
                         </span>
