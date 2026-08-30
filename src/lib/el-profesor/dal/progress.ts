@@ -2,7 +2,9 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { getChapterContent } from "./shared";
 import type { Database } from "@/lib/supabase/types";
+import type { Chapter } from "../types";
 
 /**
  * Persisted reading + mastery progress for fiches and notion syntheses
@@ -104,4 +106,136 @@ export async function getNotionMasteryProgress(userId: string, notionId: string)
     userId,
     (cards ?? []).map((c) => c.id)
   );
+}
+
+/**
+ * Average read % across each published chapter's own fiches (piste
+ * 2026-08-29 — "visible directement depuis la vue principale") — mirrors
+ * getMasteryCountsByChapter's own per-chapter loop and reuses the same
+ * request-memoized getChapterContent, so this costs nothing extra when
+ * called alongside it in the same page load (React's cache() dedupes the
+ * identical calls).
+ */
+export async function getReadProgressByChapter(userId: string, chapters: Chapter[]): Promise<Record<string, number>> {
+  const result: Record<string, number> = {};
+  await Promise.all(
+    chapters
+      .filter((c) => c.status === "published")
+      .map(async (chapter) => {
+        const content = await getChapterContent(chapter.id, false);
+        const ficheIds = content.flatMap((s) => (s.fiche ? [s.fiche.id] : []));
+        if (ficheIds.length === 0) {
+          result[chapter.id] = 0;
+          return;
+        }
+        const progress = await getFicheReadProgressBatch(userId, ficheIds);
+        const sum = ficheIds.reduce((acc, id) => acc + (progress[id] ?? 0), 0);
+        result[chapter.id] = Math.round(sum / ficheIds.length);
+      })
+  );
+  return result;
+}
+
+export interface NotionProgressEntry {
+  readPct: number;
+  mastery: MasteryProgress;
+}
+
+/**
+ * Read % + mastery for every given notion in one pass (piste 2026-08-29 —
+ * for the "Par notion" dashboard list, where showing this per card with
+ * getNotionMasteryProgress's one-notion-at-a-time queries would mean N
+ * round trips for N notions). Same "active" scope (non-superseded fiche,
+ * published flashcard) as getNotionMasteryProgress.
+ */
+export async function getNotionProgressBatch(userId: string, notionIds: string[]): Promise<Record<string, NotionProgressEntry>> {
+  const result: Record<string, NotionProgressEntry> = {};
+  if (notionIds.length === 0) return result;
+  const supabase = await createClient();
+
+  const [{ data: readRows }, { data: links }] = await Promise.all([
+    supabase.from("el_profesor_notion_read_progress").select("notion_id, progress_pct").eq("user_id", userId).in("notion_id", notionIds),
+    supabase.from("el_profesor_notion_links").select("notion_id, fiche_id").in("notion_id", notionIds),
+  ]);
+  const readByNotion = new Map((readRows ?? []).map((r) => [r.notion_id, r.progress_pct]));
+
+  const ficheIdsByNotion = new Map<string, string[]>();
+  const allFicheIds = new Set<string>();
+  for (const l of links ?? []) {
+    const list = ficheIdsByNotion.get(l.notion_id) ?? [];
+    list.push(l.fiche_id);
+    ficheIdsByNotion.set(l.notion_id, list);
+    allFicheIds.add(l.fiche_id);
+  }
+
+  const { data: fiches } =
+    allFicheIds.size > 0 ? await supabase.from("el_profesor_fiches").select("id, superseded_by_fiche_id").in("id", [...allFicheIds]) : { data: [] };
+  const activeFicheIds = new Set((fiches ?? []).filter((f) => !f.superseded_by_fiche_id).map((f) => f.id));
+
+  const { data: cards } =
+    activeFicheIds.size > 0
+      ? await supabase.from("el_profesor_flashcards").select("id, fiche_id").in("fiche_id", [...activeFicheIds]).eq("status", "published")
+      : { data: [] };
+  const cardRows = cards ?? [];
+  const allCardIds = cardRows.map((c) => c.id);
+  const { data: states } =
+    allCardIds.length > 0
+      ? await supabase.from("el_profesor_review_state").select("flashcard_id, state").eq("user_id", userId).in("flashcard_id", allCardIds)
+      : { data: [] };
+  const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s.state]));
+
+  const cardIdsByFiche = new Map<string, string[]>();
+  for (const c of cardRows) {
+    const list = cardIdsByFiche.get(c.fiche_id) ?? [];
+    list.push(c.id);
+    cardIdsByFiche.set(c.fiche_id, list);
+  }
+
+  for (const notionId of notionIds) {
+    const ficheIds = (ficheIdsByNotion.get(notionId) ?? []).filter((id) => activeFicheIds.has(id));
+    let total = 0;
+    let acquired = 0;
+    let learning = 0;
+    for (const ficheId of ficheIds) {
+      for (const cardId of cardIdsByFiche.get(ficheId) ?? []) {
+        total++;
+        const state = stateByCard.get(cardId);
+        if (state === "review") acquired++;
+        else if (state === "learning" || state === "relearning") learning++;
+      }
+    }
+    result[notionId] = { readPct: readByNotion.get(notionId) ?? 0, mastery: { total, acquired, learning } };
+  }
+  return result;
+}
+
+export interface GlobalProgressSummary {
+  readPct: number;
+  mastery: MasteryProgress;
+}
+
+/**
+ * Library-wide read % + mastery across every published, non-superseded
+ * fiche (piste 2026-08-29 — the "barre globale" under the book list and
+ * under the notion list). Same numbers in both places on purpose: it's
+ * the same underlying set of fiches/flashcards either way, just a
+ * different lens (by book vs. by notion) above it.
+ */
+export async function getGlobalProgressSummary(userId: string): Promise<GlobalProgressSummary> {
+  const supabase = await createClient();
+  const { data: fiches } = await supabase.from("el_profesor_fiches").select("id").eq("status", "published").is("superseded_by_fiche_id", null);
+  const ficheIds = (fiches ?? []).map((f) => f.id);
+  if (ficheIds.length === 0) return { readPct: 0, mastery: EMPTY_MASTERY };
+
+  const [{ data: readRows }, { data: cards }] = await Promise.all([
+    supabase.from("el_profesor_fiche_read_progress").select("progress_pct").eq("user_id", userId).in("fiche_id", ficheIds),
+    supabase.from("el_profesor_flashcards").select("id").in("fiche_id", ficheIds).eq("status", "published"),
+  ]);
+  const readPct = Math.round((readRows ?? []).reduce((sum, r) => sum + r.progress_pct, 0) / ficheIds.length);
+  const mastery = await masteryForFlashcardIds(
+    supabase,
+    userId,
+    (cards ?? []).map((c) => c.id)
+  );
+  return { readPct, mastery };
 }

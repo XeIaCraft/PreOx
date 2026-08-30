@@ -15,7 +15,7 @@ import type { DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types"
  * on DashboardNotionViewData.
  */
 export function DashboardNotionView({ dataPromise, isAdmin = false }: { dataPromise: Promise<DashboardNotionViewData>; isAdmin?: boolean }) {
-  const { notions, categories, readiness, recommendations, doseCalculators, caseCounts } = use(dataPromise);
+  const { notions, categories, readiness, recommendations, doseCalculators, caseCounts, progress } = use(dataPromise);
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -51,6 +51,7 @@ export function DashboardNotionView({ dataPromise, isAdmin = false }: { dataProm
             recommendations={recommendations}
             doseCalculators={doseCalculators}
             caseCounts={caseCounts}
+            progress={progress}
             isAdmin={isAdmin}
           />
         </div>

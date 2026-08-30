@@ -83,7 +83,14 @@ import {
 import { formatUsd } from "@/lib/el-profesor/ai-pricing";
 import { exceedsGeminiFreeTierBudget } from "@/lib/el-profesor/gemini-quota";
 import { exceedsQualitySplitThreshold, MIN_PAGES_TO_SPLIT } from "@/lib/el-profesor/chapter-quality";
-import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts, ChapterMasteryPercentile, ElProfesorAiProvider } from "@/lib/el-profesor/dal";
+import type {
+  BookWithChapters,
+  ChapterDueCounts,
+  ChapterMasteryCounts,
+  ChapterMasteryPercentile,
+  ElProfesorAiProvider,
+  GlobalProgressSummary,
+} from "@/lib/el-profesor/dal";
 import type { ChapterStatus } from "@/lib/el-profesor/types";
 import type { DashboardSecondaryData, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
 
@@ -99,6 +106,53 @@ function MasteryBar({ counts }: { counts: { total: number; new: number; learning
       <p className="mt-1 text-[11px] text-foreground-subtle">
         {counts.acquired} acquise{counts.acquired > 1 ? "s" : ""} · {counts.learning} en cours · {counts.new} nouvelle{counts.new > 1 ? "s" : ""}
       </p>
+    </div>
+  );
+}
+
+/** Reading-progress counterpart to MasteryBar (piste 2026-08-29 — "diviser la barre en deux : une lecture et une flashcard") — a separate bar rather than a second segment on MasteryBar's own, since the two percentages measure different things (blocks scrolled vs. cards learned) and can disagree freely. */
+function ReadProgressBar({ pct }: { pct: number }) {
+  if (pct <= 0) return null;
+  return (
+    <div className="mt-2">
+      <div className="h-1.5 overflow-hidden rounded-full bg-surface-muted">
+        <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-1 text-[11px] text-foreground-subtle">{pct}% lu</p>
+    </div>
+  );
+}
+
+/** Library-wide read/mastery summary (piste 2026-08-29) — shown once under the "Par livre" book list and once under the "Par notion" list, same underlying numbers either way. */
+function GlobalProgressCard({ progress }: { progress: GlobalProgressSummary }) {
+  const { readPct, mastery } = progress;
+  if (mastery.total === 0 && readPct === 0) return null;
+  const masteryPct = mastery.total > 0 ? Math.round((mastery.acquired / mastery.total) * 100) : 0;
+  return (
+    <div className="mt-6 rounded-[var(--radius-lg)] border border-border bg-surface-muted p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-foreground-subtle">Progression globale</p>
+      <div className="mt-3 grid gap-4 sm:grid-cols-2">
+        <div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-foreground">Lecture</span>
+            <span className="tabular-nums text-foreground-subtle">{readPct}%</span>
+          </div>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface">
+            <div className="h-full bg-primary" style={{ width: `${readPct}%` }} />
+          </div>
+        </div>
+        <div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-foreground">Maîtrise</span>
+            <span className="tabular-nums text-foreground-subtle">
+              {mastery.total > 0 ? `${masteryPct}% (${mastery.acquired}/${mastery.total})` : "Aucune flashcard"}
+            </span>
+          </div>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface">
+            <div className="h-full bg-success" style={{ width: `${masteryPct}%` }} />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -423,6 +477,8 @@ export function ElProfesorBoard({
   hasGeminiKey,
   aiProvider,
   serverResumeChapterId,
+  readProgressByChapter,
+  globalProgress,
   secondaryDataPromise,
   aiConfigPromise,
   notionViewDataPromise,
@@ -431,6 +487,10 @@ export function ElProfesorBoard({
   dueCounts: ChapterDueCounts;
   needsReviewCounts: ChapterDueCounts;
   masteryCounts: ChapterMasteryCounts;
+  /** Average read % per chapter (piste 2026-08-29 — visible directly on the chapter card, next to its mastery bar). */
+  readProgressByChapter: Record<string, number>;
+  /** Library-wide read %/mastery summary, shown once under the book list and once under the notion list. */
+  globalProgress: GlobalProgressSummary;
   /** Effective admin-ness — false while a real admin is previewing as a user (see realIsAdmin/previewingAsUser below). Everything else in this component keys off this, not the real role. */
   isAdmin: boolean;
   /** The signed-in profile's actual role — never affected by the preview toggle. Only this gates rendering the toggle itself. */
@@ -1012,6 +1072,7 @@ export function ElProfesorBoard({
               <DashboardNotionView dataPromise={notionViewDataPromise} isAdmin={isAdmin} />
             </Suspense>
           </RenderErrorBoundary>
+          <GlobalProgressCard progress={globalProgress} />
         </div>
       )}
 
@@ -1266,6 +1327,7 @@ export function ElProfesorBoard({
                     {chapter.status === "failed" && chapter.extractionError && (
                       <p className="mt-1.5 text-xs text-danger">{chapter.extractionError}</p>
                     )}
+                    {chapter.status === "published" && <ReadProgressBar pct={readProgressByChapter[chapter.id] ?? 0} />}
                     {chapter.status === "published" && masteryCounts[chapter.id] && <MasteryBar counts={masteryCounts[chapter.id]} />}
                     {chapter.status === "published" && globalMastery[chapter.id] && (
                       <p className="mt-1 text-[11px] text-foreground-subtle">
@@ -1502,6 +1564,8 @@ export function ElProfesorBoard({
         })}
       </div>
       )}
+
+      {viewMode === "book" && <GlobalProgressCard progress={globalProgress} />}
 
       {books.length > 0 && (
         <RenderErrorBoundary fallbackTitle="Statistiques d'apprentissage" compact>

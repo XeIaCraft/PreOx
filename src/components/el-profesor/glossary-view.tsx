@@ -22,7 +22,7 @@ import { MergeFichesForm } from "@/components/el-profesor/merge-fiches-form";
 import { moveNotion, moveNotionFiche } from "@/app/apps/el-profesor/actions/notions";
 import { useToast } from "@/components/ui/toast";
 import type { NotionSummary, NotionRecommendation, DoseCalculator as DoseCalculatorEntry, NotionCategory } from "@/lib/el-profesor/types";
-import type { NotionReadiness } from "@/lib/el-profesor/dal";
+import type { NotionReadiness, NotionProgressEntry } from "@/lib/el-profesor/dal";
 
 // Notion cards can list many fiches (a well-covered notion easily reaches
 // a dozen) — collapsed to this many by default so the "Par notion" view
@@ -99,6 +99,42 @@ function DoseCalculatorSection({ calculators }: { calculators: DoseCalculatorEnt
         Outil de calcul, pas un avis médical — vérifiez systématiquement la posologie auprès d&apos;une source de référence à jour avant
         toute administration.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Read % + FSRS mastery %, shown directly on each notion card (piste
+ * 2026-08-29 — "sur notion ajouter cette même barre [lecture/flashcard]").
+ * Same visual language as board.tsx's chapter-card bars (ReadProgressBar +
+ * MasteryBar), kept as a local copy rather than a shared import since both
+ * are small, dependency-free snippets scoped to their own card layout.
+ */
+function NotionProgressBars({ entry }: { entry: NotionProgressEntry | undefined }) {
+  if (!entry) return null;
+  const { readPct, mastery } = entry;
+  if (readPct <= 0 && mastery.total === 0) return null;
+  const masteryPct = mastery.total > 0 ? Math.round((mastery.acquired / mastery.total) * 100) : 0;
+  const segPct = (n: number) => `${(n / mastery.total) * 100}%`;
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+      {readPct > 0 && (
+        <span className="flex items-center gap-1.5 text-[11px] text-foreground-subtle">
+          <span className="h-1 w-14 overflow-hidden rounded-full bg-surface-muted">
+            <span className="block h-full rounded-full bg-primary" style={{ width: `${readPct}%` }} />
+          </span>
+          {readPct}% lu
+        </span>
+      )}
+      {mastery.total > 0 && (
+        <span className="flex items-center gap-1.5 text-[11px] text-foreground-subtle">
+          <span className="flex h-1 w-14 overflow-hidden rounded-full bg-surface-muted">
+            <span className="bg-success" style={{ width: segPct(mastery.acquired) }} />
+            <span className="bg-accent" style={{ width: segPct(mastery.learning) }} />
+          </span>
+          {masteryPct}% maîtrisé
+        </span>
+      )}
     </div>
   );
 }
@@ -187,6 +223,7 @@ export function NotionList({
   recommendations,
   doseCalculators,
   caseCounts,
+  progress = {},
   isAdmin = false,
 }: {
   notions: NotionSummary[];
@@ -196,6 +233,8 @@ export function NotionList({
   recommendations: Record<string, NotionRecommendation[]>;
   doseCalculators: Record<string, DoseCalculatorEntry[]>;
   caseCounts: Record<string, number>;
+  /** Read % + FSRS mastery % per notion (piste 2026-08-29), rendered via NotionProgressBars. Optional/defaulted so callers that haven't fetched it yet (none currently) don't break. */
+  progress?: Record<string, NotionProgressEntry>;
   /** Rename/reorder/merge controls only make sense for admins — everyone else sees the plain read-only listing. */
   isAdmin?: boolean;
 }) {
@@ -245,20 +284,19 @@ export function NotionList({
         // page itself rather than cluttering this list.
         if (!isAdmin) {
           return (
-            <div
-              key={notion.id}
-              id={`notion-${notion.id}`}
-              className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-border px-3 py-2.5"
-            >
-              <Link href={`/apps/el-profesor/notions/${notion.id}`} className="min-w-0 flex-1 truncate text-sm font-medium text-foreground hover:underline">
-                {notion.name}
-              </Link>
-              <Link
-                href={`/apps/el-profesor/review?mode=theme&notionId=${notion.id}&name=${encodeURIComponent(notion.name)}`}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary-tint px-2.5 py-1 text-xs font-medium text-primary-strong hover:bg-primary-tint/70"
-              >
-                <GraduationCap className="h-3.5 w-3.5" /> Réviser
-              </Link>
+            <div key={notion.id} id={`notion-${notion.id}`} className="rounded-[var(--radius-md)] border border-border px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <Link href={`/apps/el-profesor/notions/${notion.id}`} className="min-w-0 flex-1 truncate text-sm font-medium text-foreground hover:underline">
+                  {notion.name}
+                </Link>
+                <Link
+                  href={`/apps/el-profesor/review?mode=theme&notionId=${notion.id}&name=${encodeURIComponent(notion.name)}`}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary-tint px-2.5 py-1 text-xs font-medium text-primary-strong hover:bg-primary-tint/70"
+                >
+                  <GraduationCap className="h-3.5 w-3.5" /> Réviser
+                </Link>
+              </div>
+              <NotionProgressBars entry={progress[notion.id]} />
             </div>
           );
         }
@@ -327,6 +365,7 @@ export function NotionList({
                 </Link>
               </div>
             </div>
+            <NotionProgressBars entry={progress[notion.id]} />
             {r && r.total > 0 && tier && (
               <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-muted">
                 <div className={`h-full rounded-full ${tier.barClassName}`} style={{ width: `${r.readinessPct}%` }} />

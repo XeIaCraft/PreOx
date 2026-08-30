@@ -47,6 +47,9 @@ import {
   getNotionRecommendations,
   getDoseCalculators,
   getCaseJournalCountsByNotion,
+  getReadProgressByChapter,
+  getGlobalProgressSummary,
+  getNotionProgressBatch,
   type BookWithChapters,
 } from "@/lib/el-profesor/dal";
 import { getBatchJobs } from "@/app/apps/el-profesor/actions/batches";
@@ -120,14 +123,15 @@ async function loadSecondaryDashboardData(
 async function loadNotionViewData(profileId: string): Promise<DashboardNotionViewData> {
   const notions = await getGlossary();
   const notionIds = notions.map((n) => n.notion.id);
-  const [categories, readiness, recommendations, doseCalculators, caseCounts] = await Promise.all([
+  const [categories, readiness, recommendations, doseCalculators, caseCounts, progress] = await Promise.all([
     getNotionCategories(),
     getNotionReadiness(profileId, notions),
     getNotionRecommendations(notionIds),
     getDoseCalculators(notionIds),
     getCaseJournalCountsByNotion(profileId, notionIds),
+    getNotionProgressBatch(profileId, notionIds),
   ]);
-  return { notions, categories, readiness, recommendations, doseCalculators, caseCounts };
+  return { notions, categories, readiness, recommendations, doseCalculators, caseCounts, progress };
 }
 
 async function loadAiConfigData(): Promise<DashboardAiConfigData> {
@@ -159,16 +163,19 @@ export default async function ElProfesorPage() {
 
   // Core data the book list itself renders from — awaited so the page's
   // static shell (header + book list) never shows a placeholder for it.
-  const [dueCounts, needsReviewCounts, masteryCounts, difficultCounts, globalMastery, hasGeminiKey, aiProvider, readingPosition] = await Promise.all([
-    getDueCountsByChapter(profile.id, allChapters),
-    isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
-    getMasteryCountsByChapter(profile.id, allChapters),
-    getDifficultCountsByChapter(profile.id, allChapters),
-    getGlobalChapterMasteryPercentages(allChapters),
-    isAdmin ? hasElProfesorGeminiKey() : Promise.resolve(false),
-    isAdmin ? getElProfesorAiProvider() : Promise.resolve("gemini" as const),
-    getReadingPosition(profile.id),
-  ]);
+  const [dueCounts, needsReviewCounts, masteryCounts, difficultCounts, globalMastery, hasGeminiKey, aiProvider, readingPosition, readProgressByChapter, globalProgress] =
+    await Promise.all([
+      getDueCountsByChapter(profile.id, allChapters),
+      isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
+      getMasteryCountsByChapter(profile.id, allChapters),
+      getDifficultCountsByChapter(profile.id, allChapters),
+      getGlobalChapterMasteryPercentages(allChapters),
+      isAdmin ? hasElProfesorGeminiKey() : Promise.resolve(false),
+      isAdmin ? getElProfesorAiProvider() : Promise.resolve("gemini" as const),
+      getReadingPosition(profile.id),
+      getReadProgressByChapter(profile.id, allChapters),
+      getGlobalProgressSummary(profile.id),
+    ]);
 
   // Started here (server render), not awaited — passed down as a Promise
   // and unwrapped with React's use() only where each slice is actually
@@ -193,6 +200,8 @@ export default async function ElProfesorPage() {
         hasGeminiKey={hasGeminiKey}
         aiProvider={aiProvider}
         serverResumeChapterId={readingPosition?.chapterId ?? null}
+        readProgressByChapter={readProgressByChapter}
+        globalProgress={globalProgress}
         secondaryDataPromise={secondaryDataPromise}
         aiConfigPromise={aiConfigPromise}
         notionViewDataPromise={notionViewDataPromise}

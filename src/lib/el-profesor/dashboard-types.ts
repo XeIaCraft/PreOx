@@ -12,6 +12,7 @@ import type {
   BookRecommendation,
   DueBlockEntry,
   NotionReadiness,
+  NotionProgressEntry,
 } from "@/lib/el-profesor/dal";
 import type { Flashcard, NotionSummary, NotionRecommendation, DoseCalculator, NotionCategory } from "@/lib/el-profesor/types";
 import type { ElProfesorBatchJobRow } from "@/lib/supabase/types";
@@ -75,4 +76,6 @@ export interface DashboardNotionViewData {
   recommendations: Record<string, NotionRecommendation[]>;
   doseCalculators: Record<string, DoseCalculator[]>;
   caseCounts: Record<string, number>;
+  /** Read % + FSRS mastery per notion (piste 2026-08-29 — visible directly on each notion card). */
+  progress: Record<string, NotionProgressEntry>;
 }
