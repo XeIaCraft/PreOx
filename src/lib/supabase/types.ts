@@ -492,6 +492,20 @@ export type ElProfesorReadingPositionRow = {
   updated_at: string;
 };
 
+export type ElProfesorFicheReadProgressRow = {
+  user_id: string;
+  fiche_id: string;
+  progress_pct: number;
+  updated_at: string;
+};
+
+export type ElProfesorNotionReadProgressRow = {
+  user_id: string;
+  notion_id: string;
+  progress_pct: number;
+  updated_at: string;
+};
+
 export type ElProfesorUserFsrsParamsRow = {
   user_id: string;
   request_retention: number;
@@ -970,6 +984,18 @@ export type Database = {
         Row: ElProfesorReadingPositionRow;
         Insert: Partial<ElProfesorReadingPositionRow> & { user_id: string; chapter_id: string };
         Update: Partial<ElProfesorReadingPositionRow>;
+        Relationships: [];
+      };
+      el_profesor_fiche_read_progress: {
+        Row: ElProfesorFicheReadProgressRow;
+        Insert: Partial<ElProfesorFicheReadProgressRow> & { user_id: string; fiche_id: string };
+        Update: Partial<ElProfesorFicheReadProgressRow>;
+        Relationships: [];
+      };
+      el_profesor_notion_read_progress: {
+        Row: ElProfesorNotionReadProgressRow;
+        Insert: Partial<ElProfesorNotionReadProgressRow> & { user_id: string; notion_id: string };
+        Update: Partial<ElProfesorNotionReadProgressRow>;
         Relationships: [];
       };
       el_profesor_user_fsrs_params: {

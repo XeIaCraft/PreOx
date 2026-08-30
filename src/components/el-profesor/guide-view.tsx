@@ -255,6 +255,11 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
               répétition espacée à l&apos;échelle du bloc, indépendante des flashcards.
             </IconRow>
             <IconRow icon={Star}>Mettre le livre/chapitre en favori — reste directement dans la barre du haut.</IconRow>
+            <IconRow icon={Gauge}>
+              Progression de cette fiche (icône <Gauge className="inline h-3.5 w-3.5 align-text-bottom" /> à côté des Options) —
+              pourcentage de lecture (au fil du scroll) et de maîtrise en révision (flashcards de cette fiche), chacun
+              réinitialisable indépendamment. Même chose sur une synthèse de notion.
+            </IconRow>
             <IconRow icon={SlidersHorizontal}>
               Options de la fiche (piste 2026-08-28) — regroupe tout le reste dans une même fenêtre pour ne pas surcharger la barre :
               mise en page (actuelle/livre/sommaire), taille du texte, texte justifié, confort de lecture (sépia), police adaptée

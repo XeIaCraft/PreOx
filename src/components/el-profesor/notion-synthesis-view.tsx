@@ -21,6 +21,8 @@ import {
   AlignJustify,
   Sun,
   SpellCheck,
+  Gauge,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +39,7 @@ import {
   deleteNotionSynthesisBlock,
   deleteNotionSynthesis,
 } from "@/app/apps/el-profesor/actions/notions";
+import { saveNotionReadProgress, resetNotionReadProgress, resetNotionMastery } from "@/app/apps/el-profesor/actions/progress";
 import { useToast } from "@/components/ui/toast";
 import {
   getFontScale,
@@ -49,7 +52,7 @@ import {
   setDyslexicFont,
   type FontScale,
 } from "@/lib/el-profesor/local-prefs";
-import type { AdjacentNotionEntry } from "@/lib/el-profesor/dal";
+import type { AdjacentNotionEntry, MasteryProgress } from "@/lib/el-profesor/dal";
 import type {
   NotionSynthesis,
   NotionSynthesisBlock,
@@ -266,6 +269,8 @@ export function NotionSynthesisView({
   isAdmin,
   prevNotion = null,
   nextNotion = null,
+  readProgress: initialReadProgress = 0,
+  masteryProgress: initialMasteryProgress = { total: 0, acquired: 0, learning: 0 },
 }: {
   notionId: string;
   notionName: string;
@@ -274,6 +279,9 @@ export function NotionSynthesisView({
   isAdmin: boolean;
   prevNotion?: AdjacentNotionEntry | null;
   nextNotion?: AdjacentNotionEntry | null;
+  /** Highest-ever scroll % reached on this synthesis, and its FSRS mastery breakdown (piste 2026-08-29 — "voir sa progression... avec possibilité de la réinitialiser"). */
+  readProgress?: number;
+  masteryProgress?: MasteryProgress;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -283,12 +291,41 @@ export function NotionSynthesisView({
   const [readingComfort, setReadingComfortState] = useState(() => getReadingComfort());
   const [dyslexicFont, setDyslexicFontState] = useState(() => getDyslexicFont());
   const [optionsMenuOpen, setOptionsMenuOpen] = useState(false);
+  const [progressPanelOpen, setProgressPanelOpen] = useState(false);
+  const [progressPending, setProgressPending] = useState(false);
+  const [readProgress, setReadProgress] = useState(initialReadProgress);
+  const [mastery, setMastery] = useState(initialMasteryProgress);
+  const readProgressSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeSection, setActiveSection] = useState(0);
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
   const chipRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const distinctBooks = new Set(fiches.map((f) => f.bookId)).size;
   const sections = synthesis ? groupBlocksBySection(synthesis.blocks) : [];
+  const masteryPct = mastery.total > 0 ? Math.round((mastery.acquired / mastery.total) * 100) : 0;
+
+  // Tracks the highest-ever page-scroll % reached (piste 2026-08-29) — same
+  // "never regresses, debounced save" contract as the fiche reader's own
+  // per-fiche tracking in chapter-view.tsx, just against window scroll
+  // instead of a fixed content pane (this page isn't a fixed-height shell).
+  useEffect(() => {
+    if (!synthesis || synthesis.blocks.length === 0) return;
+    function handleReadScroll() {
+      const doc = document.documentElement;
+      const max = doc.scrollHeight - doc.clientHeight;
+      const pct = max > 0 ? Math.round(Math.min(100, (doc.scrollTop / max) * 100)) : 0;
+      setReadProgress((prev) => {
+        if (prev >= pct) return prev;
+        if (readProgressSaveTimer.current) clearTimeout(readProgressSaveTimer.current);
+        readProgressSaveTimer.current = setTimeout(() => {
+          saveNotionReadProgress(notionId, pct).catch(() => {});
+        }, 1500);
+        return pct;
+      });
+    }
+    window.addEventListener("scroll", handleReadScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleReadScroll);
+  }, [synthesis, notionId]);
 
   // Scroll-spy for the sticky section-shortcut strip (requested 2026-08-29
   // — "la sous partie s'actualise avec la sous partie en cours") — the
@@ -398,6 +435,29 @@ export function NotionSynthesisView({
     });
   }
 
+  function handleResetReadProgress() {
+    setProgressPending(true);
+    resetNotionReadProgress(notionId)
+      .then((result) => {
+        setReadProgress(0);
+        toast(result.success ?? "Progression de lecture réinitialisée.", { variant: "success" });
+      })
+      .catch(() => toast("Impossible de réinitialiser la progression de lecture.", { variant: "error" }))
+      .finally(() => setProgressPending(false));
+  }
+
+  function handleResetMastery() {
+    if (!confirm("Réinitialiser la mémorisation de cette notion ? Toutes ses flashcards repartiront de zéro en révision.")) return;
+    setProgressPending(true);
+    resetNotionMastery(notionId)
+      .then((result) => {
+        setMastery((prev) => ({ total: prev.total, acquired: 0, learning: 0 }));
+        toast(result.success ?? "Progression de mémorisation réinitialisée.", { variant: "success" });
+      })
+      .catch(() => toast("Impossible de réinitialiser la mémorisation.", { variant: "error" }))
+      .finally(() => setProgressPending(false));
+  }
+
   function goToNotion(direction: 1 | -1) {
     const target = direction === 1 ? nextNotion : prevNotion;
     if (target) router.push(`/apps/el-profesor/notions/${target.notionId}`);
@@ -458,9 +518,14 @@ export function NotionSynthesisView({
             <Badge variant={synthesis.status === "published" ? "success" : "accent"}>{synthesis.status === "published" ? "Synthèse publiée" : "Brouillon"}</Badge>
           )}
           {synthesis && synthesis.blocks.length > 0 && (
-            <Button variant="ghost" size="icon" onClick={() => setOptionsMenuOpen(true)} aria-label="Options de lecture" title="Options de lecture">
-              <SlidersHorizontal className="h-4 w-4" />
-            </Button>
+            <>
+              <Button variant="ghost" size="icon" onClick={() => setProgressPanelOpen(true)} aria-label="Progression de cette synthèse" title="Progression de cette synthèse">
+                <Gauge className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setOptionsMenuOpen(true)} aria-label="Options de lecture" title="Options de lecture">
+                <SlidersHorizontal className="h-4 w-4" />
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -526,6 +591,41 @@ export function NotionSynthesisView({
             <OptionToggleRow icon={AlignJustify} label="Texte justifié" active={textJustify} onClick={toggleTextJustify} />
             <OptionToggleRow icon={Sun} label="Lecture confort (sépia)" active={readingComfort} onClick={toggleReadingComfort} />
             <OptionToggleRow icon={SpellCheck} label="Police adaptée dyslexie" active={dyslexicFont} onClick={toggleDyslexicFont} />
+          </div>
+        </Modal>
+      )}
+
+      {progressPanelOpen && (
+        <Modal title="Progression de cette synthèse" onClose={() => setProgressPanelOpen(false)} size="sm">
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-foreground">Lecture</span>
+                <span className="tabular-nums text-foreground-subtle">{readProgress}%</span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-muted">
+                <div className="h-full bg-primary transition-[width]" style={{ width: `${readProgress}%` }} />
+              </div>
+              <Button variant="ghost" size="sm" className="mt-2" onClick={handleResetReadProgress} disabled={progressPending || readProgress === 0}>
+                <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser la lecture
+              </Button>
+            </div>
+            <div className="border-t border-border pt-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-foreground">Maîtrise (révision)</span>
+                <span className="tabular-nums text-foreground-subtle">
+                  {mastery.total > 0 ? `${masteryPct}% (${mastery.acquired}/${mastery.total})` : "Aucune flashcard"}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-muted">
+                <div className="h-full bg-accent transition-[width]" style={{ width: `${masteryPct}%` }} />
+              </div>
+              {mastery.total > 0 && (
+                <Button variant="ghost" size="sm" className="mt-2" onClick={handleResetMastery} disabled={progressPending}>
+                  <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser la mémorisation
+                </Button>
+              )}
+            </div>
           </div>
         </Modal>
       )}

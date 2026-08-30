@@ -21,6 +21,7 @@ import "server-only";
 //   dose calculators, notion-update proposals.
 // - dal/ai-config.ts: Gemini/Claude provider config + usage stats.
 // - dal/admin-quality.ts: admin content-quality dashboards.
+// - dal/progress.ts: per-fiche/per-notion reading + mastery progress.
 export { requireElProfesorAccess, requireElProfesorAdmin, getChapterContent } from "./dal/shared";
 export type { SubEntityWithFiche } from "./dal/shared";
 export * from "./dal/library";
@@ -28,3 +29,4 @@ export * from "./dal/review";
 export * from "./dal/notions";
 export * from "./dal/ai-config";
 export * from "./dal/admin-quality";
+export * from "./dal/progress";

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, LayoutTemplate, LayoutList, BookOpenText, ListTree, SlidersHorizontal, AlignJustify, Check } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, LayoutTemplate, LayoutList, BookOpenText, ListTree, SlidersHorizontal, AlignJustify, Check, Gauge, RotateCcw } from "lucide-react";
 import { QuizMode } from "@/components/el-profesor/quiz-mode";
 import { MindMapDialog } from "@/components/el-profesor/mind-map-dialog";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import { toggleBookmark } from "@/app/apps/el-profesor/actions/bookmarks";
 import { getMyNote, saveMyNote, toggleNoteShare } from "@/app/apps/el-profesor/actions/notes";
 import { toggleFicheShare } from "@/app/apps/el-profesor/actions/share";
 import { recordReadingPosition } from "@/app/apps/el-profesor/actions/reading-position";
+import { saveFicheReadProgress, resetFicheReadProgress, resetFicheMastery } from "@/app/apps/el-profesor/actions/progress";
 import {
   getLastSubEntity,
   setLastSubEntity,
@@ -42,7 +43,7 @@ import {
   type FontScale,
   type FicheLayout,
 } from "@/lib/el-profesor/local-prefs";
-import type { SubEntityWithFiche, BlockReviewState, AdjacentChapterEntry } from "@/lib/el-profesor/dal";
+import type { SubEntityWithFiche, BlockReviewState, AdjacentChapterEntry, MasteryProgress } from "@/lib/el-profesor/dal";
 import type { Citation, ChapterSourceKind } from "@/lib/el-profesor/types";
 
 /** Read-only fallback for a chapter sourced from Word/PowerPoint (item 5 of the backlog) — no PDF to render, so citations only ever show as plain quoted text and there's no page to jump to. */
@@ -163,6 +164,8 @@ function ImmersiveFicheReader({
   onGoToFiche,
   onOpenFicheList,
   onOpenLayoutPicker,
+  onOpenProgressPanel,
+  onScrollProgress,
 }: {
   chapterTitle: string;
   layout: "livre" | "sommaire";
@@ -180,6 +183,9 @@ function ImmersiveFicheReader({
   onGoToFiche: (direction: 1 | -1) => void;
   onOpenFicheList: () => void;
   onOpenLayoutPicker: () => void;
+  /** Opens the read/mastery progress panel (piste 2026-08-29) — this shell has no other way to reach it, since it fully covers the desktop-style header where "Options de la fiche" normally lives. */
+  onOpenProgressPanel: () => void;
+  onScrollProgress: (pct: number) => void;
 }) {
   const swipeStartX = useRef<number | null>(null);
 
@@ -215,15 +221,26 @@ function ImmersiveFicheReader({
               <ChevronLeft className="h-3.5 w-3.5" /> Chapitre
             </button>
           </div>
-          <button
-            type="button"
-            onClick={onOpenLayoutPicker}
-            aria-label="Mise en page de la fiche"
-            title="Mise en page de la fiche"
-            className="rounded-full p-1.5 text-foreground-subtle hover:bg-surface-muted hover:text-foreground"
-          >
-            <LayoutTemplate className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onOpenProgressPanel}
+              aria-label="Progression"
+              title="Progression"
+              className="rounded-full p-1.5 text-foreground-subtle hover:bg-surface-muted hover:text-foreground"
+            >
+              <Gauge className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={onOpenLayoutPicker}
+              aria-label="Mise en page de la fiche"
+              title="Mise en page de la fiche"
+              className="rounded-full p-1.5 text-foreground-subtle hover:bg-surface-muted hover:text-foreground"
+            >
+              <LayoutTemplate className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         {layout === "livre" && (
           <p className="mt-3 truncate text-[11px] font-semibold uppercase tracking-wide text-foreground-subtle">
@@ -242,6 +259,11 @@ function ImmersiveFicheReader({
         className={`min-h-0 flex-1 overflow-y-auto px-5 ${layout === "livre" ? "pb-24" : "pb-6"}`}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const max = el.scrollHeight - el.clientHeight;
+          onScrollProgress(max > 0 ? Math.min(100, (el.scrollTop / max) * 100) : 0);
+        }}
       >
         <FicheViewer
           title={fiche.title}
@@ -335,6 +357,8 @@ export function ChapterView({
   isAdmin = false,
   prevChapter = null,
   nextChapter = null,
+  ficheReadProgress = {},
+  ficheMasteryProgress = {},
 }: {
   chapterId: string;
   chapterTitle: string;
@@ -348,6 +372,9 @@ export function ChapterView({
   /** The book's neighboring chapters (piste 2026-08-28) — lets prev/next fiche navigation continue straight into the next/previous chapter once it runs out of fiches in this one, instead of just stopping at the boundary. */
   prevChapter?: AdjacentChapterEntry | null;
   nextChapter?: AdjacentChapterEntry | null;
+  /** Highest-ever scroll % reached per fiche id (piste 2026-08-29 — "voir sa progression"), and each fiche's FSRS mastery breakdown, both keyed by fiche id. */
+  ficheReadProgress?: Record<string, number>;
+  ficheMasteryProgress?: Record<string, MasteryProgress>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -378,6 +405,15 @@ export function ChapterView({
   // silently hidden below sm/md and so completely unreachable on mobile.
   const [optionsMenuOpen, setOptionsMenuOpen] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
+  // Local, mutable copy of the server-fetched read/mastery progress
+  // (piste 2026-08-29) — grows as the reader scrolls (read %, never
+  // regresses) and shrinks on an explicit reset, without waiting on a
+  // full page refresh either way.
+  const [readProgressByFiche, setReadProgressByFiche] = useState<Record<string, number>>(ficheReadProgress);
+  const [masteryByFiche, setMasteryByFiche] = useState<Record<string, MasteryProgress>>(ficheMasteryProgress);
+  const [progressPanelOpen, setProgressPanelOpen] = useState(false);
+  const [progressPending, setProgressPending] = useState(false);
+  const readProgressSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [bookmarks, setBookmarks] = useState(() => new Set(bookmarkedIds ?? []));
   const [bookmarkPending, setBookmarkPending] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -607,7 +643,54 @@ export function ChapterView({
     const el = contentRef.current;
     if (!el) return;
     const max = el.scrollHeight - el.clientHeight;
-    setScrollProgress(max > 0 ? Math.min(100, (el.scrollTop / max) * 100) : 0);
+    const pct = max > 0 ? Math.min(100, (el.scrollTop / max) * 100) : 0;
+    setScrollProgress(pct);
+    reportReadProgress(pct);
+  }
+
+  /**
+   * Tracks the highest-ever scroll % reached in the CURRENT fiche (piste
+   * 2026-08-29) — never regresses on its own (scrolling back up to reread
+   * something shouldn't undo progress), debounced so a scroll gesture
+   * doesn't fire a save on every animation frame. Shared by both the
+   * desktop content pane and the mobile immersive reader's own pane.
+   */
+  function reportReadProgress(pct: number) {
+    const ficheId = selected?.fiche?.id;
+    if (!ficheId) return;
+    const rounded = Math.round(pct);
+    setReadProgressByFiche((prev) => {
+      if ((prev[ficheId] ?? 0) >= rounded) return prev;
+      const next = { ...prev, [ficheId]: rounded };
+      if (readProgressSaveTimer.current) clearTimeout(readProgressSaveTimer.current);
+      readProgressSaveTimer.current = setTimeout(() => {
+        saveFicheReadProgress(ficheId, next[ficheId]).catch(() => {});
+      }, 1500);
+      return next;
+    });
+  }
+
+  function handleResetFicheReadProgress(ficheId: string) {
+    setProgressPending(true);
+    resetFicheReadProgress(ficheId)
+      .then((result) => {
+        setReadProgressByFiche((prev) => ({ ...prev, [ficheId]: 0 }));
+        toast(result.success ?? "Progression de lecture réinitialisée.", { variant: "success" });
+      })
+      .catch(() => toast("Impossible de réinitialiser la progression de lecture.", { variant: "error" }))
+      .finally(() => setProgressPending(false));
+  }
+
+  function handleResetFicheMastery(ficheId: string) {
+    if (!confirm("Réinitialiser la mémorisation de cette fiche ? Toutes ses flashcards repartiront de zéro en révision.")) return;
+    setProgressPending(true);
+    resetFicheMastery(ficheId)
+      .then((result) => {
+        setMasteryByFiche((prev) => ({ ...prev, [ficheId]: { total: prev[ficheId]?.total ?? 0, acquired: 0, learning: 0 } }));
+        toast(result.success ?? "Progression de mémorisation réinitialisée.", { variant: "success" });
+      })
+      .catch(() => toast("Impossible de réinitialiser la mémorisation.", { variant: "error" }))
+      .finally(() => setProgressPending(false));
   }
 
   function handleToggleBookmark() {
@@ -693,6 +776,8 @@ export function ChapterView({
           onGoToFiche={goToFiche}
           onOpenFicheList={() => setFicheListOpen(true)}
           onOpenLayoutPicker={() => setLayoutPickerOpen(true)}
+          onOpenProgressPanel={() => setProgressPanelOpen(true)}
+          onScrollProgress={reportReadProgress}
         />
       )}
       {isOffline && (
@@ -725,6 +810,16 @@ export function ChapterView({
           </Button>
           <Button variant="ghost" size="icon" onClick={() => setOptionsMenuOpen(true)} aria-label="Options de la fiche" title="Options de la fiche">
             <SlidersHorizontal className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setProgressPanelOpen(true)}
+            disabled={!selected?.fiche}
+            aria-label="Progression de cette fiche"
+            title="Progression de cette fiche"
+          >
+            <Gauge className="h-4 w-4" />
           </Button>
           <Button
             variant={pdfPanelOpen ? "secondary" : "ghost"}
@@ -1151,6 +1246,61 @@ export function ChapterView({
       {layoutPickerOpen && (
         <FicheLayoutPicker value={ficheLayout} onChange={chooseFicheLayout} onClose={() => setLayoutPickerOpen(false)} />
       )}
+
+      {progressPanelOpen &&
+        selected?.fiche &&
+        (() => {
+          const ficheId = selected.fiche.id;
+          const readPct = readProgressByFiche[ficheId] ?? 0;
+          const mastery = masteryByFiche[ficheId] ?? { total: 0, acquired: 0, learning: 0 };
+          const masteryPct = mastery.total > 0 ? Math.round((mastery.acquired / mastery.total) * 100) : 0;
+          return (
+            <Modal title="Progression de cette fiche" onClose={() => setProgressPanelOpen(false)} size="sm">
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-foreground">Lecture</span>
+                    <span className="tabular-nums text-foreground-subtle">{readPct}%</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-muted">
+                    <div className="h-full bg-primary transition-[width]" style={{ width: `${readPct}%` }} />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => handleResetFicheReadProgress(ficheId)}
+                    disabled={progressPending || readPct === 0}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser la lecture
+                  </Button>
+                </div>
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-foreground">Maîtrise (révision)</span>
+                    <span className="tabular-nums text-foreground-subtle">
+                      {mastery.total > 0 ? `${masteryPct}% (${mastery.acquired}/${mastery.total})` : "Aucune flashcard"}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-muted">
+                    <div className="h-full bg-accent transition-[width]" style={{ width: `${masteryPct}%` }} />
+                  </div>
+                  {mastery.total > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => handleResetFicheMastery(ficheId)}
+                      disabled={progressPending}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser la mémorisation
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </Modal>
+          );
+        })()}
 
       {quizOpen && <QuizMode cards={publishedFlashcards} onClose={() => setQuizOpen(false)} />}
       {mindMapOpen && <MindMapDialog chapterId={chapterId} onClose={() => setMindMapOpen(false)} />}

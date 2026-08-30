@@ -6,6 +6,8 @@ import {
   getReadingPosition,
   getBlockReviewStates,
   getAdjacentChapters,
+  getFicheReadProgressBatch,
+  getFicheMasteryProgressBatch,
 } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { getEffectiveIsAdmin } from "@/lib/el-profesor/preview-mode";
@@ -36,7 +38,12 @@ export default async function ChapterPage({
   ]);
 
   const blockIds = subEntities.flatMap((s) => s.fiche?.blocks.map((b) => b.id) ?? []);
-  const blockReviewStates = await getBlockReviewStates(profile.id, blockIds);
+  const ficheIds = subEntities.flatMap((s) => (s.fiche ? [s.fiche.id] : []));
+  const [blockReviewStates, ficheReadProgress, ficheMasteryProgress] = await Promise.all([
+    getBlockReviewStates(profile.id, blockIds),
+    getFicheReadProgressBatch(profile.id, ficheIds),
+    getFicheMasteryProgressBatch(profile.id, ficheIds),
+  ]);
 
   // Server-side cross-device resume: only applies when there's no explicit
   // deep link and the saved position was in this same chapter — the client
@@ -58,6 +65,8 @@ export default async function ChapterPage({
         isAdmin={isAdmin}
         prevChapter={adjacentChapters.prev}
         nextChapter={adjacentChapters.next}
+        ficheReadProgress={ficheReadProgress}
+        ficheMasteryProgress={ficheMasteryProgress}
       />
     </ToastProvider>
   );

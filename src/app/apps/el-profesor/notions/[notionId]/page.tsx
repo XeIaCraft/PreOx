@@ -1,5 +1,12 @@
 import { notFound } from "next/navigation";
-import { requireElProfesorAccess, getNotionSynthesis, getNotionFiches, getAdjacentNotions } from "@/lib/el-profesor/dal";
+import {
+  requireElProfesorAccess,
+  getNotionSynthesis,
+  getNotionFiches,
+  getAdjacentNotions,
+  getNotionReadProgress,
+  getNotionMasteryProgress,
+} from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { getEffectiveIsAdmin } from "@/lib/el-profesor/preview-mode";
 import { NotionSynthesisView } from "@/components/el-profesor/notion-synthesis-view";
@@ -19,10 +26,12 @@ export default async function NotionSynthesisPage({ params }: { params: Promise<
   // includeDraft mirrors isAdmin — see getNotionSynthesis's doc comment: RLS
   // alone can't be trusted here since a previewing admin's session still
   // carries real admin grants.
-  const [synthesis, fiches, adjacentNotions] = await Promise.all([
+  const [synthesis, fiches, adjacentNotions, readProgress, masteryProgress] = await Promise.all([
     getNotionSynthesis(notionId, isAdmin),
     getNotionFiches(notionId),
     getAdjacentNotions(notionId),
+    getNotionReadProgress(profile.id, notionId),
+    getNotionMasteryProgress(profile.id, notionId),
   ]);
 
   return (
@@ -35,6 +44,8 @@ export default async function NotionSynthesisPage({ params }: { params: Promise<
         isAdmin={isAdmin}
         prevNotion={adjacentNotions.prev}
         nextNotion={adjacentNotions.next}
+        readProgress={readProgress}
+        masteryProgress={masteryProgress}
       />
     </ToastProvider>
   );
