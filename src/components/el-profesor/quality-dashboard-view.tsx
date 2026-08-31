@@ -1,10 +1,17 @@
 "use client";
 
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ShieldAlert, Copy, Merge, AlertTriangle } from "lucide-react";
+import { ArrowLeft, ShieldAlert, Copy, Merge, AlertTriangle, Trash2 } from "lucide-react";
 import { Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
+import { dismissDuplicateFlashcardPair, dismissSimilarSubEntityPair, dismissThinSubEntity } from "@/app/apps/el-profesor/actions/quality";
+import { deleteFlashcard } from "@/app/apps/el-profesor/actions/extraction";
+import { markFicheSuperseded } from "@/app/apps/el-profesor/actions/notions";
+import type { ActionState } from "@/app/apps/el-profesor/actions/library";
 import type { BookQualityDashboard } from "@/lib/el-profesor/dal";
 
 function timeAgoLabel(iso: string | null): string {
@@ -26,6 +33,19 @@ export function QualityDashboardView({
   dashboard: BookQualityDashboard | null;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+
+  function runAction(action: () => Promise<ActionState>) {
+    startTransition(async () => {
+      const result = await action();
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Fait.", { variant: "success" });
+        router.refresh();
+      }
+    });
+  }
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
@@ -89,6 +109,34 @@ export function QualityDashboardView({
                         <p className="text-foreground">« {pair.a.front} »</p>
                         <p className="mt-1 text-foreground-muted">« {pair.b.front} »</p>
                         <p className="mt-1 text-xs text-foreground-subtle">{Math.round(pair.similarity * 100)}% de similarité</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={isPending}
+                            onClick={() => runAction(() => dismissDuplicateFlashcardPair(pair.a.id, pair.b.id))}
+                          >
+                            Différentes, garder les deux
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-danger"
+                            disabled={isPending}
+                            onClick={() => runAction(() => deleteFlashcard(pair.a.id))}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" /> Supprimer la 1ère
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-danger"
+                            disabled={isPending}
+                            onClick={() => runAction(() => deleteFlashcard(pair.b.id))}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" /> Supprimer la 2e
+                          </Button>
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -115,6 +163,16 @@ export function QualityDashboardView({
                           {s.chapterTitle} — {s.blockCount} bloc{s.blockCount > 1 ? "s" : ""}, {s.flashcardCount} flashcard
                           {s.flashcardCount > 1 ? "s" : ""}
                         </p>
+                        <div className="mt-2 border-t border-border/60 pt-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={isPending}
+                            onClick={() => runAction(() => dismissThinSubEntity(s.subEntityId))}
+                          >
+                            Non, ce n&apos;est pas incomplet
+                          </Button>
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -137,6 +195,38 @@ export function QualityDashboardView({
                         <p className="mt-1 text-xs text-foreground-subtle">
                           {pair.chapterTitle} — {Math.round(pair.similarity * 100)}% de similarité
                         </p>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={isPending}
+                            onClick={() => runAction(() => dismissSimilarSubEntityPair(pair.a.id, pair.b.id))}
+                          >
+                            Différentes, garder séparées
+                          </Button>
+                          {pair.ficheIdA && pair.ficheIdB && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={isPending}
+                                onClick={() => runAction(() => markFicheSuperseded(pair.ficheIdB!, pair.ficheIdA!, "duplicate", ""))}
+                                title={`Fusionne « ${pair.b.name} » dans « ${pair.a.name} » (réversible)`}
+                              >
+                                <Merge className="h-3.5 w-3.5" /> Fusionner dans « {pair.a.name} »
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={isPending}
+                                onClick={() => runAction(() => markFicheSuperseded(pair.ficheIdA!, pair.ficheIdB!, "duplicate", ""))}
+                                title={`Fusionne « ${pair.a.name} » dans « ${pair.b.name} » (réversible)`}
+                              >
+                                <Merge className="h-3.5 w-3.5" /> Fusionner dans « {pair.b.name} »
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </li>
                     ))}
                   </ul>

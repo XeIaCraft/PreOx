@@ -56,6 +56,16 @@ describe("scheduleReview", () => {
     }
   });
 
+  it("orders the four grades' next due date Again < Hard < Good < Easy, from the same starting state", () => {
+    const again = scheduleReview(null, "again", NOW);
+    const hard = scheduleReview(null, "hard", NOW);
+    const good = scheduleReview(null, "good", NOW);
+    const easy = scheduleReview(null, "easy", NOW);
+    expect(new Date(hard.due).getTime()).toBeGreaterThanOrEqual(new Date(again.due).getTime());
+    expect(new Date(good.due).getTime()).toBeGreaterThanOrEqual(new Date(hard.due).getTime());
+    expect(new Date(easy.due).getTime()).toBeGreaterThanOrEqual(new Date(good.due).getTime());
+  });
+
   it("round-trips every review state label through the FSRS state enum without loss", () => {
     const states: ReviewState["state"][] = ["new", "learning", "review", "relearning"];
     for (const state of states) {

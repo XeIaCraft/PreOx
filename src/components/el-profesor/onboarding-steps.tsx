@@ -18,7 +18,7 @@ export const EL_PROFESOR_ONBOARDING_STEPS: OnboardingStep[] = [
     icon: Layers,
     title: "Des flashcards qui s'adaptent à vous",
     description:
-      "La répétition espacée (FSRS) vous représente chaque carte juste avant que vous ne risquiez de l'oublier. Répondez honnêtement « Incorrect »/« Correct » : le rythme s'ajuste à votre mémoire, pas l'inverse.",
+      "La répétition espacée (FSRS) vous représente chaque carte juste avant que vous ne risquiez de l'oublier. Notez-vous honnêtement (Encore/Difficile/Correct/Facile) : le rythme s'ajuste à votre mémoire, pas l'inverse.",
   },
   {
     icon: ShieldAlert,

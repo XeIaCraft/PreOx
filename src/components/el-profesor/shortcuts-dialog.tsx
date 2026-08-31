@@ -24,8 +24,9 @@ const GROUPS: ShortcutGroup[] = [
     title: "Révision de flashcards",
     shortcuts: [
       { keys: ["Espace"], description: "Demander à révéler la réponse" },
-      { keys: ["←", "1"], description: "Avant révélation : « hésitant(e) » — après : « à revoir »" },
-      { keys: ["→", "2"], description: "Avant révélation : « sûr(e) » — après : « acquis »" },
+      { keys: ["←"], description: "Confiance avant révélation : « hésitant(e) »" },
+      { keys: ["→"], description: "Confiance avant révélation : « sûr(e) »" },
+      { keys: ["1", "2", "3", "4"], description: "Après révélation : Encore / Difficile / Correct / Facile" },
       { keys: ["Ctrl", "Z"], description: "Annuler la dernière réponse" },
     ],
   },

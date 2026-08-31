@@ -413,7 +413,8 @@ export async function maybeRecomputeUserFsrsRetention(userId: string): Promise<v
   const { data: ratings } = await supabase.from("el_profesor_review_log").select("rating").eq("user_id", userId).eq("source", "scheduled");
   const rows = ratings ?? [];
   if (rows.length === 0) return;
-  const successRate = rows.filter((r) => r.rating === "good").length / rows.length;
+  // "Success" = recalled at all (hard/good/easy), not specifically "good" — a 4-grade rating still only fails on "again".
+  const successRate = rows.filter((r) => r.rating !== "again").length / rows.length;
   const clamped = computeAdjustedRetention(successRate);
 
   await supabase
@@ -970,17 +971,18 @@ export async function getFlashcardVariantStats(flashcardId: string, originalText
   const rows = data ?? [];
 
   const textById = new Map<string | null, string>([[null, originalText], ...variants.map((v) => [v.id, v.text] as const)]);
-  const grouped = new Map<string | null, { attempts: number; good: number }>();
+  const grouped = new Map<string | null, { attempts: number; success: number }>();
   for (const row of rows) {
     const key = row.variant_id;
-    if (!grouped.has(key)) grouped.set(key, { attempts: 0, good: 0 });
+    if (!grouped.has(key)) grouped.set(key, { attempts: 0, success: 0 });
     const entry = grouped.get(key)!;
     entry.attempts++;
-    if (row.rating === "good") entry.good++;
+    // "Success" = recalled at all (hard/good/easy) — a 4-grade rating still only fails on "again".
+    if (row.rating !== "again") entry.success++;
   }
 
   return [...textById.entries()].map(([variantId, text]) => {
-    const entry = grouped.get(variantId) ?? { attempts: 0, good: 0 };
-    return { variantId, text, attempts: entry.attempts, successRate: entry.attempts > 0 ? entry.good / entry.attempts : 0 };
+    const entry = grouped.get(variantId) ?? { attempts: 0, success: 0 };
+    return { variantId, text, attempts: entry.attempts, successRate: entry.attempts > 0 ? entry.success / entry.attempts : 0 };
   });
 }

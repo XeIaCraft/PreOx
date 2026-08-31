@@ -405,7 +405,7 @@ export function LearningWidgets({
   reviewTimeStats,
 }: {
   activity: ReviewActivitySummary;
-  /** Reviews in the last 30 days marked "sûr(e)" then answered "Incorrect" — piste 2026-08-24 (calibration de la confiance). */
+  /** Reviews in the last 30 days marked "sûr(e)" then rated "Encore" — piste 2026-08-24 (calibration de la confiance). */
   overconfidentMissCount?: number;
   forecast?: UpcomingForecastDay[];
   globalDueCount: number;
@@ -518,7 +518,7 @@ export function LearningWidgets({
         <p className="text-xs text-foreground-subtle">Temps total investi : {formatReviewDuration(reviewTimeStats.totalMs)}.</p>
       )}
       {!!overconfidentMissCount && overconfidentMissCount > 0 && (
-        <p className="mt-1 flex items-center gap-1.5 text-xs text-danger" title="Cartes où vous vous êtes déclaré(e) « sûr(e) » avant de révéler la réponse, puis avez répondu « Incorrect » — le signal le plus important à corriger en pratique clinique.">
+        <p className="mt-1 flex items-center gap-1.5 text-xs text-danger" title="Cartes où vous vous êtes déclaré(e) « sûr(e) » avant de révéler la réponse, puis avez répondu « Encore » — le signal le plus important à corriger en pratique clinique.">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {overconfidentMissCount} réponse{overconfidentMissCount > 1 ? "s" : ""} sûre
           {overconfidentMissCount > 1 ? "s" : ""} mais fausse{overconfidentMissCount > 1 ? "s" : ""} ces 30 derniers jours.
         </p>

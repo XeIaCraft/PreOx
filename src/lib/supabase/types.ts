@@ -257,7 +257,7 @@ export type ElProfesorNotionUpdateProposalRow = {
   resolved_by: string | null;
 };
 export type ElProfesorContentStatus = "draft" | "published";
-export type ElProfesorReviewRating = "again" | "good";
+export type ElProfesorReviewRating = "again" | "hard" | "good" | "easy";
 export type ElProfesorReviewSource = "scheduled" | "free" | "exam";
 
 export type ElProfesorBookRow = {
@@ -490,6 +490,14 @@ export type ElProfesorReadingPositionRow = {
   chapter_id: string;
   sub_entity_id: string | null;
   updated_at: string;
+};
+
+export type ElProfesorQualityDismissalRow = {
+  id: string;
+  kind: "duplicate_flashcard" | "similar_sub_entity" | "thin_sub_entity";
+  entity_key: string;
+  dismissed_at: string;
+  dismissed_by: string | null;
 };
 
 export type ElProfesorFicheReadProgressRow = {
@@ -990,6 +998,12 @@ export type Database = {
         Row: ElProfesorFicheReadProgressRow;
         Insert: Partial<ElProfesorFicheReadProgressRow> & { user_id: string; fiche_id: string };
         Update: Partial<ElProfesorFicheReadProgressRow>;
+        Relationships: [];
+      };
+      el_profesor_quality_dismissals: {
+        Row: ElProfesorQualityDismissalRow;
+        Insert: Partial<ElProfesorQualityDismissalRow> & { kind: ElProfesorQualityDismissalRow["kind"]; entity_key: string };
+        Update: Partial<ElProfesorQualityDismissalRow>;
         Relationships: [];
       };
       el_profesor_notion_read_progress: {

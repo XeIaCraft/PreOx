@@ -28,13 +28,21 @@ export interface ThinSubEntity {
 export interface BookQualityDashboard {
   chapters: BookQualityChapterStat[];
   duplicateFlashcards: DuplicateFlashcardPair[];
-  similarSubEntities: (SimilarSubEntityPair & { chapterTitle: string })[];
+  similarSubEntities: (SimilarSubEntityPair & { chapterTitle: string; ficheIdA: string | null; ficheIdB: string | null })[];
   thinSubEntities: ThinSubEntity[];
 }
 
-/** Combines coverage (open signalements, staleness), near-duplicate flashcards, and near-duplicate sub-entity names into one per-book admin view — items 43/45/50 of the backlog. Deterministic dedup, no Gemini cost. */
+/** Order-independent identity for a flagged pair — dismissing "A/B" also covers a later "B/A". */
+function pairKey(idA: string, idB: string): string {
+  return [idA, idB].sort().join(":");
+}
+
+/** Combines coverage (open signalements, staleness), near-duplicate flashcards, and near-duplicate sub-entity names into one per-book admin view — items 43/45/50 of the backlog. Deterministic dedup, no Gemini cost. Every finding here is recomputed fresh on each load (no stable row of its own), so a dismissed one is excluded by looking up its caller-built key in el_profesor_quality_dismissals — see that table's own migration comment (piste 2026-08-31, action buttons on this page). */
 export async function getBookQualityDashboard(bookId: string): Promise<BookQualityDashboard> {
   const supabase = createAdminClient();
+
+  const { data: dismissedRows } = await supabase.from("el_profesor_quality_dismissals").select("kind, entity_key");
+  const dismissed = new Set((dismissedRows ?? []).map((d) => `${d.kind}:${d.entity_key}`));
 
   const { data: chapterRows } = await supabase
     .from("el_profesor_chapters")
@@ -50,6 +58,7 @@ export async function getBookQualityDashboard(bookId: string): Promise<BookQuali
   const allFlashcards: { id: string; front: string }[] = [];
   const allSubEntities: { id: string; name: string; chapterId: string }[] = [];
   const contentSizeBySubEntity = new Map<string, { blockCount: number; flashcardCount: number }>();
+  const ficheIdBySubEntity = new Map<string, string>();
   const flagCountByChapter = new Map<string, number>();
   const lastReviewedByChapter = new Map<string, string | null>();
 
@@ -62,6 +71,7 @@ export async function getBookQualityDashboard(bookId: string): Promise<BookQuali
         const flashcardCount = sub.fiche?.flashcards.length ?? 0;
         contentSizeBySubEntity.set(sub.id, { blockCount, flashcardCount });
         if (!sub.fiche) continue;
+        ficheIdBySubEntity.set(sub.id, sub.fiche.id);
         for (const card of sub.fiche.flashcards) allFlashcards.push({ id: card.id, front: card.front.text });
       }
 
@@ -88,11 +98,17 @@ export async function getBookQualityDashboard(bookId: string): Promise<BookQuali
     })
   );
 
-  const duplicateFlashcards = findDuplicateFlashcards(allFlashcards);
-  const similarSubEntities = findSimilarSubEntities(allSubEntities).map((pair) => ({
-    ...pair,
-    chapterTitle: chapterTitleById.get(pair.a.chapterId) ?? "",
-  }));
+  const duplicateFlashcards = findDuplicateFlashcards(allFlashcards).filter(
+    (p) => !dismissed.has(`duplicate_flashcard:${pairKey(p.a.id, p.b.id)}`)
+  );
+  const similarSubEntities = findSimilarSubEntities(allSubEntities)
+    .filter((p) => !dismissed.has(`similar_sub_entity:${pairKey(p.a.id, p.b.id)}`))
+    .map((pair) => ({
+      ...pair,
+      chapterTitle: chapterTitleById.get(pair.a.chapterId) ?? "",
+      ficheIdA: ficheIdBySubEntity.get(pair.a.id) ?? null,
+      ficheIdB: ficheIdBySubEntity.get(pair.b.id) ?? null,
+    }));
 
   const chapterStats: BookQualityChapterStat[] = chapters.map((c) => ({
     chapterId: c.id,
@@ -116,7 +132,7 @@ export async function getBookQualityDashboard(bookId: string): Promise<BookQuali
     const threshold = average * 0.4;
     for (const sub of allSubEntities) {
       const size = contentSizeBySubEntity.get(sub.id) ?? { blockCount: 0, flashcardCount: 0 };
-      if (size.blockCount + size.flashcardCount < threshold) {
+      if (size.blockCount + size.flashcardCount < threshold && !dismissed.has(`thin_sub_entity:${sub.id}`)) {
         thinSubEntities.push({
           subEntityId: sub.id,
           subEntityName: sub.name,

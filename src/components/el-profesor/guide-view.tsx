@@ -323,7 +323,7 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
           </p>
           <ul className="space-y-1.5">
             <IconRow icon={ThumbsUp}>
-              Retournez la carte (tap ou espace), puis répondez « Incorrect »/« Correct » (ou glissez à gauche/droite sur mobile).
+              Retournez la carte (tap ou espace), puis notez-vous : « Encore », « Difficile », « Correct » ou « Facile ».
             </IconRow>
             <IconRow icon={Undo2}>Annuler la dernière réponse si vous vous êtes trompé de bouton.</IconRow>
             <IconRow icon={Timer}>Minuteur Pomodoro optionnel (25 min / pause 5 min).</IconRow>

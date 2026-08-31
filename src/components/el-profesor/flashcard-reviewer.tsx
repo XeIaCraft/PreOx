@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, X, PartyPopper, Undo2, Info, Keyboard, Timer, Square, PenLine, Maximize2, Minimize2, BellOff, Volume2, VolumeX } from "lucide-react";
+import { ArrowLeft, PartyPopper, Undo2, Info, Keyboard, Timer, Square, PenLine, Maximize2, Minimize2, BellOff, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { submitReview, undoReview, excludeFlashcardFromReviews, type ReviewConfidence } from "@/app/apps/el-profesor/actions/review";
@@ -10,7 +10,7 @@ import { FlagButton } from "@/components/el-profesor/flag-button";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { useToast } from "@/components/ui/toast";
 import { maskClozeText, splitClozeSegments } from "@/lib/el-profesor/cloze";
-import type { Flashcard, ReviewSource, ReviewState, ImageOcclusion } from "@/lib/el-profesor/types";
+import type { Flashcard, ReviewSource, ReviewState, ReviewRating, ImageOcclusion } from "@/lib/el-profesor/types";
 
 /** A cloze passage with its blanked spans highlighted — the revealed side of a "flashcard à trous" (piste 2026-08-24). Plain text render when there's nothing to hide. */
 function ClozeText({ text, ranges, hiddenClassName }: { text: string; ranges: { start: number; end: number }[]; hiddenClassName: string }) {
@@ -71,9 +71,17 @@ interface LastAction {
   flashcardId: string;
   logId: string;
   previousState: ReviewState | null | undefined;
-  rating: "again" | "good";
+  rating: ReviewRating;
   front: string;
 }
+
+/** FSRS's 4-grade self-assessment scale, in order — one color/label pair per grade, shared by the rating buttons and the results-screen tally. */
+const RATING_OPTIONS: { rating: ReviewRating; label: string; className: string }[] = [
+  { rating: "again", label: "Encore", className: "bg-danger text-white border-transparent hover:opacity-90" },
+  { rating: "hard", label: "Difficile", className: "bg-accent text-accent-foreground border-transparent hover:opacity-90" },
+  { rating: "good", label: "Correct", className: "bg-primary text-primary-foreground border-transparent hover:bg-primary-strong" },
+  { rating: "easy", label: "Facile", className: "bg-success text-white border-transparent hover:opacity-90" },
+];
 
 const POMODORO_FOCUS_MS = 25 * 60_000;
 const POMODORO_BREAK_MS = 5 * 60_000;
@@ -204,7 +212,7 @@ export function FlashcardReviewer({
   const [confidence, setConfidence] = useState<ReviewConfidence | null>(null);
   const [overconfidentMisses, setOverconfidentMisses] = useState(0);
   const [done, setDone] = useState(0);
-  const [tally, setTally] = useState({ again: 0, good: 0 });
+  const [tally, setTally] = useState<Record<ReviewRating, number>>({ again: 0, hard: 0, good: 0, easy: 0 });
   const [struggled, setStruggled] = useState<string[]>([]);
   const [lastAction, setLastAction] = useState<LastAction | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -218,7 +226,7 @@ export function FlashcardReviewer({
   // consistent, and a mis-heard "correct"/"incorrect" would silently
   // corrupt the FSRS schedule — too risky to ship without live testing.
   // Reading the card aloud already covers the main use case (reviewing
-  // without looking at the screen); rating still needs a tap/key/swipe.
+  // without looking at the screen); rating still needs a tap/key.
   const [audioMode, setAudioMode] = useState(false);
   const [examRemainingMs, setExamRemainingMs] = useState(examDurationMs ?? 0);
   const [examExpired, setExamExpired] = useState(false);
@@ -226,9 +234,6 @@ export function FlashcardReviewer({
   const revealedAtRef = useRef<number | null>(null);
   // Picked once per session mount so it stays stable across re-renders but varies session to session.
   const [completionMessage] = useState(() => COMPLETION_MESSAGES[Math.floor(Math.random() * COMPLETION_MESSAGES.length)]);
-  const swipeStartX = useRef<number | null>(null);
-  const [dragX, setDragX] = useState(0);
-  const [dragging, setDragging] = useState(false);
 
   const current = cards[index];
   // Computed once per mount (one session = one wording per card, re-rolled
@@ -251,7 +256,7 @@ export function FlashcardReviewer({
     revealedAtRef.current = Date.now();
   }
 
-  function handleRate(rating: "again" | "good") {
+  function handleRate(rating: ReviewRating) {
     if (!current) return;
     const answeredIndex = index;
     const durationMs = revealedAtRef.current != null ? Date.now() - revealedAtRef.current : undefined;
@@ -272,7 +277,7 @@ export function FlashcardReviewer({
         front: current.front.text,
       });
       setDone((d) => d + 1);
-      setTally((t) => (rating === "again" ? { ...t, again: t.again + 1 } : { ...t, good: t.good + 1 }));
+      setTally((t) => ({ ...t, [rating]: t[rating] + 1 }));
       if (rating === "again") setStruggled((s) => [...s, current.front.text]);
       if (rating === "again" && answeredConfidence === "sure") setOverconfidentMisses((n) => n + 1);
       setRevealed(false);
@@ -372,7 +377,7 @@ export function FlashcardReviewer({
     setOverconfidentMisses(0);
     setDictationInput("");
     setDone(0);
-    setTally({ again: 0, good: 0 });
+    setTally({ again: 0, hard: 0, good: 0, easy: 0 });
     setStruggled([]);
     setLastAction(null);
     if (examDurationMs) {
@@ -390,9 +395,7 @@ export function FlashcardReviewer({
         return;
       }
       setDone((d) => Math.max(0, d - 1));
-      setTally((t) =>
-        lastAction.rating === "again" ? { ...t, again: Math.max(0, t.again - 1) } : { ...t, good: Math.max(0, t.good - 1) }
-      );
+      setTally((t) => ({ ...t, [lastAction.rating]: Math.max(0, t[lastAction.rating] - 1) }));
       if (lastAction.rating === "again") setStruggled((s) => s.filter((f) => f !== lastAction.front));
       setIndex(lastAction.index);
       setRevealed(true);
@@ -423,52 +426,21 @@ export function FlashcardReviewer({
       if (!revealed && !awaitingConfidence && e.key === " ") {
         e.preventDefault();
         requestReveal();
-      } else if (awaitingConfidence && (e.key === "ArrowLeft" || e.key === "1")) {
+      } else if (awaitingConfidence && e.key === "ArrowLeft") {
         e.preventDefault();
         confirmReveal("unsure");
-      } else if (awaitingConfidence && (e.key === "ArrowRight" || e.key === "2")) {
+      } else if (awaitingConfidence && e.key === "ArrowRight") {
         e.preventDefault();
         confirmReveal("sure");
-      } else if (revealed && (e.key === "ArrowLeft" || e.key === "1")) {
+      } else if (revealed && ["1", "2", "3", "4"].includes(e.key)) {
         e.preventDefault();
-        handleRate("again");
-      } else if (revealed && (e.key === "ArrowRight" || e.key === "2")) {
-        e.preventDefault();
-        handleRate("good");
+        handleRate(RATING_OPTIONS[Number(e.key) - 1].rating);
       }
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, revealed, awaitingConfidence, isPending, lastAction, examExpired]);
-
-  function handleCardPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (e.pointerType !== "touch" || !revealed || isPending) return;
-    swipeStartX.current = e.clientX;
-    setDragging(true);
-  }
-
-  function handleCardPointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (swipeStartX.current === null) return;
-    setDragX(e.clientX - swipeStartX.current);
-  }
-
-  function handleCardPointerUp(e: React.PointerEvent<HTMLDivElement>) {
-    const startX = swipeStartX.current;
-    swipeStartX.current = null;
-    setDragging(false);
-    setDragX(0);
-    if (e.pointerType !== "touch" || startX === null || !revealed || isPending) return;
-    const dx = e.clientX - startX;
-    if (Math.abs(dx) < 70) return;
-    handleRate(dx > 0 ? "good" : "again");
-  }
-
-  function handleCardPointerCancel() {
-    swipeStartX.current = null;
-    setDragging(false);
-    setDragX(0);
-  }
 
   // Tapping the card itself flips it — mirrors the "Afficher la réponse"
   // button so the card (the dominant element on mobile) is directly
@@ -499,6 +471,7 @@ export function FlashcardReviewer({
   }
 
   if (!current || examExpired) {
+    const correctCount = tally.hard + tally.good + tally.easy;
     return (
       <div className="mx-auto max-w-md px-4 py-16 text-center">
         <PartyPopper className="mx-auto h-8 w-8 animate-bounce text-primary-strong" />
@@ -514,7 +487,9 @@ export function FlashcardReviewer({
         )}
         {done > 0 && (
           <p className="mt-1 text-xs text-foreground-subtle">
-            <span className="text-success">{tally.good} correcte{tally.good > 1 ? "s" : ""}</span>
+            <span className="text-success">
+              {correctCount} correcte{correctCount > 1 ? "s" : ""}
+            </span>
             {" · "}
             <span className="text-danger">{tally.again} à revoir</span>
           </p>
@@ -574,7 +549,7 @@ export function FlashcardReviewer({
                 <button
                   type="button"
                   className="text-foreground-subtle hover:text-foreground"
-                  title="Répétition espacée : chaque carte revient juste avant que vous ne risquiez de l'oublier. Répondre « Incorrect » la fait revenir plus vite, « Correct » espace l'intervalle suivant — plus fiable pour la mémoire à long terme qu'une simple relecture."
+                  title="Répétition espacée : chaque carte revient juste avant que vous ne risquiez de l'oublier. « Encore » la fait revenir vite, « Difficile »/« Correct »/« Facile » espacent de plus en plus l'intervalle suivant — plus fiable pour la mémoire à long terme qu'une simple relecture."
                   aria-label="Comment fonctionne la planification des révisions"
                 >
                   <Info className="h-3.5 w-3.5" />
@@ -685,32 +660,21 @@ export function FlashcardReviewer({
       )}
 
       <div className="flex flex-1 items-center justify-center [perspective:1200px]">
-        <div
-          className={`relative min-h-[min(220px,45vh)] w-full touch-pan-y ${!revealed ? "cursor-pointer" : ""}`}
-          onPointerDown={handleCardPointerDown}
-          onPointerMove={handleCardPointerMove}
-          onPointerUp={handleCardPointerUp}
-          onPointerCancel={handleCardPointerCancel}
-          onClick={handleCardClick}
-          style={{
-            transform: dragX ? `translateX(${dragX}px) rotate(${dragX / 24}deg)` : undefined,
-            transition: dragging ? "none" : "transform 0.25s ease",
-          }}
-        >
+        <div className={`relative min-h-[min(220px,45vh)] w-full ${!revealed ? "cursor-pointer" : ""}`} onClick={handleCardClick}>
           <div
             className={`relative h-full min-h-[min(220px,45vh)] w-full transition-transform duration-500 [transform-style:preserve-3d] ${
               revealed ? "[transform:rotateY(180deg)]" : ""
             }`}
           >
-            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-border bg-surface p-8 text-center shadow-sm [backface-visibility:hidden]">
+            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-border bg-surface p-8 shadow-sm [backface-visibility:hidden]">
               {current.imageUrl && (
                 <OcclusionImage imageUrl={current.imageUrl} imageAlt={current.imageAlt} occlusions={current.imageOcclusions} revealed={false} />
               )}
-              <p className="text-lg text-foreground">
+              <p className="w-full text-justify text-lg leading-relaxed text-foreground">
                 {current.clozeRanges.length > 0 ? maskClozeText(current.front.text, current.clozeRanges) : (shownVariant?.text ?? current.front.text)}
               </p>
             </div>
-            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-primary/30 bg-surface p-8 text-center shadow-sm [backface-visibility:hidden] [transform:rotateY(180deg)]">
+            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-primary/30 bg-surface p-8 shadow-sm [backface-visibility:hidden] [transform:rotateY(180deg)]">
               {revealed && (
                 <div className="absolute right-3 top-3 flex items-center gap-2">
                   <button
@@ -731,32 +695,16 @@ export function FlashcardReviewer({
               )}
               {current.clozeRanges.length > 0 ? (
                 <>
-                  <p className="text-lg font-medium text-foreground">
+                  <p className="w-full text-justify text-lg font-medium leading-relaxed text-foreground">
                     <ClozeText text={current.front.text} ranges={current.clozeRanges} hiddenClassName="rounded bg-primary-tint px-1 text-primary-strong" />
                   </p>
-                  {current.back.text && <p className="mt-2 text-sm text-foreground-muted">{current.back.text}</p>}
+                  {current.back.text && <p className="mt-2 w-full text-justify text-sm leading-relaxed text-foreground-muted">{current.back.text}</p>}
                 </>
               ) : (
-                <p className="text-lg font-medium text-primary-strong">{current.back.text}</p>
+                <p className="w-full text-justify text-lg font-medium leading-relaxed text-primary-strong">{current.back.text}</p>
               )}
             </div>
           </div>
-          {revealed && dragX !== 0 && (
-            <>
-              <div
-                className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-1 rounded-full border-2 border-danger bg-surface px-2 py-1 text-xs font-bold uppercase text-danger"
-                style={{ opacity: Math.min(1, Math.max(0, -dragX / 70)) }}
-              >
-                <X className="h-3.5 w-3.5" /> Incorrect
-              </div>
-              <div
-                className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-1 rounded-full border-2 border-success bg-surface px-2 py-1 text-xs font-bold uppercase text-success"
-                style={{ opacity: Math.min(1, Math.max(0, dragX / 70)) }}
-              >
-                Correct <Check className="h-3.5 w-3.5" />
-              </div>
-            </>
-          )}
         </div>
       </div>
 
@@ -794,22 +742,28 @@ export function FlashcardReviewer({
             Afficher la réponse
           </Button>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {dictationMode && dictationInput.trim() && (
-              <p className="col-span-2 -mt-1 mb-1 text-center text-xs text-foreground-subtle">
+              <p className="col-span-2 -mt-1 mb-1 text-center text-xs text-foreground-subtle sm:col-span-4">
                 Votre réponse : <span className="italic">{dictationInput}</span>
               </p>
             )}
-            <Button variant="secondary" size="lg" onClick={() => handleRate("again")} disabled={isPending}>
-              <X className="h-4 w-4" /> Incorrect
-            </Button>
-            <Button size="lg" onClick={() => handleRate("good")} disabled={isPending}>
-              <Check className="h-4 w-4" /> Correct
-            </Button>
+            {RATING_OPTIONS.map((opt) => (
+              <Button
+                key={opt.rating}
+                variant="secondary"
+                size="lg"
+                onClick={() => handleRate(opt.rating)}
+                disabled={isPending}
+                className={opt.className}
+              >
+                {opt.label}
+              </Button>
+            ))}
           </div>
         )}
         <p className="mt-2 hidden text-center text-xs text-foreground-subtle sm:block">
-          Espace pour révéler · ← / → pour répondre (confiance, puis exactitude) · Ctrl+Z / ⌘Z pour annuler
+          Espace pour révéler · ← / → pour la confiance · 1 à 4 pour noter (Encore/Difficile/Correct/Facile) · Ctrl+Z / ⌘Z pour annuler
         </p>
       </div>
     </div>

@@ -17,14 +17,12 @@ const LABEL_TO_STATE: Record<ReviewState["state"], State> = {
   relearning: State.Relearning,
 };
 
-/**
- * The app exposes only a binary Correct/Incorrect self-grade (Anki-style,
- * as requested) rather than FSRS's usual 4-grade scale — mapped onto
- * Again/Good, letting the FSRS math still drive real spaced scheduling.
- */
+/** FSRS's own 4-grade self-assessment scale — a direct passthrough, no remapping needed. */
 const RATING_MAP: Record<ReviewRating, Grade> = {
   again: Rating.Again,
+  hard: Rating.Hard,
   good: Rating.Good,
+  easy: Rating.Easy,
 };
 
 function toFsrsCard(state: ReviewState | null): Card {
