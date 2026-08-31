@@ -25,13 +25,40 @@ export interface MasteryProgress {
 
 const EMPTY_MASTERY: MasteryProgress = { total: 0, acquired: 0, learning: 0 };
 
+const IN_CHUNK_SIZE = 150;
+
+/**
+ * Supabase's .in() filter is serialized straight into the request's query
+ * string. This library is easily into the hundreds of fiches/flashcards
+ * (1500+ flashcards isn't unusual), and a single .in() over an id list
+ * that size can exceed the request's URL-length limit — failing (or
+ * silently coming back empty) rather than erroring loudly, which zeroes
+ * out whatever library-wide aggregate depends on it. Every function below
+ * that filters by a library-wide id list (as opposed to one chapter's or
+ * one notion's own, small handful of ids) goes through this instead of a
+ * single unbounded .in().
+ */
+async function selectInChunks<T>(
+  ids: string[],
+  runQuery: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+): Promise<T[]> {
+  if (ids.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK_SIZE) chunks.push(ids.slice(i, i + IN_CHUNK_SIZE));
+  const results = await Promise.all(chunks.map((chunk) => runQuery(chunk)));
+  for (const r of results) if (r.error) console.error("[el-profesor/progress] chunked query failed:", r.error.message);
+  return results.flatMap((r) => r.data ?? []);
+}
+
 /** Batched for a whole chapter's fiches at once — mirrors getBlockReviewStates' batching so the chapter page fetches every fiche's progress in one pass instead of one query per sub-entity. */
 export async function getFicheReadProgressBatch(userId: string, ficheIds: string[]): Promise<Record<string, number>> {
   if (ficheIds.length === 0) return {};
   const supabase = await createClient();
-  const { data } = await supabase.from("el_profesor_fiche_read_progress").select("fiche_id, progress_pct").eq("user_id", userId).in("fiche_id", ficheIds);
+  const rows = await selectInChunks(ficheIds, (chunk) =>
+    supabase.from("el_profesor_fiche_read_progress").select("fiche_id, progress_pct").eq("user_id", userId).in("fiche_id", chunk)
+  );
   const result: Record<string, number> = {};
-  for (const row of data ?? []) result[row.fiche_id] = row.progress_pct;
+  for (const row of rows) result[row.fiche_id] = row.progress_pct;
   return result;
 }
 
@@ -48,10 +75,12 @@ export async function getNotionReadProgress(userId: string, notionId: string): P
 
 async function masteryForFlashcardIds(supabase: SupabaseClient<Database>, userId: string, flashcardIds: string[]): Promise<MasteryProgress> {
   if (flashcardIds.length === 0) return EMPTY_MASTERY;
-  const { data: states } = await supabase.from("el_profesor_review_state").select("flashcard_id, state").eq("user_id", userId).in("flashcard_id", flashcardIds);
+  const states = await selectInChunks(flashcardIds, (chunk) =>
+    supabase.from("el_profesor_review_state").select("flashcard_id, state").eq("user_id", userId).in("flashcard_id", chunk)
+  );
   let acquired = 0;
   let learning = 0;
-  for (const s of states ?? []) {
+  for (const s of states) {
     if (s.state === "review") acquired++;
     else if (s.state === "learning" || s.state === "relearning") learning++;
   }
@@ -65,19 +94,16 @@ export async function getFicheMasteryProgressBatch(userId: string, ficheIds: str
   if (ficheIds.length === 0) return result;
 
   const supabase = await createClient();
-  const { data: cards } = await supabase.from("el_profesor_flashcards").select("id, fiche_id").in("fiche_id", ficheIds).eq("status", "published");
-  const rows = cards ?? [];
+  const rows = await selectInChunks(ficheIds, (chunk) =>
+    supabase.from("el_profesor_flashcards").select("id, fiche_id").in("fiche_id", chunk).eq("status", "published")
+  );
   if (rows.length === 0) return result;
 
-  const { data: states } = await supabase
-    .from("el_profesor_review_state")
-    .select("flashcard_id, state")
-    .eq("user_id", userId)
-    .in(
-      "flashcard_id",
-      rows.map((c) => c.id)
-    );
-  const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s.state]));
+  const states = await selectInChunks(
+    rows.map((c) => c.id),
+    (chunk) => supabase.from("el_profesor_review_state").select("flashcard_id, state").eq("user_id", userId).in("flashcard_id", chunk)
+  );
+  const stateByCard = new Map(states.map((s) => [s.flashcard_id, s.state]));
 
   for (const c of rows) {
     const entry = result[c.fiche_id];
@@ -165,36 +191,34 @@ export async function getNotionProgressBatch(userId: string, notionIds: string[]
   if (notionIds.length === 0) return result;
   const supabase = await createClient();
 
-  const [{ data: readRows }, { data: links }] = await Promise.all([
-    supabase.from("el_profesor_notion_read_progress").select("notion_id, progress_pct").eq("user_id", userId).in("notion_id", notionIds),
-    supabase.from("el_profesor_notion_links").select("notion_id, fiche_id").in("notion_id", notionIds),
+  const [readRows, links] = await Promise.all([
+    selectInChunks(notionIds, (chunk) =>
+      supabase.from("el_profesor_notion_read_progress").select("notion_id, progress_pct").eq("user_id", userId).in("notion_id", chunk)
+    ),
+    selectInChunks(notionIds, (chunk) => supabase.from("el_profesor_notion_links").select("notion_id, fiche_id").in("notion_id", chunk)),
   ]);
-  const readByNotion = new Map((readRows ?? []).map((r) => [r.notion_id, r.progress_pct]));
+  const readByNotion = new Map(readRows.map((r) => [r.notion_id, r.progress_pct]));
 
   const ficheIdsByNotion = new Map<string, string[]>();
   const allFicheIds = new Set<string>();
-  for (const l of links ?? []) {
+  for (const l of links) {
     const list = ficheIdsByNotion.get(l.notion_id) ?? [];
     list.push(l.fiche_id);
     ficheIdsByNotion.set(l.notion_id, list);
     allFicheIds.add(l.fiche_id);
   }
 
-  const { data: fiches } =
-    allFicheIds.size > 0 ? await supabase.from("el_profesor_fiches").select("id, superseded_by_fiche_id").in("id", [...allFicheIds]) : { data: [] };
-  const activeFicheIds = new Set((fiches ?? []).filter((f) => !f.superseded_by_fiche_id).map((f) => f.id));
+  const fiches = await selectInChunks([...allFicheIds], (chunk) => supabase.from("el_profesor_fiches").select("id, superseded_by_fiche_id").in("id", chunk));
+  const activeFicheIds = new Set(fiches.filter((f) => !f.superseded_by_fiche_id).map((f) => f.id));
 
-  const { data: cards } =
-    activeFicheIds.size > 0
-      ? await supabase.from("el_profesor_flashcards").select("id, fiche_id").in("fiche_id", [...activeFicheIds]).eq("status", "published")
-      : { data: [] };
-  const cardRows = cards ?? [];
+  const cardRows = await selectInChunks([...activeFicheIds], (chunk) =>
+    supabase.from("el_profesor_flashcards").select("id, fiche_id").in("fiche_id", chunk).eq("status", "published")
+  );
   const allCardIds = cardRows.map((c) => c.id);
-  const { data: states } =
-    allCardIds.length > 0
-      ? await supabase.from("el_profesor_review_state").select("flashcard_id, state").eq("user_id", userId).in("flashcard_id", allCardIds)
-      : { data: [] };
-  const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s.state]));
+  const states = await selectInChunks(allCardIds, (chunk) =>
+    supabase.from("el_profesor_review_state").select("flashcard_id, state").eq("user_id", userId).in("flashcard_id", chunk)
+  );
+  const stateByCard = new Map(states.map((s) => [s.flashcard_id, s.state]));
 
   const cardIdsByFiche = new Map<string, string[]>();
   for (const c of cardRows) {
@@ -239,15 +263,15 @@ export async function getGlobalProgressSummary(userId: string): Promise<GlobalPr
   const ficheIds = (fiches ?? []).map((f) => f.id);
   if (ficheIds.length === 0) return { readPct: 0, mastery: EMPTY_MASTERY };
 
-  const [{ data: readRows }, { data: cards }] = await Promise.all([
-    supabase.from("el_profesor_fiche_read_progress").select("progress_pct").eq("user_id", userId).in("fiche_id", ficheIds),
-    supabase.from("el_profesor_flashcards").select("id").in("fiche_id", ficheIds).eq("status", "published"),
+  const [readRows, cards] = await Promise.all([
+    selectInChunks(ficheIds, (chunk) => supabase.from("el_profesor_fiche_read_progress").select("progress_pct").eq("user_id", userId).in("fiche_id", chunk)),
+    selectInChunks(ficheIds, (chunk) => supabase.from("el_profesor_flashcards").select("id").in("fiche_id", chunk).eq("status", "published")),
   ]);
-  const readPct = Math.round((readRows ?? []).reduce((sum, r) => sum + r.progress_pct, 0) / ficheIds.length);
+  const readPct = Math.round(readRows.reduce((sum, r) => sum + r.progress_pct, 0) / ficheIds.length);
   const mastery = await masteryForFlashcardIds(
     supabase,
     userId,
-    (cards ?? []).map((c) => c.id)
+    cards.map((c) => c.id)
   );
   return { readPct, mastery };
 }

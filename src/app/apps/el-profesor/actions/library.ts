@@ -213,6 +213,53 @@ export async function uploadChapterFromPdfPath(
   return { success: "Chapitre importé. Lancez l'extraction quand vous êtes prêt.", chapterId };
 }
 
+/**
+ * Attaches a PDF to a chapter that doesn't have one yet — piste 2026-08-31,
+ * for the "Importer" dialog: a Word/PowerPoint chapter has no PDF to
+ * ground-truth-correct citations against (see importChapterContent's own
+ * comment on that), so when the admin already has a PDF version of the
+ * content they're pasting in by hand, attaching it here upgrades the
+ * chapter to a real PDF source going forward — citation verification, the
+ * PDF viewer, and any later re-extraction or split all start working for
+ * it exactly as if it had been uploaded as a PDF originally.
+ *
+ * Same signed-upload-url path as a new chapter's PDF (`storagePath` is
+ * uploaded browser-side via uploadPdfDirect before this is called) — this
+ * only registers it. Refuses to overwrite an existing PDF: replacing one
+ * would silently invalidate citations already anchored to the old page
+ * numbers, which is a different, riskier operation than filling a gap.
+ */
+export async function attachChapterPdf(chapterId: string, storagePath: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: chapter } = await supabase.from("el_profesor_chapters").select("source_kind, pdf_storage_path").eq("id", chapterId).single();
+  if (!chapter) return { error: "Chapitre introuvable." };
+  if (chapter.source_kind === "pdf" || chapter.pdf_storage_path) {
+    return { error: "Ce chapitre a déjà un PDF." };
+  }
+
+  let bytes: Uint8Array;
+  try {
+    bytes = await downloadChapterPdfBytes(storagePath);
+  } catch {
+    return { error: "PDF illisible ou introuvable dans le stockage." };
+  }
+  const pageCount = await getPdfPageCount(bytes).catch(() => null);
+
+  const { error } = await supabase
+    .from("el_profesor_chapters")
+    .update({ pdf_storage_path: storagePath, pdf_page_count: pageCount, source_kind: "pdf" })
+    .eq("id", chapterId);
+  if (error) {
+    await deleteChapterPdf(storagePath);
+    return { error: "Impossible d'enregistrer le PDF." };
+  }
+
+  revalidatePath("/apps/el-profesor");
+  return { success: "PDF joint au chapitre." };
+}
+
 /** Word/PowerPoint chapter import — small enough (unlike a PDF) to pass directly as a Server Action argument. */
 export async function uploadChapterFromOfficeFile(bookId: string, title: string, orderIndex: number, file: File): Promise<ActionState & { chapterId?: string }> {
   await requireElProfesorAdmin();

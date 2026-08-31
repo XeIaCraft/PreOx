@@ -1,21 +1,28 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { Copy, Check, Upload } from "lucide-react";
+import { Copy, Check, Upload, FileText } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { importChapterContent, importComplementaryContent } from "@/app/apps/el-profesor/actions/extraction";
+import { attachChapterPdf } from "@/app/apps/el-profesor/actions/library";
+import { uploadPdfDirect } from "@/lib/el-profesor/client-pdf-upload";
 import { buildExternalImportPrompt } from "@/lib/el-profesor/prompts";
 import { useToast } from "@/components/ui/toast";
 
 export function ImportContentDialog({
   chapterId,
   chapterTitle,
+  bookId,
+  hasPdf,
   onClose,
   onImported,
 }: {
   chapterId: string;
   chapterTitle: string;
+  bookId: string;
+  /** Word/PowerPoint chapters have no PDF (see importChapterContent's own comment on why that matters for citations) — offer to attach one only in that case; a chapter that already has a PDF keeps it (replacing it would invalidate citations already anchored to the old page numbers). */
+  hasPdf: boolean;
   onClose: () => void;
   onImported: () => void;
 }) {
@@ -24,6 +31,9 @@ export function ImportContentDialog({
   const [json, setJson] = useState("");
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const [pdfAttached, setPdfAttached] = useState(false);
+  const [isUploadingPdf, setIsUploadingPdf] = useState(false);
 
   function handleFileChosen(file: File | null) {
     if (!file) return;
@@ -31,6 +41,30 @@ export function ImportContentDialog({
       .text()
       .then((text) => setJson(text))
       .catch(() => toast("Impossible de lire ce fichier.", { variant: "error" }));
+  }
+
+  async function handlePdfChosen(file: File | null) {
+    if (!file) return;
+    if (file.type !== "application/pdf") {
+      toast("Le fichier doit être un PDF.", { variant: "error" });
+      return;
+    }
+    setIsUploadingPdf(true);
+    try {
+      const uploaded = await uploadPdfDirect(`${bookId}/${chapterId}.pdf`, file);
+      if ("error" in uploaded) {
+        toast(uploaded.error, { variant: "error" });
+        return;
+      }
+      const result = await attachChapterPdf(chapterId, uploaded.path);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "PDF joint.", { variant: "success" });
+        setPdfAttached(true);
+      }
+    } finally {
+      setIsUploadingPdf(false);
+    }
   }
 
   function handleCopyPrompt() {
@@ -71,6 +105,34 @@ export function ImportContentDialog({
       size="lg"
     >
       <div className="space-y-3">
+        {!hasPdf && (
+          <div className="rounded-[var(--radius-md)] border border-border bg-surface-muted/50 p-3">
+            {pdfAttached ? (
+              <p className="flex items-center gap-1.5 text-xs font-medium text-success">
+                <FileText className="h-3.5 w-3.5" /> PDF joint à ce chapitre.
+              </p>
+            ) : (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => pdfInputRef.current?.click()} disabled={isUploadingPdf}>
+                  <FileText className="h-3.5 w-3.5" /> {isUploadingPdf ? "Envoi…" : "Joindre le PDF de ce chapitre"}
+                </Button>
+                <input
+                  ref={pdfInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={(e) => handlePdfChosen(e.target.files?.[0] ?? null)}
+                />
+                <p className="mt-1.5 text-xs text-foreground-subtle">
+                  Ce chapitre (Word/PowerPoint) n&apos;a pas de PDF — si vous avez généré le contenu ci-dessous à partir d&apos;un
+                  PDF, le joindre ici permet de vérifier les citations automatiquement et de consulter le PDF dans l&apos;app,
+                  comme pour un chapitre importé en PDF.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
         <div>
           <Button variant="secondary" size="sm" onClick={handleCopyPrompt} disabled={isPending}>
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

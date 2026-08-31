@@ -18,6 +18,7 @@ import {
   HelpCircle,
   Download,
   ShieldAlert,
+  Users,
   ChevronUp,
   ChevronDown,
   Search,
@@ -331,7 +332,7 @@ type ModalState =
   | { type: "gemini_settings" }
   | { type: "search_book"; bookId: string; bookTitle: string }
   | { type: "search_notes" }
-  | { type: "import_content"; chapterId: string; chapterTitle: string }
+  | { type: "import_content"; chapterId: string; chapterTitle: string; bookId: string; hasPdf: boolean }
   | { type: "archive_book"; bookId: string; title: string }
   | { type: "new_edition"; book: { id: string; title: string; author: string | null; edition: string | null; theme: string | null } }
   | { type: "extraction_history"; chapterId: string; chapterTitle: string }
@@ -1225,7 +1226,7 @@ export function ElProfesorBoard({
                 return (
                   <div
                     key={chapter.id}
-                    className={`rounded-[var(--radius-lg)] border p-4 ${selected ? "border-primary bg-primary-tint/30" : "border-border bg-surface"}`}
+                    className={`rounded-[var(--radius-lg)] border p-3 ${selected ? "border-primary bg-primary-tint/30" : "border-border bg-surface"}`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="flex min-w-0 items-start gap-2">
@@ -1293,6 +1294,19 @@ export function ElProfesorBoard({
                           </Badge>
                         )}
                         {isAdmin && needsReview > 0 && <Badge variant="accent">{needsReview} à vérifier</Badge>}
+                        {chapter.status === "published" && globalMastery[chapter.id] && (
+                          <Badge variant="neutral" title={`${globalMastery[chapter.id].masteredPct}% des autres utilisateurs actifs ont aussi maîtrisé ce chapitre`}>
+                            <Users className="h-3 w-3" /> {globalMastery[chapter.id].masteredPct}%
+                          </Badge>
+                        )}
+                        {chapter.status === "published" && (difficultCounts[chapter.id] ?? 0) > 0 && (
+                          <Badge
+                            variant="danger"
+                            title={`${difficultCounts[chapter.id]} carte${(difficultCounts[chapter.id] ?? 0) > 1 ? "s" : ""} difficile${(difficultCounts[chapter.id] ?? 0) > 1 ? "s" : ""}`}
+                          >
+                            <ShieldAlert className="h-3 w-3" /> {difficultCounts[chapter.id]}
+                          </Badge>
+                        )}
                         <Badge variant={STATUS_VARIANT[chapter.status]}>{STATUS_LABEL[chapter.status]}</Badge>
                       </div>
                     </div>
@@ -1305,20 +1319,8 @@ export function ElProfesorBoard({
                         mastery={masteryCounts[chapter.id] ?? { total: 0, acquired: 0, learning: 0 }}
                       />
                     )}
-                    {chapter.status === "published" && globalMastery[chapter.id] && (
-                      <p className="mt-1 text-[11px] text-foreground-subtle">
-                        {globalMastery[chapter.id].masteredPct}% des autres utilisateurs actifs ont aussi maîtrisé ce chapitre
-                      </p>
-                    )}
-                    {chapter.status === "published" && (difficultCounts[chapter.id] ?? 0) > 0 && (
-                      <p className="mt-1 flex items-center gap-1 text-[11px] text-danger">
-                        <ShieldAlert className="h-3 w-3" /> {difficultCounts[chapter.id]} carte
-                        {(difficultCounts[chapter.id] ?? 0) > 1 ? "s" : ""} difficile
-                        {(difficultCounts[chapter.id] ?? 0) > 1 ? "s" : ""}
-                      </p>
-                    )}
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       {chapter.status === "published" && (
                         <>
                           <Link href={`/apps/el-profesor/chapters/${chapter.id}/review?mode=due`}>
@@ -1440,7 +1442,15 @@ export function ElProfesorBoard({
                               variant="ghost"
                               size="sm"
                               className="w-full justify-start"
-                              onClick={() => setModal({ type: "import_content", chapterId: chapter.id, chapterTitle: chapter.title })}
+                              onClick={() =>
+                                setModal({
+                                  type: "import_content",
+                                  chapterId: chapter.id,
+                                  chapterTitle: chapter.title,
+                                  bookId: book.id,
+                                  hasPdf: chapter.sourceKind === "pdf",
+                                })
+                              }
                               title="Importer des fiches/flashcards générées ailleurs (ex. Claude.ai) au lieu d'appeler Gemini"
                             >
                               Importer
@@ -1518,17 +1528,15 @@ export function ElProfesorBoard({
                           </Button>
                         </MoreActionsMenu>
                       )}
-                    </div>
-                    {chapter.status === "published" && (
-                      <div className="mt-1.5">
+                      {chapter.status === "published" && (
                         <Link
                           href={`/apps/el-profesor/chapters/${chapter.id}/review?mode=free`}
                           className="text-xs text-foreground-subtle underline hover:text-foreground"
                         >
                           Révision libre
                         </Link>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -1677,6 +1685,8 @@ export function ElProfesorBoard({
         <ImportContentDialog
           chapterId={modal.chapterId}
           chapterTitle={modal.chapterTitle}
+          bookId={modal.bookId}
+          hasPdf={modal.hasPdf}
           onClose={() => setModal(null)}
           onImported={() => {
             setModal(null);
