@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { Copy, Check, Upload, FileText } from "lucide-react";
+import { Copy, Check, Upload, FileText, Download } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { importChapterContent, importComplementaryContent } from "@/app/apps/el-profesor/actions/extraction";
 import { attachChapterPdf } from "@/app/apps/el-profesor/actions/library";
+import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { uploadPdfDirect } from "@/lib/el-profesor/client-pdf-upload";
 import { buildExternalImportPrompt } from "@/lib/el-profesor/prompts";
 import { useToast } from "@/components/ui/toast";
@@ -34,6 +35,18 @@ export function ImportContentDialog({
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const [pdfAttached, setPdfAttached] = useState(false);
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+
+  async function handleDownloadPdf() {
+    setIsDownloadingPdf(true);
+    const result = await getChapterPdfUrl(chapterId);
+    setIsDownloadingPdf(false);
+    if (result.error || !result.url) {
+      toast(result.error ?? "Impossible de générer le lien vers le PDF.", { variant: "error" });
+      return;
+    }
+    window.open(result.url, "_blank", "noopener,noreferrer");
+  }
 
   function handleFileChosen(file: File | null) {
     if (!file) return;
@@ -134,13 +147,21 @@ export function ImportContentDialog({
         )}
 
         <div>
-          <Button variant="secondary" size="sm" onClick={handleCopyPrompt} disabled={isPending}>
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            {copied ? "Copié !" : "Copier le prompt"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" size="sm" onClick={handleCopyPrompt} disabled={isPending}>
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? "Copié !" : "Copier le prompt"}
+            </Button>
+            {(hasPdf || pdfAttached) && (
+              <Button variant="secondary" size="sm" onClick={handleDownloadPdf} disabled={isDownloadingPdf}>
+                <Download className="h-3.5 w-3.5" /> {isDownloadingPdf ? "…" : "Télécharger le PDF"}
+              </Button>
+            )}
+          </div>
           <p className="mt-1.5 text-xs text-foreground-subtle">
-            Collez ce texte dans une conversation avec le PDF du chapitre joint à la main, puis récupérez sa réponse (le JSON)
-            ci-dessous — collée, ou déposée en fichier si le copier-coller tronque un contenu très long (fréquent sur mobile).
+            Collez ce texte dans une conversation avec le PDF du chapitre joint à la main{hasPdf || pdfAttached ? " (téléchargez-le ci-dessus)" : ""},
+            puis récupérez sa réponse (le JSON) ci-dessous — collée, ou déposée en fichier si le copier-coller tronque un contenu très
+            long (fréquent sur mobile).
           </p>
         </div>
 
