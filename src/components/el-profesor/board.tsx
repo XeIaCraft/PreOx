@@ -152,40 +152,30 @@ function ElapsedTime({ startedAt }: { startedAt: number }) {
 /**
  * Groups a chapter card's less-frequently-used admin actions behind a
  * "Plus" menu (requested 2026-08-26 — the per-book chapter list was "très
- * dense" with every action always visible) — closes on Escape or on
- * clicking outside/inside (a backdrop plus a click handler on the panel
- * itself, since every menu item is a normal onClick button and closing on
- * bubble is simpler than wiring each one individually).
+ * dense" with every action always visible). Was a corner-anchored
+ * `absolute` dropdown, which rendered cut off / clipped on narrow mobile
+ * viewports and cards with `overflow-hidden` (reported 2026-08-31,
+ * screenshot showing it sliced at the screen edge) — reusing the shared
+ * Modal (centered on sm+, a bottom sheet below it) sidesteps that whole
+ * class of positioning bugs, same fix already applied to HeaderMenu above
+ * for the identical symptom.
  */
 function MoreActionsMenu({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open]);
-
   return (
-    <div className="relative">
-      <Button variant="ghost" size="icon" onClick={() => setOpen((v) => !v)} aria-label="Plus d'actions" aria-expanded={open}>
+    <>
+      <Button variant="ghost" size="icon" onClick={() => setOpen(true)} aria-label="Plus d'actions" aria-expanded={open}>
         <MoreVertical className="h-4 w-4" />
       </Button>
       {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
-          <div
-            onClick={() => setOpen(false)}
-            className="absolute right-0 z-20 mt-1 flex w-52 flex-col gap-0.5 rounded-[var(--radius-md)] border border-border bg-surface p-1.5 shadow-lg"
-          >
+        <Modal title="Actions" onClose={() => setOpen(false)} size="sm">
+          <div className="-m-4 flex flex-col gap-0.5 p-2" onClick={() => setOpen(false)}>
             {children}
           </div>
-        </>
+        </Modal>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1456,17 +1446,15 @@ export function ElProfesorBoard({
                               Importer
                             </Button>
                           )}
-                          {chapter.status !== "pending" && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-full justify-start"
-                              onClick={() => setModal({ type: "extraction_history", chapterId: chapter.id, chapterTitle: chapter.title })}
-                              title="Voir les 5 dernières tentatives d'extraction — utile pour diagnostiquer une génération vide"
-                            >
-                              <History className="h-3.5 w-3.5" /> Historique IA
-                            </Button>
-                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start"
+                            onClick={() => setModal({ type: "extraction_history", chapterId: chapter.id, chapterTitle: chapter.title })}
+                            title="Voir les 5 dernières tentatives d'extraction — utile pour diagnostiquer une génération vide. Reste disponible après un « Vider le contenu » : l'historique n'est pas supprimé, seul le contenu généré l'est."
+                          >
+                            <History className="h-3.5 w-3.5" /> Historique IA
+                          </Button>
                           {chapter.sourceKind === "pdf" &&
                             chapter.status !== "extracting" &&
                             chapter.status !== "queued" &&
