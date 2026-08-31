@@ -528,6 +528,9 @@ export function FlashcardReviewer({
     );
   }
 
+  const frontDisplayText =
+    current.clozeRanges.length > 0 ? maskClozeText(current.front.text, current.clozeRanges) : (shownVariant?.text ?? current.front.text);
+
   return (
     <div ref={containerRef} className={`mx-auto flex min-h-[calc(100vh-4rem)] max-w-xl flex-col bg-background px-4 py-6 ${focusMode ? "justify-center" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-y-1.5">
@@ -659,53 +662,60 @@ export function FlashcardReviewer({
         </p>
       )}
 
-      <div className="flex flex-1 items-center justify-center [perspective:1200px]">
-        <div className={`relative min-h-[min(220px,45vh)] w-full ${!revealed ? "cursor-pointer" : ""}`} onClick={handleCardClick}>
-          <div
-            className={`relative h-full min-h-[min(220px,45vh)] w-full transition-transform duration-500 [transform-style:preserve-3d] ${
-              revealed ? "[transform:rotateY(180deg)]" : ""
-            }`}
-          >
-            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-border bg-surface p-8 shadow-sm [backface-visibility:hidden]">
-              {current.imageUrl && (
-                <OcclusionImage imageUrl={current.imageUrl} imageAlt={current.imageAlt} occlusions={current.imageOcclusions} revealed={false} />
-              )}
-              <p className="w-full text-justify text-lg leading-relaxed text-foreground">
-                {current.clozeRanges.length > 0 ? maskClozeText(current.front.text, current.clozeRanges) : (shownVariant?.text ?? current.front.text)}
-              </p>
+      {/*
+        Full-height, borderless reading pane (piste 2026-08-31 — "un mixte
+        de C et B, la question qui se réduit pour afficher la réponse mais
+        en plein écran"): no card box, no flip animation. Before reveal the
+        question fills the available space; on reveal it shrinks to a
+        muted one-line recap up top and the answer takes over the rest —
+        both states size to their own content instead of a shared
+        min-height, which is what caused long answers to need scrolling
+        even when they'd otherwise fit.
+      */}
+      <div className={`flex flex-1 flex-col ${!revealed ? "cursor-pointer" : ""}`} onClick={handleCardClick}>
+        {!revealed ? (
+          <div className="flex flex-1 flex-col items-start justify-center gap-3 px-1 py-6">
+            {current.imageUrl && (
+              <OcclusionImage imageUrl={current.imageUrl} imageAlt={current.imageAlt} occlusions={current.imageOcclusions} revealed={false} />
+            )}
+            <p className="w-full text-left text-xl font-medium leading-relaxed text-foreground">{frontDisplayText}</p>
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col gap-4 px-1 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <p className="min-w-0 text-sm leading-snug text-foreground-subtle">{frontDisplayText}</p>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExclude}
+                  disabled={isPending}
+                  className="text-foreground-subtle transition-colors hover:text-danger"
+                  aria-label="Exclure cette carte de mes révisions"
+                  title="Exclure cette carte de mes révisions"
+                >
+                  <BellOff className="h-3.5 w-3.5" />
+                </button>
+                <FlagButton targetType="flashcard" targetId={current.id} />
+              </div>
             </div>
-            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-[var(--radius-lg)] border border-primary/30 bg-surface p-8 shadow-sm [backface-visibility:hidden] [transform:rotateY(180deg)]">
-              {revealed && (
-                <div className="absolute right-3 top-3 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleExclude}
-                    disabled={isPending}
-                    className="text-foreground-subtle transition-colors hover:text-danger"
-                    aria-label="Exclure cette carte de mes révisions"
-                    title="Exclure cette carte de mes révisions"
-                  >
-                    <BellOff className="h-3.5 w-3.5" />
-                  </button>
-                  <FlagButton targetType="flashcard" targetId={current.id} />
-                </div>
-              )}
+            <div className="h-px w-8 shrink-0 bg-primary" />
+            <div className="flex flex-1 flex-col justify-center gap-3 overflow-y-auto">
               {current.imageUrl && current.imageOcclusions.length > 0 && (
                 <OcclusionImage imageUrl={current.imageUrl} imageAlt={current.imageAlt} occlusions={current.imageOcclusions} revealed={true} />
               )}
               {current.clozeRanges.length > 0 ? (
                 <>
-                  <p className="w-full text-justify text-lg font-medium leading-relaxed text-foreground">
+                  <p className="w-full text-left text-xl font-medium leading-relaxed text-foreground">
                     <ClozeText text={current.front.text} ranges={current.clozeRanges} hiddenClassName="rounded bg-primary-tint px-1 text-primary-strong" />
                   </p>
-                  {current.back.text && <p className="mt-2 w-full text-justify text-sm leading-relaxed text-foreground-muted">{current.back.text}</p>}
+                  {current.back.text && <p className="w-full text-left text-sm leading-relaxed text-foreground-muted">{current.back.text}</p>}
                 </>
               ) : (
-                <p className="w-full text-justify text-lg font-medium leading-relaxed text-primary-strong">{current.back.text}</p>
+                <p className="w-full text-left text-xl font-medium leading-relaxed text-primary-strong">{current.back.text}</p>
               )}
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="pb-[calc(1rem+env(safe-area-inset-bottom))]">
