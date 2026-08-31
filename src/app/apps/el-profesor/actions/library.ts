@@ -260,6 +260,26 @@ export async function attachChapterPdf(chapterId: string, storagePath: string): 
   return { success: "PDF joint au chapitre." };
 }
 
+/**
+ * Deletes a PDF from storage that no chapter references — the admin-facing
+ * side of getOrphanedChapterPdfs (piste 2026-08-31: closing an upload
+ * dialog before the chapter-registering step leaves the file behind with
+ * nothing pointing at it). Re-checks the path is still unreferenced right
+ * before deleting — belt-and-suspenders against a race with some other
+ * flow attaching it in the meantime, since this is irreversible.
+ */
+export async function deleteOrphanedPdf(path: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = await createClient();
+
+  const { data: stillReferenced } = await supabase.from("el_profesor_chapters").select("id").eq("pdf_storage_path", path).maybeSingle();
+  if (stillReferenced) return { error: "Ce PDF est maintenant relié à un chapitre — rechargez la page." };
+
+  await deleteChapterPdf(path);
+  revalidatePath("/apps/el-profesor/quality");
+  return { success: "PDF supprimé." };
+}
+
 /** Word/PowerPoint chapter import — small enough (unlike a PDF) to pass directly as a Server Action argument. */
 export async function uploadChapterFromOfficeFile(bookId: string, title: string, orderIndex: number, file: File): Promise<ActionState & { chapterId?: string }> {
   await requireElProfesorAdmin();

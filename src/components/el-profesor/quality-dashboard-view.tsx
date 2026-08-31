@@ -1,18 +1,19 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ShieldAlert, Copy, Merge, AlertTriangle, Trash2 } from "lucide-react";
+import { ArrowLeft, ShieldAlert, Copy, Merge, AlertTriangle, Trash2, FileWarning } from "lucide-react";
 import { Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { dismissDuplicateFlashcardPair, dismissSimilarSubEntityPair, dismissThinSubEntity } from "@/app/apps/el-profesor/actions/quality";
 import { deleteFlashcard } from "@/app/apps/el-profesor/actions/extraction";
 import { markFicheSuperseded } from "@/app/apps/el-profesor/actions/notions";
-import type { ActionState } from "@/app/apps/el-profesor/actions/library";
-import type { BookQualityDashboard } from "@/lib/el-profesor/dal";
+import { deleteOrphanedPdf, type ActionState } from "@/app/apps/el-profesor/actions/library";
+import type { BookQualityDashboard, OrphanedPdf } from "@/lib/el-profesor/dal";
 
 function timeAgoLabel(iso: string | null): string {
   if (!iso) return "jamais révisé";
@@ -23,18 +24,32 @@ function timeAgoLabel(iso: string | null): string {
   return `révisé il y a ${Math.round(days / 30)} mois`;
 }
 
+function formatBytes(n: number | null): string {
+  if (n == null) return "taille inconnue";
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} Ko`;
+  return `${(n / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "date inconnue";
+  return new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+}
+
 export function QualityDashboardView({
   books,
   selectedBookId,
   dashboard,
+  orphanedPdfs,
 }: {
   books: { id: string; title: string }[];
   selectedBookId: string | null;
   dashboard: BookQualityDashboard | null;
+  orphanedPdfs: OrphanedPdf[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
+  const [confirmDeletePdf, setConfirmDeletePdf] = useState<OrphanedPdf | null>(null);
 
   function runAction(action: () => Promise<ActionState>) {
     startTransition(async () => {
@@ -56,6 +71,41 @@ export function QualityDashboardView({
       <p className="mt-1 text-sm text-foreground-muted">
         Couverture par chapitre, flashcards potentiellement en double, sous-entités à fusionner — par livre.
       </p>
+
+      <div className="mt-6">
+        <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <FileWarning className="h-4 w-4" /> PDF orphelins ({orphanedPdfs.length})
+        </p>
+        <p className="mb-2 text-xs text-foreground-subtle">
+          Fichiers dans le stockage reliés à aucun chapitre — le plus souvent un import fermé avant validation. Concerne
+          toute la bibliothèque, pas seulement le livre sélectionné ci-dessous.
+        </p>
+        {orphanedPdfs.length === 0 ? (
+          <p className="text-sm text-foreground-subtle">Aucun fichier orphelin détecté.</p>
+        ) : (
+          <ul className="divide-y divide-border rounded-[var(--radius-md)] border border-border">
+            {orphanedPdfs.map((pdf) => (
+              <li key={pdf.path} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-xs text-foreground">{pdf.path}</p>
+                  <p className="text-xs text-foreground-subtle">
+                    {formatBytes(pdf.sizeBytes)} · {formatDate(pdf.lastModified)}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-danger"
+                  disabled={isPending}
+                  onClick={() => setConfirmDeletePdf(pdf)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Supprimer
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {books.length === 0 ? (
         <p className="mt-6 text-sm text-foreground-subtle">Aucun livre avec du contenu publié pour l&apos;instant.</p>
@@ -235,6 +285,22 @@ export function QualityDashboardView({
             </>
           )}
         </>
+      )}
+
+      {confirmDeletePdf && (
+        <ConfirmDeleteDialog
+          title="Supprimer ce PDF orphelin"
+          itemName={confirmDeletePdf.path}
+          introText={`Le fichier « ${confirmDeletePdf.path} » (${formatBytes(confirmDeletePdf.sizeBytes)}) sera supprimé définitivement du stockage.`}
+          consequences={["Aucun chapitre ne le référence — aucun contenu publié n'est concerné."]}
+          isPending={isPending}
+          onConfirm={() => {
+            const path = confirmDeletePdf.path;
+            setConfirmDeletePdf(null);
+            runAction(() => deleteOrphanedPdf(path));
+          }}
+          onClose={() => setConfirmDeletePdf(null)}
+        />
       )}
     </div>
   );

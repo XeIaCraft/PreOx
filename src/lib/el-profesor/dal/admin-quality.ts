@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getChapterContent } from "./shared";
 import { blockToPlainText } from "../block-text";
 import { findDuplicateFlashcards, findSimilarSubEntities, type DuplicateFlashcardPair, type SimilarSubEntityPair } from "../dedupe";
+import { EL_PROFESOR_PDF_BUCKET } from "../storage-constants";
 import type { BlockContent, BlockType, Chapter, Book } from "../types";
 
 // -- Per-book quality dashboard (admin-only) ---------------------------------
@@ -263,4 +264,57 @@ export async function getStaleChaptersForAdmin(
   );
 
   return alerts;
+}
+
+// -- PDF orphelins (non reliés à un chapitre) --------------------------------
+
+export interface OrphanedPdf {
+  path: string;
+  sizeBytes: number | null;
+  lastModified: string | null;
+}
+
+/**
+ * PDFs sitting in storage that no chapter references — piste 2026-08-31.
+ * Several admin upload flows send the PDF bytes straight from the browser
+ * to storage *before* the chapter row that would reference them exists
+ * (uploadPdfDirect + a later Server Action call — see its own doc comment
+ * for why: a book PDF can be 100+ MB, too large for a Server Action
+ * argument) — closing the dialog or losing the connection between those
+ * two steps leaves the uploaded file behind with nothing pointing at it.
+ * Same risk applies to "Diviser un PDF"'s `_staging/` uploads if abandoned
+ * before the final split runs. Computed by diffing the bucket's actual
+ * contents against every chapter's pdf_storage_path — nothing here is
+ * pre-flagged in the database, since an orphan is defined by the absence
+ * of a reference, not a stored property of the file itself.
+ */
+export async function getOrphanedChapterPdfs(): Promise<OrphanedPdf[]> {
+  const supabase = createAdminClient();
+
+  const { data: chapters } = await supabase.from("el_profesor_chapters").select("pdf_storage_path").not("pdf_storage_path", "is", null);
+  const referenced = new Set((chapters ?? []).map((c) => c.pdf_storage_path as string));
+
+  const { data: topLevel } = await supabase.storage.from(EL_PROFESOR_PDF_BUCKET).list("", { limit: 1000 });
+  const orphaned: OrphanedPdf[] = [];
+
+  for (const entry of topLevel ?? []) {
+    if (entry.id === null) {
+      // A "folder" (one per book id, plus "_staging" for in-progress book
+      // splits) — list() only returns one level at a time, so descend into it.
+      const { data: files } = await supabase.storage.from(EL_PROFESOR_PDF_BUCKET).list(entry.name, { limit: 1000 });
+      for (const file of files ?? []) {
+        if (file.id === null) continue; // bucket layout never nests folders — skip defensively rather than recurse
+        const path = `${entry.name}/${file.name}`;
+        if (!referenced.has(path)) {
+          orphaned.push({ path, sizeBytes: file.metadata?.size ?? null, lastModified: file.updated_at ?? file.created_at ?? null });
+        }
+      }
+    } else if (!referenced.has(entry.name)) {
+      // A file sitting directly at the bucket root — the app never writes
+      // one there, but don't silently hide it if something else did.
+      orphaned.push({ path: entry.name, sizeBytes: entry.metadata?.size ?? null, lastModified: entry.updated_at ?? entry.created_at ?? null });
+    }
+  }
+
+  return orphaned.sort((a, b) => (b.lastModified ?? "").localeCompare(a.lastModified ?? ""));
 }
