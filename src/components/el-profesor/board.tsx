@@ -63,6 +63,7 @@ import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-se
 import { LibraryStats } from "@/components/el-profesor/learning-widgets";
 import { DashboardDailyCard, DashboardSecondaryWidgets, DashboardWidgetsSkeleton } from "@/components/el-profesor/dashboard-secondary-widgets";
 import { RenderErrorBoundary } from "@/components/el-profesor/render-error-boundary";
+import { CompactProgressBars } from "@/components/el-profesor/progress-bars";
 import { deleteBook, deleteChapter, moveBook, moveChapter } from "@/app/apps/el-profesor/actions/library";
 import { setElProfesorPreviewAsUser } from "@/app/apps/el-profesor/actions/preview";
 import { extractChapter, extractChapterComplementary, resetStuckExtraction, resetChapterContent } from "@/app/apps/el-profesor/actions/extraction";
@@ -93,35 +94,6 @@ import type {
 } from "@/lib/el-profesor/dal";
 import type { ChapterStatus } from "@/lib/el-profesor/types";
 import type { DashboardSecondaryData, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
-
-function MasteryBar({ counts }: { counts: { total: number; new: number; learning: number; acquired: number } }) {
-  if (counts.total === 0) return null;
-  const pct = (n: number) => `${(n / counts.total) * 100}%`;
-  return (
-    <div className="mt-2">
-      <div className="flex h-1.5 overflow-hidden rounded-full bg-surface-muted">
-        <div className="bg-success" style={{ width: pct(counts.acquired) }} />
-        <div className="bg-accent" style={{ width: pct(counts.learning) }} />
-      </div>
-      <p className="mt-1 text-[11px] text-foreground-subtle">
-        {counts.acquired} acquise{counts.acquired > 1 ? "s" : ""} · {counts.learning} en cours · {counts.new} nouvelle{counts.new > 1 ? "s" : ""}
-      </p>
-    </div>
-  );
-}
-
-/** Reading-progress counterpart to MasteryBar (piste 2026-08-29 — "diviser la barre en deux : une lecture et une flashcard") — a separate bar rather than a second segment on MasteryBar's own, since the two percentages measure different things (blocks scrolled vs. cards learned) and can disagree freely. */
-function ReadProgressBar({ pct }: { pct: number }) {
-  if (pct <= 0) return null;
-  return (
-    <div className="mt-2">
-      <div className="h-1.5 overflow-hidden rounded-full bg-surface-muted">
-        <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
-      </div>
-      <p className="mt-1 text-[11px] text-foreground-subtle">{pct}% lu</p>
-    </div>
-  );
-}
 
 /** Library-wide read/mastery summary (piste 2026-08-29) — shown once under the "Par livre" book list and once under the "Par notion" list, same underlying numbers either way. */
 function GlobalProgressCard({ progress }: { progress: GlobalProgressSummary }) {
@@ -1327,8 +1299,12 @@ export function ElProfesorBoard({
                     {chapter.status === "failed" && chapter.extractionError && (
                       <p className="mt-1.5 text-xs text-danger">{chapter.extractionError}</p>
                     )}
-                    {chapter.status === "published" && <ReadProgressBar pct={readProgressByChapter[chapter.id] ?? 0} />}
-                    {chapter.status === "published" && masteryCounts[chapter.id] && <MasteryBar counts={masteryCounts[chapter.id]} />}
+                    {chapter.status === "published" && (
+                      <CompactProgressBars
+                        readPct={readProgressByChapter[chapter.id] ?? 0}
+                        mastery={masteryCounts[chapter.id] ?? { total: 0, acquired: 0, learning: 0 }}
+                      />
+                    )}
                     {chapter.status === "published" && globalMastery[chapter.id] && (
                       <p className="mt-1 text-[11px] text-foreground-subtle">
                         {globalMastery[chapter.id].masteredPct}% des autres utilisateurs actifs ont aussi maîtrisé ce chapitre

@@ -21,6 +21,7 @@ import { RenameNotionButton } from "@/components/el-profesor/rename-notion-butto
 import { MergeFichesForm } from "@/components/el-profesor/merge-fiches-form";
 import { moveNotion, moveNotionFiche } from "@/app/apps/el-profesor/actions/notions";
 import { useToast } from "@/components/ui/toast";
+import { CompactProgressBars } from "@/components/el-profesor/progress-bars";
 import type { NotionSummary, NotionRecommendation, DoseCalculator as DoseCalculatorEntry, NotionCategory } from "@/lib/el-profesor/types";
 import type { NotionReadiness, NotionProgressEntry } from "@/lib/el-profesor/dal";
 
@@ -99,42 +100,6 @@ function DoseCalculatorSection({ calculators }: { calculators: DoseCalculatorEnt
         Outil de calcul, pas un avis médical — vérifiez systématiquement la posologie auprès d&apos;une source de référence à jour avant
         toute administration.
       </p>
-    </div>
-  );
-}
-
-/**
- * Read % + FSRS mastery %, shown directly on each notion card (piste
- * 2026-08-29 — "sur notion ajouter cette même barre [lecture/flashcard]").
- * Same visual language as board.tsx's chapter-card bars (ReadProgressBar +
- * MasteryBar), kept as a local copy rather than a shared import since both
- * are small, dependency-free snippets scoped to their own card layout.
- */
-function NotionProgressBars({ entry }: { entry: NotionProgressEntry | undefined }) {
-  if (!entry) return null;
-  const { readPct, mastery } = entry;
-  if (readPct <= 0 && mastery.total === 0) return null;
-  const masteryPct = mastery.total > 0 ? Math.round((mastery.acquired / mastery.total) * 100) : 0;
-  const segPct = (n: number) => `${(n / mastery.total) * 100}%`;
-  return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-      {readPct > 0 && (
-        <span className="flex items-center gap-1.5 text-[11px] text-foreground-subtle">
-          <span className="h-1 w-14 overflow-hidden rounded-full bg-surface-muted">
-            <span className="block h-full rounded-full bg-primary" style={{ width: `${readPct}%` }} />
-          </span>
-          {readPct}% lu
-        </span>
-      )}
-      {mastery.total > 0 && (
-        <span className="flex items-center gap-1.5 text-[11px] text-foreground-subtle">
-          <span className="flex h-1 w-14 overflow-hidden rounded-full bg-surface-muted">
-            <span className="bg-success" style={{ width: segPct(mastery.acquired) }} />
-            <span className="bg-accent" style={{ width: segPct(mastery.learning) }} />
-          </span>
-          {masteryPct}% maîtrisé
-        </span>
-      )}
     </div>
   );
 }
@@ -296,7 +261,10 @@ export function NotionList({
                   <GraduationCap className="h-3.5 w-3.5" /> Réviser
                 </Link>
               </div>
-              <NotionProgressBars entry={progress[notion.id]} />
+              <CompactProgressBars
+                readPct={progress[notion.id]?.readPct ?? 0}
+                mastery={progress[notion.id]?.mastery ?? { total: 0, acquired: 0, learning: 0 }}
+              />
             </div>
           );
         }
@@ -365,7 +333,10 @@ export function NotionList({
                 </Link>
               </div>
             </div>
-            <NotionProgressBars entry={progress[notion.id]} />
+            <CompactProgressBars
+              readPct={progress[notion.id]?.readPct ?? 0}
+              mastery={progress[notion.id]?.mastery ?? { total: 0, acquired: 0, learning: 0 }}
+            />
             {r && r.total > 0 && tier && (
               <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-muted">
                 <div className={`h-full rounded-full ${tier.barClassName}`} style={{ width: `${r.readinessPct}%` }} />

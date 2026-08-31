@@ -110,29 +110,41 @@ export async function getNotionMasteryProgress(userId: string, notionId: string)
 
 /**
  * Average read % across each published chapter's own fiches (piste
- * 2026-08-29 — "visible directement depuis la vue principale") — mirrors
- * getMasteryCountsByChapter's own per-chapter loop and reuses the same
- * request-memoized getChapterContent, so this costs nothing extra when
- * called alongside it in the same page load (React's cache() dedupes the
- * identical calls).
+ * 2026-08-29 — "visible directement depuis la vue principale"). Reuses the
+ * same request-memoized getChapterContent already called by
+ * getMasteryCountsByChapter (free via React's cache()), but — unlike a
+ * first version of this function — fetches read progress for every
+ * chapter's fiches in ONE getFicheReadProgressBatch call instead of one
+ * query per chapter: with this in the dashboard's eager (awaited) block
+ * alongside masteryCounts, a per-chapter query added a real N+1 (one extra
+ * round trip per published chapter) that measurably delayed the page shell
+ * and, transitively, every promise streamed after it — exactly what the
+ * eager/deferred split exists to avoid.
  */
 export async function getReadProgressByChapter(userId: string, chapters: Chapter[]): Promise<Record<string, number>> {
+  const published = chapters.filter((c) => c.status === "published");
+  const contentByChapter = await Promise.all(published.map((c) => getChapterContent(c.id, false)));
+
+  const ficheIdsByChapter = new Map<string, string[]>();
+  const allFicheIds = new Set<string>();
+  published.forEach((chapter, i) => {
+    const ficheIds = contentByChapter[i].flatMap((s) => (s.fiche ? [s.fiche.id] : []));
+    ficheIdsByChapter.set(chapter.id, ficheIds);
+    for (const id of ficheIds) allFicheIds.add(id);
+  });
+
+  const progress = await getFicheReadProgressBatch(userId, [...allFicheIds]);
+
   const result: Record<string, number> = {};
-  await Promise.all(
-    chapters
-      .filter((c) => c.status === "published")
-      .map(async (chapter) => {
-        const content = await getChapterContent(chapter.id, false);
-        const ficheIds = content.flatMap((s) => (s.fiche ? [s.fiche.id] : []));
-        if (ficheIds.length === 0) {
-          result[chapter.id] = 0;
-          return;
-        }
-        const progress = await getFicheReadProgressBatch(userId, ficheIds);
-        const sum = ficheIds.reduce((acc, id) => acc + (progress[id] ?? 0), 0);
-        result[chapter.id] = Math.round(sum / ficheIds.length);
-      })
-  );
+  for (const chapter of published) {
+    const ficheIds = ficheIdsByChapter.get(chapter.id) ?? [];
+    if (ficheIds.length === 0) {
+      result[chapter.id] = 0;
+      continue;
+    }
+    const sum = ficheIds.reduce((acc, id) => acc + (progress[id] ?? 0), 0);
+    result[chapter.id] = Math.round(sum / ficheIds.length);
+  }
   return result;
 }
 
