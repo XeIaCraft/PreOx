@@ -385,31 +385,45 @@ export type ClaudeBatchResult =
  * lets each logged row carry the source PDF's page count, so the cost
  * estimate can later scale per chapter instead of averaging across every
  * call regardless of size.
+ *
+ * `logUsageForCustomIds`, when given, restricts logClaudeUsage calls to
+ * that set — Claude's results endpoint returns the same full list on every
+ * call for an ended batch (it isn't consumed), and the poller now calls
+ * this again on every poll of a large batch that didn't finish applying
+ * within one invocation (see batch-poll.ts's time budget). Without this,
+ * every re-poll would re-log usage/cost for items already logged on an
+ * earlier pass, double- (or N-times-) counting real spend against the same
+ * actual API calls — found 2026-08-31 alongside the "35 chapters, only 16
+ * came back" report, root-caused to exactly this retry pattern.
  */
 export async function getClaudeBatchResults(
   apiKey: string,
   anthropicBatchId: string,
   model: string,
-  pageCountByCustomId?: Map<string, number>
+  pageCountByCustomId?: Map<string, number>,
+  logUsageForCustomIds?: Set<string>
 ): Promise<ClaudeBatchResult[]> {
   const client = claudeClient(apiKey);
   const results: ClaudeBatchResult[] = [];
   for await (const entry of await client.messages.batches.results(anthropicBatchId)) {
     const pdfPageCount = pageCountByCustomId?.get(entry.custom_id) ?? null;
+    const shouldLogUsage = !logUsageForCustomIds || logUsageForCustomIds.has(entry.custom_id);
     if (entry.result.type === "succeeded") {
       const toolUse = entry.result.message.content.find((b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use");
       if (!toolUse || !toolUse.input) {
         results.push({ customId: entry.custom_id, outcome: "errored", message: "Résultat Claude sans sortie structurée." });
         continue;
       }
-      await logClaudeUsage({
-        model,
-        success: true,
-        promptTokens: entry.result.message.usage.input_tokens,
-        candidatesTokens: entry.result.message.usage.output_tokens,
-        totalTokens: entry.result.message.usage.input_tokens + entry.result.message.usage.output_tokens,
-        pdfPageCount,
-      });
+      if (shouldLogUsage) {
+        await logClaudeUsage({
+          model,
+          success: true,
+          promptTokens: entry.result.message.usage.input_tokens,
+          candidatesTokens: entry.result.message.usage.output_tokens,
+          totalTokens: entry.result.message.usage.input_tokens + entry.result.message.usage.output_tokens,
+          pdfPageCount,
+        });
+      }
       results.push({
         customId: entry.custom_id,
         outcome: "succeeded",
@@ -418,7 +432,7 @@ export async function getClaudeBatchResults(
       });
     } else if (entry.result.type === "errored") {
       const message = entry.result.error.error.message || "Erreur inconnue.";
-      await logClaudeUsage({ model, success: false, errorMessage: message.slice(0, 300), pdfPageCount });
+      if (shouldLogUsage) await logClaudeUsage({ model, success: false, errorMessage: message.slice(0, 300), pdfPageCount });
       results.push({ customId: entry.custom_id, outcome: "errored", message: message.slice(0, 300) });
     } else {
       results.push({ customId: entry.custom_id, outcome: entry.result.type });

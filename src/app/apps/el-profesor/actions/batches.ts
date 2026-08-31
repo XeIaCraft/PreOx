@@ -280,8 +280,18 @@ export async function pollClaudeBatchesNow(): Promise<ActionState & { polled?: n
   await requireElProfesorAdmin();
   const { polled, completed } = await pollAllClaudeBatches();
   if (polled === 0) return { success: "Aucun lot en attente — rien à vérifier.", polled, completed };
+  // A large batch (a few dozen chapters) can take more than one pass to
+  // fully apply — see pollAllClaudeBatches' own time-budget comment. When
+  // some polled jobs aren't in `completed`, they're still 'submitted' with
+  // partial progress recorded — cliquer à nouveau reprend exactement où ça
+  // s'est arrêté, rien n'est perdu ni ré-appliqué en double.
+  const stillInProgress = polled - completed;
   return {
-    success: `${polled} lot(s) vérifié(s), ${completed} terminé(s) et appliqué(s).`,
+    success:
+      `${polled} lot(s) vérifié(s), ${completed} terminé(s) et appliqué(s).` +
+      (stillInProgress > 0
+        ? ` ${stillInProgress} lot(s) encore en cours d'application (lot volumineux) — recliquez dans une minute pour continuer.`
+        : ""),
     polled,
     completed,
   };

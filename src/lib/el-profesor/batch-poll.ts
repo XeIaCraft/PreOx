@@ -260,9 +260,28 @@ async function applyBatchResult(
   return { continued: false };
 }
 
-/** Polls every submitted Claude batch job and applies whatever finished. */
+// Applying one chapter-extraction item does a PDF download + OCR fallback +
+// citation correction + several writes — genuinely slow per item, and both
+// callers of pollAllClaudeBatches (the cron route and the "Vérifier
+// maintenant" Server Action) run under a 60s maxDuration. A batch of a few
+// dozen chapters can blow well past that mid-loop, and Vercel kills the
+// invocation outright — no chance to run the job's own "mark completed"
+// update afterward. Found 2026-08-31: a 35-chapter batch that only ever
+// applied ~16 chapters no matter how many times it was re-polled, because
+// every retry re-fetched and RE-APPLIED every item from scratch (nothing
+// tracked which ones had already landed), duplicating content for the ones
+// that did succeed and burning the same time budget again before reaching
+// the rest. Fixed by (1) skipping any item whose status isn't still
+// 'pending' — the actual persisted signal of "not yet applied" — and (2)
+// stopping before the time budget runs out, leaving the job 'submitted' so
+// the next poll picks up exactly where this one left off instead of
+// starting over.
+const POLL_TIME_BUDGET_MS = 45_000;
+
+/** Polls every submitted Claude batch job and applies whatever finished — may take several polls to fully drain a large batch, see the time-budget comment above. */
 export async function pollAllClaudeBatches(): Promise<{ polled: number; completed: number }> {
   const admin = createAdminClient();
+  const startedAt = Date.now();
   const { data: jobs } = await admin.from("el_profesor_batch_jobs").select("*").eq("status", "submitted");
   if (!jobs || jobs.length === 0) return { polled: 0, completed: 0 };
 
@@ -270,6 +289,8 @@ export async function pollAllClaudeBatches(): Promise<{ polled: number; complete
   let touchedNotions = false;
 
   for (const job of jobs) {
+    if (Date.now() - startedAt > POLL_TIME_BUDGET_MS) break; // out of time this round — this job (and any after it) is untouched, so nothing already applied is at risk; picked up again next poll
+
     let claudeConfig: { apiKey: string; model: string };
     try {
       claudeConfig = await getElProfesorClaudeConfig();
@@ -296,6 +317,25 @@ export async function pollAllClaudeBatches(): Promise<{ polled: number; complete
     // results stream in, so it needs this map up front to log per-page data.
     const { data: items } = await admin.from("el_profesor_batch_items").select("*").eq("batch_job_id", job.id);
     const itemByCustomId = new Map((items ?? []).map((i) => [i.custom_id, i]));
+    // The only items still waiting to be applied — anything else already
+    // has a real outcome recorded from an earlier poll and must never be
+    // re-applied (chapter extraction isn't idempotent: re-running it would
+    // insert a second copy of every sub-entity/fiche/flashcard).
+    const pendingCustomIds = new Set((items ?? []).filter((i) => i.status === "pending").map((i) => i.custom_id));
+    if (pendingCustomIds.size === 0) {
+      // Every item already has an outcome — this job just never made it to
+      // its own "mark completed" update (the same time-budget cutoff this
+      // fix guards against, before the fix existed). Finalize it now
+      // without touching any content again.
+      const succeeded = (items ?? []).filter((i) => i.status === "succeeded").length;
+      const errored = (items ?? []).length - succeeded;
+      await admin
+        .from("el_profesor_batch_jobs")
+        .update({ status: "completed", succeeded_count: succeeded, errored_count: errored, completed_at: new Date().toISOString() })
+        .eq("id", job.id);
+      completedCount++;
+      continue;
+    }
 
     const chapterIds = [...new Set((items ?? []).map((i) => i.target as unknown as BatchItemTarget).filter((t) => t.type === "chapter").map((t) => t.chapterId))];
     const pageCountByChapterId = new Map<string, number>();
@@ -314,7 +354,7 @@ export async function pollAllClaudeBatches(): Promise<{ polled: number; complete
 
     let results: ClaudeBatchResult[];
     try {
-      results = await getClaudeBatchResults(claudeConfig.apiKey, job.anthropic_batch_id, claudeConfig.model, pageCountByCustomId);
+      results = await getClaudeBatchResults(claudeConfig.apiKey, job.anthropic_batch_id, claudeConfig.model, pageCountByCustomId, pendingCustomIds);
     } catch (err) {
       await admin
         .from("el_profesor_batch_jobs")
@@ -328,7 +368,13 @@ export async function pollAllClaudeBatches(): Promise<{ polled: number; complete
     let promptTokens = 0;
     let candidatesTokens = 0;
     let anyFinished = false; // false if every item was just an intermediate "until complete" pass — see applyBatchResult's doc comment
+    let ranOutOfTime = false;
     for (const result of results) {
+      if (!pendingCustomIds.has(result.customId)) continue; // already applied on an earlier poll — never reapply
+      if (Date.now() - startedAt > POLL_TIME_BUDGET_MS) {
+        ranOutOfTime = true;
+        break; // whatever's left stays 'pending' — picked up next poll, nothing partial or duplicated
+      }
       const item = itemByCustomId.get(result.customId);
       if (!item) continue;
       try {
@@ -373,19 +419,46 @@ export async function pollAllClaudeBatches(): Promise<{ polled: number; complete
       if (job.kind === "notion_categorization" || job.kind === "contradiction_check" || job.kind === "notion_update_check") touchedNotions = true;
     }
 
-    // Token sums accumulate across every poll of this job — if some items
-    // are still mid-"until complete"-chain (anyFinished false for them) the
-    // job stays "completed" with whatever succeeded on this poll; the chain
-    // continuation is tracked by the newly-spawned job it triggered, not
-    // this one, so no double-counting here.
+    // Counts and tokens accumulate onto whatever this job already had from
+    // an earlier poll — `succeeded`/`errored`/`promptTokens`/`candidatesTokens`
+    // above only ever cover items actually applied *this* pass (the pending
+    // filter guarantees that), so a straight overwrite would lose progress
+    // from before.
+    const totalSucceeded = (job.succeeded_count ?? 0) + succeeded;
+    const totalErrored = (job.errored_count ?? 0) + errored;
+    const totalPromptTokens = (job.prompt_tokens ?? 0) + promptTokens;
+    const totalCandidatesTokens = (job.candidates_tokens ?? 0) + candidatesTokens;
+
+    // Authoritative check against the DB rather than in-memory bookkeeping
+    // (covers both "ran out of time mid-loop" and the rarer case where
+    // Claude's results endpoint didn't actually include every item this
+    // job is still waiting on despite `ended: true`).
+    const { count: remainingPending } = await admin
+      .from("el_profesor_batch_items")
+      .select("id", { count: "exact", head: true })
+      .eq("batch_job_id", job.id)
+      .eq("status", "pending");
+
+    if (ranOutOfTime || (remainingPending ?? 0) > 0) {
+      // Items still pending — record progress but leave status 'submitted'
+      // so the next poll resumes instead of restarting. No push
+      // notification: not actually done yet.
+      await admin
+        .from("el_profesor_batch_jobs")
+        .update({ succeeded_count: totalSucceeded, errored_count: totalErrored, prompt_tokens: totalPromptTokens, candidates_tokens: totalCandidatesTokens })
+        .eq("id", job.id);
+      if (ranOutOfTime) break; // this job already used up the time budget — no point trying the next one either
+      continue;
+    }
+
     await admin
       .from("el_profesor_batch_jobs")
       .update({
         status: "completed",
-        succeeded_count: succeeded,
-        errored_count: errored,
-        prompt_tokens: promptTokens,
-        candidates_tokens: candidatesTokens,
+        succeeded_count: totalSucceeded,
+        errored_count: totalErrored,
+        prompt_tokens: totalPromptTokens,
+        candidates_tokens: totalCandidatesTokens,
         completed_at: new Date().toISOString(),
       })
       .eq("id", job.id);
@@ -399,7 +472,7 @@ export async function pollAllClaudeBatches(): Promise<{ polled: number; complete
       for (const a of admins ?? []) {
         await sendPushToUser(a.id, {
           title: "Lot Claude terminé — El Profesor",
-          body: `${succeeded} réussite(s), ${errored} échec(s).`,
+          body: `${totalSucceeded} réussite(s), ${totalErrored} échec(s).`,
           link: "/apps/el-profesor",
         });
       }
