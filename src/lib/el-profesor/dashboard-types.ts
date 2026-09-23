@@ -13,9 +13,59 @@ import type {
   DueBlockEntry,
   NotionReadiness,
   NotionProgressEntry,
+  BookWithChapters,
+  AdjacentChapterEntry,
+  ChapterDueCounts,
+  ChapterMasteryCounts,
+  ChapterMasteryPercentile,
+  BlockReviewState,
+  GlobalProgressSummary,
+  MasteryProgress,
+  ElProfesorAiProvider,
+  SubEntityWithFiche,
 } from "@/lib/el-profesor/dal";
-import type { Flashcard, NotionSummary, NotionRecommendation, DoseCalculator, NotionCategory } from "@/lib/el-profesor/types";
+import type { Flashcard, NotionSummary, NotionRecommendation, DoseCalculator, NotionCategory, ChapterSourceKind } from "@/lib/el-profesor/types";
 import type { ElProfesorBatchJobRow } from "@/lib/supabase/types";
+
+/**
+ * Everything ElProfesorBoard needs to render, grouped into one object
+ * instead of ~10 separate props — the shape both page.tsx's initial SSR
+ * render and the "Synchroniser" local-cache sync (dal/shared.ts's
+ * loadDashboardSnapshot, actions/offline-sync.ts, local-db.ts) produce, so
+ * DashboardWithLocalCache can swap between a server-rendered snapshot and
+ * a locally-cached one without either side needing its own shape.
+ */
+export interface DashboardSnapshot {
+  books: BookWithChapters[];
+  dueCounts: ChapterDueCounts;
+  needsReviewCounts: ChapterDueCounts;
+  masteryCounts: ChapterMasteryCounts;
+  difficultCounts: ChapterDueCounts;
+  globalMastery: Record<string, ChapterMasteryPercentile>;
+  readProgressByChapter: Record<string, number>;
+  globalProgress: GlobalProgressSummary;
+  hasGeminiKey: boolean;
+  aiProvider: ElProfesorAiProvider;
+}
+
+/**
+ * Same idea as DashboardSnapshot, for one chapter's worth of what
+ * ChapterView needs. Includes the chapter's own title/source fields (not
+ * just its nested content) so ChapterViewWithLocalCache can render entirely
+ * from cache without depending on the page's own per-visit chapter-row
+ * fetch either.
+ */
+export interface ChapterContentSnapshot {
+  chapterTitle: string;
+  sourceKind: ChapterSourceKind;
+  sourceText: string | null;
+  subEntities: SubEntityWithFiche[];
+  bookmarkedIds: string[];
+  blockReviewStates: Record<string, BlockReviewState>;
+  ficheReadProgress: Record<string, number>;
+  ficheMasteryProgress: Record<string, MasteryProgress>;
+  adjacentChapters: { prev: AdjacentChapterEntry | null; next: AdjacentChapterEntry | null };
+}
 
 /**
  * Piste 2026-08-24 ("chargement progressif du tableau de bord") — everything

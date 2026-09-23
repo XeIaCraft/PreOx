@@ -9,11 +9,6 @@ import { getEffectiveIsAdmin } from "@/lib/el-profesor/preview-mode";
 export const maxDuration = 60;
 import {
   getLibrary,
-  getDueCountsByChapter,
-  getNeedsReviewCounts,
-  getMasteryCountsByChapter,
-  getDifficultCountsByChapter,
-  getGlobalChapterMasteryPercentages,
   getReviewActivitySummary,
   getOverconfidentMissCount,
   getUpcomingReviewForecast,
@@ -27,14 +22,12 @@ import {
   getKnowledgeExpiryAlerts,
   getReviewTimeStats,
   getFlagStatsByBlockType,
-  hasElProfesorGeminiKey,
   getElProfesorGeminiModel,
   getElProfesorGeminiExtraKeyCount,
   getElProfesorGeminiFallbackModel,
   getGeminiUsageStats,
   getAiSpendCapUsd,
   getCurrentMonthAiSpendUsd,
-  getElProfesorAiProvider,
   hasElProfesorClaudeKey,
   getElProfesorClaudeModel,
   getReadingPosition,
@@ -47,13 +40,12 @@ import {
   getNotionRecommendations,
   getDoseCalculators,
   getCaseJournalCountsByNotion,
-  getReadProgressByChapter,
-  getGlobalProgressSummary,
   getNotionProgressBatch,
   type BookWithChapters,
 } from "@/lib/el-profesor/dal";
 import { getBatchJobs } from "@/app/apps/el-profesor/actions/batches";
-import { ElProfesorBoard } from "@/components/el-profesor/board";
+import { getElProfesorDashboardSnapshot } from "@/app/apps/el-profesor/actions/offline-sync";
+import { DashboardWithLocalCache } from "@/components/el-profesor/dashboard-with-local-cache";
 import { ToastProvider } from "@/components/ui/toast";
 import { recordAppVisit } from "@/app/actions/discovery";
 import type { DashboardSecondaryData, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
@@ -154,28 +146,22 @@ export default async function ElProfesorPage() {
   const profile = (await getCurrentProfile())!;
   const realIsAdmin = profile.role === "admin";
   const { effectiveIsAdmin: isAdmin, previewingAsUser } = await getEffectiveIsAdmin(realIsAdmin);
-  const [, allLibraryBooks] = await Promise.all([recordAppVisit("el-profesor"), getLibrary()]);
-  const libraryBooks = allLibraryBooks.filter((b) => !b.archivedAt);
-  // Non-admins never see a chapter still being imported/reviewed — only
-  // admins need visibility into the pipeline's in-progress state.
-  const books = isAdmin ? libraryBooks : libraryBooks.map((b) => ({ ...b, chapters: b.chapters.filter((c) => c.status === "published") }));
-  const allChapters = books.flatMap((b) => b.chapters);
 
-  // Core data the book list itself renders from — awaited so the page's
-  // static shell (header + book list) never shows a placeholder for it.
-  const [dueCounts, needsReviewCounts, masteryCounts, difficultCounts, globalMastery, hasGeminiKey, aiProvider, readingPosition, readProgressByChapter, globalProgress] =
-    await Promise.all([
-      getDueCountsByChapter(profile.id, allChapters),
-      isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
-      getMasteryCountsByChapter(profile.id, allChapters),
-      getDifficultCountsByChapter(profile.id, allChapters),
-      getGlobalChapterMasteryPercentages(allChapters),
-      isAdmin ? hasElProfesorGeminiKey() : Promise.resolve(false),
-      isAdmin ? getElProfesorAiProvider() : Promise.resolve("gemini" as const),
-      getReadingPosition(profile.id),
-      getReadProgressByChapter(profile.id, allChapters),
-      getGlobalProgressSummary(profile.id),
-    ]);
+  // The book list + dashboard stats are computed by getElProfesorDashboardSnapshot
+  // (actions/offline-sync.ts) — shared with the "Synchroniser" local-cache sync,
+  // so this page and that action never duplicate the same batched queries.
+  // libraryBooks (admin-inclusive, unfiltered) is fetched again here, only for
+  // the Suspense-deferred secondary data below — cheap (one query) and keeps
+  // the snapshot itself free of chapters a non-admin shouldn't ever cache.
+  const [, snapshot, readingPosition, allLibraryBooks] = await Promise.all([
+    recordAppVisit("el-profesor"),
+    getElProfesorDashboardSnapshot(),
+    getReadingPosition(profile.id),
+    getLibrary(),
+  ]);
+  const { books } = snapshot;
+  const libraryBooks = allLibraryBooks.filter((b) => !b.archivedAt);
+  const allChapters = books.flatMap((b) => b.chapters);
 
   // Started here (server render), not awaited — passed down as a Promise
   // and unwrapped with React's use() only where each slice is actually
@@ -187,21 +173,12 @@ export default async function ElProfesorPage() {
 
   return (
     <ToastProvider>
-      <ElProfesorBoard
-        books={books}
-        dueCounts={dueCounts}
-        needsReviewCounts={needsReviewCounts}
-        masteryCounts={masteryCounts}
-        difficultCounts={difficultCounts}
-        globalMastery={globalMastery}
+      <DashboardWithLocalCache
+        initialSnapshot={snapshot}
         isAdmin={isAdmin}
         realIsAdmin={realIsAdmin}
         previewingAsUser={previewingAsUser}
-        hasGeminiKey={hasGeminiKey}
-        aiProvider={aiProvider}
         serverResumeChapterId={readingPosition?.chapterId ?? null}
-        readProgressByChapter={readProgressByChapter}
-        globalProgress={globalProgress}
         secondaryDataPromise={secondaryDataPromise}
         aiConfigPromise={aiConfigPromise}
         notionViewDataPromise={notionViewDataPromise}

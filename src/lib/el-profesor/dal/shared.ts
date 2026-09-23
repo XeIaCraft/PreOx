@@ -333,6 +333,93 @@ export async function getActiveFlashcardsByChapterBatch(chapterIds: string[]): P
 }
 
 /**
+ * Batched equivalent of calling getChapterContent(chapterId, includeDrafts)
+ * once per chapter — same full nested shape (sub-entities with their fiche,
+ * blocks, and flashcards), but for every requested chapter via a small,
+ * fixed number of chunked queries instead of one round trip per chapter.
+ * Built for the local-cache sync (piste 2026-09-24, see local-db.ts): the
+ * "Synchroniser" flow needs every chapter's full content, not just counts,
+ * to let the dashboard and chapter views render entirely from IndexedDB —
+ * a per-chapter getChapterContent loop across a whole library would be
+ * exactly the N+1 pattern already root-caused on the dashboard's stats.
+ */
+export async function getChapterContentBatch(chapterIds: string[], includeDrafts = false): Promise<Map<string, SubEntityWithFiche[]>> {
+  const result = new Map<string, SubEntityWithFiche[]>();
+  if (chapterIds.length === 0) return result;
+  const supabase = await createClient();
+
+  const subEntityRows = await selectInChunks(chapterIds, (chunk) =>
+    supabase.from("el_profesor_sub_entities").select("*").in("chapter_id", chunk)
+  );
+  if (subEntityRows.length === 0) return result;
+  subEntityRows.sort((a, b) => a.order_index - b.order_index);
+  const subEntityIds = subEntityRows.map((s) => s.id);
+
+  const ficheRows = await selectInChunks(subEntityIds, (chunk) => {
+    let query = supabase.from("el_profesor_fiches").select("*").in("sub_entity_id", chunk);
+    if (!includeDrafts) query = query.eq("status", "published");
+    return query;
+  });
+  const ficheIds = ficheRows.map((f) => f.id);
+
+  let blockRows: ElProfesorFicheBlockRow[] = [];
+  let flashcardRows: ElProfesorFlashcardRow[] = [];
+  if (ficheIds.length > 0) {
+    const [blocksRes, flashcardsRes] = await Promise.all([
+      selectInChunks(ficheIds, (chunk) => {
+        let query = supabase.from("el_profesor_fiche_blocks").select("*").in("fiche_id", chunk);
+        if (!includeDrafts) query = query.eq("status", "published");
+        return query;
+      }),
+      selectInChunks(ficheIds, (chunk) => {
+        let query = supabase.from("el_profesor_flashcards").select("*").in("fiche_id", chunk);
+        if (!includeDrafts) query = query.eq("status", "published");
+        return query;
+      }),
+    ]);
+    blockRows = blocksRes as ElProfesorFicheBlockRow[];
+    flashcardRows = flashcardsRes as ElProfesorFlashcardRow[];
+  }
+  blockRows.sort((a, b) => a.order_index - b.order_index);
+
+  // Grouped once into maps rather than filtered per sub-entity below — a
+  // whole-library batch can have thousands of blocks/flashcards, and
+  // filtering the full array once per sub-entity would turn this quadratic.
+  const ficheBySubEntity = new Map(ficheRows.map((f) => [f.sub_entity_id, f as ElProfesorFicheRow]));
+  const blocksByFiche = new Map<string, ElProfesorFicheBlockRow[]>();
+  for (const b of blockRows) {
+    const list = blocksByFiche.get(b.fiche_id);
+    if (list) list.push(b);
+    else blocksByFiche.set(b.fiche_id, [b]);
+  }
+  const flashcardsByFiche = new Map<string, ElProfesorFlashcardRow[]>();
+  for (const c of flashcardRows) {
+    const list = flashcardsByFiche.get(c.fiche_id);
+    if (list) list.push(c);
+    else flashcardsByFiche.set(c.fiche_id, [c]);
+  }
+
+  for (const sub of subEntityRows) {
+    const ficheRow = ficheBySubEntity.get(sub.id);
+    const entry: SubEntityWithFiche = !ficheRow
+      ? { ...toSubEntity(sub), fiche: null }
+      : {
+          ...toSubEntity(sub),
+          fiche: {
+            ...toFiche(ficheRow),
+            blocks: (blocksByFiche.get(ficheRow.id) ?? []).map(toFicheBlock),
+            flashcards: (flashcardsByFiche.get(ficheRow.id) ?? []).map(toFlashcard),
+          },
+        };
+    const list = result.get(sub.chapter_id);
+    if (list) list.push(entry);
+    else result.set(sub.chapter_id, [entry]);
+  }
+
+  return result;
+}
+
+/**
  * Flashcards from every fiche in this content set, excluding ones whose
  * fiche has been merged/superseded (items 52/56 — "don't learn the same
  * fact, or an outdated one, twice"). Used everywhere a review queue,

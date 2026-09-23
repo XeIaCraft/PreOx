@@ -22,7 +22,7 @@ import "server-only";
 // - dal/ai-config.ts: Gemini/Claude provider config + usage stats.
 // - dal/admin-quality.ts: admin content-quality dashboards.
 // - dal/progress.ts: per-fiche/per-notion reading + mastery progress.
-export { requireElProfesorAccess, requireElProfesorAdmin, getChapterContent } from "./dal/shared";
+export { requireElProfesorAccess, requireElProfesorAdmin, getChapterContent, getChapterContentBatch } from "./dal/shared";
 export type { SubEntityWithFiche } from "./dal/shared";
 export * from "./dal/library";
 export * from "./dal/review";
