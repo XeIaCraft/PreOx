@@ -5,35 +5,62 @@ import { ChapterView } from "@/components/el-profesor/chapter-view";
 import { getCachedChapterContent } from "@/lib/el-profesor/local-db";
 import type { ChapterContentSnapshot } from "@/lib/el-profesor/dashboard-types";
 
+function ChapterViewSkeleton() {
+  return (
+    <div className="mx-auto max-w-4xl space-y-3 px-4 py-8" aria-hidden="true">
+      <div className="h-8 w-48 animate-pulse rounded-[var(--radius-md)] bg-surface-muted/60" />
+      <div className="h-64 animate-pulse rounded-[var(--radius-lg)] bg-surface-muted/60" />
+    </div>
+  );
+}
+
 /**
  * Same seam as DashboardWithLocalCache, for one chapter (piste 2026-09-24 —
- * "cache local + synchronisation manuelle"). Seeds from the server's own
- * snapshot (so the first paint, and any chapter never synced locally, work
- * exactly as before), then swaps to the local IndexedDB copy on mount if
- * present. ChapterView itself is untouched.
+ * "cache local + synchronisation manuelle"). Takes the chapter's content as
+ * an un-awaited promise (see chapters/[chapterId]/page.tsx) rather than an
+ * already-resolved snapshot — checks the local IndexedDB cache first and
+ * only ever falls back to waiting on that promise when this chapter hasn't
+ * been synced yet, so a cached chapter renders instantly instead of always
+ * waiting on the page's own (slow) server round trip. ChapterView itself is
+ * untouched.
  */
 export function ChapterViewWithLocalCache({
   chapterId,
   initialEntityId,
   isAdmin,
-  initialSnapshot,
+  contentPromise,
 }: {
   chapterId: string;
   initialEntityId?: string;
   isAdmin: boolean;
-  initialSnapshot: ChapterContentSnapshot;
+  contentPromise: Promise<ChapterContentSnapshot | null>;
 }) {
-  const [snapshot, setSnapshot] = useState<ChapterContentSnapshot>(initialSnapshot);
+  const [snapshot, setSnapshot] = useState<ChapterContentSnapshot | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     getCachedChapterContent(chapterId).then((cached) => {
-      if (!cancelled && cached) setSnapshot(cached);
+      if (cancelled) return;
+      if (cached) {
+        setSnapshot(cached);
+        return;
+      }
+      contentPromise.then((serverSnapshot) => {
+        if (cancelled) return;
+        if (serverSnapshot) setSnapshot(serverSnapshot);
+        else setNotFound(true);
+      });
     });
     return () => {
       cancelled = true;
     };
-  }, [chapterId]);
+  }, [chapterId, contentPromise]);
+
+  if (notFound) {
+    return <p className="mx-auto max-w-4xl px-4 py-8 text-sm text-foreground-muted">Ce chapitre n&apos;est plus disponible.</p>;
+  }
+  if (!snapshot) return <ChapterViewSkeleton />;
 
   return (
     <ChapterView

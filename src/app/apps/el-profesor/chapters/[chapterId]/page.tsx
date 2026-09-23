@@ -18,8 +18,17 @@ export default async function ChapterPage({
   const { entity } = await searchParams;
   const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
 
+  // Both cheap, single indexed lookups — kept awaited, they were never the
+  // slow part. getElProfesorChapterContentBatch is the expensive one (the
+  // full sub_entities/fiches/blocks/flashcards join): deliberately NOT
+  // awaited below, for the same reason as page.tsx's dashboard snapshot —
+  // awaiting it here blocks the whole page on every navigation, leaving the
+  // local cache no chance to ever render first.
   const supabase = await createClient();
-  const { data: chapter } = await supabase.from("el_profesor_chapters").select("id, status").eq("id", chapterId).single();
+  const [{ data: chapter }, readingPosition] = await Promise.all([
+    supabase.from("el_profesor_chapters").select("id, status").eq("id", chapterId).single(),
+    entity ? Promise.resolve(null) : getReadingPosition(profile.id),
+  ]);
   if (!chapter || chapter.status !== "published") notFound();
 
   // getElProfesorChapterContentBatch (actions/offline-sync.ts) is the same
@@ -27,12 +36,7 @@ export default async function ChapterPage({
   // once — reused here for this one chapter so the live path and the cached
   // path never compute this differently. It also resolves chapterTitle/
   // sourceKind/sourceText, so no separate `select("*")` is needed above.
-  const [contentByChapter, readingPosition] = await Promise.all([
-    getElProfesorChapterContentBatch([chapterId]),
-    entity ? Promise.resolve(null) : getReadingPosition(profile.id),
-  ]);
-  const snapshot = contentByChapter[chapterId];
-  if (!snapshot) notFound();
+  const contentPromise = getElProfesorChapterContentBatch([chapterId]).then((byChapter) => byChapter[chapterId] ?? null);
 
   // Server-side cross-device resume: only applies when there's no explicit
   // deep link and the saved position was in this same chapter — the client
@@ -41,7 +45,13 @@ export default async function ChapterPage({
 
   return (
     <ToastProvider>
-      <ChapterViewWithLocalCache chapterId={chapterId} initialEntityId={entity ?? resumeEntityId} isAdmin={isAdmin} initialSnapshot={snapshot} />
+      <ChapterViewWithLocalCache
+        key={chapterId}
+        chapterId={chapterId}
+        initialEntityId={entity ?? resumeEntityId}
+        isAdmin={isAdmin}
+        contentPromise={contentPromise}
+      />
     </ToastProvider>
   );
 }

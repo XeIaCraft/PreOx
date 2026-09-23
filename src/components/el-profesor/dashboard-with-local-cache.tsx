@@ -18,16 +18,34 @@ function syncedAgoLabel(iso: string): string {
   return `il y a ${Math.floor(hours / 24)} j`;
 }
 
+function DashboardSkeleton() {
+  return (
+    <div className="mx-auto max-w-4xl space-y-3 px-4 py-8 sm:px-6 xl:max-w-6xl" aria-hidden="true">
+      <div className="h-9 w-64 animate-pulse rounded-[var(--radius-md)] bg-surface-muted/60" />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="h-28 animate-pulse rounded-[var(--radius-lg)] bg-surface-muted/60" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Seam between the server-rendered dashboard and the local IndexedDB cache
- * (piste 2026-09-24 — "cache local + synchronisation manuelle"). Seeds its
- * state from the server's own snapshot (so the very first paint, and any
- * browser/session without a local cache yet, work exactly as before), then
- * on mount swaps in whatever's cached locally if present. ElProfesorBoard
- * itself is untouched — this only decides which snapshot it renders from.
+ * (piste 2026-09-24 — "cache local + synchronisation manuelle"). Takes the
+ * expensive dashboard snapshot as an un-awaited promise (see page.tsx) —
+ * awaiting it server-side would block this whole page on every navigation,
+ * which made the local cache pointless the first time this shipped: the
+ * client never got a chance to render from IndexedDB before the slow server
+ * round trip had already finished, since Next.js's navigation waits for the
+ * page's own response either way. So: check the local cache first, and only
+ * ever fall back to the server promise when there isn't one yet (first
+ * visit, or a chapter/dashboard never synced). ElProfesorBoard itself is
+ * untouched — this only decides which snapshot it renders from.
  */
 export function DashboardWithLocalCache({
-  initialSnapshot,
+  initialSnapshotPromise,
   isAdmin,
   realIsAdmin,
   previewingAsUser,
@@ -36,7 +54,7 @@ export function DashboardWithLocalCache({
   aiConfigPromise,
   notionViewDataPromise,
 }: {
-  initialSnapshot: DashboardSnapshot;
+  initialSnapshotPromise: Promise<DashboardSnapshot>;
   isAdmin: boolean;
   realIsAdmin: boolean;
   previewingAsUser: boolean;
@@ -45,7 +63,7 @@ export function DashboardWithLocalCache({
   aiConfigPromise: Promise<DashboardAiConfigData | null>;
   notionViewDataPromise: Promise<DashboardNotionViewData>;
 }) {
-  const [snapshot, setSnapshot] = useState<DashboardSnapshot>(initialSnapshot);
+  const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [checkedCache, setCheckedCache] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
@@ -53,26 +71,34 @@ export function DashboardWithLocalCache({
   useEffect(() => {
     let cancelled = false;
     getCachedDashboard().then((cached) => {
-      if (cancelled || !cached) {
+      if (cancelled) return;
+      if (cached) {
+        const { syncedAt: cachedSyncedAt, ...cachedSnapshot } = cached;
+        setSnapshot(cachedSnapshot);
+        setSyncedAt(cachedSyncedAt);
         setCheckedCache(true);
         return;
       }
-      const { syncedAt: cachedSyncedAt, ...cachedSnapshot } = cached;
-      setSnapshot(cachedSnapshot);
-      setSyncedAt(cachedSyncedAt);
+      // No local cache yet — this is the only case where we actually wait
+      // on the slow server snapshot.
       setCheckedCache(true);
+      initialSnapshotPromise.then((serverSnapshot) => {
+        if (!cancelled) setSnapshot(serverSnapshot);
+      });
     });
     return () => {
       cancelled = true;
     };
     // Runs once on mount only — a fresh sync updates state directly via
     // handleSynced below, no need to re-check the cache reactively.
-  }, []);
+  }, [initialSnapshotPromise]);
 
   function handleSynced(newSnapshot: DashboardSnapshot, newSyncedAt: string) {
     setSnapshot(newSnapshot);
     setSyncedAt(newSyncedAt);
   }
+
+  if (!snapshot) return <DashboardSkeleton />;
 
   return (
     <>

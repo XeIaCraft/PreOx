@@ -147,34 +147,35 @@ export default async function ElProfesorPage() {
   const realIsAdmin = profile.role === "admin";
   const { effectiveIsAdmin: isAdmin, previewingAsUser } = await getEffectiveIsAdmin(realIsAdmin);
 
-  // The book list + dashboard stats are computed by getElProfesorDashboardSnapshot
-  // (actions/offline-sync.ts) — shared with the "Synchroniser" local-cache sync,
-  // so this page and that action never duplicate the same batched queries.
-  // libraryBooks (admin-inclusive, unfiltered) is fetched again here, only for
-  // the Suspense-deferred secondary data below — cheap (one query) and keeps
-  // the snapshot itself free of chapters a non-admin shouldn't ever cache.
-  const [, snapshot, readingPosition, allLibraryBooks] = await Promise.all([
-    recordAppVisit("el-profesor"),
-    getElProfesorDashboardSnapshot(),
-    getReadingPosition(profile.id),
-    getLibrary(),
-  ]);
-  const { books } = snapshot;
-  const libraryBooks = allLibraryBooks.filter((b) => !b.archivedAt);
-  const allChapters = books.flatMap((b) => b.chapters);
+  // recordAppVisit and getReadingPosition are single cheap indexed lookups
+  // (analytics insert, one row by user id) — kept awaited, they were never
+  // the slow part. getElProfesorDashboardSnapshot is the expensive one
+  // (books + every batched dashboard stat): deliberately NOT awaited here.
+  // Awaiting it would block this whole page behind it on every navigation,
+  // which is exactly what made the local cache pointless — the client
+  // never got a chance to render from IndexedDB before the slow server
+  // round trip finished, since Next.js waits for the page's own response
+  // either way. Passed down as a promise instead: DashboardWithLocalCache
+  // renders instantly from its local cache when one exists, and only ever
+  // waits on this promise when there isn't one yet (first visit).
+  const [, readingPosition] = await Promise.all([recordAppVisit("el-profesor"), getReadingPosition(profile.id)]);
+  const snapshotPromise = getElProfesorDashboardSnapshot();
 
-  // Started here (server render), not awaited — passed down as a Promise
-  // and unwrapped with React's use() only where each slice is actually
-  // needed, streamed in behind a <Suspense> boundary once ready. See
-  // src/lib/el-profesor/dashboard-types.ts for what each covers.
-  const secondaryDataPromise = loadSecondaryDashboardData(profile.id, isAdmin, allChapters, books, libraryBooks);
+  // Chained off snapshotPromise (needs its books/chapters) rather than
+  // awaited directly — still never blocks this page, exactly like before.
+  const secondaryDataPromise = snapshotPromise.then(async (snapshot) => {
+    const allChapters = snapshot.books.flatMap((b) => b.chapters);
+    const allLibraryBooks = await getLibrary();
+    const libraryBooks = allLibraryBooks.filter((b) => !b.archivedAt);
+    return loadSecondaryDashboardData(profile.id, isAdmin, allChapters, snapshot.books, libraryBooks);
+  });
   const aiConfigPromise = isAdmin ? loadAiConfigData() : Promise.resolve(null);
   const notionViewDataPromise = loadNotionViewData(profile.id);
 
   return (
     <ToastProvider>
       <DashboardWithLocalCache
-        initialSnapshot={snapshot}
+        initialSnapshotPromise={snapshotPromise}
         isAdmin={isAdmin}
         realIsAdmin={realIsAdmin}
         previewingAsUser={previewingAsUser}
