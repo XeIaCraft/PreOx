@@ -5,7 +5,7 @@ import { CheckCircle2, AlertTriangle } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { getElProfesorDashboardSnapshot, getElProfesorChapterContentBatch } from "@/app/apps/el-profesor/actions/offline-sync";
-import { setCachedDashboard, setCachedChapterContentBatch, getCachedDashboard } from "@/lib/el-profesor/local-db";
+import { setCachedDashboard, setCachedChapterContentBatch, getCachedDashboard, pruneChapterContent } from "@/lib/el-profesor/local-db";
 import type { DashboardSnapshot } from "@/lib/el-profesor/dashboard-types";
 
 // Small enough that the progress bar advances visibly chapter-batch by
@@ -56,6 +56,11 @@ export function SyncModal({
     // Only published chapters are ever opened via la lecture d'un chapitre —
     // no point downloading content for one still en cours d'extraction.
     const chapterIds = snapshot.books.flatMap((b) => b.chapters.filter((c) => c.status === "published").map((c) => c.id));
+    // Drops cached content for chapters that no longer exist (deleted,
+    // unpublished, or their book archived) before writing fresh content —
+    // otherwise old chapters' data would just pile up in IndexedDB forever,
+    // since the writes below only ever overwrite entries for chapterIds.
+    await pruneChapterContent(chapterIds);
     setTotalChapters(chapterIds.length);
     setPhase("content");
 

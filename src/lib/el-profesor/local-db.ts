@@ -106,6 +106,61 @@ export async function getLastSyncedAt(): Promise<string | null> {
   return dashboard?.syncedAt ?? null;
 }
 
+async function getAllKeys(storeName: string): Promise<string[]> {
+  const db = await openDb();
+  if (!db) return [];
+  try {
+    return await new Promise<string[]>((resolve) => {
+      const request = db.transaction(storeName, "readonly").objectStore(storeName).getAllKeys();
+      request.onsuccess = () => resolve((request.result as string[] | undefined) ?? []);
+      request.onerror = () => resolve([]);
+    });
+  } catch {
+    return [];
+  } finally {
+    db.close();
+  }
+}
+
+async function deleteEntries(storeName: string, keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  const db = await openDb();
+  if (!db) return;
+  try {
+    await new Promise<void>((resolve) => {
+      try {
+        const tx = db.transaction(storeName, "readwrite");
+        const store = tx.objectStore(storeName);
+        for (const key of keys) store.delete(key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+        tx.onabort = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Removes cached content for chapters that no longer exist in the library
+ * (deleted, unpublished, or their book archived since the last sync) —
+ * setCachedChapterContentBatch only ever overwrites entries for the
+ * chapters it's given, it never notices ones that dropped out, so without
+ * this every full sync would leave old chapters' content piling up in
+ * IndexedDB forever. Called with the fresh chapter id list before writing
+ * new content, so a chapter that's still current keeps its previous cached
+ * copy until its own chunk re-syncs, even if a later chunk fails.
+ */
+export async function pruneChapterContent(validChapterIds: string[]): Promise<void> {
+  const validSet = new Set(validChapterIds);
+  const existingKeys = await getAllKeys(CHAPTER_CONTENT_STORE);
+  const staleKeys = existingKeys.filter((id) => !validSet.has(id));
+  await deleteEntries(CHAPTER_CONTENT_STORE, staleKeys);
+}
+
 export async function clearLocalCache(): Promise<void> {
   const db = await openDb();
   if (!db) return;
