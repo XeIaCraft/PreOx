@@ -236,6 +236,102 @@ export const getChapterContent = cache(async function getChapterContent(
   });
 });
 
+const IN_CHUNK_SIZE = 150;
+
+/**
+ * Supabase's .in() filter is serialized straight into the request's query
+ * string. This library is easily into the hundreds of chapters/fiches/
+ * flashcards (1500+ flashcards isn't unusual), and a single .in() over an id
+ * list that size can exceed the request's URL-length limit — failing (or
+ * silently coming back empty) rather than erroring loudly. Every function
+ * here (and in dal/progress.ts, which imports this) that filters by a
+ * library-wide id list goes through this instead of a single unbounded .in().
+ */
+export async function selectInChunks<T>(
+  ids: string[],
+  runQuery: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+): Promise<T[]> {
+  if (ids.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK_SIZE) chunks.push(ids.slice(i, i + IN_CHUNK_SIZE));
+  const results = await Promise.all(chunks.map((chunk) => runQuery(chunk)));
+  for (const r of results) if (r.error) console.error("[el-profesor/dal] chunked query failed:", r.error.message);
+  return results.flatMap((r) => r.data ?? []);
+}
+
+export interface ChapterFicheRef {
+  ficheId: string;
+  chapterId: string;
+  supersededByFicheId: string | null;
+}
+
+/**
+ * Batched sub_entities -> fiches join across MANY chapters at once (two
+ * chunked .in() passes total, no matter how many chapters are requested).
+ * The dashboard's per-chapter aggregates (due/mastery/difficult counts,
+ * read progress, global mastery %) used to each call getChapterContent once
+ * per chapter instead — deduped across those callers by getChapterContent's
+ * own cache(), but never batched across chapters, so a library of a few
+ * hundred chapters still meant a few hundred concurrent round trips on
+ * every render of this page, including the render bundled into every
+ * mutating Server Action's own response (root-caused 2026-09-24: an action
+ * looked instant thanks to optimistic UI, but the next one couldn't even be
+ * dispatched for a couple of minutes — Next.js serializes Server Actions
+ * per client, so the slow render blocked the queue). Use this instead of a
+ * per-chapter getChapterContent loop whenever the caller needs fiches
+ * across every chapter rather than one chapter's full nested content.
+ */
+export async function getFichesByChapterBatch(chapterIds: string[], includeDrafts = false): Promise<ChapterFicheRef[]> {
+  if (chapterIds.length === 0) return [];
+  const supabase = await createClient();
+
+  const subEntityRows = await selectInChunks(chapterIds, (chunk) =>
+    supabase.from("el_profesor_sub_entities").select("id, chapter_id").in("chapter_id", chunk)
+  );
+  if (subEntityRows.length === 0) return [];
+  const chapterBySubEntity = new Map(subEntityRows.map((s) => [s.id, s.chapter_id]));
+  const subEntityIds = subEntityRows.map((s) => s.id);
+
+  const ficheRows = await selectInChunks(subEntityIds, (chunk) => {
+    let query = supabase.from("el_profesor_fiches").select("id, sub_entity_id, superseded_by_fiche_id").in("sub_entity_id", chunk);
+    if (!includeDrafts) query = query.eq("status", "published");
+    return query;
+  });
+
+  return ficheRows
+    .map((f) => {
+      const chapterId = chapterBySubEntity.get(f.sub_entity_id);
+      return chapterId ? { ficheId: f.id, chapterId, supersededByFicheId: f.superseded_by_fiche_id } : null;
+    })
+    .filter((f): f is ChapterFicheRef => f !== null);
+}
+
+/** Batched equivalent of calling getChapterContent(chapterId, false) once per chapter and running activeFlashcards() over each result — see getFichesByChapterBatch above for why this exists. */
+export async function getActiveFlashcardsByChapterBatch(chapterIds: string[]): Promise<Map<string, Flashcard[]>> {
+  const result = new Map<string, Flashcard[]>();
+  if (chapterIds.length === 0) return result;
+
+  const fiches = await getFichesByChapterBatch(chapterIds, false);
+  const chapterByFiche = new Map(fiches.map((f) => [f.ficheId, f.chapterId]));
+  const activeFicheIds = fiches.filter((f) => !f.supersededByFicheId).map((f) => f.ficheId);
+  if (activeFicheIds.length === 0) return result;
+
+  const supabase = await createClient();
+  const flashcardRows = await selectInChunks(activeFicheIds, (chunk) =>
+    supabase.from("el_profesor_flashcards").select("*").eq("status", "published").in("fiche_id", chunk)
+  );
+
+  for (const row of flashcardRows) {
+    const chapterId = chapterByFiche.get(row.fiche_id);
+    if (!chapterId) continue;
+    const card = toFlashcard(row as ElProfesorFlashcardRow);
+    const list = result.get(chapterId);
+    if (list) list.push(card);
+    else result.set(chapterId, [card]);
+  }
+  return result;
+}
+
 /**
  * Flashcards from every fiche in this content set, excluding ones whose
  * fiche has been merged/superseded (items 52/56 — "don't learn the same

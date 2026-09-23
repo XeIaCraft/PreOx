@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { computeAdjustedRetention } from "../fsrs";
 import { blockToPlainText } from "../block-text";
-import { getChapterContent, activeFlashcards, shuffle, toReviewState, toFlashcard, resolveFicheContexts } from "./shared";
+import { getChapterContent, activeFlashcards, shuffle, toReviewState, toFlashcard, resolveFicheContexts, selectInChunks, getActiveFlashcardsByChapterBatch } from "./shared";
 import type { Chapter, Flashcard, ReviewState, FlashcardSide, Book, BlockType, BlockContent, FlashcardVariant } from "../types";
 import type { ElProfesorReviewStateRow, ElProfesorFicheRow, ElProfesorFlashcardRow } from "@/lib/supabase/types";
 
@@ -238,41 +238,36 @@ export async function getDailyCard(userId: string, chapters: Chapter[]): Promise
   return source[dayIndex % source.length];
 }
 
-/** Per-chapter "carnet d'erreurs" counts — same criteria as getDifficultQueue, tallied by chapter for the dashboard cards. */
+/**
+ * Per-chapter "carnet d'erreurs" counts — same criteria as getDifficultQueue,
+ * tallied by chapter for the dashboard cards. Used a per-chapter
+ * getChapterContent + review_state query loop before 2026-09-24 (see
+ * getFichesByChapterBatch's doc comment in dal/shared.ts) — now one batched
+ * flashcard fetch plus one batched review_state fetch for every chapter at once.
+ */
 export async function getDifficultCountsByChapter(userId: string, chapters: Chapter[]): Promise<ChapterDueCounts> {
-  const counts: ChapterDueCounts = {};
+  const published = chapters.filter((c) => c.status === "published");
+  const [flashcardsByChapter, suspended] = await Promise.all([
+    getActiveFlashcardsByChapterBatch(published.map((c) => c.id)),
+    getSuspendedFlashcardIds(userId),
+  ]);
+  const allFlashcardIds = [...flashcardsByChapter.values()].flat().map((f) => f.id);
+
   const supabase = await createClient();
-  const suspended = await getSuspendedFlashcardIds(userId);
-
-  await Promise.all(
-    chapters
-      .filter((c) => c.status === "published")
-      .map(async (chapter) => {
-        const content = await getChapterContent(chapter.id, false);
-        const flashcards = activeFlashcards(content);
-        if (flashcards.length === 0) {
-          counts[chapter.id] = 0;
-          return;
-        }
-
-        const { data: states } = await supabase
-          .from("el_profesor_review_state")
-          .select("flashcard_id, state, lapses")
-          .eq("user_id", userId)
-          .in(
-            "flashcard_id",
-            flashcards.map((f) => f.id)
-          );
-        const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s]));
-
-        counts[chapter.id] = flashcards.filter((card) => {
-          if (suspended.has(card.id)) return false;
-          const state = stateByCard.get(card.id);
-          return !!state && (state.state === "relearning" || state.lapses >= 2);
-        }).length;
-      })
+  const states = await selectInChunks(allFlashcardIds, (chunk) =>
+    supabase.from("el_profesor_review_state").select("flashcard_id, state, lapses").eq("user_id", userId).in("flashcard_id", chunk)
   );
+  const stateByCard = new Map(states.map((s) => [s.flashcard_id, s]));
 
+  const counts: ChapterDueCounts = {};
+  for (const chapter of published) {
+    const flashcards = flashcardsByChapter.get(chapter.id) ?? [];
+    counts[chapter.id] = flashcards.filter((card) => {
+      if (suspended.has(card.id)) return false;
+      const state = stateByCard.get(card.id);
+      return !!state && (state.state === "relearning" || state.lapses >= 2);
+    }).length;
+  }
   return counts;
 }
 
@@ -478,16 +473,37 @@ export async function getUpcomingReviewForecast(userId: string, chapters: Chapte
 }
 
 /** Due-today count per chapter, for the dashboard's chapter cards. */
+/**
+ * Used a per-chapter getDueQueue call before 2026-09-24 (each of which does
+ * its own getChapterContent + review_state round trip) — now shares the same
+ * batched flashcard fetch as getMasteryCountsByChapter/getDifficultCountsByChapter
+ * plus one batched review_state fetch, instead of one pair of round trips
+ * per chapter. See getFichesByChapterBatch's doc comment in dal/shared.ts.
+ */
 export async function getDueCountsByChapter(userId: string, chapters: Chapter[]): Promise<ChapterDueCounts> {
-  const counts: ChapterDueCounts = {};
-  await Promise.all(
-    chapters
-      .filter((c) => c.status === "published")
-      .map(async (chapter) => {
-        const due = await getDueQueue(userId, chapter.id);
-        counts[chapter.id] = due.length;
-      })
+  const published = chapters.filter((c) => c.status === "published");
+  const [flashcardsByChapter, suspended] = await Promise.all([
+    getActiveFlashcardsByChapterBatch(published.map((c) => c.id)),
+    getSuspendedFlashcardIds(userId),
+  ]);
+  const allFlashcardIds = [...flashcardsByChapter.values()].flat().map((f) => f.id);
+
+  const supabase = await createClient();
+  const states = await selectInChunks(allFlashcardIds, (chunk) =>
+    supabase.from("el_profesor_review_state").select("flashcard_id, due").eq("user_id", userId).in("flashcard_id", chunk)
   );
+  const dueByCard = new Map(states.map((s) => [s.flashcard_id, s.due]));
+  const now = Date.now();
+
+  const counts: ChapterDueCounts = {};
+  for (const chapter of published) {
+    const flashcards = flashcardsByChapter.get(chapter.id) ?? [];
+    counts[chapter.id] = flashcards.filter((card) => {
+      if (suspended.has(card.id)) return false;
+      const due = dueByCard.get(card.id);
+      return !due || new Date(due).getTime() <= now;
+    }).length;
+  }
   return counts;
 }
 
@@ -497,44 +513,41 @@ export type ChapterMasteryCounts = Record<string, { total: number; new: number; 
  * Per-chapter breakdown of the user's own memorization progress, for the
  * dashboard's motivational progress indicator. "new" = never reviewed,
  * "learning" = FSRS learning/relearning state, "acquired" = FSRS review
- * state (graduated past the initial learning phase).
+ * state (graduated past the initial learning phase). Used a per-chapter
+ * getChapterContent + review_state query loop before 2026-09-24 — see
+ * getFichesByChapterBatch's doc comment in dal/shared.ts.
  */
 export async function getMasteryCountsByChapter(userId: string, chapters: Chapter[]): Promise<ChapterMasteryCounts> {
-  const counts: ChapterMasteryCounts = {};
+  const published = chapters.filter((c) => c.status === "published");
+  const flashcardsByChapter = await getActiveFlashcardsByChapterBatch(published.map((c) => c.id));
+  const allFlashcardIds = [...flashcardsByChapter.values()].flat().map((f) => f.id);
+
   const supabase = await createClient();
-
-  await Promise.all(
-    chapters
-      .filter((c) => c.status === "published")
-      .map(async (chapter) => {
-        const content = await getChapterContent(chapter.id, false);
-        const flashcards = activeFlashcards(content);
-        const total = flashcards.length;
-        if (total === 0) {
-          counts[chapter.id] = { total: 0, new: 0, learning: 0, acquired: 0 };
-          return;
-        }
-
-        const { data: states } = await supabase
-          .from("el_profesor_review_state")
-          .select("flashcard_id, state")
-          .eq("user_id", userId)
-          .in(
-            "flashcard_id",
-            flashcards.map((f) => f.id)
-          );
-        const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s.state]));
-
-        let learning = 0;
-        let acquired = 0;
-        for (const card of flashcards) {
-          const state = stateByCard.get(card.id);
-          if (state === "review") acquired++;
-          else if (state === "learning" || state === "relearning") learning++;
-        }
-        counts[chapter.id] = { total, new: total - stateByCard.size, learning, acquired };
-      })
+  const states = await selectInChunks(allFlashcardIds, (chunk) =>
+    supabase.from("el_profesor_review_state").select("flashcard_id, state").eq("user_id", userId).in("flashcard_id", chunk)
   );
+  const stateByCard = new Map(states.map((s) => [s.flashcard_id, s.state]));
+
+  const counts: ChapterMasteryCounts = {};
+  for (const chapter of published) {
+    const flashcards = flashcardsByChapter.get(chapter.id) ?? [];
+    const total = flashcards.length;
+    if (total === 0) {
+      counts[chapter.id] = { total: 0, new: 0, learning: 0, acquired: 0 };
+      continue;
+    }
+
+    let learning = 0;
+    let acquired = 0;
+    let known = 0;
+    for (const card of flashcards) {
+      const state = stateByCard.get(card.id);
+      if (state) known++;
+      if (state === "review") acquired++;
+      else if (state === "learning" || state === "relearning") learning++;
+    }
+    counts[chapter.id] = { total, new: total - known, learning, acquired };
+  }
 
   return counts;
 }
@@ -828,39 +841,48 @@ export interface ChapterMasteryPercentile {
  * otherwise reveal a single other user's own mastery state.
  */
 export async function getGlobalChapterMasteryPercentages(chapters: Chapter[]): Promise<Record<string, ChapterMasteryPercentile>> {
-  const supabase = createAdminClient();
   const published = chapters.filter((c) => c.status === "published");
   const result: Record<string, ChapterMasteryPercentile> = {};
 
-  await Promise.all(
-    published.map(async (chapter) => {
-      const content = await getChapterContent(chapter.id, false);
-      const flashcardIds = activeFlashcards(content).map((f) => f.id);
-      if (flashcardIds.length === 0) return;
+  const flashcardsByChapter = await getActiveFlashcardsByChapterBatch(published.map((c) => c.id));
+  const chapterByFlashcard = new Map<string, string>();
+  for (const [chapterId, cards] of flashcardsByChapter) for (const card of cards) chapterByFlashcard.set(card.id, chapterId);
+  const allFlashcardIds = [...chapterByFlashcard.keys()];
+  if (allFlashcardIds.length === 0) return result;
 
-      const { data: states } = await supabase
-        .from("el_profesor_review_state")
-        .select("user_id, flashcard_id, state")
-        .in("flashcard_id", flashcardIds);
-
-      const engagedUsers = new Set<string>();
-      const acquiredByUser = new Map<string, Set<string>>();
-      for (const row of states ?? []) {
-        engagedUsers.add(row.user_id);
-        if (row.state === "review") {
-          if (!acquiredByUser.has(row.user_id)) acquiredByUser.set(row.user_id, new Set());
-          acquiredByUser.get(row.user_id)!.add(row.flashcard_id);
-        }
-      }
-      if (engagedUsers.size < 3) return;
-
-      let masteredCount = 0;
-      for (const userId of engagedUsers) {
-        if ((acquiredByUser.get(userId)?.size ?? 0) === flashcardIds.length) masteredCount++;
-      }
-      result[chapter.id] = { masteredPct: Math.round((masteredCount / engagedUsers.size) * 100), engagedUsers: engagedUsers.size };
-    })
+  const supabase = createAdminClient();
+  const states = await selectInChunks(allFlashcardIds, (chunk) =>
+    supabase.from("el_profesor_review_state").select("user_id, flashcard_id, state").in("flashcard_id", chunk)
   );
+
+  const engagedUsersByChapter = new Map<string, Set<string>>();
+  const acquiredByUserByChapter = new Map<string, Map<string, Set<string>>>();
+  for (const row of states) {
+    const chapterId = chapterByFlashcard.get(row.flashcard_id);
+    if (!chapterId) continue;
+    if (!engagedUsersByChapter.has(chapterId)) engagedUsersByChapter.set(chapterId, new Set());
+    engagedUsersByChapter.get(chapterId)!.add(row.user_id);
+    if (row.state === "review") {
+      if (!acquiredByUserByChapter.has(chapterId)) acquiredByUserByChapter.set(chapterId, new Map());
+      const acquiredByUser = acquiredByUserByChapter.get(chapterId)!;
+      if (!acquiredByUser.has(row.user_id)) acquiredByUser.set(row.user_id, new Set());
+      acquiredByUser.get(row.user_id)!.add(row.flashcard_id);
+    }
+  }
+
+  for (const chapter of published) {
+    const flashcardIds = (flashcardsByChapter.get(chapter.id) ?? []).map((f) => f.id);
+    if (flashcardIds.length === 0) continue;
+    const engagedUsers = engagedUsersByChapter.get(chapter.id);
+    if (!engagedUsers || engagedUsers.size < 3) continue;
+
+    const acquiredByUser = acquiredByUserByChapter.get(chapter.id);
+    let masteredCount = 0;
+    for (const userId of engagedUsers) {
+      if ((acquiredByUser?.get(userId)?.size ?? 0) === flashcardIds.length) masteredCount++;
+    }
+    result[chapter.id] = { masteredPct: Math.round((masteredCount / engagedUsers.size) * 100), engagedUsers: engagedUsers.size };
+  }
 
   return result;
 }

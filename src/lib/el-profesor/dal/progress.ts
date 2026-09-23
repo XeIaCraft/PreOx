@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { getChapterContent } from "./shared";
+import { selectInChunks, getFichesByChapterBatch } from "./shared";
 import type { Database } from "@/lib/supabase/types";
 import type { Chapter } from "../types";
 
@@ -24,31 +24,6 @@ export interface MasteryProgress {
 }
 
 const EMPTY_MASTERY: MasteryProgress = { total: 0, acquired: 0, learning: 0 };
-
-const IN_CHUNK_SIZE = 150;
-
-/**
- * Supabase's .in() filter is serialized straight into the request's query
- * string. This library is easily into the hundreds of fiches/flashcards
- * (1500+ flashcards isn't unusual), and a single .in() over an id list
- * that size can exceed the request's URL-length limit — failing (or
- * silently coming back empty) rather than erroring loudly, which zeroes
- * out whatever library-wide aggregate depends on it. Every function below
- * that filters by a library-wide id list (as opposed to one chapter's or
- * one notion's own, small handful of ids) goes through this instead of a
- * single unbounded .in().
- */
-async function selectInChunks<T>(
-  ids: string[],
-  runQuery: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
-): Promise<T[]> {
-  if (ids.length === 0) return [];
-  const chunks: string[][] = [];
-  for (let i = 0; i < ids.length; i += IN_CHUNK_SIZE) chunks.push(ids.slice(i, i + IN_CHUNK_SIZE));
-  const results = await Promise.all(chunks.map((chunk) => runQuery(chunk)));
-  for (const r of results) if (r.error) console.error("[el-profesor/progress] chunked query failed:", r.error.message);
-  return results.flatMap((r) => r.data ?? []);
-}
 
 /** Batched for a whole chapter's fiches at once — mirrors getBlockReviewStates' batching so the chapter page fetches every fiche's progress in one pass instead of one query per sub-entity. */
 export async function getFicheReadProgressBatch(userId: string, ficheIds: string[]): Promise<Record<string, number>> {
@@ -136,30 +111,33 @@ export async function getNotionMasteryProgress(userId: string, notionId: string)
 
 /**
  * Average read % across each published chapter's own fiches (piste
- * 2026-08-29 — "visible directement depuis la vue principale"). Reuses the
- * same request-memoized getChapterContent already called by
- * getMasteryCountsByChapter (free via React's cache()), but — unlike a
- * first version of this function — fetches read progress for every
- * chapter's fiches in ONE getFicheReadProgressBatch call instead of one
- * query per chapter: with this in the dashboard's eager (awaited) block
- * alongside masteryCounts, a per-chapter query added a real N+1 (one extra
- * round trip per published chapter) that measurably delayed the page shell
- * and, transitively, every promise streamed after it — exactly what the
- * eager/deferred split exists to avoid.
+ * 2026-08-29 — "visible directement depuis la vue principale"). Used to
+ * call getChapterContent once per chapter (a first version's per-chapter
+ * read-progress query was folded into one getFicheReadProgressBatch call,
+ * but the getChapterContent fan-out itself remained, "free" only in the
+ * sense that getMasteryCountsByChapter etc. deduped the same calls via
+ * cache() — still N concurrent round trips for a library of N chapters).
+ * Now uses getFichesByChapterBatch, a genuinely batched cross-chapter join,
+ * root-caused 2026-09-24 alongside the dashboard's other per-chapter loops.
  */
 export async function getReadProgressByChapter(userId: string, chapters: Chapter[]): Promise<Record<string, number>> {
   const published = chapters.filter((c) => c.status === "published");
-  const contentByChapter = await Promise.all(published.map((c) => getChapterContent(c.id, false)));
+  const fiches = await getFichesByChapterBatch(
+    published.map((c) => c.id),
+    false
+  );
 
   const ficheIdsByChapter = new Map<string, string[]>();
-  const allFicheIds = new Set<string>();
-  published.forEach((chapter, i) => {
-    const ficheIds = contentByChapter[i].flatMap((s) => (s.fiche ? [s.fiche.id] : []));
-    ficheIdsByChapter.set(chapter.id, ficheIds);
-    for (const id of ficheIds) allFicheIds.add(id);
-  });
+  for (const f of fiches) {
+    const list = ficheIdsByChapter.get(f.chapterId);
+    if (list) list.push(f.ficheId);
+    else ficheIdsByChapter.set(f.chapterId, [f.ficheId]);
+  }
 
-  const progress = await getFicheReadProgressBatch(userId, [...allFicheIds]);
+  const progress = await getFicheReadProgressBatch(
+    userId,
+    fiches.map((f) => f.ficheId)
+  );
 
   const result: Record<string, number> = {};
   for (const chapter of published) {
