@@ -1310,10 +1310,7 @@ export function ChapterView({
           subEntityId={selected.id}
           subEntityName={selected.name}
           onClose={() => setContributingFlashcard(false)}
-          onSubmitted={() => {
-            setContributingFlashcard(false);
-            router.refresh();
-          }}
+          onSubmitted={() => setContributingFlashcard(false)}
         />
       )}
 
@@ -1324,10 +1321,7 @@ export function ChapterView({
           subEntities={withFiche.map((s) => ({ id: s.id, name: s.name }))}
           selection={pendingSelection}
           onClose={() => setPendingSelection(null)}
-          onSubmitted={() => {
-            setPendingSelection(null);
-            router.refresh();
-          }}
+          onSubmitted={() => setPendingSelection(null)}
         />
       )}
 

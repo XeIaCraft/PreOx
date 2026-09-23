@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense, use, useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, use, useEffect, useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -43,6 +42,7 @@ import {
   Eye,
   EyeOff,
   Menu,
+  CheckCircle2,
 } from "lucide-react";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { hasSeenOnboarding } from "@/lib/onboarding";
@@ -67,7 +67,13 @@ import { RenderErrorBoundary } from "@/components/el-profesor/render-error-bound
 import { CompactProgressBars } from "@/components/el-profesor/progress-bars";
 import { deleteBook, deleteChapter, moveBook, moveChapter } from "@/app/apps/el-profesor/actions/library";
 import { setElProfesorPreviewAsUser } from "@/app/apps/el-profesor/actions/preview";
-import { extractChapter, extractChapterComplementary, resetStuckExtraction, resetChapterContent } from "@/app/apps/el-profesor/actions/extraction";
+import {
+  extractChapter,
+  extractChapterComplementary,
+  resetStuckExtraction,
+  resetChapterContent,
+  bulkPublishChapters,
+} from "@/app/apps/el-profesor/actions/extraction";
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
 import { ExtractionHistoryDialog } from "@/components/el-profesor/dialogs/extraction-history-dialog";
@@ -427,8 +433,53 @@ function GeminiSettingsLoader({
   );
 }
 
+type BoardAction =
+  | { type: "moveBook"; bookId: string; direction: "up" | "down" }
+  | { type: "moveChapter"; chapterId: string; direction: "up" | "down" }
+  | { type: "publishChapters"; chapterIds: string[] };
+
+/**
+ * Reorders swap one adjacent pair by id — array position is what the UI
+ * actually renders from (bookIndex/chapterIndex are derived via findIndex/
+ * map on every render), so this doesn't need to touch order_index at all;
+ * the server call does that. Publish flips status on the current frame for
+ * every selected chapter that's actually draft_ready, mirroring the same
+ * guard bulkPublishChapters applies server-side (extraction.ts) so the
+ * optimistic count matches what the server will actually report.
+ */
+function applyBoardAction(current: BookWithChapters[], action: BoardAction): BookWithChapters[] {
+  if (action.type === "publishChapters") {
+    const ids = new Set(action.chapterIds);
+    return current.map((book) => ({
+      ...book,
+      chapters: book.chapters.map((c) => (ids.has(c.id) && c.status === "draft_ready" ? { ...c, status: "published" as const } : c)),
+    }));
+  }
+
+  if (action.type === "moveBook") {
+    const index = current.findIndex((b) => b.id === action.bookId);
+    const targetIndex = action.direction === "up" ? index - 1 : index + 1;
+    if (index === -1 || targetIndex < 0 || targetIndex >= current.length) return current;
+    const next = [...current];
+    [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+    return next;
+  }
+
+  const bookIndex = current.findIndex((b) => b.chapters.some((c) => c.id === action.chapterId));
+  if (bookIndex === -1) return current;
+  const book = current[bookIndex];
+  const chapterIndex = book.chapters.findIndex((c) => c.id === action.chapterId);
+  const targetIndex = action.direction === "up" ? chapterIndex - 1 : chapterIndex + 1;
+  if (targetIndex < 0 || targetIndex >= book.chapters.length) return current;
+  const nextChapters = [...book.chapters];
+  [nextChapters[chapterIndex], nextChapters[targetIndex]] = [nextChapters[targetIndex], nextChapters[chapterIndex]];
+  const nextBooks = [...current];
+  nextBooks[bookIndex] = { ...book, chapters: nextChapters };
+  return nextBooks;
+}
+
 export function ElProfesorBoard({
-  books,
+  books: booksProp,
   dueCounts,
   needsReviewCounts,
   masteryCounts,
@@ -478,8 +529,12 @@ export function ElProfesorBoard({
   /** Same streamed-promise pattern, consumed by DashboardNotionView only once the "Par notion" toggle is selected. */
   notionViewDataPromise: Promise<DashboardNotionViewData>;
 }) {
-  const router = useRouter();
   const { toast } = useToast();
+  // Reordering only ever swaps two adjacent entries by id, in the book list
+  // or within one book's chapter list — applied on the current frame so the
+  // arrows feel instant, then reconciled with booksProp once moveBook/
+  // moveChapter's response lands (see handleMoveBook/handleMoveChapter).
+  const [books, applyOptimisticAction] = useOptimistic(booksProp, applyBoardAction);
   const [modal, setModal] = useState<ModalState>(null);
   const [themeFilter, setThemeFilter] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -545,15 +600,10 @@ export function ElProfesorBoard({
     .filter((c) => selectedChapterIds.has(c.id))
     .map((c) => ({ id: c.id, pdfPageCount: c.pdfPageCount }));
 
-  function refresh() {
-    startTransition(() => router.refresh());
-  }
-
   function handleTogglePreview() {
     startPreviewTransition(async () => {
       const result = await setElProfesorPreviewAsUser(!previewingAsUser);
       if (result.error) toast(result.error, { variant: "error" });
-      else router.refresh();
     });
   }
 
@@ -565,10 +615,7 @@ export function ElProfesorBoard({
       setPendingId(null);
       setPendingStartedAt(null);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "Extraction terminée.", { variant: "success" });
-        refresh();
-      }
+      else toast(result.success ?? "Extraction terminée.", { variant: "success" });
     });
   }
 
@@ -578,10 +625,7 @@ export function ElProfesorBoard({
       const result = await resetStuckExtraction(chapterId);
       setPendingId(null);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "Réinitialisé.", { variant: "success" });
-        refresh();
-      }
+      else toast(result.success ?? "Réinitialisé.", { variant: "success" });
     });
   }
 
@@ -593,10 +637,7 @@ export function ElProfesorBoard({
       setPendingId(null);
       setPendingStartedAt(null);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "Terminé.", { variant: "success" });
-        refresh();
-      }
+      else toast(result.success ?? "Terminé.", { variant: "success" });
     });
   }
 
@@ -617,7 +658,6 @@ export function ElProfesorBoard({
       else {
         toast(result.success ?? "Lot soumis.", { variant: "success" });
         setSelectedChapterIds(new Set());
-        refresh();
       }
     });
   }
@@ -630,24 +670,36 @@ export function ElProfesorBoard({
       else {
         toast(result.success ?? "Lot soumis.", { variant: "success" });
         setSelectedChapterIds(new Set());
-        refresh();
+      }
+    });
+  }
+
+  function handleBulkPublish() {
+    const ids = [...selectedChapterIds];
+    startBulkTransition(async () => {
+      applyOptimisticAction({ type: "publishChapters", chapterIds: ids });
+      const result = await bulkPublishChapters(ids);
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Chapitres publiés.", { variant: "success" });
+        setSelectedChapterIds(new Set());
       }
     });
   }
 
   function handleMoveBook(bookId: string, direction: "up" | "down") {
     startTransition(async () => {
+      applyOptimisticAction({ type: "moveBook", bookId, direction });
       const result = await moveBook(bookId, direction);
       if (result.error) toast(result.error, { variant: "error" });
-      else refresh();
     });
   }
 
   function handleMoveChapter(chapterId: string, direction: "up" | "down") {
     startTransition(async () => {
+      applyOptimisticAction({ type: "moveChapter", chapterId, direction });
       const result = await moveChapter(chapterId, direction);
       if (result.error) toast(result.error, { variant: "error" });
-      else refresh();
     });
   }
 
@@ -754,7 +806,6 @@ export function ElProfesorBoard({
       else {
         toast(result.success ?? "Livre archivé.", { variant: "success" });
         setModal(null);
-        refresh();
       }
     });
   }
@@ -765,10 +816,7 @@ export function ElProfesorBoard({
       const result = await deleteChapter(chapterId);
       setPendingId(null);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        setModal(null);
-        refresh();
-      }
+      else setModal(null);
     });
   }
 
@@ -781,7 +829,6 @@ export function ElProfesorBoard({
       else {
         toast(result.success ?? "Contenu supprimé.", { variant: "success" });
         setModal(null);
-        refresh();
       }
     });
   }
@@ -790,10 +837,7 @@ export function ElProfesorBoard({
     startTransition(async () => {
       const result = await deleteBook(bookId);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        setModal(null);
-        refresh();
-      }
+      else setModal(null);
     });
   }
 
@@ -1007,20 +1051,33 @@ export function ElProfesorBoard({
           <span className="text-sm font-medium text-foreground">
             {selectedChapterIds.size} chapitre{selectedChapterIds.size > 1 ? "s" : ""} sélectionné{selectedChapterIds.size > 1 ? "s" : ""}
           </span>
-          <Suspense fallback={<span className="text-xs text-foreground-subtle">calcul du coût…</span>}>
-            <BulkCostEstimate aiConfigPromise={aiConfigPromise} selectedChapters={selectedChapters} />
-          </Suspense>
-          <Button size="sm" onClick={handleBulkExtract} disabled={isBulkPending}>
-            <Sparkles className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Extraire via un lot Claude"}
-          </Button>
+          {aiProvider === "claude" && (
+            <>
+              <Suspense fallback={<span className="text-xs text-foreground-subtle">calcul du coût…</span>}>
+                <BulkCostEstimate aiConfigPromise={aiConfigPromise} selectedChapters={selectedChapters} />
+              </Suspense>
+              <Button size="sm" onClick={handleBulkExtract} disabled={isBulkPending}>
+                <Sparkles className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Extraire via un lot Claude"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleBulkComplement}
+                disabled={isBulkPending}
+                title="Complète chaque chapitre sélectionné, en enchaînant automatiquement les passes jusqu'à couverture complète"
+              >
+                <Zap className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Compléter jusqu'à couverture"}
+              </Button>
+            </>
+          )}
           <Button
             variant="secondary"
             size="sm"
-            onClick={handleBulkComplement}
+            onClick={handleBulkPublish}
             disabled={isBulkPending}
-            title="Complète chaque chapitre sélectionné, en enchaînant automatiquement les passes jusqu'à couverture complète"
+            title="Publie chaque chapitre sélectionné déjà au statut « brouillon à relire » — les autres sont ignorés"
           >
-            <Zap className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Compléter jusqu'à couverture"}
+            <CheckCircle2 className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Publier"}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setSelectedChapterIds(new Set())} disabled={isBulkPending}>
             Désélectionner tout
@@ -1211,7 +1268,7 @@ export function ElProfesorBoard({
                 const due = dueCounts[chapter.id] ?? 0;
                 const needsReview = needsReviewCounts[chapter.id] ?? 0;
                 const busy = isPending && pendingId === chapter.id;
-                const bulkSelectable = isAdmin && aiProvider === "claude" && chapter.sourceKind === "pdf";
+                const bulkSelectable = isAdmin;
                 const selected = selectedChapterIds.has(chapter.id);
                 return (
                   <div
@@ -1247,13 +1304,13 @@ export function ElProfesorBoard({
                             type="checkbox"
                             checked={selected}
                             onChange={() => toggleChapterSelection(chapter.id)}
-                            aria-label={`Sélectionner « ${chapter.title} » pour un lot Claude`}
+                            aria-label={`Sélectionner « ${chapter.title} » pour une action groupée`}
                             className="mt-1 h-4 w-4 shrink-0"
                           />
                         )}
                         <div className="flex items-center gap-1.5">
                           <p className="font-medium text-foreground">{chapter.title}</p>
-                          {isAdmin && <RenameChapterButton chapterId={chapter.id} currentTitle={chapter.title} onRenamed={refresh} />}
+                          {isAdmin && <RenameChapterButton chapterId={chapter.id} currentTitle={chapter.title} />}
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
@@ -1555,30 +1612,21 @@ export function ElProfesorBoard({
       {modal?.type === "add_book" && (
         <AddBookDialog
           onClose={() => setModal(null)}
-          onSaved={() => {
-            setModal(null);
-            refresh();
-          }}
+          onSaved={() => setModal(null)}
         />
       )}
       {modal?.type === "edit_book" && (
         <AddBookDialog
           book={modal.book}
           onClose={() => setModal(null)}
-          onSaved={() => {
-            setModal(null);
-            refresh();
-          }}
+          onSaved={() => setModal(null)}
         />
       )}
       {modal?.type === "new_edition" && (
         <AddBookDialog
           newEditionOf={modal.book}
           onClose={() => setModal(null)}
-          onSaved={() => {
-            setModal(null);
-            refresh();
-          }}
+          onSaved={() => setModal(null)}
         />
       )}
       {modal?.type === "upload_chapter" && (
@@ -1586,10 +1634,7 @@ export function ElProfesorBoard({
           bookId={modal.bookId}
           nextOrder={modal.nextOrder}
           onClose={() => setModal(null)}
-          onSaved={() => {
-            setModal(null);
-            refresh();
-          }}
+          onSaved={() => setModal(null)}
         />
       )}
       {modal?.type === "split_book" && (
@@ -1597,20 +1642,14 @@ export function ElProfesorBoard({
           bookId={modal.bookId}
           nextOrder={modal.nextOrder}
           onClose={() => setModal(null)}
-          onSaved={() => {
-            setModal(null);
-            refresh();
-          }}
+          onSaved={() => setModal(null)}
         />
       )}
       {modal?.type === "split_chapter" && (
         <SplitChapterDialog
           chapter={modal.chapter}
           onClose={() => setModal(null)}
-          onSaved={() => {
-            setModal(null);
-            refresh();
-          }}
+          onSaved={() => setModal(null)}
         />
       )}
       {modal?.type === "delete_book" && (
@@ -1676,10 +1715,7 @@ export function ElProfesorBoard({
           bookId={modal.bookId}
           hasPdf={modal.hasPdf}
           onClose={() => setModal(null)}
-          onImported={() => {
-            setModal(null);
-            refresh();
-          }}
+          onImported={() => setModal(null)}
         />
       )}
       {modal?.type === "extraction_history" && (
@@ -1687,10 +1723,7 @@ export function ElProfesorBoard({
           chapterId={modal.chapterId}
           chapterTitle={modal.chapterTitle}
           onClose={() => setModal(null)}
-          onRetried={() => {
-            setModal(null);
-            refresh();
-          }}
+          onRetried={() => setModal(null)}
         />
       )}
       {modal?.type === "archive_book" && (
@@ -1715,10 +1748,7 @@ export function ElProfesorBoard({
             aiConfigPromise={aiConfigPromise}
             hasApiKey={hasGeminiKey}
             aiProvider={aiProvider}
-            onClose={() => {
-              setModal(null);
-              refresh();
-            }}
+            onClose={() => setModal(null)}
           />
         </Suspense>
       )}

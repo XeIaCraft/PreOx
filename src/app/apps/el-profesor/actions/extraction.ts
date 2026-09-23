@@ -808,6 +808,65 @@ export async function finalizeChapterPublication(chapterId: string): Promise<Act
   return { success: "Chapitre publié." };
 }
 
+const PUBLISH_CHUNK_SIZE = 150;
+
+function chunkIds(ids: string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += PUBLISH_CHUNK_SIZE) chunks.push(ids.slice(i, i + PUBLISH_CHUNK_SIZE));
+  return chunks;
+}
+
+/**
+ * Bulk counterpart of finalizeChapterPublication, for the board's multi-select
+ * toolbar ("publier plusieurs chapitres à la fois" — 2026-09-23). Only
+ * chapters already at draft_ready (reviewed extraction, ready to go live) are
+ * published; anything else selected (still extracting, failed, already
+ * published...) is silently skipped and counted, rather than failing the
+ * whole batch over one unready chapter. IDs are chunked the same way as
+ * dal/progress.ts's selectInChunks — a book-wide selection can already reach
+ * the id-count that overflows a single .in() request.
+ */
+export async function bulkPublishChapters(chapterIds: string[]): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  if (chapterIds.length === 0) return { error: "Aucun chapitre sélectionné." };
+  const supabase = await createClient();
+
+  const chapterRows = (
+    await Promise.all(chunkIds(chapterIds).map((chunk) => supabase.from("el_profesor_chapters").select("id, status").in("id", chunk)))
+  ).flatMap((r) => r.data ?? []);
+  const publishableIds = chapterRows.filter((c) => c.status === "draft_ready").map((c) => c.id);
+  const skipped = chapterIds.length - publishableIds.length;
+  if (publishableIds.length === 0) {
+    return { error: "Aucun chapitre sélectionné n'est prêt à être publié (statut « brouillon à relire » requis)." };
+  }
+
+  const chapterChunks = chunkIds(publishableIds);
+  const subEntityIds = (
+    await Promise.all(chapterChunks.map((chunk) => supabase.from("el_profesor_sub_entities").select("id").in("chapter_id", chunk)))
+  ).flatMap((r) => (r.data ?? []).map((s) => s.id));
+
+  if (subEntityIds.length > 0) {
+    const ficheIds = (
+      await Promise.all(chunkIds(subEntityIds).map((chunk) => supabase.from("el_profesor_fiches").select("id").in("sub_entity_id", chunk)))
+    ).flatMap((r) => (r.data ?? []).map((f) => f.id));
+
+    await Promise.all(
+      chunkIds(ficheIds).flatMap((chunk) => [
+        supabase.from("el_profesor_fiches").update({ status: "published" }).in("id", chunk),
+        supabase.from("el_profesor_fiche_blocks").update({ status: "published" }).in("fiche_id", chunk),
+        supabase.from("el_profesor_flashcards").update({ status: "published" }).in("fiche_id", chunk),
+      ])
+    );
+  }
+
+  await Promise.all(chapterChunks.map((chunk) => supabase.from("el_profesor_chapters").update({ status: "published" }).in("id", chunk)));
+
+  revalidatePath("/apps/el-profesor");
+  const n = publishableIds.length;
+  const skippedNote = skipped > 0 ? ` (${skipped} ignoré${skipped > 1 ? "s" : ""} — pas encore prêt${skipped > 1 ? "s" : ""})` : "";
+  return { success: `${n} chapitre${n > 1 ? "s" : ""} publié${n > 1 ? "s" : ""}${skippedNote}.` };
+}
+
 export async function updateFicheBlock(
   blockId: string,
   input: { content: BlockContent; citations: Citation[] }

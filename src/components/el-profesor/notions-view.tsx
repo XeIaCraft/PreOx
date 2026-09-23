@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -1175,7 +1174,6 @@ export function NotionsView({
   supersededFiches: SupersededFicheEntry[];
   notionUpdateProposals: NotionUpdateProposal[];
 }) {
-  const router = useRouter();
   const { toast } = useToast();
   const [isCategorizing, startCategorizing] = useTransition();
   const [isDetecting, startDetecting] = useTransition();
@@ -1188,10 +1186,7 @@ export function NotionsView({
     startCategorizing(async () => {
       const result = await categorizeChapterNotions(selectedChapterId);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "", { variant: "success" });
-        refresh();
-      }
+      else toast(result.success ?? "", { variant: "success" });
     });
   }
 
@@ -1201,15 +1196,8 @@ export function NotionsView({
       const result = await detectContradictionsForNotion(notionId);
       setDetectingNotionId(null);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "", { variant: "success" });
-        refresh();
-      }
+      else toast(result.success ?? "", { variant: "success" });
     });
-  }
-
-  function refresh() {
-    router.refresh();
   }
 
   const pending = contradictions.filter((c) => c.status === "pending");
@@ -1255,7 +1243,7 @@ export function NotionsView({
           </p>
           <div className="space-y-3">
             {pending.map((c) => (
-              <ContradictionCard key={c.id} contradiction={c} onChanged={refresh} />
+              <ContradictionCard key={c.id} contradiction={c} onChanged={() => {}} />
             ))}
           </div>
         </div>
@@ -1268,7 +1256,7 @@ export function NotionsView({
           </p>
           <div className="space-y-3">
             {notionUpdateProposals.map((p) => (
-              <NotionUpdateProposalCard key={p.id} proposal={p} onChanged={refresh} />
+              <NotionUpdateProposalCard key={p.id} proposal={p} onChanged={() => {}} />
             ))}
           </div>
         </div>
@@ -1276,8 +1264,8 @@ export function NotionsView({
 
       <div className="mt-8">
         <p className="mb-2 text-sm font-medium text-foreground">Notions ({notionSummaries.length})</p>
-        <CategoryManager categories={categories} onChanged={refresh} />
-        <CreateNotionForm categories={categories} onCreated={refresh} />
+        <CategoryManager categories={categories} onChanged={() => {}} />
+        <CreateNotionForm categories={categories} onCreated={() => {}} />
         {notionSummaries.length === 0 ? (
           <p className="text-sm text-foreground-subtle">Aucune notion pour l&apos;instant — catégorisez un premier chapitre ci-dessus.</p>
         ) : (
@@ -1303,7 +1291,7 @@ export function NotionsView({
                         detectingNotionId={detectingNotionId}
                         onDetect={handleDetect}
                         onCompareToSource={setUpdateCheckNotion}
-                        onChanged={refresh}
+                        onChanged={() => {}}
                       />
                     ))}
                   </div>
@@ -1331,7 +1319,7 @@ export function NotionsView({
                         detectingNotionId={detectingNotionId}
                         onDetect={handleDetect}
                         onCompareToSource={setUpdateCheckNotion}
-                        onChanged={refresh}
+                        onChanged={() => {}}
                       />
                     ))}
                   </div>
@@ -1382,7 +1370,7 @@ export function NotionsView({
           <p className="mb-2 text-sm font-medium text-foreground">Fiches fusionnées / obsolètes ({supersededFiches.length})</p>
           <ul className="space-y-2">
             {supersededFiches.map((entry) => (
-              <SupersededFicheRow key={entry.fiche.ficheId} entry={entry} onChanged={refresh} />
+              <SupersededFicheRow key={entry.fiche.ficheId} entry={entry} onChanged={() => {}} />
             ))}
           </ul>
         </div>
@@ -1393,7 +1381,7 @@ export function NotionsView({
           <summary className="cursor-pointer text-sm font-medium text-foreground-subtle">Historique traité ({resolved.length})</summary>
           <div className="mt-3 space-y-3">
             {resolved.map((c) => (
-              <ContradictionCard key={c.id} contradiction={c} onChanged={refresh} />
+              <ContradictionCard key={c.id} contradiction={c} onChanged={() => {}} />
             ))}
           </div>
         </details>
@@ -1404,7 +1392,7 @@ export function NotionsView({
           notionId={updateCheckNotion.id}
           notionName={updateCheckNotion.name}
           onClose={() => setUpdateCheckNotion(null)}
-          onSubmitted={refresh}
+          onSubmitted={() => {}}
         />
       )}
     </div>

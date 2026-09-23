@@ -1,7 +1,6 @@
 "use client";
 
 import { use, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Sparkles, ShieldAlert, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -59,7 +58,6 @@ export function DashboardSecondaryWidgets({
   isAdmin: boolean;
 }) {
   const data = use(dataPromise);
-  const router = useRouter();
   const { toast } = useToast();
   const [pendingLeechId, setPendingLeechId] = useState<string | null>(null);
   const [isLeechPending, startLeechTransition] = useTransition();
@@ -70,10 +68,7 @@ export function DashboardSecondaryWidgets({
       const result = await suggestLeechVariant(stat.flashcardId, stat.subEntityName, stat.againRate);
       setPendingLeechId(null);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.suggestion ? `Variante ajoutée : « ${result.suggestion} »` : (result.success ?? "Variante ajoutée."), { variant: "success" });
-        router.refresh();
-      }
+      else toast(result.suggestion ? `Variante ajoutée : « ${result.suggestion} »` : (result.success ?? "Variante ajoutée."), { variant: "success" });
     });
   }
 

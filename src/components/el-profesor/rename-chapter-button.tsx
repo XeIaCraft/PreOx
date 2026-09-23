@@ -6,7 +6,7 @@ import { renameChapter } from "@/app/apps/el-profesor/actions/library";
 import { useToast } from "@/components/ui/toast";
 
 /** Inline rename for a chapter's own title — RenameFicheButton/RenameNotionButton's counterpart, for the chapter card on the dashboard. */
-export function RenameChapterButton({ chapterId, currentTitle, onRenamed }: { chapterId: string; currentTitle: string; onRenamed: () => void }) {
+export function RenameChapterButton({ chapterId, currentTitle }: { chapterId: string; currentTitle: string }) {
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(currentTitle);
@@ -26,7 +26,6 @@ export function RenameChapterButton({ chapterId, currentTitle, onRenamed }: { ch
         return;
       }
       setEditing(false);
-      onRenamed();
     });
   }
 

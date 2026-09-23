@@ -354,10 +354,6 @@ export function NotionSynthesisView({
     chipRefs.current[activeSection]?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }, [activeSection]);
 
-  function refresh() {
-    startTransition(() => router.refresh());
-  }
-
   const FONT_SCALE_ORDER: FontScale[] = ["sm", "md", "lg"];
   function adjustFontScale(direction: 1 | -1) {
     const nextIndex = Math.min(FONT_SCALE_ORDER.length - 1, Math.max(0, FONT_SCALE_ORDER.indexOf(fontScale) + direction));
@@ -394,10 +390,7 @@ export function NotionSynthesisView({
     startTransition(async () => {
       const result = await generateNotionSynthesis(notionId);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "Synthèse générée.", { variant: "success" });
-        router.refresh();
-      }
+      else toast(result.success ?? "Synthèse générée.", { variant: "success" });
     });
   }
 
@@ -405,10 +398,7 @@ export function NotionSynthesisView({
     startTransition(async () => {
       const result = await publishNotionSynthesis(notionId);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "Publiée.", { variant: "success" });
-        refresh();
-      }
+      else toast(result.success ?? "Publiée.", { variant: "success" });
     });
   }
 
@@ -416,10 +406,7 @@ export function NotionSynthesisView({
     startTransition(async () => {
       const result = await unpublishNotionSynthesis(notionId);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "Repassée en brouillon.", { variant: "success" });
-        refresh();
-      }
+      else toast(result.success ?? "Repassée en brouillon.", { variant: "success" });
     });
   }
 
@@ -428,10 +415,7 @@ export function NotionSynthesisView({
     startTransition(async () => {
       const result = await deleteNotionSynthesis(notionId);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "Synthèse supprimée.", { variant: "success" });
-        router.refresh();
-      }
+      else toast(result.success ?? "Synthèse supprimée.", { variant: "success" });
     });
   }
 
@@ -742,7 +726,7 @@ export function NotionSynthesisView({
                           block={block}
                           isFirst={i === 0}
                           isLast={i === blocks.length - 1}
-                          onChanged={refresh}
+                          onChanged={() => {}}
                           justify={textJustify}
                         />
                       ) : (

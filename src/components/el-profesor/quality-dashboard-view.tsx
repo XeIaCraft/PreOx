@@ -55,10 +55,7 @@ export function QualityDashboardView({
     startTransition(async () => {
       const result = await action();
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "Fait.", { variant: "success" });
-        router.refresh();
-      }
+      else toast(result.success ?? "Fait.", { variant: "success" });
     });
   }
 

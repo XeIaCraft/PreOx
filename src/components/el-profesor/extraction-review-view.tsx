@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, ChevronUp, ChevronDown, FileText, PartyPopper, Search, Merge } from "lucide-react";
@@ -39,10 +39,39 @@ function SourceTextPanel({ text }: { text: string | null }) {
   );
 }
 
+type ReviewAction =
+  | { type: "moveSubEntity"; subEntityId: string; direction: "up" | "down" }
+  | { type: "publishFiche"; ficheId: string };
+
+/** Same rationale as board.tsx's applyBoardAction: reorder swaps array position (what the list actually renders from), publish flips status on the current frame so the admin doesn't wait on a round trip to see either change. */
+function applyReviewAction(current: SubEntityWithFiche[], action: ReviewAction): SubEntityWithFiche[] {
+  if (action.type === "moveSubEntity") {
+    const index = current.findIndex((s) => s.id === action.subEntityId);
+    const targetIndex = action.direction === "up" ? index - 1 : index + 1;
+    if (index === -1 || targetIndex < 0 || targetIndex >= current.length) return current;
+    const next = [...current];
+    [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+    return next;
+  }
+
+  return current.map((s) => {
+    if (!s.fiche || s.fiche.id !== action.ficheId) return s;
+    return {
+      ...s,
+      fiche: {
+        ...s.fiche,
+        status: "published" as const,
+        blocks: s.fiche.blocks.map((b) => ({ ...b, status: "published" as const })),
+        flashcards: s.fiche.flashcards.map((c) => ({ ...c, status: "published" as const })),
+      },
+    };
+  });
+}
+
 export function ExtractionReviewView({
   chapterId,
   chapterTitle,
-  subEntities,
+  subEntities: subEntitiesProp,
   flagsByTarget,
   sourceKind = "pdf",
   sourceText = null,
@@ -57,6 +86,7 @@ export function ExtractionReviewView({
   const router = useRouter();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
+  const [subEntities, applyOptimisticAction] = useOptimistic(subEntitiesProp, applyReviewAction);
   const withFiche = subEntities.filter((s) => s.fiche);
   const [selectedId, setSelectedId] = useState(withFiche[0]?.id ?? null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -158,10 +188,6 @@ export function ExtractionReviewView({
     ? [...selected.fiche.blocks, ...selected.fiche.flashcards].flatMap((item) => (flagsByTarget[item.id] ?? []).map((f) => f.id))
     : [];
 
-  function refresh() {
-    startTransition(() => router.refresh());
-  }
-
   // Image capture from the PDF (item 23): the crop comes back as a data
   // URL from PdfViewer's own canvas — held here until the admin picks which
   // of the current fiche's flashcards it belongs to (unless the capture was
@@ -188,10 +214,7 @@ export function ExtractionReviewView({
       }
       const result = await uploadFlashcardImage(flashcardId, uploaded.url);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "Image ajoutée.", { variant: "success" });
-        router.refresh();
-      }
+      else toast(result.success ?? "Image ajoutée.", { variant: "success" });
     });
   }
 
@@ -222,9 +245,9 @@ export function ExtractionReviewView({
 
   function handleMoveSubEntity(subEntityId: string, direction: "up" | "down") {
     startTransition(async () => {
+      applyOptimisticAction({ type: "moveSubEntity", subEntityId, direction });
       const result = await moveSubEntity(subEntityId, direction);
       if (result.error) toast(result.error, { variant: "error" });
-      else refresh();
     });
   }
 
@@ -232,21 +255,16 @@ export function ExtractionReviewView({
     startTransition(async () => {
       const result = await resolveFlags(flagIds);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "", { variant: "success" });
-        refresh();
-      }
+      else toast(result.success ?? "", { variant: "success" });
     });
   }
 
   function handlePublishFiche(ficheId: string) {
     startTransition(async () => {
+      applyOptimisticAction({ type: "publishFiche", ficheId });
       const result = await publishFiche(ficheId);
       if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast("Fiche publiée.", { variant: "success" });
-        refresh();
-      }
+      else toast("Fiche publiée.", { variant: "success" });
     });
   }
 
@@ -368,7 +386,7 @@ export function ExtractionReviewView({
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <h2 className="font-serif-display text-lg font-medium text-foreground">{selected.fiche.title}</h2>
-                      <RenameFicheButton ficheId={selected.fiche.id} currentTitle={selected.fiche.title} onRenamed={refresh} />
+                      <RenameFicheButton ficheId={selected.fiche.id} currentTitle={selected.fiche.title} onRenamed={() => {}} />
                     </div>
                     {selected.summary && <p className="mt-1 text-sm text-foreground-subtle">{selected.summary}</p>}
                   </div>
@@ -397,10 +415,7 @@ export function ExtractionReviewView({
                       { ficheId: selected.fiche.id, ficheTitle: selected.fiche.title },
                       ...withFiche.filter((s) => s.id !== selected.id).map((s) => ({ ficheId: s.fiche!.id, ficheTitle: s.fiche!.title })),
                     ]}
-                    onChanged={() => {
-                      setShowMerge(false);
-                      refresh();
-                    }}
+                    onChanged={() => setShowMerge(false)}
                   />
                 )}
 
@@ -415,7 +430,7 @@ export function ExtractionReviewView({
                         <div key={block.id} id={`review-block-${block.id}`} className="scroll-mt-4">
                           <BlockEditor
                             block={block}
-                            onChanged={refresh}
+                            onChanged={() => {}}
                             onCitationClick={handleCitationClick}
                             reorder={onlyFlagged ? undefined : { isFirst: i === 0, isLast: i === visibleBlocks.length - 1 }}
                             flags={flagsByTarget[block.id]}
@@ -430,7 +445,7 @@ export function ExtractionReviewView({
                         <div key={card.id} id={`review-flashcard-${card.id}`} className="scroll-mt-4">
                           <FlashcardEditor
                             flashcard={card}
-                            onChanged={refresh}
+                            onChanged={() => {}}
                             onCitationClick={handleCitationClick}
                             flags={flagsByTarget[card.id]}
                             onRequestImageCapture={(page) => handleCaptureHint(card.id, page)}
@@ -515,10 +530,7 @@ export function ExtractionReviewView({
           subEntities={withFiche.map((s) => ({ id: s.id, name: s.name }))}
           selection={pendingSelection}
           onClose={() => setPendingSelection(null)}
-          onSubmitted={() => {
-            setPendingSelection(null);
-            refresh();
-          }}
+          onSubmitted={() => setPendingSelection(null)}
         />
       )}
 

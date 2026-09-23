@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   BookOpen,
@@ -203,18 +202,13 @@ export function NotionList({
   /** Rename/reorder/merge controls only make sense for admins — everyone else sees the plain read-only listing. */
   isAdmin?: boolean;
 }) {
-  const router = useRouter();
   const { toast } = useToast();
   const [, startTransition] = useTransition();
-  function refresh() {
-    router.refresh();
-  }
 
   function handleMoveNotion(notionId: string, direction: "up" | "down") {
     startTransition(async () => {
       const result = await moveNotion(notionId, direction);
       if (result.error) toast(result.error, { variant: "error" });
-      else refresh();
     });
   }
 
@@ -303,7 +297,7 @@ export function NotionList({
                 <Link href={`/apps/el-profesor/notions/${notion.id}`} className="text-sm font-medium text-foreground hover:underline">
                   {notion.name}
                 </Link>
-                {isAdmin && <RenameNotionButton notionId={notion.id} currentName={notion.name} onRenamed={refresh} />}
+                {isAdmin && <RenameNotionButton notionId={notion.id} currentName={notion.name} onRenamed={() => {}} />}
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="neutral">
@@ -342,7 +336,7 @@ export function NotionList({
                 <div className={`h-full rounded-full ${tier.barClassName}`} style={{ width: `${r.readinessPct}%` }} />
               </div>
             )}
-            <NotionFicheList notionId={notion.id} fiches={fiches} isAdmin={isAdmin} onChanged={refresh} />
+            <NotionFicheList notionId={notion.id} fiches={fiches} isAdmin={isAdmin} onChanged={() => {}} />
             {notionRecommendations.length > 0 && (
               <div className="mt-3 border-t border-border pt-2">
                 <p className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">

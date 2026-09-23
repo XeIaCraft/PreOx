@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, Pencil, NotebookPen, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -107,7 +106,6 @@ export function CaseJournalView({
   notions: { id: string; name: string }[];
   filterNotionId: string | null;
 }) {
-  const router = useRouter();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [dialog, setDialog] = useState<{ mode: "new" } | { mode: "edit"; entry: CaseJournalEntryWithNotion } | null>(null);
@@ -115,9 +113,8 @@ export function CaseJournalView({
   const visible = filterNotionId ? entries.filter((e) => e.notionId === filterNotionId) : entries;
   const filterNotionName = filterNotionId ? (notions.find((n) => n.id === filterNotionId)?.name ?? null) : null;
 
-  function refresh() {
+  function handleSaved() {
     setDialog(null);
-    router.refresh();
   }
 
   function handleDelete(id: string) {
@@ -125,7 +122,6 @@ export function CaseJournalView({
     startTransition(async () => {
       const result = await deleteCaseJournalEntry(id);
       if (result.error) toast(result.error, { variant: "error" });
-      else router.refresh();
     });
   }
 
@@ -209,7 +205,7 @@ export function CaseJournalView({
           notions={notions}
           defaultNotionId={filterNotionId ?? undefined}
           onClose={() => setDialog(null)}
-          onSaved={refresh}
+          onSaved={handleSaved}
         />
       )}
     </div>
