@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
-import { toBook, toChapter, toFlag, getChapterContent } from "./shared";
+import { toBook, toChapter, toFlag, getChapterContent, getChapterContentBatch } from "./shared";
 import { getMasteryCountsByChapter } from "./review";
 import type { Book, Chapter, ChapterStatus, Flag, FicheQuestion, FicheAnswer } from "../types";
 import type { ElProfesorBookRow, ElProfesorChapterRow, ElProfesorFlagRow } from "@/lib/supabase/types";
@@ -315,16 +315,23 @@ export async function getBookTableOfContents(bookId: string, userId: string, inc
   const { data: chapterRows } = await supabase.from("el_profesor_chapters").select("*").eq("book_id", bookId).order("order_index", { ascending: true });
   const chapters = (chapterRows ?? []).map(toChapter).filter((c) => includeUnpublished || c.status === "published");
 
+  // Batched (getChapterContentBatch) rather than one getChapterContent call
+  // per chapter — same N+1 pattern already root-caused on the dashboard's
+  // own stats (dal/shared.ts's doc comment on getFichesByChapterBatch), just
+  // scoped to one book's chapters instead of the whole library.
   const [contentByChapter, mastery] = await Promise.all([
-    Promise.all(chapters.map((c) => getChapterContent(c.id, includeUnpublished))),
+    getChapterContentBatch(
+      chapters.map((c) => c.id),
+      includeUnpublished
+    ),
     getMasteryCountsByChapter(userId, chapters),
   ]);
 
-  const tocChapters: BookTocChapter[] = chapters.map((chapter, i) => ({
+  const tocChapters: BookTocChapter[] = chapters.map((chapter) => ({
     chapterId: chapter.id,
     chapterTitle: chapter.title,
     status: chapter.status,
-    subEntities: contentByChapter[i].map((s) => ({ id: s.id, name: s.name, hasFiche: Boolean(s.fiche) })),
+    subEntities: (contentByChapter.get(chapter.id) ?? []).map((s) => ({ id: s.id, name: s.name, hasFiche: Boolean(s.fiche) })),
     mastery: mastery[chapter.id] ?? { total: 0, new: 0, learning: 0, acquired: 0 },
   }));
 
