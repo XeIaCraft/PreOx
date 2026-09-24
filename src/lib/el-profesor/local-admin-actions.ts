@@ -59,3 +59,18 @@ export async function applyLocalMoveChapter(chapterId: string, direction: "up" |
   });
   return nextBooks;
 }
+
+function renameChapterInBooks(books: Books, chapterId: string, title: string): Books {
+  return books.map((book) => ({ ...book, chapters: book.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c)) }));
+}
+
+export async function applyLocalRenameChapter(chapterId: string, title: string): Promise<Books | null> {
+  const nextBooks = await patchCachedDashboardBooks((books) => renameChapterInBooks(books, chapterId, title));
+  await enqueuePendingWrite({
+    id: crypto.randomUUID(),
+    kind: "adminAction",
+    createdAt: new Date().toISOString(),
+    payload: { action: "library.renameChapter", args: [chapterId, title] },
+  });
+  return nextBooks;
+}

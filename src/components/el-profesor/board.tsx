@@ -67,7 +67,7 @@ import { DashboardDailyCard, DashboardSecondaryWidgets, DashboardWidgetsSkeleton
 import { RenderErrorBoundary } from "@/components/el-profesor/render-error-boundary";
 import { CompactProgressBars } from "@/components/el-profesor/progress-bars";
 import { deleteBook, deleteChapter } from "@/app/apps/el-profesor/actions/library";
-import { swapBookOrder, swapChapterOrder, applyLocalMoveBook, applyLocalMoveChapter } from "@/lib/el-profesor/local-admin-actions";
+import { swapBookOrder, swapChapterOrder, applyLocalMoveBook, applyLocalMoveChapter, applyLocalRenameChapter } from "@/lib/el-profesor/local-admin-actions";
 import { setElProfesorPreviewAsUser } from "@/app/apps/el-profesor/actions/preview";
 import {
   extractChapter,
@@ -438,7 +438,8 @@ function GeminiSettingsLoader({
 type BoardAction =
   | { type: "moveBook"; bookId: string; direction: "up" | "down" }
   | { type: "moveChapter"; chapterId: string; direction: "up" | "down" }
-  | { type: "publishChapters"; chapterIds: string[] };
+  | { type: "publishChapters"; chapterIds: string[] }
+  | { type: "renameChapter"; chapterId: string; title: string };
 
 /**
  * Reorders swap one adjacent pair by id (swapBookOrder/swapChapterOrder,
@@ -452,16 +453,24 @@ type BoardAction =
  * the server will actually report.
  */
 function applyBoardAction(current: BookWithChapters[], action: BoardAction): BookWithChapters[] {
-  if (action.type === "publishChapters") {
-    const ids = new Set(action.chapterIds);
-    return current.map((book) => ({
-      ...book,
-      chapters: book.chapters.map((c) => (ids.has(c.id) && c.status === "draft_ready" ? { ...c, status: "published" as const } : c)),
-    }));
+  switch (action.type) {
+    case "publishChapters": {
+      const ids = new Set(action.chapterIds);
+      return current.map((book) => ({
+        ...book,
+        chapters: book.chapters.map((c) => (ids.has(c.id) && c.status === "draft_ready" ? { ...c, status: "published" as const } : c)),
+      }));
+    }
+    case "moveBook":
+      return swapBookOrder(current, action.bookId, action.direction);
+    case "moveChapter":
+      return swapChapterOrder(current, action.chapterId, action.direction);
+    case "renameChapter":
+      return current.map((book) => ({
+        ...book,
+        chapters: book.chapters.map((c) => (c.id === action.chapterId ? { ...c, title: action.title } : c)),
+      }));
   }
-
-  if (action.type === "moveBook") return swapBookOrder(current, action.bookId, action.direction);
-  return swapChapterOrder(current, action.chapterId, action.direction);
 }
 
 export function ElProfesorBoard({
@@ -689,6 +698,14 @@ export function ElProfesorBoard({
     startTransition(async () => {
       applyOptimisticAction({ type: "moveChapter", chapterId, direction });
       const nextBooks = await applyLocalMoveChapter(chapterId, direction);
+      if (nextBooks) onLocalBooksChange?.(nextBooks);
+    });
+  }
+
+  function handleRenameChapter(chapterId: string, title: string) {
+    startTransition(async () => {
+      applyOptimisticAction({ type: "renameChapter", chapterId, title });
+      const nextBooks = await applyLocalRenameChapter(chapterId, title);
       if (nextBooks) onLocalBooksChange?.(nextBooks);
     });
   }
@@ -1300,7 +1317,7 @@ export function ElProfesorBoard({
                         )}
                         <div className="flex items-center gap-1.5">
                           <p className="font-medium text-foreground">{chapter.title}</p>
-                          {isAdmin && <RenameChapterButton chapterId={chapter.id} currentTitle={chapter.title} />}
+                          {isAdmin && <RenameChapterButton chapterId={chapter.id} currentTitle={chapter.title} onRename={handleRenameChapter} />}
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-wrap justify-end gap-1.5">

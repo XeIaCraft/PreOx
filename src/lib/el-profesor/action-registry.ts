@@ -12,11 +12,12 @@
 // "<name>", args: [...] } }) — no new Payload interface or PendingWrite
 // union member needed, unlike the five write kinds with bespoke local-read
 // integration (review/bookmark/note/readingPosition/exclude).
-import { moveBook, moveChapter } from "@/app/apps/el-profesor/actions/library";
+import { moveBook, moveChapter, renameChapter } from "@/app/apps/el-profesor/actions/library";
 
 export const ACTION_REGISTRY = {
   "library.moveBook": moveBook,
   "library.moveChapter": moveChapter,
+  "library.renameChapter": renameChapter,
 } as const;
 
 export type RegisteredActionName = keyof typeof ACTION_REGISTRY;

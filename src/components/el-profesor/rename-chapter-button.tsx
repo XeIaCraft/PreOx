@@ -1,32 +1,36 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { Pencil, Check, X } from "lucide-react";
-import { renameChapter } from "@/app/apps/el-profesor/actions/library";
-import { useToast } from "@/components/ui/toast";
 
-/** Inline rename for a chapter's own title — RenameFicheButton/RenameNotionButton's counterpart, for the chapter card on the dashboard. */
-export function RenameChapterButton({ chapterId, currentTitle }: { chapterId: string; currentTitle: string }) {
-  const { toast } = useToast();
+/**
+ * Inline rename for a chapter's own title — RenameFicheButton/
+ * RenameNotionButton's counterpart, for the chapter card on the dashboard.
+ * Local-first (piste 2026-09-24 — "module 100% local"): onRename applies
+ * the new title to the board's optimistic state and the local cache, then
+ * queues the real write — so this closes the instant it's called, no
+ * network wait, works offline. See ElProfesorBoard's handleRenameChapter.
+ */
+export function RenameChapterButton({
+  chapterId,
+  currentTitle,
+  onRename,
+}: {
+  chapterId: string;
+  currentTitle: string;
+  onRename: (chapterId: string, title: string) => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(currentTitle);
-  const [isPending, startTransition] = useTransition();
 
   function handleSave() {
     const trimmed = value.trim();
-    if (!trimmed) return;
-    if (trimmed === currentTitle) {
+    if (!trimmed || trimmed === currentTitle) {
       setEditing(false);
       return;
     }
-    startTransition(async () => {
-      const result = await renameChapter(chapterId, trimmed);
-      if (result.error) {
-        toast(result.error, { variant: "error" });
-        return;
-      }
-      setEditing(false);
-    });
+    onRename(chapterId, trimmed);
+    setEditing(false);
   }
 
   if (editing) {
@@ -40,19 +44,18 @@ export function RenameChapterButton({ chapterId, currentTitle }: { chapterId: st
             if (e.key === "Enter") handleSave();
             if (e.key === "Escape") setEditing(false);
           }}
-          disabled={isPending}
           className="rounded-[var(--radius-sm)] border border-border bg-surface px-1.5 py-0.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
         />
         <button
           type="button"
           onClick={handleSave}
-          disabled={isPending || !value.trim()}
+          disabled={!value.trim()}
           aria-label="Enregistrer le nouveau titre"
           className="text-success disabled:opacity-40"
         >
           <Check className="h-3.5 w-3.5" />
         </button>
-        <button type="button" onClick={() => setEditing(false)} disabled={isPending} aria-label="Annuler le renommage" className="text-foreground-subtle">
+        <button type="button" onClick={() => setEditing(false)} aria-label="Annuler le renommage" className="text-foreground-subtle">
           <X className="h-3.5 w-3.5" />
         </button>
       </span>
