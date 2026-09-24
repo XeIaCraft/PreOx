@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { notFound } from "next/navigation";
 import { NotionSynthesisView } from "@/components/el-profesor/notion-synthesis-view";
 import { getEntity, setEntity } from "@/lib/el-profesor/local-db";
 import type { NotionSynthesisSnapshot } from "@/lib/el-profesor/dashboard-types";
@@ -73,7 +72,14 @@ export function NotionSynthesisWithLocalCache({
   if (loadError) {
     return <p className="mx-auto max-w-3xl px-4 py-8 text-sm text-danger">Impossible de charger cette notion — vérifiez votre connexion.</p>;
   }
-  if (data === "miss") notFound();
+  if (data === "miss") {
+    // next/navigation's notFound() only works from a Server Component,
+    // Server Function, or Route Handler in this Next.js version — not from
+    // a Client Component's render (see node_modules/next/dist/docs/.../
+    // not-found.md), so a genuinely-missing notion renders its own inline
+    // message here instead of throwing.
+    return <p className="mx-auto max-w-3xl px-4 py-8 text-sm text-foreground-subtle">Cette notion n&apos;existe pas ou plus.</p>;
+  }
   if (!data) return <NotionSynthesisSkeleton />;
 
   return (
