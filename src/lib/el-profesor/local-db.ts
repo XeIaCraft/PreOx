@@ -105,6 +105,26 @@ export async function setCachedDashboard(snapshot: DashboardSnapshot): Promise<v
   await putEntries(DASHBOARD_STORE, [[DASHBOARD_KEY, { ...snapshot, syncedAt: new Date().toISOString() }]]);
 }
 
+/**
+ * Patches just the cached dashboard's `books` array in place (piste
+ * 2026-09-24 — "module 100% local", admin reorder) — preserves the
+ * existing `syncedAt` and every other field, unlike setCachedDashboard
+ * (which always stamps a fresh sync time — this isn't a real sync, just a
+ * local admin edit). Returns the updated books array, or null if there's
+ * nothing cached yet to patch (caller should skip the local update and just
+ * queue the write in that case). Same "preserve syncedAt" rationale as the
+ * now-removed patchDashboardCountsForReview.
+ */
+export async function patchCachedDashboardBooks(
+  updater: (books: DashboardSnapshot["books"]) => DashboardSnapshot["books"]
+): Promise<DashboardSnapshot["books"] | null> {
+  const current = await getCachedDashboard();
+  if (!current) return null;
+  const books = updater(current.books);
+  await putEntries(DASHBOARD_STORE, [[DASHBOARD_KEY, { ...current, books }]]);
+  return books;
+}
+
 export async function getCachedChapterContent(chapterId: string): Promise<WithChapterSyncMeta<ChapterContentSnapshot> | null> {
   return getValue<WithChapterSyncMeta<ChapterContentSnapshot>>(CHAPTER_CONTENT_STORE, chapterId);
 }
@@ -251,11 +271,15 @@ export async function getAllCachedReviewStates(): Promise<Map<string, ReviewStat
 }
 
 // ============================================================================
-// Local-first writes (piste 2026-09-24 — "écriture locale automatique") —
-// the "vue utilisateur" write surface only (review answers, bookmarks,
-// notes, reading position): every one of these touches only the writing
-// user's own data, so there's no cross-user conflict risk the way there
-// would be for admin content edits (which stay server-direct, unchanged).
+// Local-first writes (piste 2026-09-24 — "écriture locale automatique", puis
+// "module 100% local"). Started as the "vue utilisateur" write surface only
+// (review answers, bookmarks, notes, reading position — each touching only
+// the writing user's own data, zero cross-user conflict risk) and now also
+// covers simple, single-field admin mutations (reorder, rename, publish...)
+// via the generic "adminAction" kind below, dispatched through
+// action-registry.ts. Content editing with real conflict risk (fiches,
+// blocks, AI extraction) stays server-direct for now — see the plan's
+// staged rollout.
 // ============================================================================
 
 /** Raw per-flashcard FSRS state, synced in bulk alongside the chapter content sync — what scheduleReview (fsrs.ts) needs to compute a card's next state locally, the same way actions/review.ts does server-side. */
@@ -326,6 +350,21 @@ export interface PendingExcludePayload {
 }
 
 /**
+ * Generic escape hatch for admin mutations (piste 2026-09-24 — "module 100%
+ * local", file d'action générique) — `action` is a key into
+ * action-registry.ts's ACTION_REGISTRY, `args` its exact call arguments.
+ * Lets a new admin action join the local-first queue by registering a
+ * function + calling enqueuePendingWrite, without a bespoke Payload
+ * interface/union member/switch case each time — unlike the five kinds
+ * above, which need their own local-read integration (undo, effective
+ * suspended-ids overlay) that a fully generic shape can't express.
+ */
+export interface PendingAdminActionPayload {
+  action: string;
+  args: unknown[];
+}
+
+/**
  * One entry per queued write, replayed in order by flushPendingWrites
  * (sync-queue.ts) against the same Server Actions the app already calls
  * when online. "review" entries are kept around (marked `flushed`, with the
@@ -341,7 +380,8 @@ export type PendingWrite =
   | { id: string; kind: "bookmark"; createdAt: string; payload: PendingBookmarkPayload }
   | { id: string; kind: "note"; createdAt: string; payload: PendingNotePayload }
   | { id: string; kind: "readingPosition"; createdAt: string; payload: PendingReadingPositionPayload }
-  | { id: string; kind: "exclude"; createdAt: string; payload: PendingExcludePayload };
+  | { id: string; kind: "exclude"; createdAt: string; payload: PendingExcludePayload }
+  | { id: string; kind: "adminAction"; createdAt: string; payload: PendingAdminActionPayload };
 
 export async function enqueuePendingWrite(write: PendingWrite): Promise<void> {
   await putEntries(PENDING_WRITES_STORE, [[write.id, write]]);

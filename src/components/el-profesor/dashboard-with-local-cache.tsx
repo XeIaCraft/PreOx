@@ -123,6 +123,15 @@ export function DashboardWithLocalCache({
     setSyncedAt(newSyncedAt);
   }
 
+  // Keeps snapshot.books in step with a local admin reorder the instant it
+  // persists to the cache (handleMoveBook/handleMoveChapter in board.tsx) —
+  // without this, ElProfesorBoard's useOptimistic override would revert to
+  // this stale prop the moment its transition resolves, flashing back to
+  // the old order.
+  function handleLocalBooksChange(books: DashboardSnapshot["books"]) {
+    setSnapshot((s) => (s ? { ...s, books } : s));
+  }
+
   if (!snapshot) return <DashboardSkeleton />;
 
   return (
@@ -155,6 +164,7 @@ export function DashboardWithLocalCache({
         secondaryDataPromise={secondaryDataPromise}
         aiConfigPromise={aiConfigPromise}
         notionViewDataPromise={notionViewDataPromise}
+        onLocalBooksChange={handleLocalBooksChange}
       />
 
       {syncOpen && <SyncModal onClose={() => setSyncOpen(false)} onSynced={handleSynced} />}

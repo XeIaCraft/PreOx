@@ -13,6 +13,7 @@ import { submitReview, excludeFlashcardFromReviews, reincludeFlashcardInReviews 
 import { setBookmark } from "@/app/apps/el-profesor/actions/bookmarks";
 import { saveMyNote } from "@/app/apps/el-profesor/actions/notes";
 import { recordReadingPosition } from "@/app/apps/el-profesor/actions/reading-position";
+import { ACTION_REGISTRY, type RegisteredActionName } from "./action-registry";
 
 // How long a flushed "review" entry sticks around purely so undoLocalReview
 // can still find its serverLogId — comfortably past any realistic reaction
@@ -54,6 +55,21 @@ async function flushOne(write: PendingWrite): Promise<FlushOutcome> {
       const { chapterId, subEntityId } = write.payload;
       await recordReadingPosition(chapterId, subEntityId);
       return "delete"; // fire-and-forget by design, see that action's doc comment
+    }
+    case "adminAction": {
+      const { action, args } = write.payload;
+      const fn = ACTION_REGISTRY[action as RegisteredActionName];
+      // Unknown action name (e.g. an older client queued something this
+      // build no longer registers) — nothing to retry, drop it rather than
+      // fail forever and block every write queued after it.
+      if (!fn) return "delete";
+      // Every registered action takes and returns a plain ActionState-like
+      // object ({error?, success?, ...}) — the registry's own function
+      // signatures already type-check each call site that enqueues one
+      // (see local-admin-actions.ts), so the loose cast here is confined to
+      // this one generic dispatch point.
+      const result = (await (fn as (...fnArgs: unknown[]) => Promise<{ error?: string }>)(...args)) as { error?: string };
+      return result?.error ? "fail" : "delete";
     }
   }
 }

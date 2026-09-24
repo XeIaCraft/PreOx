@@ -66,7 +66,8 @@ import { LibraryStats } from "@/components/el-profesor/learning-widgets";
 import { DashboardDailyCard, DashboardSecondaryWidgets, DashboardWidgetsSkeleton } from "@/components/el-profesor/dashboard-secondary-widgets";
 import { RenderErrorBoundary } from "@/components/el-profesor/render-error-boundary";
 import { CompactProgressBars } from "@/components/el-profesor/progress-bars";
-import { deleteBook, deleteChapter, moveBook, moveChapter } from "@/app/apps/el-profesor/actions/library";
+import { deleteBook, deleteChapter } from "@/app/apps/el-profesor/actions/library";
+import { swapBookOrder, swapChapterOrder, applyLocalMoveBook, applyLocalMoveChapter } from "@/lib/el-profesor/local-admin-actions";
 import { setElProfesorPreviewAsUser } from "@/app/apps/el-profesor/actions/preview";
 import {
   extractChapter,
@@ -440,13 +441,15 @@ type BoardAction =
   | { type: "publishChapters"; chapterIds: string[] };
 
 /**
- * Reorders swap one adjacent pair by id — array position is what the UI
- * actually renders from (bookIndex/chapterIndex are derived via findIndex/
- * map on every render), so this doesn't need to touch order_index at all;
- * the server call does that. Publish flips status on the current frame for
- * every selected chapter that's actually draft_ready, mirroring the same
- * guard bulkPublishChapters applies server-side (extraction.ts) so the
- * optimistic count matches what the server will actually report.
+ * Reorders swap one adjacent pair by id (swapBookOrder/swapChapterOrder,
+ * shared with local-admin-actions.ts's local-first version so the transient
+ * optimistic order and the persisted cached order can never disagree) —
+ * array position is what the UI actually renders from, so this doesn't need
+ * to touch order_index at all; that's what the queued write does. Publish
+ * flips status on the current frame for every selected chapter that's
+ * actually draft_ready, mirroring the same guard bulkPublishChapters
+ * applies server-side (extraction.ts) so the optimistic count matches what
+ * the server will actually report.
  */
 function applyBoardAction(current: BookWithChapters[], action: BoardAction): BookWithChapters[] {
   if (action.type === "publishChapters") {
@@ -457,26 +460,8 @@ function applyBoardAction(current: BookWithChapters[], action: BoardAction): Boo
     }));
   }
 
-  if (action.type === "moveBook") {
-    const index = current.findIndex((b) => b.id === action.bookId);
-    const targetIndex = action.direction === "up" ? index - 1 : index + 1;
-    if (index === -1 || targetIndex < 0 || targetIndex >= current.length) return current;
-    const next = [...current];
-    [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
-    return next;
-  }
-
-  const bookIndex = current.findIndex((b) => b.chapters.some((c) => c.id === action.chapterId));
-  if (bookIndex === -1) return current;
-  const book = current[bookIndex];
-  const chapterIndex = book.chapters.findIndex((c) => c.id === action.chapterId);
-  const targetIndex = action.direction === "up" ? chapterIndex - 1 : chapterIndex + 1;
-  if (targetIndex < 0 || targetIndex >= book.chapters.length) return current;
-  const nextChapters = [...book.chapters];
-  [nextChapters[chapterIndex], nextChapters[targetIndex]] = [nextChapters[targetIndex], nextChapters[chapterIndex]];
-  const nextBooks = [...current];
-  nextBooks[bookIndex] = { ...book, chapters: nextChapters };
-  return nextBooks;
+  if (action.type === "moveBook") return swapBookOrder(current, action.bookId, action.direction);
+  return swapChapterOrder(current, action.chapterId, action.direction);
 }
 
 export function ElProfesorBoard({
@@ -497,6 +482,7 @@ export function ElProfesorBoard({
   secondaryDataPromise,
   aiConfigPromise,
   notionViewDataPromise,
+  onLocalBooksChange,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -529,12 +515,15 @@ export function ElProfesorBoard({
   aiConfigPromise: Promise<DashboardAiConfigData | null>;
   /** Same streamed-promise pattern, consumed by DashboardNotionView only once the "Par notion" toggle is selected. */
   notionViewDataPromise: Promise<DashboardNotionViewData>;
+  /** Called with the reordered books array right after a local reorder (handleMoveBook/handleMoveChapter) persists to the cache — lets the parent (DashboardWithLocalCache) update its own snapshot state in step, so booksProp is already correct by the time the transition below resolves and useOptimistic's override lapses (otherwise the list would flash back to the old order for an instant). Undefined when this board isn't backed by the local cache at all (e.g. never synced) — the reorder still gets queued, just without a local list to keep in sync with. */
+  onLocalBooksChange?: (books: BookWithChapters[]) => void;
 }) {
   const { toast } = useToast();
   // Reordering only ever swaps two adjacent entries by id, in the book list
   // or within one book's chapter list — applied on the current frame so the
-  // arrows feel instant, then reconciled with booksProp once moveBook/
-  // moveChapter's response lands (see handleMoveBook/handleMoveChapter).
+  // arrows feel instant (useOptimistic), while handleMoveBook/handleMoveChapter
+  // persist the same swap to the local cache and queue it for sync-queue.ts's
+  // next flush — no network wait, works offline.
   const [books, applyOptimisticAction] = useOptimistic(booksProp, applyBoardAction);
   const [modal, setModal] = useState<ModalState>(null);
   const [themeFilter, setThemeFilter] = useState<string | null>(null);
@@ -691,16 +680,16 @@ export function ElProfesorBoard({
   function handleMoveBook(bookId: string, direction: "up" | "down") {
     startTransition(async () => {
       applyOptimisticAction({ type: "moveBook", bookId, direction });
-      const result = await moveBook(bookId, direction);
-      if (result.error) toast(result.error, { variant: "error" });
+      const nextBooks = await applyLocalMoveBook(bookId, direction);
+      if (nextBooks) onLocalBooksChange?.(nextBooks);
     });
   }
 
   function handleMoveChapter(chapterId: string, direction: "up" | "down") {
     startTransition(async () => {
       applyOptimisticAction({ type: "moveChapter", chapterId, direction });
-      const result = await moveChapter(chapterId, direction);
-      if (result.error) toast(result.error, { variant: "error" });
+      const nextBooks = await applyLocalMoveChapter(chapterId, direction);
+      if (nextBooks) onLocalBooksChange?.(nextBooks);
     });
   }
 
