@@ -12,19 +12,28 @@
 // browser without IndexedDB) is swallowed silently and falls back to
 // whatever the server rendered — this is a performance cache, never a
 // source of truth, so a failure here must never break the page.
-import type { DashboardSnapshot, ChapterContentSnapshot, DashboardSecondaryData, DashboardNotionViewData, DashboardAiConfigData } from "./dashboard-types";
+import type {
+  DashboardSnapshot,
+  ChapterContentSnapshot,
+  DashboardSecondaryData,
+  DashboardNotionViewData,
+  DashboardAiConfigData,
+  NotionsPageSnapshot,
+  CaseJournalSnapshot,
+} from "./dashboard-types";
 import type { ReviewState, ReviewRating, ReviewSource } from "./types";
 import type { ReviewConfidence } from "@/app/apps/el-profesor/actions/review";
 
 const DB_NAME = "el-profesor-cache";
-// Bumped again to cache the dashboard's secondary widgets (activity/notions/
-// AI config/batch jobs — piste 2026-09-24 — "module 100% local", widgets
-// hors ligne) so a shell-driven dashboard render offline shows real
-// last-synced data instead of hanging forever behind their Suspense
-// boundaries (see DashboardWithLocalCache). onupgradeneeded below only
-// creates whichever stores don't exist yet, so an older database gains the
-// new ones without losing what's already cached.
-const DB_VERSION = 4;
+// Bumped again for the notions/journal screens (piste 2026-09-24 — "module
+// 100% local", extension aux autres écrans) — a generic `entities` store
+// (Part B of the plan: "type:id" keys, for per-entity screens that don't
+// warrant their own dedicated store the way dashboard/chapterContent do)
+// plus two more single-blob stores for the notions admin screen and the
+// case journal. onupgradeneeded below only creates whichever stores don't
+// exist yet, so an older database gains the new ones without losing what's
+// already cached.
+const DB_VERSION = 5;
 const DASHBOARD_STORE = "dashboard";
 const CHAPTER_CONTENT_STORE = "chapterContent";
 const REVIEW_STATE_STORE = "reviewState";
@@ -33,11 +42,16 @@ const SUSPENDED_FLASHCARD_IDS_STORE = "suspendedFlashcardIds";
 const SECONDARY_DASHBOARD_STORE = "secondaryDashboard";
 const NOTION_VIEW_DATA_STORE = "notionViewData";
 const AI_CONFIG_DATA_STORE = "aiConfigData";
+const NOTIONS_PAGE_STORE = "notionsPage";
+const CASE_JOURNAL_STORE = "caseJournal";
+const ENTITIES_STORE = "entities";
 const DASHBOARD_KEY = "singleton";
 const SUSPENDED_FLASHCARD_IDS_KEY = "singleton";
 const SECONDARY_DASHBOARD_KEY = "singleton";
 const NOTION_VIEW_DATA_KEY = "singleton";
 const AI_CONFIG_DATA_KEY = "singleton";
+const NOTIONS_PAGE_KEY = "singleton";
+const CASE_JOURNAL_KEY = "singleton";
 
 type WithSyncedAt<T> = T & { syncedAt: string };
 /** lastModifiedAt is the *server's* timestamp for this chapter at download time (el_profesor_chapter_last_modified) — compared against a fresh server value on the next sync (piste 2026-09-24 — synchronisation delta) to decide whether this chapter needs re-downloading at all. Distinct from syncedAt, which is only ever "when did we last write this" from the client's own clock. */
@@ -62,6 +76,9 @@ function openDb(): Promise<IDBDatabase | null> {
         if (!db.objectStoreNames.contains(SECONDARY_DASHBOARD_STORE)) db.createObjectStore(SECONDARY_DASHBOARD_STORE);
         if (!db.objectStoreNames.contains(NOTION_VIEW_DATA_STORE)) db.createObjectStore(NOTION_VIEW_DATA_STORE);
         if (!db.objectStoreNames.contains(AI_CONFIG_DATA_STORE)) db.createObjectStore(AI_CONFIG_DATA_STORE);
+        if (!db.objectStoreNames.contains(NOTIONS_PAGE_STORE)) db.createObjectStore(NOTIONS_PAGE_STORE);
+        if (!db.objectStoreNames.contains(CASE_JOURNAL_STORE)) db.createObjectStore(CASE_JOURNAL_STORE);
+        if (!db.objectStoreNames.contains(ENTITIES_STORE)) db.createObjectStore(ENTITIES_STORE);
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(null);
@@ -193,6 +210,39 @@ export async function getCachedAiConfigData(): Promise<{ value: DashboardAiConfi
 
 export async function setCachedAiConfigData(value: DashboardAiConfigData | null): Promise<void> {
   await putEntries(AI_CONFIG_DATA_STORE, [[AI_CONFIG_DATA_KEY, { value }]]);
+}
+
+/** The /apps/el-profesor/notions admin screen's full bundle — see NotionsPageSnapshot's doc comment. Admin-only, so a non-admin simply never has anything cached here. */
+export async function getCachedNotionsPage(): Promise<NotionsPageSnapshot | null> {
+  return getValue<NotionsPageSnapshot>(NOTIONS_PAGE_STORE, NOTIONS_PAGE_KEY);
+}
+
+export async function setCachedNotionsPage(data: NotionsPageSnapshot): Promise<void> {
+  await putEntries(NOTIONS_PAGE_STORE, [[NOTIONS_PAGE_KEY, data]]);
+}
+
+/** This user's own case journal entries + the notion list used to filter/link them. */
+export async function getCachedCaseJournal(): Promise<CaseJournalSnapshot | null> {
+  return getValue<CaseJournalSnapshot>(CASE_JOURNAL_STORE, CASE_JOURNAL_KEY);
+}
+
+export async function setCachedCaseJournal(data: CaseJournalSnapshot): Promise<void> {
+  await putEntries(CASE_JOURNAL_STORE, [[CASE_JOURNAL_KEY, data]]);
+}
+
+/**
+ * Generic "type:id" entity cache (piste 2026-09-24 — Partie B du plan) — for
+ * per-entity screens that don't warrant their own dedicated store the way
+ * dashboard/chapterContent do. Currently used for notion synthesis pages
+ * (`type: "notionSynthesis"`); a future screen joins in by picking its own
+ * type string, no new store needed.
+ */
+export async function getEntity<T>(type: string, id: string): Promise<WithSyncedAt<T> | null> {
+  return getValue<WithSyncedAt<T>>(ENTITIES_STORE, `${type}:${id}`);
+}
+
+export async function setEntity<T>(type: string, id: string, data: T): Promise<void> {
+  await putEntries(ENTITIES_STORE, [[`${type}:${id}`, { ...data, syncedAt: new Date().toISOString() }]]);
 }
 
 export async function getLastSyncedAt(): Promise<string | null> {
@@ -466,6 +516,9 @@ export async function clearLocalCache(): Promise<void> {
           SECONDARY_DASHBOARD_STORE,
           NOTION_VIEW_DATA_STORE,
           AI_CONFIG_DATA_STORE,
+          NOTIONS_PAGE_STORE,
+          CASE_JOURNAL_STORE,
+          ENTITIES_STORE,
         ];
         const tx = db.transaction(stores, "readwrite");
         for (const store of stores) tx.objectStore(store).clear();

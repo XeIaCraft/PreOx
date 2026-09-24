@@ -1,13 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, Pencil, NotebookPen, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Select, Label } from "@/components/ui/input";
-import { addCaseJournalEntry, updateCaseJournalEntry, deleteCaseJournalEntry } from "@/app/apps/el-profesor/actions/case-journal";
-import { useToast } from "@/components/ui/toast";
 import type { CaseJournalEntryWithNotion } from "@/lib/el-profesor/dal";
 
 const NO_NOTION = "__none__";
@@ -17,32 +15,23 @@ function EntryDialog({
   notions,
   defaultNotionId,
   onClose,
-  onSaved,
+  onSave,
 }: {
   entry?: CaseJournalEntryWithNotion;
   notions: { id: string; name: string }[];
   defaultNotionId?: string;
   onClose: () => void;
-  onSaved: () => void;
+  /** Local-first (piste 2026-09-24 — "module 100% local") — applies instantly to the cache/optimistic list and queues the real write, so this closes right away with no network wait. See CaseJournalWithLocalCache. */
+  onSave: (title: string, body: string, notionId: string | null) => void;
 }) {
-  const { toast } = useToast();
-  const [isPending, startTransition] = useTransition();
   const [title, setTitle] = useState(entry?.title ?? "");
   const [body, setBody] = useState(entry?.body ?? "");
   const [notionId, setNotionId] = useState(entry?.notionId ?? defaultNotionId ?? NO_NOTION);
 
   function handleSave() {
-    const resolvedNotionId = notionId === NO_NOTION ? null : notionId;
-    startTransition(async () => {
-      const result = entry
-        ? await updateCaseJournalEntry(entry.id, title, body, resolvedNotionId)
-        : await addCaseJournalEntry(title, body, resolvedNotionId);
-      if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "", { variant: "success" });
-        onSaved();
-      }
-    });
+    if (!title.trim()) return;
+    onSave(title, body, notionId === NO_NOTION ? null : notionId);
+    onClose();
   }
 
   return (
@@ -89,8 +78,8 @@ function EntryDialog({
         <Button variant="secondary" onClick={onClose}>
           Annuler
         </Button>
-        <Button onClick={handleSave} disabled={isPending || !title.trim()}>
-          {isPending ? "…" : "Enregistrer"}
+        <Button onClick={handleSave} disabled={!title.trim()}>
+          Enregistrer
         </Button>
       </div>
     </Modal>
@@ -101,28 +90,26 @@ export function CaseJournalView({
   entries,
   notions,
   filterNotionId,
+  onAdd,
+  onUpdate,
+  onDelete,
 }: {
   entries: CaseJournalEntryWithNotion[];
   notions: { id: string; name: string }[];
   filterNotionId: string | null;
+  /** Local-first (piste 2026-09-24 — "module 100% local") — see CaseJournalWithLocalCache, the only caller: each applies instantly to the cache/optimistic list and queues the real write, no network wait, works offline. */
+  onAdd: (title: string, body: string, notionId: string | null) => void;
+  onUpdate: (id: string, title: string, body: string, notionId: string | null) => void;
+  onDelete: (id: string) => void;
 }) {
-  const { toast } = useToast();
-  const [isPending, startTransition] = useTransition();
   const [dialog, setDialog] = useState<{ mode: "new" } | { mode: "edit"; entry: CaseJournalEntryWithNotion } | null>(null);
 
   const visible = filterNotionId ? entries.filter((e) => e.notionId === filterNotionId) : entries;
   const filterNotionName = filterNotionId ? (notions.find((n) => n.id === filterNotionId)?.name ?? null) : null;
 
-  function handleSaved() {
-    setDialog(null);
-  }
-
   function handleDelete(id: string) {
     if (!confirm("Supprimer ce cas de votre journal ?")) return;
-    startTransition(async () => {
-      const result = await deleteCaseJournalEntry(id);
-      if (result.error) toast(result.error, { variant: "error" });
-    });
+    onDelete(id);
   }
 
   return (
@@ -185,7 +172,6 @@ export function CaseJournalView({
                   <button
                     type="button"
                     onClick={() => handleDelete(entry.id)}
-                    disabled={isPending}
                     className="text-foreground-subtle hover:text-danger"
                     aria-label="Supprimer ce cas"
                   >
@@ -205,7 +191,9 @@ export function CaseJournalView({
           notions={notions}
           defaultNotionId={filterNotionId ?? undefined}
           onClose={() => setDialog(null)}
-          onSaved={handleSaved}
+          onSave={(title, body, notionId) =>
+            dialog.mode === "edit" ? onUpdate(dialog.entry.id, title, body, notionId) : onAdd(title, body, notionId)
+          }
         />
       )}
     </div>

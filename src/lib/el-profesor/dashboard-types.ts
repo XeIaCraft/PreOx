@@ -23,8 +23,23 @@ import type {
   MasteryProgress,
   ElProfesorAiProvider,
   SubEntityWithFiche,
+  AdjacentNotionEntry,
+  CaseJournalEntryWithNotion,
 } from "@/lib/el-profesor/dal";
-import type { Flashcard, NotionSummary, NotionRecommendation, DoseCalculator, NotionCategory, ChapterSourceKind } from "@/lib/el-profesor/types";
+import type {
+  Flashcard,
+  NotionSummary,
+  NotionRecommendation,
+  DoseCalculator,
+  NotionCategory,
+  ChapterSourceKind,
+  NotionSynthesis,
+  NotionLinkedFiche,
+  Contradiction,
+  CrossBookDuplicateFlashcards,
+  SupersededFicheEntry,
+  NotionUpdateProposal,
+} from "@/lib/el-profesor/types";
 import type { ElProfesorBatchJobRow } from "@/lib/supabase/types";
 
 /**
@@ -141,6 +156,46 @@ export interface DashboardNotionViewData {
   recommendations: Record<string, NotionRecommendation[]>;
   doseCalculators: Record<string, DoseCalculator[]>;
   caseCounts: Record<string, number>;
-  /** Read % + FSRS mastery per notion (piste 2026-08-29 — visible directly on each notion card). */
+  /** Read % + FSRS mastery per notion (piste 2026-08-29 — visible directement sur chaque carte de notion). */
   progress: Record<string, NotionProgressEntry>;
+}
+
+/**
+ * The /apps/el-profesor/notions admin screen's full data bundle (piste
+ * 2026-09-24 — "module 100% local") — cached as one blob (like
+ * DashboardSecondaryData) rather than per-entity, since it's already fetched
+ * in one batch and isn't keyed the way chapter content is.
+ */
+export interface NotionsPageSnapshot {
+  chapters: { id: string; title: string; bookTitle: string }[];
+  notionSummaries: NotionSummary[];
+  categories: NotionCategory[];
+  recommendations: Record<string, NotionRecommendation[]>;
+  doseCalculators: Record<string, DoseCalculator[]>;
+  contradictions: Contradiction[];
+  crossBookDuplicates: CrossBookDuplicateFlashcards[];
+  supersededFiches: SupersededFicheEntry[];
+  notionUpdateProposals: NotionUpdateProposal[];
+}
+
+/**
+ * One notion's synthesis screen (/notions/[notionId]) — keyed by notionId in
+ * the generic `entities` IndexedDB store (local-db.ts), the same "type:id"
+ * shape the plan's Part B describes for per-entity screens beyond the
+ * dashboard/chapter/review trio that already had their own dedicated stores.
+ */
+export interface NotionSynthesisSnapshot {
+  notionName: string;
+  synthesis: NotionSynthesis | null;
+  fiches: NotionLinkedFiche[];
+  prevNotion: AdjacentNotionEntry | null;
+  nextNotion: AdjacentNotionEntry | null;
+  readProgress: number;
+  masteryProgress: MasteryProgress;
+}
+
+/** The /apps/el-profesor/journal screen's full data — this user's own case journal entries, small enough (and personal enough) to cache as one blob rather than per-entry. */
+export interface CaseJournalSnapshot {
+  entries: CaseJournalEntryWithNotion[];
+  notions: { id: string; name: string }[];
 }

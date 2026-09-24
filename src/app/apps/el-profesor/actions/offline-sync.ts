@@ -11,8 +11,9 @@
 // of the network. These two actions are the only two round trips that sync
 // needs, however large the library: a per-chapter loop here would just be
 // the same N+1 pattern moved into this file instead of fixed.
-import { requireElProfesorAccess } from "@/lib/el-profesor/dal";
+import { requireElProfesorAccess, requireElProfesorAdmin } from "@/lib/el-profesor/dal";
 import { getEffectiveIsAdmin } from "@/lib/el-profesor/preview-mode";
+import { createClient } from "@/lib/supabase/server";
 import {
   getLibrary,
   getDueCountsByChapter,
@@ -56,6 +57,17 @@ import {
   getDoseCalculators,
   getCaseJournalCountsByNotion,
   getNotionProgressBatch,
+  getNotionSummaries,
+  getContradictions,
+  getCrossBookFlashcardDuplicates,
+  getSupersededFiches,
+  getNotionUpdateProposals,
+  getNotionSynthesis,
+  getNotionFiches,
+  getAdjacentNotions,
+  getNotionReadProgress,
+  getNotionMasteryProgress,
+  getCaseJournalEntries,
   getElProfesorGeminiModel,
   getElProfesorGeminiExtraKeyCount,
   getElProfesorGeminiFallbackModel,
@@ -67,7 +79,16 @@ import {
   type BookWithChapters,
 } from "@/lib/el-profesor/dal";
 import { getBatchJobs } from "@/app/apps/el-profesor/actions/batches";
-import type { DashboardSnapshot, ChapterContentSnapshot, DashboardSecondaryData, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
+import type {
+  DashboardSnapshot,
+  ChapterContentSnapshot,
+  DashboardSecondaryData,
+  DashboardAiConfigData,
+  DashboardNotionViewData,
+  NotionsPageSnapshot,
+  NotionSynthesisSnapshot,
+  CaseJournalSnapshot,
+} from "@/lib/el-profesor/dashboard-types";
 import type { ReviewState } from "@/lib/el-profesor/types";
 
 /** Shared by getElProfesorDashboardSnapshot and the secondary-widgets actions below, so a client-invoked (shell-driven) render of any of them sees the exact same book/chapter visibility rules as the main snapshot. */
@@ -371,4 +392,67 @@ export async function getElProfesorAiConfigData(): Promise<DashboardAiConfigData
   const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
   if (!isAdmin) return null;
   return loadAiConfigData();
+}
+
+// ============================================================================
+// Notions / journal de cas (piste 2026-09-24 — extension de "module 100%
+// local" aux autres écrans) — same "one Server Action per screen, same shape
+// the page itself builds" pattern as the dashboard/chapter actions above.
+// ============================================================================
+
+/** Same data notions/page.tsx builds — admin-only diagnostic + browsing screen, cached as one blob (see NotionsPageSnapshot). */
+export async function getElProfesorNotionsPageData(): Promise<NotionsPageSnapshot> {
+  await requireElProfesorAdmin();
+  const [books, notionSummaries, categories, contradictions, crossBookDuplicates, supersededFiches, notionUpdateProposals] = await Promise.all([
+    getLibrary(),
+    getNotionSummaries(),
+    getNotionCategories(),
+    getContradictions(),
+    getCrossBookFlashcardDuplicates(),
+    getSupersededFiches(),
+    getNotionUpdateProposals(),
+  ]);
+  const notionIds = notionSummaries.map((s) => s.notion.id);
+  const [recommendations, doseCalculators] = await Promise.all([getNotionRecommendations(notionIds), getDoseCalculators(notionIds)]);
+  const chapters = books.flatMap((book) =>
+    book.chapters
+      .filter((c) => c.status === "draft_ready" || c.status === "published")
+      .map((c) => ({ id: c.id, title: c.title, bookTitle: book.title }))
+  );
+  return { chapters, notionSummaries, categories, recommendations, doseCalculators, contradictions, crossBookDuplicates, supersededFiches, notionUpdateProposals };
+}
+
+/** Same data notions/[notionId]/page.tsx builds — cached in local-db.ts's generic `entities` store, keyed by notionId. Returns null if the notion doesn't exist (mirrors that page's notFound()). */
+export async function getElProfesorNotionSynthesis(notionId: string): Promise<NotionSynthesisSnapshot | null> {
+  const profile = await requireElProfesorAccess();
+  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
+
+  const supabase = await createClient();
+  const { data: notion } = await supabase.from("el_profesor_notions").select("id, name").eq("id", notionId).maybeSingle();
+  if (!notion) return null;
+
+  const [synthesis, fiches, adjacentNotions, readProgress, masteryProgress] = await Promise.all([
+    getNotionSynthesis(notionId, isAdmin),
+    getNotionFiches(notionId),
+    getAdjacentNotions(notionId),
+    getNotionReadProgress(profile.id, notionId),
+    getNotionMasteryProgress(profile.id, notionId),
+  ]);
+
+  return {
+    notionName: notion.name,
+    synthesis,
+    fiches,
+    prevNotion: adjacentNotions.prev,
+    nextNotion: adjacentNotions.next,
+    readProgress,
+    masteryProgress,
+  };
+}
+
+/** Same data journal/page.tsx builds — this user's own case journal entries + the notion list used to filter/link them. getCaseJournalEntries relies on RLS alone (no internal auth check), so this export must gate access itself — an exported Server Action is reachable directly regardless of what a page-level guard elsewhere "intends". */
+export async function getElProfesorCaseJournalData(): Promise<CaseJournalSnapshot> {
+  await requireElProfesorAccess();
+  const [entries, notionSummaries] = await Promise.all([getCaseJournalEntries(), getGlossary()]);
+  return { entries, notions: notionSummaries.map((s) => ({ id: s.notion.id, name: s.notion.name })) };
 }

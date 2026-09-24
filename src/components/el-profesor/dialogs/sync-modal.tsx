@@ -13,6 +13,8 @@ import {
   getElProfesorSecondaryDashboardData,
   getElProfesorNotionViewData,
   getElProfesorAiConfigData,
+  getElProfesorNotionsPageData,
+  getElProfesorCaseJournalData,
 } from "@/app/apps/el-profesor/actions/offline-sync";
 import {
   setCachedDashboard,
@@ -22,6 +24,8 @@ import {
   setCachedSecondaryDashboardData,
   setCachedNotionViewData,
   setCachedAiConfigData,
+  setCachedNotionsPage,
+  setCachedCaseJournal,
   getCachedDashboard,
   getCachedChapterLastModifiedTimestamps,
   getAllCachedChapterContent,
@@ -115,19 +119,24 @@ export function SyncModal({
     // falls back to its own live fetch if this didn't manage to cache
     // anything yet.
     try {
-      const [secondaryData, notionViewData, aiConfigData] = await Promise.all([
+      const [secondaryData, notionViewData, aiConfigData, caseJournalData, notionsPageData] = await Promise.all([
         getElProfesorSecondaryDashboardData(),
         getElProfesorNotionViewData(),
         snapshot.effectiveIsAdmin ? getElProfesorAiConfigData() : Promise.resolve(null),
+        getElProfesorCaseJournalData(),
+        snapshot.effectiveIsAdmin ? getElProfesorNotionsPageData() : Promise.resolve(null),
       ]);
       await Promise.all([
         setCachedSecondaryDashboardData(secondaryData),
         setCachedNotionViewData(notionViewData),
         setCachedAiConfigData(aiConfigData),
+        setCachedCaseJournal(caseJournalData),
+        notionsPageData ? setCachedNotionsPage(notionsPageData) : Promise.resolve(),
       ]);
     } catch {
-      // Best-effort — the widgets simply keep showing whatever was cached
-      // before (or their loading state, on a first-ever sync).
+      // Best-effort — the widgets/journal/notions screens simply keep
+      // showing whatever was cached before (or their loading state, on a
+      // first-ever sync).
     }
 
     // Only published chapters are ever opened via la lecture d'un chapitre —

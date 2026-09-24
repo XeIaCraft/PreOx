@@ -19,13 +19,21 @@ const MAX_BODY_LENGTH = 5000;
  * purement organisationnel (retrouver ses cas au même endroit que les
  * fiches/flashcards sur le sujet).
  */
-export async function addCaseJournalEntry(title: string, body: string, notionId: string | null): Promise<ActionState> {
+/**
+ * `id` is optional and only ever supplied by the local-first write path
+ * (local-case-journal.ts) — the client generates it up front so the
+ * optimistic entry it writes to the cache keeps the exact same id once this
+ * queued write actually flushes, instead of the id changing out from under
+ * it. Omitted, the column's own default applies as before.
+ */
+export async function addCaseJournalEntry(title: string, body: string, notionId: string | null, id?: string): Promise<ActionState> {
   const profile = await requireElProfesorAccess();
   const trimmedTitle = title.trim().slice(0, MAX_TITLE_LENGTH);
   if (!trimmedTitle) return { error: "Le titre est obligatoire." };
 
   const supabase = await createClient();
   const { error } = await supabase.from("el_profesor_case_journal_entries").insert({
+    ...(id ? { id } : {}),
     user_id: profile.id,
     notion_id: notionId,
     title: trimmedTitle,
