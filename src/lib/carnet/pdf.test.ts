@@ -65,7 +65,8 @@ function sample(): CarnetData {
 const PUBLIC = join(__dirname, "../../../public/carnet");
 const assets: CarnetPdfAssets = { template: readFileSync(join(PUBLIC, "modele-carnet-de-stage.pdf")), font: readFileSync(join(PUBLIC, "carlito.ttf")) };
 
-describe("PDF export (written over the official form)", () => {
+// Building a whole carnet embeds the full font: a few seconds, more when the suite runs in parallel.
+describe("PDF export (written over the official form)", { timeout: 60_000 }, () => {
   it("builds the whole carnet and an evaluation grid from the form's own pages", async () => {
     const data = sample();
     const bytes = await buildCarnetPdf(data, 2, assets);

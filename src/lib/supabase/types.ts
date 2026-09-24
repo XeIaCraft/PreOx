@@ -724,6 +724,9 @@ export type CarnetCourseRow = WithUser<import("@/lib/carnet/types").CarnetCourse
 export type CarnetPublicationRow = WithUser<import("@/lib/carnet/types").CarnetPublication>;
 export type CarnetYearRow = WithUser<import("@/lib/carnet/types").CarnetYear> & { updated_at: string };
 
+// -- "Préop" module ------------------------------------------------------------
+export type PreopRuleRow = WithUser<import("@/lib/preop/rules/types").Rule>;
+
 export type Database = {
   public: {
     Tables: {
@@ -1175,6 +1178,12 @@ export type Database = {
         Row: CarnetYearRow;
         Insert: Partial<CarnetYearRow> & { user_id: string };
         Update: Partial<CarnetYearRow>;
+        Relationships: [];
+      };
+      preop_rules: {
+        Row: PreopRuleRow;
+        Insert: Partial<PreopRuleRow> & { id: string; user_id: string; statement: string };
+        Update: Partial<PreopRuleRow>;
         Relationships: [];
       };
     };
