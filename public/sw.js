@@ -7,7 +7,7 @@ const SHELL_URLS = ["/apps", "/icon", "/manifest.webmanifest"];
 // feature. Item 37 of the backlog: offline access to content already
 // consulted, nothing more.
 const OFFLINE_CACHE_NAME = "preox-el-profesor-offline-v1";
-const OFFLINE_NAV_PREFIXES = ["/apps/el-profesor"];
+const OFFLINE_NAV_PREFIXES = ["/apps/el-profesor", "/apps/carnet-de-stage"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL_CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS)).catch(() => {}));

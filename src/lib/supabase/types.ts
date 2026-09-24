@@ -704,6 +704,26 @@ export type PagePerformanceLogRow = {
   created_at: string;
 };
 
+
+// -- "Carnet de stage" module tables -----------------------------------------
+// Client-facing shapes live in src/lib/carnet/types.ts; the database rows are
+// the same plus user_id (and updated_at where the table has one).
+// Mapped (not intersected with an interface) so each row is a plain object
+// type — supabase-js needs rows assignable to Record<string, unknown>, which
+// interfaces never are.
+type WithUser<T> = { [K in keyof T]: T[K] } & { user_id: string };
+export type CarnetProfileRow = WithUser<import("@/lib/carnet/types").CarnetProfile> & { updated_at: string };
+export type CarnetSupervisorRow = WithUser<import("@/lib/carnet/types").CarnetSupervisor> & { updated_at: string };
+export type CarnetStageRow = WithUser<import("@/lib/carnet/types").CarnetStage> & { updated_at: string };
+export type CarnetStageReviewRow = WithUser<import("@/lib/carnet/types").CarnetStageReview> & { updated_at: string };
+export type CarnetSignatureRow = WithUser<import("@/lib/carnet/types").CarnetSignature> & { created_at: string };
+export type CarnetCaseRow = WithUser<import("@/lib/carnet/types").CarnetCase> & { updated_at: string };
+export type CarnetDutyRow = WithUser<import("@/lib/carnet/types").CarnetDuty> & { updated_at: string };
+export type CarnetRelatedActivityRow = WithUser<import("@/lib/carnet/types").CarnetRelatedActivity>;
+export type CarnetCourseRow = WithUser<import("@/lib/carnet/types").CarnetCourse>;
+export type CarnetPublicationRow = WithUser<import("@/lib/carnet/types").CarnetPublication>;
+export type CarnetYearRow = WithUser<import("@/lib/carnet/types").CarnetYear> & { updated_at: string };
+
 export type Database = {
   public: {
     Tables: {
@@ -1089,6 +1109,72 @@ export type Database = {
         Row: PagePerformanceLogRow;
         Insert: Partial<PagePerformanceLogRow> & { path: string; duration_ms: number };
         Update: Partial<PagePerformanceLogRow>;
+        Relationships: [];
+      };
+      carnet_profiles: {
+        Row: CarnetProfileRow;
+        Insert: Partial<CarnetProfileRow> & { user_id: string };
+        Update: Partial<CarnetProfileRow>;
+        Relationships: [];
+      };
+      carnet_supervisors: {
+        Row: CarnetSupervisorRow;
+        Insert: Partial<CarnetSupervisorRow> & { user_id: string };
+        Update: Partial<CarnetSupervisorRow>;
+        Relationships: [];
+      };
+      carnet_stages: {
+        Row: CarnetStageRow;
+        Insert: Partial<CarnetStageRow> & { user_id: string };
+        Update: Partial<CarnetStageRow>;
+        Relationships: [];
+      };
+      carnet_stage_reviews: {
+        Row: CarnetStageReviewRow;
+        Insert: Partial<CarnetStageReviewRow> & { user_id: string };
+        Update: Partial<CarnetStageReviewRow>;
+        Relationships: [];
+      };
+      carnet_signatures: {
+        Row: CarnetSignatureRow;
+        Insert: Partial<CarnetSignatureRow> & { user_id: string };
+        Update: Partial<CarnetSignatureRow>;
+        Relationships: [];
+      };
+      carnet_cases: {
+        Row: CarnetCaseRow;
+        Insert: Partial<CarnetCaseRow> & { user_id: string };
+        Update: Partial<CarnetCaseRow>;
+        Relationships: [];
+      };
+      carnet_duties: {
+        Row: CarnetDutyRow;
+        Insert: Partial<CarnetDutyRow> & { user_id: string };
+        Update: Partial<CarnetDutyRow>;
+        Relationships: [];
+      };
+      carnet_related_activities: {
+        Row: CarnetRelatedActivityRow;
+        Insert: Partial<CarnetRelatedActivityRow> & { user_id: string };
+        Update: Partial<CarnetRelatedActivityRow>;
+        Relationships: [];
+      };
+      carnet_courses: {
+        Row: CarnetCourseRow;
+        Insert: Partial<CarnetCourseRow> & { user_id: string };
+        Update: Partial<CarnetCourseRow>;
+        Relationships: [];
+      };
+      carnet_publications: {
+        Row: CarnetPublicationRow;
+        Insert: Partial<CarnetPublicationRow> & { user_id: string };
+        Update: Partial<CarnetPublicationRow>;
+        Relationships: [];
+      };
+      carnet_years: {
+        Row: CarnetYearRow;
+        Insert: Partial<CarnetYearRow> & { user_id: string };
+        Update: Partial<CarnetYearRow>;
         Relationships: [];
       };
     };

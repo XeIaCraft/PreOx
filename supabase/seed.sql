@@ -1,5 +1,5 @@
 -- PreOx — modules du hub.
--- "À table" et "El Profesor" sont des modules réels : status='available' et
+-- "À table", "El Profesor" et "Carnet de stage" sont des modules réels : status='available' et
 -- route dédiée. Les 3 suivants sont des modules de démonstration marqués
 -- "coming_soon" car leur contenu métier sera développé ultérieurement ; la
 -- logique d'accès (RBAC) est en revanche pleinement fonctionnelle dès cette
@@ -8,7 +8,8 @@
 insert into public.apps (slug, name, description, icon, status, route, sort_order, is_active)
 values
   ('a-table', 'À table', 'Planifiez vos repas, générez des idées par IA, gérez vos courses.', 'utensils', 'available', '/apps/a-table', 1, true),
-  ('el-profesor', 'El Profesor', 'Fiches, flashcards et révision espacée générées par IA à partir de vos livres.', 'graduation-cap', 'available', '/apps/el-profesor', 2, true)
+  ('el-profesor', 'El Profesor', 'Fiches, flashcards et révision espacée générées par IA à partir de vos livres.', 'graduation-cap', 'available', '/apps/el-profesor', 2, true),
+  ('carnet-de-stage', 'Carnet de stage', 'Relevé des prestations, gardes, signatures des superviseurs et export du carnet officiel d''anesthésie-réanimation.', 'clipboard-list', 'available', '/apps/carnet-de-stage', 3, true)
 on conflict (slug) do update set status = excluded.status, route = excluded.route;
 
 insert into public.apps (slug, name, description, icon, status, sort_order, is_active)
