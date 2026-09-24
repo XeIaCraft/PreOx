@@ -24,6 +24,11 @@ import { BookTocWithLocalCache } from "@/components/el-profesor/book-toc-with-lo
 import { ChapterViewWithLocalCache } from "@/components/el-profesor/chapter-view-with-local-cache";
 import { ReviewQueueWithLocalCache } from "@/components/el-profesor/review-queue-with-local-cache";
 import { ToastProvider } from "@/components/ui/toast";
+import {
+  getElProfesorSecondaryDashboardData,
+  getElProfesorAiConfigData,
+  getElProfesorNotionViewData,
+} from "@/app/apps/el-profesor/actions/offline-sync";
 
 interface LocalNavContextValue {
   navigateLocally: (href: string) => void;
@@ -97,8 +102,17 @@ export function LocalNavShell({ children }: { children: React.ReactNode }) {
  * comment for why a brief staleness window here is harmless. No cache at
  * all yet means this can't be rendered locally — bail immediately.
  */
+type ShellDashboardReady = {
+  isAdmin: boolean;
+  realIsAdmin: boolean;
+  previewingAsUser: boolean;
+  secondaryDataPromise: ReturnType<typeof getElProfesorSecondaryDashboardData>;
+  notionViewDataPromise: ReturnType<typeof getElProfesorNotionViewData>;
+  aiConfigPromise: ReturnType<typeof getElProfesorAiConfigData>;
+};
+
 function ShellDashboard({ onCacheMiss }: { onCacheMiss: () => void }) {
-  const [ready, setReady] = useState<{ isAdmin: boolean; realIsAdmin: boolean; previewingAsUser: boolean } | "miss" | null>(null);
+  const [ready, setReady] = useState<ShellDashboardReady | "miss" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,7 +122,22 @@ function ShellDashboard({ onCacheMiss }: { onCacheMiss: () => void }) {
         setReady("miss");
         return;
       }
-      setReady({ isAdmin: cached.effectiveIsAdmin, realIsAdmin: cached.realIsAdmin, previewingAsUser: cached.previewingAsUser });
+      const isAdmin = cached.effectiveIsAdmin;
+      // There's no cached equivalent for these secondary widgets yet (see
+      // the plan's risk notes), so a shell-driven dashboard fetches them the
+      // same way a real page load would — just triggered from the client
+      // instead of page.tsx. This costs the usual auth-chain round trip,
+      // but only for these widgets, behind their own <Suspense> boundaries
+      // in ElProfesorBoard — the board itself (books, due counts, mastery)
+      // still renders instantly from cache regardless.
+      setReady({
+        isAdmin,
+        realIsAdmin: cached.realIsAdmin,
+        previewingAsUser: cached.previewingAsUser,
+        secondaryDataPromise: getElProfesorSecondaryDashboardData(),
+        notionViewDataPromise: getElProfesorNotionViewData(),
+        aiConfigPromise: isAdmin ? getElProfesorAiConfigData() : Promise.resolve(null),
+      });
     });
     return () => {
       cancelled = true;
@@ -128,9 +157,9 @@ function ShellDashboard({ onCacheMiss }: { onCacheMiss: () => void }) {
       realIsAdmin={ready.realIsAdmin}
       previewingAsUser={ready.previewingAsUser}
       serverResumeChapterId={getLastChapter()}
-      secondaryDataPromise={null}
-      aiConfigPromise={null}
-      notionViewDataPromise={null}
+      secondaryDataPromise={ready.secondaryDataPromise}
+      aiConfigPromise={ready.aiConfigPromise}
+      notionViewDataPromise={ready.notionViewDataPromise}
       onCacheMiss={onCacheMiss}
     />
   );

@@ -19,11 +19,6 @@ function syncedAgoLabel(iso: string): string {
   return `il y a ${Math.floor(hours / 24)} j`;
 }
 
-/** Never settles — used for the dashboard's admin-secondary-data promises when the local nav shell renders this locally with nothing fresh to offer them (see risk note in the plan: those widgets have no local-cache equivalent yet). Their own <Suspense> boundaries in ElProfesorBoard just keep showing their loading skeleton, which is honest (never wrong data) rather than blank or stale. A real Next.js navigation always supplies a real, resolving promise instead. */
-function neverResolves<T>(): Promise<T> {
-  return new Promise<T>(() => {});
-}
-
 function DashboardSkeleton() {
   return (
     <div className="mx-auto max-w-4xl space-y-3 px-4 py-8 sm:px-6 xl:max-w-6xl" aria-hidden="true">
@@ -67,10 +62,10 @@ export function DashboardWithLocalCache({
   realIsAdmin: boolean;
   previewingAsUser: boolean;
   serverResumeChapterId: string | null;
-  /** Null on a shell-driven render — no local-cache equivalent exists yet for these admin/secondary widgets, so they show their own loading skeleton indefinitely (see neverResolves) rather than a real Next.js navigation's fresh data. */
-  secondaryDataPromise: Promise<DashboardSecondaryData> | null;
-  aiConfigPromise: Promise<DashboardAiConfigData | null> | null;
-  notionViewDataPromise: Promise<DashboardNotionViewData> | null;
+  /** Always a real, resolving promise — page.tsx awaits none of these directly (same un-awaited-promise pattern as initialSnapshotPromise), and a shell-driven render (local-nav-shell.tsx) fetches them itself via the same Server Actions, just triggered client-side. */
+  secondaryDataPromise: Promise<DashboardSecondaryData>;
+  aiConfigPromise: Promise<DashboardAiConfigData | null>;
+  notionViewDataPromise: Promise<DashboardNotionViewData>;
   /** Called instead of awaiting initialSnapshotPromise when there's no local cache and no server promise was supplied (shell-driven render with a genuine cache miss) — the caller falls back to a real Next.js navigation. */
   onCacheMiss?: () => void;
 }) {
@@ -78,12 +73,6 @@ export function DashboardWithLocalCache({
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [checkedCache, setCheckedCache] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
-  // Stable fallbacks for a shell-driven render (see the props' doc comments)
-  // — created once so Suspense boundaries downstream don't see a new promise
-  // identity on every re-render.
-  const [fallbackSecondaryDataPromise] = useState(() => neverResolves<DashboardSecondaryData>());
-  const [fallbackAiConfigPromise] = useState(() => neverResolves<DashboardAiConfigData | null>());
-  const [fallbackNotionViewDataPromise] = useState(() => neverResolves<DashboardNotionViewData>());
 
   useEffect(() => {
     let cancelled = false;
@@ -163,9 +152,9 @@ export function DashboardWithLocalCache({
         realIsAdmin={realIsAdmin}
         previewingAsUser={previewingAsUser}
         serverResumeChapterId={serverResumeChapterId}
-        secondaryDataPromise={secondaryDataPromise ?? fallbackSecondaryDataPromise}
-        aiConfigPromise={aiConfigPromise ?? fallbackAiConfigPromise}
-        notionViewDataPromise={notionViewDataPromise ?? fallbackNotionViewDataPromise}
+        secondaryDataPromise={secondaryDataPromise}
+        aiConfigPromise={aiConfigPromise}
+        notionViewDataPromise={notionViewDataPromise}
       />
 
       {syncOpen && <SyncModal onClose={() => setSyncOpen(false)} onSynced={handleSynced} />}

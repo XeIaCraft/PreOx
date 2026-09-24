@@ -33,9 +33,50 @@ import {
   getReviewStatesByFlashcardIds,
   getSuspendedFlashcardIdsForSync,
   getChapterLastModifiedTimestamps,
+  getReviewActivitySummary,
+  getOverconfidentMissCount,
+  getUpcomingReviewForecast,
+  getGlobalDueQueue,
+  getDifficultQueue,
+  getMostDifficultFlashcardsGlobal,
+  getLeechFlashcards,
+  getDailyCard,
+  getBookmarkedEntities,
+  getStaleChaptersForAdmin,
+  getKnowledgeExpiryAlerts,
+  getReviewTimeStats,
+  getFlagStatsByBlockType,
+  getOnThisDayNote,
+  getRecommendedNextBook,
+  getDueBlocksForUser,
+  getGlossary,
+  getNotionCategories,
+  getNotionReadiness,
+  getNotionRecommendations,
+  getDoseCalculators,
+  getCaseJournalCountsByNotion,
+  getNotionProgressBatch,
+  getElProfesorGeminiModel,
+  getElProfesorGeminiExtraKeyCount,
+  getElProfesorGeminiFallbackModel,
+  getGeminiUsageStats,
+  getAiSpendCapUsd,
+  getCurrentMonthAiSpendUsd,
+  hasElProfesorClaudeKey,
+  getElProfesorClaudeModel,
+  type BookWithChapters,
 } from "@/lib/el-profesor/dal";
-import type { DashboardSnapshot, ChapterContentSnapshot } from "@/lib/el-profesor/dashboard-types";
+import { getBatchJobs } from "@/app/apps/el-profesor/actions/batches";
+import type { DashboardSnapshot, ChapterContentSnapshot, DashboardSecondaryData, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
 import type { ReviewState } from "@/lib/el-profesor/types";
+
+/** Shared by getElProfesorDashboardSnapshot and the secondary-widgets actions below, so a client-invoked (shell-driven) render of any of them sees the exact same book/chapter visibility rules as the main snapshot. */
+async function getVisibleLibrary(isAdmin: boolean): Promise<{ books: BookWithChapters[]; libraryBooks: BookWithChapters[] }> {
+  const allLibraryBooks = await getLibrary();
+  const libraryBooks = allLibraryBooks.filter((b) => !b.archivedAt);
+  const books = isAdmin ? libraryBooks : libraryBooks.map((b) => ({ ...b, chapters: b.chapters.filter((c) => c.status === "published") }));
+  return { books, libraryBooks };
+}
 
 /** Same data page.tsx computes for its initial render — see that file for why each call is shaped this way (batched, no per-chapter loop). Exported so the page and the "Synchroniser" action share one implementation. */
 export async function getElProfesorDashboardSnapshot(): Promise<DashboardSnapshot> {
@@ -43,9 +84,7 @@ export async function getElProfesorDashboardSnapshot(): Promise<DashboardSnapsho
   const realIsAdmin = profile.role === "admin";
   const { effectiveIsAdmin: isAdmin, previewingAsUser } = await getEffectiveIsAdmin(realIsAdmin);
 
-  const allLibraryBooks = await getLibrary();
-  const libraryBooks = allLibraryBooks.filter((b) => !b.archivedAt);
-  const books = isAdmin ? libraryBooks : libraryBooks.map((b) => ({ ...b, chapters: b.chapters.filter((c) => c.status === "published") }));
+  const { books } = await getVisibleLibrary(isAdmin);
   const allChapters = books.flatMap((b) => b.chapters);
 
   const [
@@ -206,4 +245,130 @@ export async function getElProfesorSuspendedFlashcardIds(): Promise<string[]> {
 export async function getElProfesorChapterLastModified(chapterIds: string[]): Promise<Record<string, string>> {
   await requireElProfesorAccess();
   return getChapterLastModifiedTimestamps(chapterIds);
+}
+
+// ============================================================================
+// Dashboard secondary widgets (piste 2026-09-24 — "module 100% local") —
+// moved here from page.tsx (which still calls these, unchanged) so the local
+// nav shell (local-nav-shell.tsx) can also call them directly when it
+// renders the dashboard client-side. Without this, a shell-driven dashboard
+// render had no way to get this data at all (no local cache exists for it
+// yet — see the plan's risk notes) and the widgets were stuck showing their
+// loading skeleton forever. Each wrapper below re-derives isAdmin/profile
+// itself rather than trusting caller-supplied values, since an exported
+// Server Action is reachable directly regardless of who "intends" to call
+// it — never trust profileId/isAdmin as params on a public export.
+// ============================================================================
+
+async function loadSecondaryDashboardData(
+  profileId: string,
+  isAdmin: boolean,
+  allChapters: BookWithChapters["chapters"],
+  books: BookWithChapters[],
+  libraryBooks: BookWithChapters[]
+): Promise<DashboardSecondaryData> {
+  const [
+    activity,
+    overconfidentMissCount,
+    forecast,
+    globalDue,
+    difficult,
+    mostDifficultGlobal,
+    leechFlashcards,
+    dailyCard,
+    bookmarks,
+    staleChapters,
+    knowledgeExpiryAlerts,
+    reviewTimeStats,
+    flagStatsByBlockType,
+    onThisDayNote,
+    bookRecommendation,
+    dueBlocks,
+  ] = await Promise.all([
+    getReviewActivitySummary(profileId),
+    getOverconfidentMissCount(profileId),
+    getUpcomingReviewForecast(profileId, allChapters),
+    getGlobalDueQueue(profileId, allChapters),
+    getDifficultQueue(profileId, allChapters),
+    isAdmin ? getMostDifficultFlashcardsGlobal() : Promise.resolve([]),
+    isAdmin ? getLeechFlashcards() : Promise.resolve([]),
+    getDailyCard(profileId, allChapters),
+    getBookmarkedEntities(profileId),
+    isAdmin ? getStaleChaptersForAdmin(allChapters, libraryBooks) : Promise.resolve([]),
+    getKnowledgeExpiryAlerts(profileId, allChapters, libraryBooks),
+    getReviewTimeStats(profileId),
+    isAdmin ? getFlagStatsByBlockType() : Promise.resolve([]),
+    getOnThisDayNote(profileId),
+    getRecommendedNextBook(profileId, books),
+    getDueBlocksForUser(profileId),
+  ]);
+  return {
+    activity,
+    overconfidentMissCount,
+    forecast,
+    globalDueCount: globalDue.length,
+    difficultCount: difficult.length,
+    mostDifficultGlobal,
+    leechFlashcards,
+    dailyCard,
+    bookmarks,
+    staleChapters,
+    knowledgeExpiryAlerts,
+    reviewTimeStats,
+    flagStatsByBlockType,
+    onThisDayNote,
+    bookRecommendation,
+    dueBlocks,
+  };
+}
+
+async function loadNotionViewData(profileId: string): Promise<DashboardNotionViewData> {
+  const notions = await getGlossary();
+  const notionIds = notions.map((n) => n.notion.id);
+  const [categories, readiness, recommendations, doseCalculators, caseCounts, progress] = await Promise.all([
+    getNotionCategories(),
+    getNotionReadiness(profileId, notions),
+    getNotionRecommendations(notionIds),
+    getDoseCalculators(notionIds),
+    getCaseJournalCountsByNotion(profileId, notionIds),
+    getNotionProgressBatch(profileId, notionIds),
+  ]);
+  return { notions, categories, readiness, recommendations, doseCalculators, caseCounts, progress };
+}
+
+async function loadAiConfigData(): Promise<DashboardAiConfigData> {
+  const [geminiModel, geminiExtraKeyCount, geminiFallbackModel, geminiUsageStats, aiSpendCapUsd, currentMonthAiSpendUsd, hasClaudeKey, claudeModel, batchJobs] =
+    await Promise.all([
+      getElProfesorGeminiModel(),
+      getElProfesorGeminiExtraKeyCount(),
+      getElProfesorGeminiFallbackModel(),
+      getGeminiUsageStats(),
+      getAiSpendCapUsd(),
+      getCurrentMonthAiSpendUsd(),
+      hasElProfesorClaudeKey(),
+      getElProfesorClaudeModel(),
+      getBatchJobs(),
+    ]);
+  return { geminiModel, geminiExtraKeyCount, geminiFallbackModel, geminiUsageStats, aiSpendCapUsd, currentMonthAiSpendUsd, hasClaudeKey, claudeModel, batchJobs };
+}
+
+/** Called by page.tsx (chained off its own already-fetched snapshot) and by the local nav shell (on a shell-driven dashboard render, where no snapshot promise exists to chain off — it re-derives its own visible-library view instead). */
+export async function getElProfesorSecondaryDashboardData(): Promise<DashboardSecondaryData> {
+  const profile = await requireElProfesorAccess();
+  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
+  const { books, libraryBooks } = await getVisibleLibrary(isAdmin);
+  const allChapters = books.flatMap((b) => b.chapters);
+  return loadSecondaryDashboardData(profile.id, isAdmin, allChapters, books, libraryBooks);
+}
+
+export async function getElProfesorNotionViewData(): Promise<DashboardNotionViewData> {
+  const profile = await requireElProfesorAccess();
+  return loadNotionViewData(profile.id);
+}
+
+export async function getElProfesorAiConfigData(): Promise<DashboardAiConfigData | null> {
+  const profile = await requireElProfesorAccess();
+  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
+  if (!isAdmin) return null;
+  return loadAiConfigData();
 }

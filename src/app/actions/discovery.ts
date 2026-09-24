@@ -22,14 +22,24 @@ export async function togglePinnedApp(appId: string, pinned: boolean): Promise<A
   return { success: "" };
 }
 
-/** Fire-and-forget-ish: called from a module's own page on every visit. Never throws — a broken visit log must not break the page. */
-export async function recordAppVisit(slug: string): Promise<void> {
+/**
+ * Fire-and-forget-ish: called from a module's own page on every visit,
+ * right after that page has already resolved its own profile via
+ * getCurrentProfile() — takes userId directly instead of re-resolving it
+ * via requireProfile() (which every call site used to do redundantly,
+ * costing an extra, non-memoized MFA-assurance round trip on every single
+ * app visit). Safe to trust the caller's userId here: the insert below goes
+ * through the standard per-request Supabase client, so user_recent_apps'
+ * own RLS (`auth.uid() = user_id`) still rejects it if it were ever called
+ * with a mismatched id. Never throws — a broken visit log must not break
+ * the page.
+ */
+export async function recordAppVisit(userId: string, slug: string): Promise<void> {
   try {
-    const profile = await requireProfile();
     const supabase = await createClient();
     const { data: app } = await supabase.from("apps").select("id").eq("slug", slug).maybeSingle();
     if (!app) return;
-    await supabase.from("user_recent_apps").upsert({ user_id: profile.id, app_id: app.id, visited_at: new Date().toISOString() });
+    await supabase.from("user_recent_apps").upsert({ user_id: userId, app_id: app.id, visited_at: new Date().toISOString() });
   } catch (err) {
     console.error("recordAppVisit failed:", err);
   }

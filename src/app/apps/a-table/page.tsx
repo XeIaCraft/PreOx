@@ -6,7 +6,7 @@ import { recordAppVisit } from "@/app/actions/discovery";
 
 export default async function ATablePage() {
   const profile = (await getCurrentProfile())!;
-  const [data] = await Promise.all([getATableData(profile.id), recordAppVisit("a-table")]);
+  const [data] = await Promise.all([getATableData(profile.id), recordAppVisit(profile.id, "a-table")]);
 
   return (
     <ToastProvider>
