@@ -1,5 +1,5 @@
 import { requireElProfesorAdmin } from "@/lib/el-profesor/dal";
-import { getElProfesorNotionsPageData } from "@/app/apps/el-profesor/actions/offline-sync";
+import { getElProfesorNotionsPageData } from "@/lib/el-profesor/sync-data";
 import { NotionsPageWithLocalCache } from "@/components/el-profesor/notions-page-with-local-cache";
 import { ToastProvider } from "@/components/ui/toast";
 

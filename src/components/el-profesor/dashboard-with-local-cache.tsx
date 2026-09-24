@@ -1,13 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CloudDownload, RefreshCw } from "lucide-react";
+import { CloudDownload, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { SyncModal } from "@/components/el-profesor/dialogs/sync-modal";
-import { getCachedDashboard, getCachedSecondaryDashboardData, getCachedNotionViewData, getCachedAiConfigData } from "@/lib/el-profesor/local-db";
-import { getLocalDueCounts, getLocalMasteryCounts, getLocalReadProgressByChapter } from "@/lib/el-profesor/local-review-queue";
-import type { DashboardSnapshot, DashboardSecondaryData, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
+import { ResetCacheModal } from "@/components/el-profesor/dialogs/reset-cache-modal";
+import { getCachedNotionViewData, getCachedAiConfigData, setCachedAiConfigData } from "@/lib/el-profesor/local-db";
+import { loadLocalDashboardView, type LocalDashboardView } from "@/lib/el-profesor/local-dashboard";
+import { runBackgroundSync, type SyncOutcome } from "@/lib/el-profesor/sync-runner";
+import { fetchDashboardSnapshot } from "@/lib/el-profesor/sync-api";
+import { consumeAutoSyncAfterReset } from "@/lib/el-profesor/cache-reset";
+import type { DashboardSnapshot, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
 
 /** "il y a 3 min" / "il y a 2 h" / "il y a 5 j" — finer-grained than the day-only timeAgoLabel elsewhere in the module, since a sync can have just happened. */
 function syncedAgoLabel(iso: string): string {
@@ -33,178 +37,194 @@ function DashboardSkeleton() {
 }
 
 /**
- * Seam between the server-rendered dashboard and the local IndexedDB cache
- * (piste 2026-09-24 — "cache local + synchronisation manuelle"). Takes the
- * expensive dashboard snapshot as an un-awaited promise (see page.tsx) —
- * awaiting it server-side would block this whole page on every navigation,
- * which made the local cache pointless the first time this shipped: the
- * client never got a chance to render from IndexedDB before the slow server
- * round trip had already finished, since Next.js's navigation waits for the
- * page's own response either way. So: check the local cache first, and only
- * ever fall back to the server promise when there isn't one yet (first
- * visit, or a chapter/dashboard never synced). ElProfesorBoard itself is
- * untouched — this only decides which snapshot it renders from.
+ * The dashboard, rendered from the local cache (piste 2026-09-24 — "module
+ * 100 % local", then "widgets en local"). Everything shown — the library,
+ * every per-chapter figure and every widget — is computed on the device by
+ * loadLocalDashboardView (local-dashboard.ts) from what "Synchroniser"
+ * stored, and recomputed whenever this mounts, the tab comes back into view
+ * or a sync finishes: a review, a bookmark or a read fiche shows up here
+ * immediately, never "after the next sync". The server is only asked for
+ * the whole dashboard when nothing is cached on this device yet (first
+ * visit, or right after a cache reset).
  */
 export function DashboardWithLocalCache({
-  initialSnapshotPromise,
   isAdmin,
   realIsAdmin,
   previewingAsUser,
   serverResumeChapterId,
   onCacheMiss,
 }: {
-  /** Null when rendered by the local nav shell (local-nav-shell.tsx) rather than page.tsx directly — in that case onCacheMiss must be provided instead. */
-  initialSnapshotPromise: Promise<DashboardSnapshot> | null;
   isAdmin: boolean;
   realIsAdmin: boolean;
   previewingAsUser: boolean;
   serverResumeChapterId: string | null;
-  /** Called instead of awaiting initialSnapshotPromise when there's no local cache and no server promise was supplied (shell-driven render with a genuine cache miss) — the caller falls back to a real Next.js navigation. */
+  /** Set by the local nav shell (local-nav-shell.tsx): on a cache miss it falls back to a real Next.js navigation instead of fetching the snapshot itself. */
   onCacheMiss?: () => void;
 }) {
-  const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
-  const [syncedAt, setSyncedAt] = useState<string | null>(null);
+  const [local, setLocal] = useState<LocalDashboardView | null>(null);
+  const [serverSnapshot, setServerSnapshot] = useState<DashboardSnapshot | null>(null);
+  const [serverSnapshotFailed, setServerSnapshotFailed] = useState(false);
   const [checkedCache, setCheckedCache] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
-  // The three secondary-widget datasets (activity/notions/AI config — piste
-  // 2026-09-24 — suite au retour "les widgets ne s'affichent jamais et
-  // finissent en erreur") are read PURELY from cache, never live-fetched as
-  // part of a normal render: unlike the main snapshot above (which falls
-  // back to a live fetch when there's no cache at all — unavoidable for a
-  // true first visit), a live fetch here had no bound on how long it could
-  // hang or how it could fail, on a route that renders on every navigation.
-  // These stay null (rendered as an explicit "pas encore synchronisé" state
-  // by their consumers) until an actual "Synchroniser" run populates them —
-  // see refreshWidgetCaches below, called both on mount and right after a
-  // sync completes.
-  const [secondaryData, setSecondaryData] = useState<DashboardSecondaryData | null>(null);
+  const [autoStartSync, setAutoStartSync] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [backgroundSyncing, setBackgroundSyncing] = useState(false);
   const [notionViewData, setNotionViewData] = useState<DashboardNotionViewData | null>(null);
   const [aiConfigData, setAiConfigData] = useState<DashboardAiConfigData | null>(null);
 
-  const refreshWidgetCaches = useCallback((forIsAdmin: boolean) => {
-    // Keyed by isAdmin (the CURRENT render's effective admin/preview state,
-    // not whatever a past sync happened to be) — see
-    // getCachedSecondaryDashboardData's doc comment for why: without this, a
-    // real admin's cached admin-only data could get served back during a
-    // "preview as user" session.
-    getCachedSecondaryDashboardData(forIsAdmin).then((cached) => setSecondaryData(cached));
-    getCachedNotionViewData().then((cached) => setNotionViewData(cached));
-    getCachedAiConfigData(forIsAdmin).then((cached) => setAiConfigData(cached?.value ?? null));
-  }, []);
+  const loadLocal = useCallback(() => Promise.all([loadLocalDashboardView(isAdmin), getCachedNotionViewData(), getCachedAiConfigData(isAdmin)]), [isAdmin]);
 
-  useEffect(() => {
-    // Re-checks whenever the effective admin/preview state changes (e.g.
-    // after the preview-as-user toggle, which forces a reload — see
-    // board.tsx's handleTogglePreview — but this stays correct even if that
-    // ever changes without one).
-    refreshWidgetCaches(isAdmin);
-  }, [isAdmin, refreshWidgetCaches]);
+  const applyLocal = useCallback(
+    ([view, notionView, aiConfig]: [LocalDashboardView | null, DashboardNotionViewData | null, { value: DashboardAiConfigData | null } | null]) => {
+      setNotionViewData(notionView);
+      setAiConfigData(aiConfig?.value ?? null);
+      if (view) setLocal(view);
+      return view;
+    },
+    []
+  );
+
+  const reloadLocal = useCallback(() => {
+    loadLocal()
+      .then(applyLocal)
+      .catch(() => {});
+  }, [loadLocal, applyLocal]);
 
   useEffect(() => {
     let cancelled = false;
-    getCachedDashboard().then(async (cached) => {
+    loadLocal().then((result) => {
       if (cancelled) return;
-      if (cached) {
-        const { syncedAt: cachedSyncedAt, ...cachedSnapshot } = cached;
-        // Due/mastery counts are recomputed fresh from the cached chapter
-        // content + review state (piste 2026-09-24 — correctif du bug "à
-        // jour") rather than trusting the snapshot's own frozen numbers,
-        // which only ever reflected the state at the last "Synchroniser"
-        // and could silently drift from the live review queue. Falls back
-        // to the snapshot's own values if nothing's cached yet to compute
-        // from (e.g. dashboard synced once but no chapter content sync
-        // completed).
-        const [localDueCounts, localMasteryCounts, localReadProgressByChapter] = await Promise.all([
-          getLocalDueCounts(),
-          getLocalMasteryCounts(),
-          getLocalReadProgressByChapter(),
-        ]);
-        if (cancelled) return;
-        setSnapshot({
-          ...cachedSnapshot,
-          dueCounts: localDueCounts ?? cachedSnapshot.dueCounts,
-          masteryCounts: localMasteryCounts ?? cachedSnapshot.masteryCounts,
-          readProgressByChapter: localReadProgressByChapter ?? cachedSnapshot.readProgressByChapter,
-        });
-        setSyncedAt(cachedSyncedAt);
-        setCheckedCache(true);
+      const view = applyLocal(result);
+      setCheckedCache(true);
+      if (consumeAutoSyncAfterReset()) {
+        setAutoStartSync(true);
+        setSyncOpen(true);
+      }
+      if (view) return;
+      if (onCacheMiss) {
+        onCacheMiss();
         return;
       }
-      // No local cache yet.
-      setCheckedCache(true);
-      if (initialSnapshotPromise) {
-        // This is the only case where we actually wait on the slow server
-        // snapshot — page.tsx's hard-navigation path.
-        initialSnapshotPromise.then((serverSnapshot) => {
-          if (!cancelled) setSnapshot(serverSnapshot);
+      fetchDashboardSnapshot()
+        .then((snapshot) => {
+          if (!cancelled) setServerSnapshot(snapshot);
+        })
+        .catch(() => {
+          if (!cancelled) setServerSnapshotFailed(true);
         });
-      } else {
-        onCacheMiss?.();
-      }
     });
     return () => {
       cancelled = true;
     };
-    // Runs once on mount only — a fresh sync updates state directly via
-    // handleSynced below, no need to re-check the cache reactively.
-  }, [initialSnapshotPromise, onCacheMiss]);
+  }, [loadLocal, applyLocal, onCacheMiss]);
 
-  function handleSynced(newSnapshot: DashboardSnapshot, newSyncedAt: string) {
-    setSnapshot(newSnapshot);
-    setSyncedAt(newSyncedAt);
-    // "Synchroniser" just wrote fresh secondary-widget data to the cache —
-    // without this they'd keep showing whatever (or nothing) was there
-    // before until the next full reload, which is exactly the "je dois
-    // synchroniser pour que ça s'actualise, et même là ça ne s'actualise
-    // pas" problem this was meant to fix.
-    refreshWidgetCaches(newSnapshot.effectiveIsAdmin);
+  // Coming back to this tab (e.g. after reviewing in another one, or the
+  // next morning when more cards have come due) recomputes everything from
+  // the cache — cheap, and keeps due counts honest as time passes.
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") reloadLocal();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [reloadLocal]);
+
+  function handleSynced(outcome: SyncOutcome) {
+    reloadLocal();
+    // Cross-user stats, the notion view and admin settings follow in the
+    // background — the dashboard is already complete without them, and
+    // picks them up as soon as they land.
+    setBackgroundSyncing(true);
+    runBackgroundSync(outcome.snapshot.effectiveIsAdmin).finally(() => {
+      setBackgroundSyncing(false);
+      reloadLocal();
+    });
   }
 
-  // Keeps snapshot.books in step with a local admin reorder the instant it
-  // persists to the cache (handleMoveBook/handleMoveChapter in board.tsx) —
-  // without this, ElProfesorBoard's useOptimistic override would revert to
-  // this stale prop the moment its transition resolves, flashing back to
-  // the old order.
+  const handleAiConfigChange = useCallback(
+    (config: DashboardAiConfigData) => {
+      setAiConfigData(config);
+      setCachedAiConfigData(isAdmin, config).catch(() => {});
+    },
+    [isAdmin]
+  );
+
+  // Keeps the rendered books in step with a local admin reorder the instant
+  // it persists to the cache (handleMoveBook/handleMoveChapter in board.tsx)
+  // — otherwise ElProfesorBoard's useOptimistic override would revert to a
+  // stale prop the moment its transition resolves, flashing the old order.
   function handleLocalBooksChange(books: DashboardSnapshot["books"]) {
-    setSnapshot((s) => (s ? { ...s, books } : s));
+    setLocal((l) => (l ? { ...l, snapshot: { ...l.snapshot, books } } : l));
+    setServerSnapshot((s) => (s ? { ...s, books } : s));
   }
 
-  if (!snapshot) return <DashboardSkeleton />;
+  const snapshot = local?.snapshot ?? serverSnapshot;
 
   return (
     <>
-      <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-end gap-2 px-4 pt-4 text-xs text-foreground-subtle sm:px-6 xl:max-w-6xl">
-        {checkedCache && !syncedAt && (
-          <span className="text-accent">Aucune donnée locale — synchronisez pour un accès instantané la prochaine fois.</span>
-        )}
-        {syncedAt && <span>Synchronisé {syncedAgoLabel(syncedAt)}</span>}
-        <Button variant="ghost" size="sm" onClick={() => setSyncOpen(true)}>
-          {syncedAt ? <RefreshCw className="h-3.5 w-3.5" /> : <CloudDownload className="h-3.5 w-3.5" />} Synchroniser
-        </Button>
-      </div>
+      {!snapshot ? (
+        serverSnapshotFailed ? (
+          <p className="mx-auto max-w-4xl px-4 py-8 text-sm text-foreground-muted sm:px-6">
+            Impossible de charger le tableau de bord — vérifiez votre connexion, puis synchronisez ou rechargez la page.
+          </p>
+        ) : (
+          <DashboardSkeleton />
+        )
+      ) : (
+        <>
+          <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-end gap-2 px-4 pt-4 text-xs text-foreground-subtle sm:px-6 xl:max-w-6xl">
+            {checkedCache && !local && <span className="text-accent">Aucune donnée locale — synchronisez pour un accès instantané et hors ligne.</span>}
+            {local?.historyMissing && <span className="text-accent">Statistiques de révision incomplètes — synchronisez pour les compléter.</span>}
+            {backgroundSyncing && <span>Mise à jour des statistiques…</span>}
+            {local && <span>Synchronisé {syncedAgoLabel(local.syncedAt)}</span>}
+            <Button variant="ghost" size="sm" onClick={() => setSyncOpen(true)}>
+              {local ? <RefreshCw className="h-3.5 w-3.5" /> : <CloudDownload className="h-3.5 w-3.5" />} Synchroniser
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setResetOpen(true)}
+              title="Vider les données El Profesor enregistrées sur cet appareil et les retélécharger"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser le cache
+            </Button>
+          </div>
 
-      <ElProfesorBoard
-        books={snapshot.books}
-        dueCounts={snapshot.dueCounts}
-        needsReviewCounts={snapshot.needsReviewCounts}
-        masteryCounts={snapshot.masteryCounts}
-        difficultCounts={snapshot.difficultCounts}
-        globalMastery={snapshot.globalMastery}
-        readProgressByChapter={snapshot.readProgressByChapter}
-        globalProgress={snapshot.globalProgress}
-        hasGeminiKey={snapshot.hasGeminiKey}
-        aiProvider={snapshot.aiProvider}
-        isAdmin={isAdmin}
-        realIsAdmin={realIsAdmin}
-        previewingAsUser={previewingAsUser}
-        serverResumeChapterId={serverResumeChapterId}
-        secondaryData={secondaryData}
-        aiConfigData={aiConfigData}
-        notionViewData={notionViewData}
-        onLocalBooksChange={handleLocalBooksChange}
-      />
+          <ElProfesorBoard
+            books={snapshot.books}
+            dueCounts={snapshot.dueCounts}
+            needsReviewCounts={snapshot.needsReviewCounts}
+            masteryCounts={snapshot.masteryCounts}
+            difficultCounts={snapshot.difficultCounts}
+            globalMastery={snapshot.globalMastery}
+            readProgressByChapter={snapshot.readProgressByChapter}
+            globalProgress={snapshot.globalProgress}
+            hasGeminiKey={snapshot.hasGeminiKey}
+            aiProvider={snapshot.aiProvider}
+            isAdmin={isAdmin}
+            realIsAdmin={realIsAdmin}
+            previewingAsUser={previewingAsUser}
+            serverResumeChapterId={serverResumeChapterId}
+            secondaryData={local?.widgets ?? null}
+            aiConfigData={aiConfigData}
+            notionViewData={notionViewData}
+            onLocalBooksChange={handleLocalBooksChange}
+            onAiConfigChange={handleAiConfigChange}
+          />
+        </>
+      )}
 
-      {syncOpen && <SyncModal onClose={() => setSyncOpen(false)} onSynced={handleSynced} />}
+      {syncOpen && (
+        <SyncModal
+          autoStart={autoStartSync}
+          onClose={() => {
+            setSyncOpen(false);
+            setAutoStartSync(false);
+          }}
+          onSynced={handleSynced}
+        />
+      )}
+      {resetOpen && <ResetCacheModal onClose={() => setResetOpen(false)} />}
     </>
   );
 }

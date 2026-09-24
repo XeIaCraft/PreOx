@@ -9,6 +9,16 @@ import type { ReviewRating, ReviewSource, ReviewState } from "@/lib/el-profesor/
 
 export type ReviewConfidence = "sure" | "unsure";
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_REVIEW_BACKDATE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** The device's own answer time when plausible — never in the future, never more than 30 days back (a wrong device clock falls back to "now"). */
+function resolveReviewedAt(clientReviewedAt: string | null | undefined): Date {
+  const now = Date.now();
+  const t = clientReviewedAt ? new Date(clientReviewedAt).getTime() : NaN;
+  return Number.isFinite(t) && t <= now && t >= now - MAX_REVIEW_BACKDATE_MS ? new Date(t) : new Date(now);
+}
+
 export interface ActionState {
   error?: string;
   success?: string;
@@ -35,10 +45,22 @@ export async function submitReview(
   source: ReviewSource,
   durationMs?: number,
   variantId?: string | null,
-  confidence?: ReviewConfidence | null
+  confidence?: ReviewConfidence | null,
+  clientLogId?: string | null,
+  clientReviewedAt?: string | null
 ): Promise<SubmitReviewResult> {
   const profile = await requireElProfesorAccess();
   const supabase = await createClient();
+  // The local-first queue's own id for this review (piste 2026-09-24),
+  // reused as the log row's primary key so a replay is idempotent: a flush
+  // whose request reached the server but whose response never made it back
+  // (tab closed mid-flush, network drop) gets retried later with the same
+  // id, and must not record — or reschedule — the same answer twice.
+  const idempotencyId = clientLogId && UUID_PATTERN.test(clientLogId) ? clientLogId : null;
+  // When the card was actually answered — a review done offline on Monday
+  // and delivered on Wednesday must count for Monday (streak, heatmap) and
+  // be scheduled from Monday, exactly as the device already did locally.
+  const reviewedAt = resolveReviewedAt(clientReviewedAt);
 
   // Sanity-clamped: a stray multi-minute gap (tab left in background, phone
   // locked mid-review) would otherwise wildly skew the aggregate time stats.
@@ -49,6 +71,8 @@ export async function submitReview(
   const { data: logRow, error: logError } = await supabase
     .from("el_profesor_review_log")
     .insert({
+      ...(idempotencyId ? { id: idempotencyId } : {}),
+      reviewed_at: reviewedAt.toISOString(),
       user_id: profile.id,
       flashcard_id: flashcardId,
       rating,
@@ -59,13 +83,20 @@ export async function submitReview(
     })
     .select("id")
     .single();
+  // Primary-key conflict on a replayed id: this exact review is already
+  // recorded (and its FSRS update already applied) — report success without
+  // applying it a second time.
+  if (logError && idempotencyId && logError.code === "23505") return { success: "Révision déjà enregistrée.", logId: idempotencyId };
   if (logError || !logRow) return { error: "Impossible d'enregistrer cette révision." };
 
   let previousState: ReviewState | null = null;
   if (source === "scheduled") {
     const [state, retention] = await Promise.all([getReviewState(profile.id, flashcardId), getUserFsrsRetention(profile.id)]);
     previousState = state;
-    const next = scheduleReview(previousState, rating, new Date(), retention);
+    // Never schedule from before the card's last known review (answered on
+    // another device in the meantime) — FSRS needs time to move forward.
+    const lastReviewMs = previousState?.lastReview ? new Date(previousState.lastReview).getTime() : 0;
+    const next = scheduleReview(previousState, rating, new Date(Math.max(reviewedAt.getTime(), lastReviewMs)), retention);
 
     const { error: upsertError } = await supabase.from("el_profesor_review_state").upsert(
       {

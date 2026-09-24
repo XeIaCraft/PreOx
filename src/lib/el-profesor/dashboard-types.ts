@@ -38,6 +38,7 @@ import type {
   CrossBookDuplicateFlashcards,
   SupersededFicheEntry,
   NotionUpdateProposal,
+  ReviewState,
 } from "@/lib/el-profesor/types";
 import type { ElProfesorBatchJobRow } from "@/lib/supabase/types";
 
@@ -45,7 +46,7 @@ import type { ElProfesorBatchJobRow } from "@/lib/supabase/types";
  * Everything ElProfesorBoard needs to render, grouped into one object
  * instead of ~10 separate props — the shape both page.tsx's initial SSR
  * render and the "Synchroniser" local-cache sync (dal/shared.ts's
- * loadDashboardSnapshot, actions/offline-sync.ts, local-db.ts) produce, so
+ * loadDashboardSnapshot, lib/el-profesor/sync-data.ts, local-db.ts) produce, so
  * DashboardWithLocalCache can swap between a server-rendered snapshot and
  * a locally-cached one without either side needing its own shape.
  */
@@ -120,6 +121,77 @@ export interface DashboardSecondaryData {
   onThisDayNote: OnThisDayNote | null;
   bookRecommendation: BookRecommendation | null;
   dueBlocks: DueBlockEntry[];
+}
+
+/**
+ * This user's own small per-entity data, synced in full on every
+ * "Synchroniser" (piste 2026-09-24 — suite au retour "pourquoi les widgets
+ * ne fonctionnent pas en local ?") and cached as its own IndexedDB entries
+ * instead of being frozen inside each chapter's content snapshot: the delta
+ * sync only re-downloads a chapter when its CONTENT changed, but a bookmark,
+ * a note, a block re-read or a review changes on its own schedule — tied to
+ * chapter content it went stale forever. Each list is one paginated
+ * user-scoped query server-side (no library-wide id list involved), so this
+ * stays a small, fast payload however big the library is.
+ */
+export interface CachedBookmark {
+  subEntityId: string;
+  tags: string[];
+  createdAt: string;
+}
+
+export interface CachedNote {
+  subEntityId: string;
+  content: string;
+  shareToken: string | null;
+  createdAt: string;
+}
+
+export interface UserSyncData {
+  reviewStates: ReviewState[];
+  ficheReadProgress: Record<string, number>;
+  bookmarks: CachedBookmark[];
+  blockReviewStates: Record<string, BlockReviewState>;
+  notes: CachedNote[];
+}
+
+/** One UTC day of this user's review log, pre-aggregated — everything the streak/heatmap, time-invested and overconfidence widgets need, without shipping every individual review row to the browser. */
+export interface ReviewDayStats {
+  count: number;
+  ms: number;
+  /** Reviews marked "sûr(e)" then answered "again" — see getOverconfidentMissCount. */
+  sureMisses: number;
+}
+
+/** Per-day aggregates for every review at or after `since` (or the whole history when the request had no `since`) — the client replaces those days in its cached history and keeps the older ones as they were. */
+export interface ReviewHistoryDelta {
+  days: Record<string, ReviewDayStats>;
+}
+
+/**
+ * The few dashboard widgets that genuinely can't be computed on this device
+ * because they aggregate OTHER users' data (anonymous cross-user stats,
+ * admin content diagnostics) — fetched in the background after a sync,
+ * never blocking it or the dashboard, and simply absent until the first
+ * successful fetch. Everything else the dashboard shows is computed locally
+ * (local-widgets.ts).
+ */
+export interface DashboardExtras {
+  globalMastery: Record<string, ChapterMasteryPercentile>;
+  bookRecommendation: BookRecommendation | null;
+  mostDifficultGlobal: DifficultFlashcardStat[];
+  leechFlashcards: LeechFlashcardStat[];
+  flagStatsByBlockType: BlockTypeFlagStat[];
+  staleChapters: StaleChapterAlert[];
+}
+
+/** Everything the essential part of "Synchroniser" needs in one round trip — see loadSyncManifest (sync-data.ts). */
+export interface SyncManifest {
+  /** Only the server-side fields are meaningful here — the per-user aggregates (due/mastery/difficult counts, read progress, global progress) are computed on the device from the cached content instead, see local-dashboard.ts. */
+  snapshot: DashboardSnapshot;
+  suspendedIds: string[];
+  /** Per published chapter — compared against each cached chapter's own lastModifiedAt to decide what to re-download. */
+  lastModified: Record<string, string>;
 }
 
 /**

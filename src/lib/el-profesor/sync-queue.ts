@@ -1,104 +1,130 @@
 "use client";
 
 // Automatic background flush of the local-first write queue (piste
-// 2026-09-24 — "écriture locale automatique"). Every write queued by
-// local-review.ts (flashcard reviews, exclusions) or the bookmark/note/
-// reading-position call sites in chapter-view.tsx sits in local-db.ts's
-// pendingWrites store until this replays it against the same Server Actions
-// the app already called synchronously before — see sync-queue-runner.tsx
-// for what triggers a flush (periodic timer, visibilitychange/pagehide, and
-// the "Synchroniser" modal flushing first before it pulls fresh content).
-import { getAllPendingWrites, deletePendingWrite, enqueuePendingWrite, type PendingWrite } from "./local-db";
-import { submitReview, excludeFlashcardFromReviews, reincludeFlashcardInReviews } from "@/app/apps/el-profesor/actions/review";
-import { setBookmark } from "@/app/apps/el-profesor/actions/bookmarks";
-import { saveMyNote } from "@/app/apps/el-profesor/actions/notes";
-import { recordReadingPosition } from "@/app/apps/el-profesor/actions/reading-position";
-import { ACTION_REGISTRY, type RegisteredActionName } from "./action-registry";
+// 2026-09-24 — "écriture locale automatique"). Every write queued locally
+// (flashcard reviews, exclusions, bookmarks, notes, reading position, read
+// progress, block re-reads, admin reorder/rename/publish…) sits in
+// local-db.ts's pendingWrites store until this delivers it — see
+// sync-queue-runner.tsx for what triggers a flush (periodic timer,
+// visibilitychange/pagehide) and the "Synchroniser" modal, which flushes
+// first before it pulls fresh data.
+//
+// Writes go out in batches, one plain POST per batch to the sync route
+// handler (flush-writes.ts replays them server-side, in order) — no longer
+// one Server Action per write: those ran strictly one at a time and each
+// re-rendered the current page, so a review session's worth of answers
+// could keep every other action (a sync, the settings dialog…) waiting for
+// minutes.
+import {
+  getAllPendingWrites,
+  getPendingWrite,
+  deletePendingWrite,
+  enqueuePendingWrite,
+  markLocalReviewEventFlushed,
+  deleteLocalReviewEvent,
+  type PendingWrite,
+} from "./local-db";
+import { postPendingWrites } from "./sync-api";
+import { undoReview } from "@/app/apps/el-profesor/actions/review";
+import type { FlushResult } from "./flush-writes";
 
 // How long a flushed "review" entry sticks around purely so undoLocalReview
 // can still find its serverLogId — comfortably past any realistic reaction
 // time to hit "undo" after answering a card.
 const FLUSHED_REVIEW_RETENTION_MS = 5 * 60_000;
+// Same bound as MAX_WRITES_PER_FLUSH in flush-writes.ts (server-only, so not importable here).
+const BATCH_SIZE = 25;
 
-let flushing = false;
+let inFlight: Promise<void> | null = null;
 
-type FlushOutcome = "delete" | "keep-flushed" | "fail";
+/**
+ * Delivers every queued write in order, stopping at the first failure (kept
+ * in place for the next attempt — never skipped, so a later write for the
+ * same card/note/bookmark can't overtake an earlier one on a retry). Also
+ * garbage-collects "review" entries flushed a while ago. Calls made while a
+ * flush is already running share that same flush.
+ */
+export function flushPendingWrites(): Promise<void> {
+  if (!inFlight) inFlight = runFlush().finally(() => (inFlight = null));
+  return inFlight;
+}
 
-async function flushOne(write: PendingWrite): Promise<FlushOutcome> {
-  switch (write.kind) {
-    case "review": {
-      if (write.flushed) return "keep-flushed"; // nothing left to send — see the retention cleanup below
-      const { flashcardId, rating, source, durationMs, variantId, confidence } = write.payload;
-      const result = await submitReview(flashcardId, rating, source, durationMs, variantId, confidence);
-      if (result.error || !result.logId) return "fail";
-      // Marked flushed rather than deleted — undoLocalReview needs the real
-      // log id for a brief window after this (see its doc comment).
-      await enqueuePendingWrite({ ...write, flushed: true, serverLogId: result.logId });
-      return "keep-flushed";
-    }
-    case "exclude": {
-      const { flashcardId, excluded } = write.payload;
-      const result = excluded ? await excludeFlashcardFromReviews(flashcardId) : await reincludeFlashcardInReviews(flashcardId);
-      return result.error ? "fail" : "delete";
-    }
-    case "bookmark": {
-      const { subEntityId, bookmarked } = write.payload;
-      const result = await setBookmark(subEntityId, bookmarked);
-      return result.error ? "fail" : "delete";
-    }
-    case "note": {
-      const { subEntityId, content } = write.payload;
-      const result = await saveMyNote(subEntityId, content);
-      return result.error ? "fail" : "delete";
-    }
-    case "readingPosition": {
-      const { chapterId, subEntityId } = write.payload;
-      await recordReadingPosition(chapterId, subEntityId);
-      return "delete"; // fire-and-forget by design, see that action's doc comment
-    }
-    case "adminAction": {
-      const { action, args } = write.payload;
-      const fn = ACTION_REGISTRY[action as RegisteredActionName];
-      // Unknown action name (e.g. an older client queued something this
-      // build no longer registers) — nothing to retry, drop it rather than
-      // fail forever and block every write queued after it.
-      if (!fn) return "delete";
-      // Every registered action takes and returns a plain ActionState-like
-      // object ({error?, success?, ...}) — the registry's own function
-      // signatures already type-check each call site that enqueues one
-      // (see local-admin-actions.ts), so the loose cast here is confined to
-      // this one generic dispatch point.
-      const result = (await (fn as (...fnArgs: unknown[]) => Promise<{ error?: string }>)(...args)) as { error?: string };
-      return result?.error ? "fail" : "delete";
-    }
+/** For "Synchroniser" and the cache reset: waits for a flush already in progress, then runs one more full pass for anything queued while it was in flight. */
+export async function flushAllPendingWrites(): Promise<void> {
+  if (inFlight) await inFlight.catch(() => {});
+  await flushPendingWrites().catch(() => {});
+}
+
+/** Writes still waiting to reach the server (a flushed review kept only for "undo" doesn't count). */
+export async function countUnsentPendingWrites(): Promise<number> {
+  const writes = await getAllPendingWrites();
+  return writes.filter((w) => !(w.kind === "review" && w.flushed)).length;
+}
+
+async function runFlush(): Promise<void> {
+  try {
+    await deliverQueue();
+  } catch (err) {
+    // Never rejects: the runner fires this from timers and page events with nobody awaiting it — whatever didn't go out stays queued for next time.
+    console.error("[el-profesor/sync-queue] flush failed:", err);
   }
 }
 
-/**
- * Replays every queued write in order, stopping at the first failure (kept
- * in place for the next flush attempt — never skipped, so a later write for
- * the same flashcard/note/bookmark can't jump ahead of an earlier one on a
- * retry). Also garbage-collects "review" entries that were flushed a while
- * ago and are just past their undo grace period. Safe to call concurrently
- * (e.g. the periodic timer and a manual sync overlapping) — a flush already
- * in progress is a no-op.
- */
-export async function flushPendingWrites(): Promise<void> {
-  if (flushing) return;
-  flushing = true;
-  try {
-    const writes = await getAllPendingWrites();
-    const now = Date.now();
-    for (const write of writes) {
-      if (write.kind === "review" && write.flushed) {
-        if (now - new Date(write.createdAt).getTime() > FLUSHED_REVIEW_RETENTION_MS) await deletePendingWrite(write.id);
-        continue;
-      }
-      const outcome = await flushOne(write);
-      if (outcome === "fail") break;
-      if (outcome === "delete") await deletePendingWrite(write.id);
+async function deliverQueue(): Promise<void> {
+  const writes = await getAllPendingWrites();
+  const now = Date.now();
+  const toSend: PendingWrite[] = [];
+  for (const write of writes) {
+    if (write.kind === "review" && write.flushed) {
+      if (now - new Date(write.createdAt).getTime() > FLUSHED_REVIEW_RETENTION_MS) await deletePendingWrite(write.id);
+      continue;
     }
-  } finally {
-    flushing = false;
+    toSend.push(write);
   }
+
+  for (let i = 0; i < toSend.length; i += BATCH_SIZE) {
+    const batch = toSend.slice(i, i + BATCH_SIZE);
+    let results: FlushResult[];
+    try {
+      ({ results } = await postPendingWrites(batch));
+    } catch {
+      return; // offline, session expired, server unavailable — everything stays queued for the next attempt
+    }
+    const sentById = new Map(batch.map((w) => [w.id, w]));
+    for (const result of results) {
+      const sent = sentById.get(result.id);
+      if (sent) await applyFlushResult(sent, result);
+    }
+    if (results.length < batch.length || results.some((r) => r.outcome === "fail")) return;
+  }
+}
+
+async function applyFlushResult(sent: PendingWrite, result: FlushResult): Promise<void> {
+  const current = await getPendingWrite(sent.id);
+  if (sent.kind === "review") {
+    if (result.outcome === "keep-flushed" && result.serverLogId) {
+      if (!current) {
+        // Undone on this device while the request was in flight — the
+        // server recorded it anyway, so undo it there too.
+        await undoReview(sent.payload.flashcardId, result.serverLogId, sent.payload.source, sent.payload.previousState).catch(() => {});
+        return;
+      }
+      // Kept (marked flushed) rather than deleted — undoLocalReview needs
+      // the real log id for a brief window after this.
+      await enqueuePendingWrite({ ...sent, flushed: true, serverLogId: result.serverLogId });
+      await markLocalReviewEventFlushed(sent.id, new Date().toISOString());
+    } else if (result.outcome === "delete") {
+      // Dropped server-side (its card no longer exists) — it will never be
+      // in the review history, so stop counting it locally too.
+      await deletePendingWrite(sent.id);
+      await deleteLocalReviewEvent(sent.id);
+    }
+    return;
+  }
+  // Every other kind reuses one stable id per target (note:<id>,
+  // bookmark:<id>, readProgress:<id>, readingPosition…) so a newer value
+  // replaces a still-queued older one. If that happened while this batch
+  // was in flight, the newer version is still waiting to be sent: only
+  // delete the exact version the server just acknowledged.
+  if (result.outcome === "delete" && current && current.createdAt === sent.createdAt) await deletePendingWrite(sent.id);
 }

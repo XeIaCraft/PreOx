@@ -15,11 +15,15 @@
 import type {
   DashboardSnapshot,
   ChapterContentSnapshot,
-  DashboardSecondaryData,
   DashboardNotionViewData,
   DashboardAiConfigData,
   NotionsPageSnapshot,
+  CachedBookmark,
+  CachedNote,
+  ReviewDayStats,
+  DashboardExtras,
 } from "./dashboard-types";
+import type { BlockReviewState } from "./dal";
 import type { ReviewState, ReviewRating, ReviewSource } from "./types";
 import type { ReviewConfidence } from "@/app/apps/el-profesor/actions/review";
 
@@ -32,20 +36,30 @@ const DB_NAME = "el-profesor-cache";
 // case journal. onupgradeneeded below only creates whichever stores don't
 // exist yet, so an older database gains the new ones without losing what's
 // already cached.
-const DB_VERSION = 5;
+//
+// Version 6 (piste 2026-09-24 — "widgets en local"): `userData` holds this
+// user's own small per-entity data (bookmarks, notes, block re-read
+// schedule, review-history aggregates, the few cross-user dashboard
+// extras), and `localReviewEvents` the reviews answered on this device that
+// the cached review history doesn't include yet — together they let every
+// dashboard widget be computed on the device instead of fetched. The old
+// `secondaryDashboard` store (a server-computed widget blob that routinely
+// timed out) is dropped.
+const DB_VERSION = 6;
 const DASHBOARD_STORE = "dashboard";
 const CHAPTER_CONTENT_STORE = "chapterContent";
 const REVIEW_STATE_STORE = "reviewState";
 const PENDING_WRITES_STORE = "pendingWrites";
 const SUSPENDED_FLASHCARD_IDS_STORE = "suspendedFlashcardIds";
-const SECONDARY_DASHBOARD_STORE = "secondaryDashboard";
+const LEGACY_SECONDARY_DASHBOARD_STORE = "secondaryDashboard";
 const NOTION_VIEW_DATA_STORE = "notionViewData";
 const AI_CONFIG_DATA_STORE = "aiConfigData";
 const NOTIONS_PAGE_STORE = "notionsPage";
 const ENTITIES_STORE = "entities";
+const USER_DATA_STORE = "userData";
+const LOCAL_REVIEW_EVENTS_STORE = "localReviewEvents";
 const DASHBOARD_KEY = "singleton";
 const SUSPENDED_FLASHCARD_IDS_KEY = "singleton";
-const SECONDARY_DASHBOARD_KEY = "singleton";
 const NOTION_VIEW_DATA_KEY = "singleton";
 const AI_CONFIG_DATA_KEY = "singleton";
 const NOTIONS_PAGE_KEY = "singleton";
@@ -70,11 +84,13 @@ function openDb(): Promise<IDBDatabase | null> {
         if (!db.objectStoreNames.contains(REVIEW_STATE_STORE)) db.createObjectStore(REVIEW_STATE_STORE);
         if (!db.objectStoreNames.contains(PENDING_WRITES_STORE)) db.createObjectStore(PENDING_WRITES_STORE);
         if (!db.objectStoreNames.contains(SUSPENDED_FLASHCARD_IDS_STORE)) db.createObjectStore(SUSPENDED_FLASHCARD_IDS_STORE);
-        if (!db.objectStoreNames.contains(SECONDARY_DASHBOARD_STORE)) db.createObjectStore(SECONDARY_DASHBOARD_STORE);
         if (!db.objectStoreNames.contains(NOTION_VIEW_DATA_STORE)) db.createObjectStore(NOTION_VIEW_DATA_STORE);
         if (!db.objectStoreNames.contains(AI_CONFIG_DATA_STORE)) db.createObjectStore(AI_CONFIG_DATA_STORE);
         if (!db.objectStoreNames.contains(NOTIONS_PAGE_STORE)) db.createObjectStore(NOTIONS_PAGE_STORE);
         if (!db.objectStoreNames.contains(ENTITIES_STORE)) db.createObjectStore(ENTITIES_STORE);
+        if (!db.objectStoreNames.contains(USER_DATA_STORE)) db.createObjectStore(USER_DATA_STORE);
+        if (!db.objectStoreNames.contains(LOCAL_REVIEW_EVENTS_STORE)) db.createObjectStore(LOCAL_REVIEW_EVENTS_STORE);
+        if (db.objectStoreNames.contains(LEGACY_SECONDARY_DASHBOARD_STORE)) db.deleteObjectStore(LEGACY_SECONDARY_DASHBOARD_STORE);
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(null);
@@ -179,41 +195,32 @@ export async function setCachedFicheReadProgress(chapterId: string, ficheId: str
 }
 
 /**
- * Full refresh of every cached chapter's ficheReadProgress/ficheMasteryProgress
- * for whichever fiche ids are already cached somewhere (piste 2026-09-24 —
- * suite au retour "je supprime la progression, le % reste au même niveau
- * même après synchronisation") — unlike patchCachedFicheReadProgress above
- * (a "never regress" optimistic local write), this OVERWRITES unconditionally
- * with fresh server values, because it's called from "Synchroniser" as
- * ground truth, including the case where progress went DOWN (a reset).
- * Called with progress for every fiche id already known locally (from any
- * previously cached chapter, whether or not that chapter's own content was
- * re-downloaded this sync) — see getElProfesorFicheProgressBatch's doc
- * comment for why chapter-content delta sync alone can't catch this.
+ * Applies this user's complete, fresh read-progress map (from the sync's
+ * user data) to every cached chapter's ficheReadProgress — for EVERY fiche
+ * each chapter contains, not only the ones that already had an entry: a
+ * fiche read on another device since, or reset (its server row deleted),
+ * must change here too. A fiche absent from the server map is 0 %. Fiches
+ * with a still-queued local progress write (`keepFicheIds`) keep their
+ * local value — the server hasn't seen it yet. Unconditional overwrite
+ * otherwise (ground truth, including going back down after a reset), unlike
+ * patchCachedFicheReadProgress's optimistic "never regress" rule.
  */
-export async function patchAllCachedFicheProgress(
-  readProgressByFicheId: Record<string, number>,
-  masteryProgressByFicheId: Record<string, ChapterContentSnapshot["ficheMasteryProgress"][string]>
-): Promise<void> {
+export async function applyServerFicheReadProgress(readProgressByFicheId: Record<string, number>, keepFicheIds: Set<string>): Promise<void> {
   const all = await getAllCachedChapterContent();
   const updates: [string, WithChapterSyncMeta<ChapterContentSnapshot>][] = [];
   for (const [chapterId, content] of all) {
     let changed = false;
     const nextRead = { ...content.ficheReadProgress };
-    for (const ficheId of Object.keys(nextRead)) {
-      if (ficheId in readProgressByFicheId && nextRead[ficheId] !== readProgressByFicheId[ficheId]) {
-        nextRead[ficheId] = readProgressByFicheId[ficheId];
+    for (const sub of content.subEntities) {
+      const ficheId = sub.fiche?.id;
+      if (!ficheId || keepFicheIds.has(ficheId)) continue;
+      const fresh = readProgressByFicheId[ficheId] ?? 0;
+      if ((nextRead[ficheId] ?? 0) !== fresh) {
+        nextRead[ficheId] = fresh;
         changed = true;
       }
     }
-    const nextMastery = { ...content.ficheMasteryProgress };
-    for (const ficheId of Object.keys(nextMastery)) {
-      if (ficheId in masteryProgressByFicheId) {
-        nextMastery[ficheId] = masteryProgressByFicheId[ficheId];
-        changed = true;
-      }
-    }
-    if (changed) updates.push([chapterId, { ...content, ficheReadProgress: nextRead, ficheMasteryProgress: nextMastery }]);
+    if (changed) updates.push([chapterId, { ...content, ficheReadProgress: nextRead }]);
   }
   if (updates.length > 0) await putEntries(CHAPTER_CONTENT_STORE, updates);
 }
@@ -232,29 +239,6 @@ export async function setCachedChapterContentBatch(entries: Record<string, Chapt
     CHAPTER_CONTENT_STORE,
     Object.entries(entries).map(([chapterId, snapshot]) => [chapterId, { ...snapshot, syncedAt, lastModifiedAt: lastModifiedByChapterId[chapterId] ?? syncedAt }])
   );
-}
-
-/**
- * Dashboard secondary widgets (activity, forecast, bookmarks, stale
- * chapters...) — cached alongside the main dashboard snapshot so a
- * shell-driven render (local-nav-shell.tsx) shows real last-synced data
- * instead of hanging behind Suspense forever when offline. See
- * DashboardWithLocalCache for the cache-first substitution.
- *
- * Keyed by isAdmin (piste 2026-09-24 — suite au code review): several
- * fields (staleChapters, flagStatsByBlockType, mostDifficultGlobal,
- * leechFlashcards) are admin-only. Without this key, a sync run while
- * actually admin would cache the admin variant, then get served back
- * unchanged during a later "preview as user" session — defeating the point
- * of that preview. Same rationale as NotionSynthesisWithLocalCache's
- * entity-id suffix.
- */
-export async function getCachedSecondaryDashboardData(isAdmin: boolean): Promise<DashboardSecondaryData | null> {
-  return getValue<DashboardSecondaryData>(SECONDARY_DASHBOARD_STORE, `${SECONDARY_DASHBOARD_KEY}:${isAdmin ? "admin" : "user"}`);
-}
-
-export async function setCachedSecondaryDashboardData(isAdmin: boolean, data: DashboardSecondaryData): Promise<void> {
-  await putEntries(SECONDARY_DASHBOARD_STORE, [[`${SECONDARY_DASHBOARD_KEY}:${isAdmin ? "admin" : "user"}`, data]]);
 }
 
 export async function getCachedNotionViewData(): Promise<DashboardNotionViewData | null> {
@@ -451,6 +435,194 @@ export async function getAllCachedReviewStates(): Promise<Map<string, ReviewStat
 }
 
 // ============================================================================
+// This user's own per-entity data (piste 2026-09-24 — suite au retour
+// "pourquoi les widgets ne fonctionnent pas en local ?"). Refreshed in full
+// by every "Synchroniser" (UserSyncData) and patched in place by each local
+// write, so the dashboard widgets and the chapter view read one current
+// copy instead of whatever each chapter's content snapshot happened to
+// contain the last time that chapter's content changed.
+// ============================================================================
+
+const BOOKMARKS_KEY = "bookmarks";
+const NOTES_KEY = "notes";
+const BLOCK_REVIEW_STATES_KEY = "blockReviewStates";
+const REVIEW_HISTORY_KEY = "reviewHistory";
+const DASHBOARD_EXTRAS_KEY = "dashboardExtras";
+
+/** Newest first, like the server's own order. Null = never synced on this device (callers fall back to the chapter snapshot's own copy). */
+export async function getCachedUserBookmarks(): Promise<CachedBookmark[] | null> {
+  return getValue<CachedBookmark[]>(USER_DATA_STORE, BOOKMARKS_KEY);
+}
+
+export async function setCachedUserBookmarks(bookmarks: CachedBookmark[]): Promise<void> {
+  await putEntries(USER_DATA_STORE, [[BOOKMARKS_KEY, bookmarks]]);
+}
+
+/** Local-first star toggle (chapter view) — newest first, like the server's order. No-op if bookmarks were never synced. */
+export async function patchCachedUserBookmark(subEntityId: string, bookmarked: boolean): Promise<void> {
+  const current = await getCachedUserBookmarks();
+  if (!current) return;
+  const without = current.filter((b) => b.subEntityId !== subEntityId);
+  const existing = current.find((b) => b.subEntityId === subEntityId);
+  await setCachedUserBookmarks(bookmarked ? [existing ?? { subEntityId, tags: [], createdAt: new Date().toISOString() }, ...without] : without);
+}
+
+/** Local-first tag edit — see BookmarksList. No-op if bookmarks were never synced (nothing to patch; the queued write still reaches the server). */
+export async function patchCachedBookmarkTags(subEntityId: string, tags: string[]): Promise<void> {
+  const current = await getCachedUserBookmarks();
+  if (!current) return;
+  await setCachedUserBookmarks(current.map((b) => (b.subEntityId === subEntityId ? { ...b, tags } : b)));
+}
+
+/** Keyed by subEntityId. Null = never synced on this device. */
+export async function getCachedUserNotes(): Promise<Record<string, CachedNote> | null> {
+  return getValue<Record<string, CachedNote>>(USER_DATA_STORE, NOTES_KEY);
+}
+
+export async function setCachedUserNotes(notes: CachedNote[]): Promise<void> {
+  await putEntries(USER_DATA_STORE, [[NOTES_KEY, Object.fromEntries(notes.map((n) => [n.subEntityId, n]))]]);
+}
+
+/** Local-first note edit/share toggle. Creates the entry if the note didn't exist yet (first keystroke on a sub-entity). No-op if notes were never synced. */
+export async function patchCachedNote(subEntityId: string, patch: Partial<Omit<CachedNote, "subEntityId">>): Promise<void> {
+  const current = await getCachedUserNotes();
+  if (!current) return;
+  const existing = current[subEntityId] ?? { subEntityId, content: "", shareToken: null, createdAt: new Date().toISOString() };
+  await putEntries(USER_DATA_STORE, [[NOTES_KEY, { ...current, [subEntityId]: { ...existing, ...patch } }]]);
+}
+
+/** Keyed by blockId. Null = never synced on this device. */
+export async function getCachedBlockReviewStates(): Promise<Record<string, BlockReviewState> | null> {
+  return getValue<Record<string, BlockReviewState>>(USER_DATA_STORE, BLOCK_REVIEW_STATES_KEY);
+}
+
+export async function setCachedBlockReviewStates(states: Record<string, BlockReviewState>): Promise<void> {
+  await putEntries(USER_DATA_STORE, [[BLOCK_REVIEW_STATES_KEY, states]]);
+}
+
+/** Local-first block re-read ("je m'en souviens") — see BlockRereadControl. Starts a fresh map if never synced, so the widget still reflects it. */
+export async function patchCachedBlockReviewState(blockId: string, state: BlockReviewState): Promise<void> {
+  const current = (await getCachedBlockReviewStates()) ?? {};
+  await setCachedBlockReviewStates({ ...current, [blockId]: state });
+}
+
+/**
+ * Per-UTC-day review aggregates from the server (ReviewHistoryDelta, merged
+ * sync after sync), plus `fetchedAt` — this device's clock when the last
+ * history request STARTED. Two uses: the next sync only asks for days from
+ * the start of that day onward (delta), and local review events flushed
+ * before that moment are known to be included in `days` already (see
+ * pruneLocalReviewEventsIncludedBefore).
+ */
+export interface CachedReviewHistory {
+  days: Record<string, ReviewDayStats>;
+  fetchedAt: string;
+}
+
+export async function getCachedReviewHistory(): Promise<CachedReviewHistory | null> {
+  return getValue<CachedReviewHistory>(USER_DATA_STORE, REVIEW_HISTORY_KEY);
+}
+
+export async function setCachedReviewHistory(history: CachedReviewHistory): Promise<void> {
+  await putEntries(USER_DATA_STORE, [[REVIEW_HISTORY_KEY, history]]);
+}
+
+/** Keyed by isAdmin, same reason as getCachedAiConfigData: admin-only fields must never be served back during a "preview as user" session. */
+export async function getCachedDashboardExtras(isAdmin: boolean): Promise<DashboardExtras | null> {
+  return getValue<DashboardExtras>(USER_DATA_STORE, `${DASHBOARD_EXTRAS_KEY}:${isAdmin ? "admin" : "user"}`);
+}
+
+export async function setCachedDashboardExtras(isAdmin: boolean, extras: DashboardExtras): Promise<void> {
+  await putEntries(USER_DATA_STORE, [[`${DASHBOARD_EXTRAS_KEY}:${isAdmin ? "admin" : "user"}`, extras]]);
+}
+
+/**
+ * One review answered on this device (piste 2026-09-24 — "widgets en
+ * local"), kept until the cached review history is known to include it —
+ * so the streak/heatmap/time widgets count it the instant it's answered,
+ * not at the next "Synchroniser". `flushedAt` is set once the write queue
+ * has delivered it; a history fetch that started after that moment
+ * necessarily contains it, and the event is dropped then.
+ */
+export interface LocalReviewEvent {
+  /** Same id as the review's PendingWrite (and the server's log row). */
+  id: string;
+  flashcardId: string;
+  source: ReviewSource;
+  reviewedAt: string;
+  durationMs: number | null;
+  rating: ReviewRating;
+  confidence: ReviewConfidence | null;
+  flushedAt?: string;
+}
+
+export async function addLocalReviewEvent(event: LocalReviewEvent): Promise<void> {
+  await putEntries(LOCAL_REVIEW_EVENTS_STORE, [[event.id, event]]);
+}
+
+export async function deleteLocalReviewEvent(id: string): Promise<void> {
+  await deleteEntries(LOCAL_REVIEW_EVENTS_STORE, [id]);
+}
+
+export async function markLocalReviewEventFlushed(id: string, flushedAt: string): Promise<void> {
+  const event = await getValue<LocalReviewEvent>(LOCAL_REVIEW_EVENTS_STORE, id);
+  if (event) await putEntries(LOCAL_REVIEW_EVENTS_STORE, [[id, { ...event, flushedAt }]]);
+}
+
+export async function getAllLocalReviewEvents(): Promise<LocalReviewEvent[]> {
+  return getAllValues<LocalReviewEvent>(LOCAL_REVIEW_EVENTS_STORE);
+}
+
+/** Drops the events a history fetch that started at `fetchStartedAt` necessarily included (delivered to the server before it began). */
+export async function pruneLocalReviewEventsIncludedBefore(fetchStartedAt: string): Promise<void> {
+  const cutoff = new Date(fetchStartedAt).getTime();
+  const events = await getAllLocalReviewEvents();
+  await deleteEntries(
+    LOCAL_REVIEW_EVENTS_STORE,
+    events.filter((e) => e.flushedAt && new Date(e.flushedAt).getTime() < cutoff).map((e) => e.id)
+  );
+}
+
+/**
+ * Replaces the whole reviewState store with the server's complete set for
+ * this user (UserSyncData) — which also drops states for cards that no
+ * longer exist, the old pruneReviewState's job — except for the cards in
+ * `keepLocalFlashcardIds`: reviewed on this device in a way the server's
+ * answer can't include yet (not delivered, or delivered after the fetch
+ * began), whose local FSRS state is the more current one.
+ */
+export async function replaceCachedReviewStates(serverStates: ReviewState[], keepLocalFlashcardIds: Set<string>): Promise<void> {
+  const next = new Map(serverStates.map((state) => [state.flashcardId, state]));
+  if (keepLocalFlashcardIds.size > 0) {
+    const local = await getAllCachedReviewStates();
+    for (const id of keepLocalFlashcardIds) {
+      const state = local.get(id);
+      if (state) next.set(id, state);
+      else next.delete(id);
+    }
+  }
+  const db = await openDb();
+  if (!db) return;
+  try {
+    await new Promise<void>((resolve) => {
+      try {
+        const tx = db.transaction(REVIEW_STATE_STORE, "readwrite");
+        const store = tx.objectStore(REVIEW_STATE_STORE);
+        store.clear();
+        for (const [id, state] of next) store.put(state, id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+        tx.onabort = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } finally {
+    db.close();
+  }
+}
+
+// ============================================================================
 // Local-first writes (piste 2026-09-24 — "écriture locale automatique", puis
 // "module 100% local"). Started as the "vue utilisateur" write surface only
 // (review answers, bookmarks, notes, reading position — each touching only
@@ -495,6 +667,24 @@ export async function getCachedSuspendedFlashcardIds(): Promise<string[] | null>
 
 export async function setCachedSuspendedFlashcardIds(ids: string[]): Promise<void> {
   await putEntries(SUSPENDED_FLASHCARD_IDS_STORE, [[SUSPENDED_FLASHCARD_IDS_KEY, ids]]);
+}
+
+/**
+ * Local-first exclude/re-include — patched straight into the cached list
+ * (not only queued): once the queued write is delivered it leaves the
+ * queue, and without this the card would pop back into the local due
+ * counts until the next sync re-downloaded the list.
+ */
+export async function patchCachedSuspendedFlashcardId(flashcardId: string, excluded: boolean): Promise<void> {
+  const current = new Set((await getCachedSuspendedFlashcardIds()) ?? []);
+  if (excluded) current.add(flashcardId);
+  else current.delete(flashcardId);
+  await setCachedSuspendedFlashcardIds([...current]);
+}
+
+/** Local-first "réinitialiser la mémorisation" — these cards become "new" again locally, exactly as the queued resetFicheMastery makes them server-side. */
+export async function deleteCachedReviewStates(flashcardIds: string[]): Promise<void> {
+  await deleteEntries(REVIEW_STATE_STORE, flashcardIds);
 }
 
 export interface PendingReviewPayload {
@@ -593,11 +783,12 @@ export async function clearLocalCache(): Promise<void> {
           REVIEW_STATE_STORE,
           PENDING_WRITES_STORE,
           SUSPENDED_FLASHCARD_IDS_STORE,
-          SECONDARY_DASHBOARD_STORE,
           NOTION_VIEW_DATA_STORE,
           AI_CONFIG_DATA_STORE,
           NOTIONS_PAGE_STORE,
           ENTITIES_STORE,
+          USER_DATA_STORE,
+          LOCAL_REVIEW_EVENTS_STORE,
         ];
         const tx = db.transaction(stores, "readwrite");
         for (const store of stores) tx.objectStore(store).clear();

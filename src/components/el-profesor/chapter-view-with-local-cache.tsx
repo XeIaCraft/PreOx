@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChapterView } from "@/components/el-profesor/chapter-view";
-import { getCachedChapterContent } from "@/lib/el-profesor/local-db";
+import { loadLocalChapterSnapshot } from "@/lib/el-profesor/local-chapter";
 import type { ChapterContentSnapshot } from "@/lib/el-profesor/dashboard-types";
 
 function ChapterViewSkeleton() {
@@ -21,8 +21,10 @@ function ChapterViewSkeleton() {
  * already-resolved snapshot — checks the local IndexedDB cache first and
  * only ever falls back to waiting on that promise when this chapter hasn't
  * been synced yet, so a cached chapter renders instantly instead of always
- * waiting on the page's own (slow) server round trip. ChapterView itself is
- * untouched.
+ * waiting on the page's own (slow) server round trip. The cached copy comes
+ * with this user's current bookmarks, block re-read schedule and mastery
+ * laid over it (loadLocalChapterSnapshot) — never the copy frozen inside
+ * the chapter snapshot the last time its content changed.
  */
 export function ChapterViewWithLocalCache({
   chapterId,
@@ -43,7 +45,7 @@ export function ChapterViewWithLocalCache({
 
   useEffect(() => {
     let cancelled = false;
-    getCachedChapterContent(chapterId).then((cached) => {
+    loadLocalChapterSnapshot(chapterId).then((cached) => {
       if (cancelled) return;
       if (cached) {
         setSnapshot(cached);

@@ -23,9 +23,16 @@ import { StudyToolsButtons } from "@/components/el-profesor/study-tools-buttons"
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { getMyNote, toggleNoteShare } from "@/app/apps/el-profesor/actions/notes";
+import { applyPendingNoteWrites } from "@/lib/el-profesor/local-widgets";
 import { toggleFicheShare } from "@/app/apps/el-profesor/actions/share";
-import { saveFicheReadProgress, resetFicheReadProgress, resetFicheMastery } from "@/app/apps/el-profesor/actions/progress";
-import { enqueuePendingWrite, patchCachedFicheReadProgress, setCachedFicheReadProgress } from "@/lib/el-profesor/local-db";
+import { enqueuePendingWrite, getCachedUserNotes, patchCachedNote, getAllPendingWrites } from "@/lib/el-profesor/local-db";
+import {
+  saveFicheReadProgressLocally,
+  resetFicheReadProgressLocally,
+  resetFicheMasteryLocally,
+  setBookmarkLocally,
+  saveNoteLocally,
+} from "@/lib/el-profesor/local-writes";
 import {
   getLastSubEntity,
   setLastSubEntity,
@@ -681,12 +688,12 @@ export function ChapterView({
       const next = { ...prev, [ficheId]: rounded };
       if (readProgressSaveTimer.current) clearTimeout(readProgressSaveTimer.current);
       readProgressSaveTimer.current = setTimeout(() => {
-        saveFicheReadProgress(ficheId, next[ficheId]).catch(() => {});
-        // Keeps this chapter's cached content in step with what was just
-        // saved (piste 2026-09-24) — see patchCachedFicheReadProgress's doc
-        // comment for why: without this, the chapter card's read-% on the
-        // dashboard only ever caught up at the next "Synchroniser".
-        patchCachedFicheReadProgress(chapterId, ficheId, next[ficheId]).catch(() => {});
+        // Local-first (piste 2026-09-24): written to the cached chapter
+        // content right away — so the chapter card's read-% on the dashboard
+        // is current the moment you get back to it — and queued for the
+        // server, instead of a direct Server Action call on every pause
+        // while scrolling (which also stood in Next's one-at-a-time queue).
+        saveFicheReadProgressLocally(chapterId, ficheId, next[ficheId]).catch(() => {});
       }, 1500);
       return next;
     });
@@ -694,16 +701,13 @@ export function ChapterView({
 
   function handleResetFicheReadProgress(ficheId: string) {
     setProgressPending(true);
-    resetFicheReadProgress(ficheId)
-      .then((result) => {
+    // Local-first (piste 2026-09-24): forced back to 0 in the cache right
+    // away — an explicit reset must go down, unlike a passive reading
+    // update — and queued for the server.
+    resetFicheReadProgressLocally(chapterId, ficheId)
+      .then(() => {
         setReadProgressByFiche((prev) => ({ ...prev, [ficheId]: 0 }));
-        // Forces the cache back to 0 too (piste 2026-09-24 — suite au retour
-        // "je supprime la progression, le % reste au même niveau même après
-        // synchronisation") — patchCachedFicheReadProgress's "never regress"
-        // rule is right for a passive reading update, but wrong here: an
-        // explicit reset must actually go down.
-        setCachedFicheReadProgress(chapterId, ficheId, 0).catch(() => {});
-        toast(result.success ?? "Progression de lecture réinitialisée.", { variant: "success" });
+        toast("Progression de lecture réinitialisée.", { variant: "success" });
       })
       .catch(() => toast("Impossible de réinitialiser la progression de lecture.", { variant: "error" }))
       .finally(() => setProgressPending(false));
@@ -712,10 +716,14 @@ export function ChapterView({
   function handleResetFicheMastery(ficheId: string) {
     if (!confirm("Réinitialiser la mémorisation de cette fiche ? Toutes ses flashcards repartiront de zéro en révision.")) return;
     setProgressPending(true);
-    resetFicheMastery(ficheId)
-      .then((result) => {
+    const flashcardIds = withFiche.find((s) => s.fiche?.id === ficheId)?.fiche?.flashcards.map((f) => f.id) ?? [];
+    // Local-first: these cards become "new" again in the local review
+    // state at once (so due counts and the review queue agree immediately),
+    // and the server-side reset is queued.
+    resetFicheMasteryLocally(ficheId, flashcardIds)
+      .then(() => {
         setMasteryByFiche((prev) => ({ ...prev, [ficheId]: { total: prev[ficheId]?.total ?? 0, acquired: 0, learning: 0 } }));
-        toast(result.success ?? "Progression de mémorisation réinitialisée.", { variant: "success" });
+        toast("Progression de mémorisation réinitialisée — ces cartes repartiront de zéro.", { variant: "success" });
       })
       .catch(() => toast("Impossible de réinitialiser la mémorisation.", { variant: "error" }))
       .finally(() => setProgressPending(false));
@@ -733,16 +741,9 @@ export function ChapterView({
     });
     setBookmarkPending(true);
     // Local-first (piste 2026-09-24): the click above already reflects
-    // instantly — the real write is queued for sync-queue.ts's automatic
-    // flush. "bookmarked" is the desired end state rather than a toggle, and
-    // keyed by subEntityId, so a second click before the flush just replaces
-    // the queued state instead of queueing two toggles that could double-flip.
-    enqueuePendingWrite({
-      id: `bookmark:${selectedId}`,
-      kind: "bookmark",
-      createdAt: new Date().toISOString(),
-      payload: { subEntityId: selectedId, bookmarked: nextBookmarked },
-    }).finally(() => setBookmarkPending(false));
+    // instantly — "Mes favoris" on the dashboard too, since the cached
+    // bookmark list is patched as well — and the real write is queued.
+    setBookmarkLocally(selectedId, nextBookmarked).finally(() => setBookmarkPending(false));
   }
 
   function handleCopyLink() {
@@ -1345,12 +1346,26 @@ function NoteEditor({ subEntityId }: { subEntityId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    getMyNote(subEntityId).then((note) => {
-      if (!cancelled) {
-        setContent(note.content);
-        setShareToken(note.shareToken);
-      }
-    });
+    // Local-first (piste 2026-09-24): the synced note (plus anything typed
+    // since, still queued) opens instantly and offline. The server is only
+    // asked on a device that has never synced notes.
+    Promise.all([getCachedUserNotes(), getAllPendingWrites()])
+      .then(async ([cachedNotes, pending]) => {
+        if (cachedNotes) {
+          const note = applyPendingNoteWrites(cachedNotes, pending)[subEntityId];
+          return { content: note?.content ?? "", shareToken: note?.shareToken ?? null };
+        }
+        return getMyNote(subEntityId);
+      })
+      .then((note) => {
+        if (!cancelled) {
+          setContent(note.content);
+          setShareToken(note.shareToken);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setContent("");
+      });
     return () => {
       cancelled = true;
     };
@@ -1361,13 +1376,11 @@ function NoteEditor({ subEntityId }: { subEntityId: string }) {
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
     setSaving(true);
     saveTimeout.current = setTimeout(() => {
-      // Local-first (piste 2026-09-24): queued rather than saved directly —
-      // sync-queue.ts's automatic flush upserts it, so a note taken offline
-      // isn't lost. Keyed by subEntityId so retyping before the next flush
-      // just replaces the still-queued content instead of piling up writes.
-      enqueuePendingWrite({ id: `note:${subEntityId}`, kind: "note", createdAt: new Date().toISOString(), payload: { subEntityId, content: value } }).finally(
-        () => setSaving(false)
-      );
+      // Local-first (piste 2026-09-24): saved to the cached notes and queued
+      // — sync-queue.ts's automatic flush upserts it, so a note taken
+      // offline isn't lost. Keyed by subEntityId so retyping before the next
+      // flush just replaces the still-queued content instead of piling up writes.
+      saveNoteLocally(subEntityId, value).finally(() => setSaving(false));
     }, 800);
   }
 
@@ -1378,6 +1391,7 @@ function NoteEditor({ subEntityId }: { subEntityId: string }) {
         return;
       }
       setShareToken(result.shareToken ?? null);
+      patchCachedNote(subEntityId, { shareToken: result.shareToken ?? null }).catch(() => {});
       if (result.shareToken) {
         navigator.clipboard.writeText(`${window.location.origin}/share/note/${result.shareToken}`).catch(() => {});
         toast("Lien de partage copié.", { variant: "success" });

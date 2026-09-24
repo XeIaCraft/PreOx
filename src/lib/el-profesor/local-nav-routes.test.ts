@@ -57,6 +57,13 @@ describe("matchLocalRoute", () => {
     }
   });
 
+  it("matches the cross-chapter review in due and difficult modes, but not the notion-theme mode", () => {
+    expect(matchLocalRoute("/apps/el-profesor/review", params())).toEqual({ kind: "globalReview", mode: "due" });
+    expect(matchLocalRoute("/apps/el-profesor/review", params({ mode: "due" }))).toEqual({ kind: "globalReview", mode: "due" });
+    expect(matchLocalRoute("/apps/el-profesor/review", params({ mode: "difficult" }))).toEqual({ kind: "globalReview", mode: "difficult" });
+    expect(matchLocalRoute("/apps/el-profesor/review", params({ mode: "theme", notionId: "n-1" }))).toBeNull();
+  });
+
   it("does not match routes outside the module", () => {
     expect(matchLocalRoute("/apps/a-table", params())).toBeNull();
     expect(matchLocalRoute("/admin/apps", params())).toBeNull();

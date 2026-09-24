@@ -19,7 +19,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { FlagButton } from "@/components/el-profesor/flag-button";
-import { markBlockReviewed } from "@/app/apps/el-profesor/actions/block-review";
+import { markBlockReviewedLocally } from "@/lib/el-profesor/local-writes";
 import type { BlockReviewState } from "@/lib/el-profesor/dal";
 import type { FicheLayout } from "@/lib/el-profesor/local-prefs";
 import type { BlockType, Citation, FicheBlock, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
@@ -27,9 +27,10 @@ import type { BlockType, Citation, FicheBlock, ProtocolBlockContent, TableBlockC
 /**
  * Spaced repetition per block (item 16 of the backlog) — a self-contained
  * "still remember it" / "need to revisit" pair, separate from the
- * flashcard FSRS engine. Optimistically updates its own local state after
- * the server action resolves rather than round-tripping through the
- * parent, since nothing else on the page depends on this block's schedule.
+ * flashcard FSRS engine. Local-first (piste 2026-09-24): the next schedule
+ * is computed on the device with the server's own formula, written to the
+ * cached block re-read states (so the dashboard's "blocs à relire" widget
+ * agrees at once) and queued for the server — works offline, no wait.
  */
 function BlockRereadControl({ blockId, initialState }: { blockId: string; initialState?: BlockReviewState }) {
   const [state, setState] = useState(initialState ?? null);
@@ -37,10 +38,8 @@ function BlockRereadControl({ blockId, initialState }: { blockId: string; initia
 
   function handleRate(remembered: boolean) {
     setPending(true);
-    markBlockReviewed(blockId, remembered)
-      .then((result) => {
-        if (result.nextDueAt && result.intervalDays !== undefined) setState({ nextDueAt: result.nextDueAt, intervalDays: result.intervalDays });
-      })
+    markBlockReviewedLocally(blockId, remembered, state)
+      .then((next) => setState(next))
       .finally(() => setPending(false));
   }
 

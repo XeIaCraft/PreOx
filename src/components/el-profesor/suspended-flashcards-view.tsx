@@ -5,7 +5,8 @@ import Link from "next/link";
 import { ArrowLeft, BellOff, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { reincludeFlashcardInReviews } from "@/app/apps/el-profesor/actions/review";
+import { setFlashcardExcludedLocally } from "@/lib/el-profesor/local-writes";
+import { flushPendingWrites } from "@/lib/el-profesor/sync-queue";
 import type { SuspendedFlashcard } from "@/lib/el-profesor/dal";
 
 export function SuspendedFlashcardsView({ cards }: { cards: SuspendedFlashcard[] }) {
@@ -15,12 +16,18 @@ export function SuspendedFlashcardsView({ cards }: { cards: SuspendedFlashcard[]
 
   function handleReinclude(flashcardId: string) {
     startTransition(async () => {
-      const result = await reincludeFlashcardInReviews(flashcardId);
-      if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast("Carte réintégrée dans vos révisions.", { variant: "success" });
-        setReincluded((s) => new Set(s).add(flashcardId));
+      // Local-first (piste 2026-09-24): back in the local due counts and
+      // review queue at once, and delivered right away in the background
+      // (this list itself is server-rendered, so a reload should agree).
+      try {
+        await setFlashcardExcludedLocally(flashcardId, false);
+      } catch {
+        toast("Impossible de réintégrer cette carte.", { variant: "error" });
+        return;
       }
+      flushPendingWrites().catch(() => {});
+      toast("Carte réintégrée dans vos révisions.", { variant: "success" });
+      setReincluded((s) => new Set(s).add(flashcardId));
     });
   }
 

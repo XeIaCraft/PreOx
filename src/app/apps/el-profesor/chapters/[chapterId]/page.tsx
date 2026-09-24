@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireElProfesorAccess, getReadingPosition } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { getEffectiveIsAdmin } from "@/lib/el-profesor/preview-mode";
-import { getElProfesorChapterContentBatch } from "@/app/apps/el-profesor/actions/offline-sync";
+import { getElProfesorChapterContentBatch } from "@/lib/el-profesor/sync-data";
 import { ChapterViewWithLocalCache } from "@/components/el-profesor/chapter-view-with-local-cache";
 import { ToastProvider } from "@/components/ui/toast";
 
@@ -31,7 +31,7 @@ export default async function ChapterPage({
   ]);
   if (!chapter || chapter.status !== "published") notFound();
 
-  // getElProfesorChapterContentBatch (actions/offline-sync.ts) is the same
+  // getElProfesorChapterContentBatch (lib/el-profesor/sync-data.ts) is the same
   // function the "Synchroniser" local-cache sync uses for every chapter at
   // once — reused here for this one chapter so the live path and the cached
   // path never compute this differently. It also resolves chapterTitle/

@@ -1,5 +1,6 @@
 import { requireElProfesorAccess, getLibrary, getGlobalDueQueue, getDifficultQueue, getNotionDueQueue } from "@/lib/el-profesor/dal";
 import { FlashcardReviewer } from "@/components/el-profesor/flashcard-reviewer";
+import { GlobalReviewWithLocalCache } from "@/components/el-profesor/review-queue-with-local-cache";
 import { ToastProvider } from "@/components/ui/toast";
 
 // Cross-chapter review: interleaved practice across every published chapter
@@ -18,28 +19,32 @@ export default async function GlobalReviewPage({
   const isDifficult = mode === "difficult";
   const isTheme = mode === "theme" && Boolean(notionId);
 
-  let cards;
-  let badgeLabel: string;
-  let emptyMessage: string;
   if (isTheme) {
-    cards = await getNotionDueQueue(profile.id, notionId!);
-    badgeLabel = name ? `Thème : ${name}` : "Thème";
-    emptyMessage = "Rien à réviser sur ce thème pour l'instant.";
-  } else if (isDifficult) {
-    const books = await getLibrary();
-    cards = await getDifficultQueue(profile.id, books.flatMap((b) => b.chapters));
-    badgeLabel = "Carnet d'erreurs";
-    emptyMessage = "Aucune carte difficile en ce moment — beau travail !";
-  } else {
-    const books = await getLibrary();
-    cards = await getGlobalDueQueue(profile.id, books.flatMap((b) => b.chapters));
-    badgeLabel = "Toutes matières";
-    emptyMessage = "Rien à réviser aujourd'hui, tous chapitres confondus.";
+    const cards = await getNotionDueQueue(profile.id, notionId!);
+    return (
+      <ToastProvider>
+        <FlashcardReviewer
+          source="scheduled"
+          cards={cards}
+          badgeLabel={name ? `Thème : ${name}` : "Thème"}
+          emptyMessage="Rien à réviser sur ce thème pour l'instant."
+        />
+      </ToastProvider>
+    );
   }
+
+  // Cache-first (piste 2026-09-24): the queue is computed on the device
+  // from the synced library whenever it's cached, with the same functions
+  // as the dashboard's counts. This server-side queue is only waited on
+  // when nothing is cached yet — deliberately not awaited here.
+  const cardsPromise = getLibrary().then((books) => {
+    const chapters = books.flatMap((b) => b.chapters);
+    return isDifficult ? getDifficultQueue(profile.id, chapters) : getGlobalDueQueue(profile.id, chapters);
+  });
 
   return (
     <ToastProvider>
-      <FlashcardReviewer source={isDifficult ? "free" : "scheduled"} cards={cards} badgeLabel={badgeLabel} emptyMessage={emptyMessage} />
+      <GlobalReviewWithLocalCache mode={isDifficult ? "difficult" : "due"} cardsPromise={cardsPromise} />
     </ToastProvider>
   );
 }

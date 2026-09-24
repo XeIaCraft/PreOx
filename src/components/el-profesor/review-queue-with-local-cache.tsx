@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { FlashcardReviewer } from "@/components/el-profesor/flashcard-reviewer";
 import { getLocalDueQueue, getLocalFreeQueue } from "@/lib/el-profesor/local-review-queue";
 import { applyFreeSessionCap } from "@/lib/el-profesor/review-session-params";
+import { loadLocalGlobalReviewQueue } from "@/lib/el-profesor/local-dashboard";
 import type { Flashcard, ReviewSource } from "@/lib/el-profesor/types";
 
 function ReviewSkeleton() {
@@ -93,4 +94,53 @@ export function ReviewQueueWithLocalCache({
       emptyMessage={emptyMessage}
     />
   );
+}
+
+const GLOBAL_REVIEW_LABELS = {
+  due: { badgeLabel: "Toutes matières", emptyMessage: "Rien à réviser aujourd'hui, tous chapitres confondus." },
+  difficult: { badgeLabel: "Carnet d'erreurs", emptyMessage: "Aucune carte difficile en ce moment — beau travail !" },
+} as const;
+
+/**
+ * Cross-chapter review ("Révision globale" / "Carnet d'erreurs") from the
+ * local cache (piste 2026-09-24): the server version used to rebuild every
+ * chapter's queue one by one before showing a single card. Falls back to
+ * the server-computed queue only when nothing is cached on this device.
+ */
+export function GlobalReviewWithLocalCache({
+  mode,
+  cardsPromise,
+  onCacheMiss,
+}: {
+  mode: "due" | "difficult";
+  /** Null when rendered by the local nav shell — onCacheMiss must be provided instead. */
+  cardsPromise: Promise<Flashcard[]> | null;
+  onCacheMiss?: () => void;
+}) {
+  const [cards, setCards] = useState<Flashcard[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadLocalGlobalReviewQueue(mode).then((local) => {
+      if (cancelled) return;
+      if (local) {
+        setCards(local);
+        return;
+      }
+      if (!cardsPromise) {
+        onCacheMiss?.();
+        return;
+      }
+      cardsPromise.then((server) => {
+        if (!cancelled) setCards(server);
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, cardsPromise, onCacheMiss]);
+
+  if (!cards) return <ReviewSkeleton />;
+  const labels = GLOBAL_REVIEW_LABELS[mode];
+  return <FlashcardReviewer source={mode === "difficult" ? "free" : "scheduled"} cards={cards} badgeLabel={labels.badgeLabel} emptyMessage={labels.emptyMessage} />;
 }

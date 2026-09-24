@@ -10,7 +10,8 @@ export type LocalView =
   | { kind: "dashboard" }
   | { kind: "book"; bookId: string }
   | { kind: "chapter"; chapterId: string; entityId?: string }
-  | { kind: "review"; chapterId: string; source: ReviewSource; limit?: string; all?: string; duration?: string };
+  | { kind: "review"; chapterId: string; source: ReviewSource; limit?: string; all?: string; duration?: string }
+  | { kind: "globalReview"; mode: "due" | "difficult" };
 
 const BASE = "/apps/el-profesor";
 
@@ -45,6 +46,17 @@ export function matchLocalRoute(pathname: string, searchParams: URLSearchParams)
     };
   }
 
+  // Cross-chapter review ("Révision globale" / "Carnet d'erreurs") — both
+  // computed from the cached library like the per-chapter queue. The
+  // "theme" mode (one notion across every book) needs notion links the
+  // local cache doesn't hold, so it stays a normal server page.
+  if (rest.length === 1 && rest[0] === "review") {
+    const mode = searchParams.get("mode");
+    if (mode === "difficult") return { kind: "globalReview", mode: "difficult" };
+    if (!mode || mode === "due") return { kind: "globalReview", mode: "due" };
+    return null;
+  }
+
   // Everything else — /guide, /journal, /suspended, /notions*, /quality,
   // /archived, /emergency, /chapters/:id/admin-review, settings dialogs,
   // etc. — is deliberately not covered yet (see the plan's staged rollout).
@@ -62,5 +74,7 @@ export function localViewKey(view: LocalView): string {
       return `chapter:${view.chapterId}:${view.entityId ?? ""}`;
     case "review":
       return `review:${view.chapterId}:${view.source}:${view.limit ?? ""}:${view.all ?? ""}:${view.duration ?? ""}`;
+    case "globalReview":
+      return `globalReview:${view.mode}`;
   }
 }

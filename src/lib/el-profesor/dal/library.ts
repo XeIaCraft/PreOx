@@ -1,7 +1,8 @@
 import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
-import { toBook, toChapter, toFlag, getChapterContent, getChapterContentBatch } from "./shared";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { toBook, toChapter, toFlag, getChapterContent, getChapterContentBatch, getActiveFlashcardsByChapterBatch, selectInChunks } from "./shared";
 import { getMasteryCountsByChapter } from "./review";
 import type { Book, Chapter, ChapterStatus, Flag, FicheQuestion, FicheAnswer } from "../types";
 import type { ElProfesorBookRow, ElProfesorChapterRow, ElProfesorFlagRow } from "@/lib/supabase/types";
@@ -167,42 +168,36 @@ export async function getRecommendedNextBook(userId: string, books: BookWithChap
   const published = books.filter((b) => b.chapters.some((c) => c.status === "published"));
   if (published.length < 2) return null;
 
-  const supabase = await createClient();
-  const publishedChapters = published.flatMap((b) => b.chapters.filter((c) => c.status === "published"));
-  const chapterIds = publishedChapters.map((c) => c.id);
-  if (chapterIds.length === 0) return null;
-
-  const { data: subEntities } = await supabase.from("el_profesor_sub_entities").select("id, chapter_id").in("chapter_id", chapterIds);
-  const subEntityIds = (subEntities ?? []).map((s) => s.id);
-  const { data: fiches } = subEntityIds.length
-    ? await supabase.from("el_profesor_fiches").select("id, sub_entity_id").in("sub_entity_id", subEntityIds).eq("status", "published")
-    : { data: [] };
-  const ficheIds = (fiches ?? []).map((f) => f.id);
-  const { data: flashcards } = ficheIds.length
-    ? await supabase.from("el_profesor_flashcards").select("id, fiche_id").in("fiche_id", ficheIds)
-    : { data: [] };
-
   const chapterToBook = new Map<string, string>();
-  for (const book of published) for (const c of book.chapters) chapterToBook.set(c.id, book.id);
-  const subEntityToChapter = new Map((subEntities ?? []).map((s) => [s.id, s.chapter_id]));
-  const ficheToSubEntity = new Map((fiches ?? []).map((f) => [f.id, f.sub_entity_id]));
+  for (const book of published) for (const c of book.chapters) if (c.status === "published") chapterToBook.set(c.id, book.id);
+  if (chapterToBook.size === 0) return null;
 
+  // Batched (piste 2026-09-24): this used to put every sub-entity id, then
+  // every flashcard id of the whole library into single unchunked .in()
+  // filters — thousands of ids in one URL, which PostgREST rejects or
+  // silently truncates, so this quietly returned null on any real library.
+  const flashcardsByChapter = await getActiveFlashcardsByChapterBatch([...chapterToBook.keys()]);
   const flashcardToBook = new Map<string, string>();
-  for (const card of flashcards ?? []) {
-    const subEntityId = ficheToSubEntity.get(card.fiche_id);
-    const chapterId = subEntityId ? subEntityToChapter.get(subEntityId) : undefined;
-    const bookId = chapterId ? chapterToBook.get(chapterId) : undefined;
-    if (bookId) flashcardToBook.set(card.id, bookId);
+  for (const [chapterId, cards] of flashcardsByChapter) {
+    const bookId = chapterToBook.get(chapterId);
+    if (bookId) for (const card of cards) flashcardToBook.set(card.id, bookId);
   }
-
   const allFlashcardIds = [...flashcardToBook.keys()];
   if (allFlashcardIds.length === 0) return null;
 
-  const { data: states } = await supabase.from("el_profesor_review_state").select("user_id, flashcard_id").in("flashcard_id", allFlashcardIds);
+  // Cross-user by definition, hence the service-role client:
+  // el_profesor_review_state's RLS is strictly per-user, so the
+  // request-scoped client only ever returned the caller's own rows here —
+  // no other user's engagement was ever counted and this could never
+  // recommend anything. Same anonymous-aggregate pattern as
+  // getGlobalChapterMasteryPercentages: only a per-book count of distinct
+  // other users ever leaves this function, never who reviewed what.
+  const admin = createAdminClient();
+  const states = await selectInChunks(allFlashcardIds, (chunk) => admin.from("el_profesor_review_state").select("user_id, flashcard_id").in("flashcard_id", chunk));
 
   const engagedUsersByBook = new Map<string, Set<string>>();
   const myBookIds = new Set<string>();
-  for (const s of states ?? []) {
+  for (const s of states) {
     const bookId = flashcardToBook.get(s.flashcard_id);
     if (!bookId) continue;
     if (s.user_id === userId) {

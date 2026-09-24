@@ -2,7 +2,7 @@ import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getChapterContent } from "./shared";
+import { getChapterContent, getActiveFlashcardsByChapterBatch } from "./shared";
 import { blockToPlainText } from "../block-text";
 import { findDuplicateFlashcards, findSimilarSubEntities, type DuplicateFlashcardPair, type SimilarSubEntityPair } from "../dedupe";
 import { EL_PROFESOR_PDF_BUCKET } from "../storage-constants";
@@ -227,26 +227,43 @@ export async function getStaleChaptersForAdmin(
   const cutoff = Date.now() - staleDays * 24 * 60 * 60 * 1000;
   const alerts: StaleChapterAlert[] = [];
 
-  await Promise.all(
-    published.map(async (chapter) => {
-      const content = await getChapterContent(chapter.id, false);
-      const flashcardIds = content.flatMap((s) => s.fiche?.flashcards ?? []).map((f) => f.id);
-      if (flashcardIds.length === 0) return;
+  // One batched fiche/flashcard join for every chapter at once (piste
+  // 2026-09-24): this used to call getChapterContent once PER chapter —
+  // several queries each, a few hundred round trips for the whole library —
+  // which alone could push the dashboard widgets past the platform's
+  // function timeout.
+  const flashcardsByChapter = await getActiveFlashcardsByChapterBatch(published.map((c) => c.id));
 
+  async function latestReviewAt(flashcardIds: string[]): Promise<string | null> {
+    let latest: string | null = null;
+    for (let i = 0; i < flashcardIds.length; i += 150) {
       const { data } = await supabase
         .from("el_profesor_review_log")
         .select("reviewed_at")
-        .in("flashcard_id", flashcardIds)
+        .in("flashcard_id", flashcardIds.slice(i, i + 150))
         .order("reviewed_at", { ascending: false })
         .limit(1);
-      const last = data?.[0]?.reviewed_at ?? null;
+      const candidate = data?.[0]?.reviewed_at ?? null;
+      if (candidate && (!latest || new Date(candidate).getTime() > new Date(latest).getTime())) latest = candidate;
+    }
+    return latest;
+  }
+
+  // Bounded concurrency — one small indexed lookup per chapter, but never
+  // hundreds of them in flight at once.
+  const queue = published.filter((c) => (flashcardsByChapter.get(c.id)?.length ?? 0) > 0);
+  async function worker() {
+    for (let chapter = queue.shift(); chapter; chapter = queue.shift()) {
+      const last = await latestReviewAt((flashcardsByChapter.get(chapter.id) ?? []).map((f) => f.id));
       if (!last || new Date(last).getTime() < cutoff) {
         alerts.push({ chapterId: chapter.id, chapterTitle: chapter.title, bookTitle: bookTitleById.get(chapter.bookId) ?? "", lastReviewedAt: last });
       }
-    })
-  );
+    }
+  }
+  await Promise.all(Array.from({ length: 8 }, worker));
 
-  return alerts;
+  const orderById = new Map(published.map((c, i) => [c.id, i]));
+  return alerts.sort((a, b) => (orderById.get(a.chapterId) ?? 0) - (orderById.get(b.chapterId) ?? 0));
 }
 
 // -- PDF orphelins (non reliés à un chapitre) --------------------------------

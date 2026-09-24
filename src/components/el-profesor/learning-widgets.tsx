@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { LocalNavLink } from "@/components/el-profesor/local-nav-link";
 import { Flame, Layers, ShieldAlert, Award, Trophy, BookCheck, Sparkles, BookOpen, GraduationCap, Star, Download, History, Tag, Check, Target, Users, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { getDailyGoal, setDailyGoal, getWeeklyGoal, setWeeklyGoal } from "@/lib/el-profesor/local-prefs";
-import { setBookmarkTags } from "@/app/apps/el-profesor/actions/bookmarks";
+import { setBookmarkTagsLocally } from "@/lib/el-profesor/local-writes";
 import { getWeaknessSynthesis } from "@/app/apps/el-profesor/actions/synthesis";
 import type { ReviewActivitySummary, UpcomingForecastDay, BookmarkedEntity, OnThisDayNote, BookRecommendation, DueBlockEntry } from "@/lib/el-profesor/dal";
 import type { Flashcard } from "@/lib/el-profesor/types";
@@ -23,7 +23,7 @@ export function DueBlocksWidget({ blocks }: { blocks: DueBlockEntry[] }) {
       </p>
       <div className="mt-2 space-y-1">
         {blocks.map((b) => (
-          <Link
+          <LocalNavLink
             key={b.blockId}
             href={`/apps/el-profesor/chapters/${b.chapterId}?entity=${b.subEntityId}#fiche-block-${b.blockId}`}
             className="block rounded-[var(--radius-sm)] px-2 py-1.5 hover:bg-surface-muted"
@@ -32,7 +32,7 @@ export function DueBlocksWidget({ blocks }: { blocks: DueBlockEntry[] }) {
             <p className="truncate text-xs text-foreground-subtle">
               {b.chapterTitle} — {b.excerpt}
             </p>
-          </Link>
+          </LocalNavLink>
         ))}
       </div>
     </div>
@@ -40,12 +40,17 @@ export function DueBlocksWidget({ blocks }: { blocks: DueBlockEntry[] }) {
 }
 
 export function BookmarksList({ bookmarks }: { bookmarks: BookmarkedEntity[] }) {
-  const [tagsBySubEntity, setTagsBySubEntity] = useState(() => new Map(bookmarks.map((b) => [b.subEntityId, b.tags])));
+  // Only this session's edits live in state — everything else is read from
+  // the prop, so a list recomputed from the local cache (after a sync, or a
+  // bookmark added elsewhere) always shows its current tags.
+  const [editedTags, setEditedTags] = useState<Map<string, string[]>>(() => new Map());
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
 
   if (bookmarks.length === 0) return null;
+
+  const tagsBySubEntity = new Map(bookmarks.map((b) => [b.subEntityId, editedTags.get(b.subEntityId) ?? b.tags]));
 
   const allTags = [...new Set([...tagsBySubEntity.values()].flat())].sort();
   const visible = activeTag ? bookmarks.filter((b) => tagsBySubEntity.get(b.subEntityId)?.includes(activeTag)) : bookmarks;
@@ -60,9 +65,10 @@ export function BookmarksList({ bookmarks }: { bookmarks: BookmarkedEntity[] }) 
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
-    setTagsBySubEntity((prev) => new Map(prev).set(subEntityId, tags));
+    setEditedTags((prev) => new Map(prev).set(subEntityId, tags));
     setEditingId(null);
-    setBookmarkTags(subEntityId, tags);
+    // Local-first (piste 2026-09-24): saved to the cached bookmarks and queued for the server.
+    setBookmarkTagsLocally(subEntityId, tags).catch(() => {});
   }
 
   return (
@@ -99,12 +105,12 @@ export function BookmarksList({ bookmarks }: { bookmarks: BookmarkedEntity[] }) 
           return (
             <div key={b.subEntityId} className="rounded-[var(--radius-sm)] px-2 py-1.5 hover:bg-surface-muted">
               <div className="flex items-start justify-between gap-2">
-                <Link href={`/apps/el-profesor/chapters/${b.chapterId}?entity=${b.subEntityId}`} className="min-w-0 flex-1">
+                <LocalNavLink href={`/apps/el-profesor/chapters/${b.chapterId}?entity=${b.subEntityId}`} className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground">{b.subEntityName}</p>
                   <p className="text-xs text-foreground-subtle">
                     {b.bookTitle} — {b.chapterTitle}
                   </p>
-                </Link>
+                </LocalNavLink>
                 <button
                   type="button"
                   onClick={() => (editingId === b.subEntityId ? saveTags(b.subEntityId) : startEditing(b))}
@@ -224,7 +230,7 @@ function timeAgoLabel(createdAt: string): string {
 /** "Ce jour-là" — resurfaces one personal note written months/years ago, item 36 of the backlog. */
 export function OnThisDayNoteCard({ note }: { note: OnThisDayNote }) {
   return (
-    <Link
+    <LocalNavLink
       href={`/apps/el-profesor/chapters/${note.chapterId}?entity=${note.subEntityId}`}
       className="mt-6 block rounded-[var(--radius-lg)] border border-border bg-surface p-4 hover:border-accent/40"
     >
@@ -236,7 +242,7 @@ export function OnThisDayNoteCard({ note }: { note: OnThisDayNote }) {
       <p className="mt-1 text-xs text-foreground-subtle">
         {note.bookTitle} — {note.chapterTitle}
       </p>
-    </Link>
+    </LocalNavLink>
   );
 }
 
@@ -307,7 +313,7 @@ function WeaknessSynthesisButton() {
 /** "Recommandé par les autres utilisateurs" — item 29 of the backlog. */
 export function BookRecommendationCard({ recommendation }: { recommendation: BookRecommendation }) {
   return (
-    <Link
+    <LocalNavLink
       href={`/apps/el-profesor/chapters/${recommendation.firstChapterId}`}
       className="mt-6 block rounded-[var(--radius-lg)] border border-border bg-surface p-4 hover:border-accent/40"
     >
@@ -320,7 +326,7 @@ export function BookRecommendationCard({ recommendation }: { recommendation: Boo
         {recommendation.otherUsersEngaged > 1 ? "s" : ""} y révise{recommendation.otherUsersEngaged > 1 ? "nt" : ""} déjà — vous ne l&apos;avez
         pas encore commencé.
       </p>
-    </Link>
+    </LocalNavLink>
   );
 }
 
@@ -460,20 +466,20 @@ export function LearningWidgets({
           <DailyGoalRing todayCount={todayCount} />
         </div>
         {globalDueCount > 0 && (
-          <Link
+          <LocalNavLink
             href="/apps/el-profesor/review?mode=due"
             className="flex shrink-0 items-center gap-1.5 rounded-[var(--radius-lg)] border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground"
           >
             <Layers className="h-3.5 w-3.5" /> Révision ({globalDueCount})
-          </Link>
+          </LocalNavLink>
         )}
         {difficultCount > 0 && (
-          <Link
+          <LocalNavLink
             href="/apps/el-profesor/review?mode=difficult"
             className="flex shrink-0 items-center gap-1.5 rounded-[var(--radius-lg)] border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground"
           >
             <ShieldAlert className="h-3.5 w-3.5" /> Erreurs ({difficultCount})
-          </Link>
+          </LocalNavLink>
         )}
         <div className="flex shrink-0 items-center gap-1.5 rounded-[var(--radius-lg)] border border-border bg-surface px-3 py-2 text-xs text-foreground-subtle">
           <Award className="h-3.5 w-3.5" /> {earnedCount}/{badges.length} badges
@@ -565,18 +571,18 @@ export function LearningWidgets({
       {(globalDueCount > 0 || difficultCount > 0) && (
         <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-3.5">
           {globalDueCount > 0 && (
-            <Link href="/apps/el-profesor/review?mode=due">
+            <LocalNavLink href="/apps/el-profesor/review?mode=due">
               <Button variant="secondary" size="sm">
                 <Layers className="h-3.5 w-3.5" /> Révision globale ({globalDueCount})
               </Button>
-            </Link>
+            </LocalNavLink>
           )}
           {difficultCount > 0 && (
-            <Link href="/apps/el-profesor/review?mode=difficult">
+            <LocalNavLink href="/apps/el-profesor/review?mode=difficult">
               <Button variant="secondary" size="sm">
                 <ShieldAlert className="h-3.5 w-3.5" /> Carnet d&apos;erreurs ({difficultCount})
               </Button>
-            </Link>
+            </LocalNavLink>
           )}
           {difficultCount > 0 && <WeaknessSynthesisButton />}
         </div>

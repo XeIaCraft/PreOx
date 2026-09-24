@@ -254,9 +254,66 @@ export async function selectInChunks<T>(
   if (ids.length === 0) return [];
   const chunks: string[][] = [];
   for (let i = 0; i < ids.length; i += IN_CHUNK_SIZE) chunks.push(ids.slice(i, i + IN_CHUNK_SIZE));
-  const results = await Promise.all(chunks.map((chunk) => runQuery(chunk)));
-  for (const r of results) if (r.error) console.error("[el-profesor/dal] chunked query failed:", r.error.message);
-  return results.flatMap((r) => r.data ?? []);
+  const results = await Promise.all(chunks.map((chunk) => runChunkUntruncated(chunk, runQuery)));
+  return results.flat();
+}
+
+/**
+ * PostgREST silently caps every response at `max_rows` (1000 on Supabase
+ * unless reconfigured) — no error, just fewer rows. A 150-id chunk is safe
+ * for a 1:1 lookup, but not for a 1:N one: 150 fiches' blocks, or every
+ * sub-entity of a few dozen chapters, can easily exceed 1000 rows and lose
+ * the rest without anyone noticing (piste 2026-09-24 — suite à l'audit de la
+ * synchronisation). A chunk that comes back exactly at the cap is split in
+ * half and re-queried until each half fits, so the result is always complete.
+ */
+async function runChunkUntruncated<T>(
+  chunk: string[],
+  runQuery: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+): Promise<T[]> {
+  const { data, error } = await runQuery(chunk);
+  if (error) {
+    console.error("[el-profesor/dal] chunked query failed:", error.message);
+    return [];
+  }
+  const rows = data ?? [];
+  if (rows.length >= POSTGREST_MAX_ROWS && chunk.length > 1) {
+    const mid = Math.ceil(chunk.length / 2);
+    const [first, second] = await Promise.all([runChunkUntruncated(chunk.slice(0, mid), runQuery), runChunkUntruncated(chunk.slice(mid), runQuery)]);
+    return [...first, ...second];
+  }
+  return rows;
+}
+
+const POSTGREST_MAX_ROWS = 1000;
+
+/**
+ * Every row of an unbounded select (e.g. "all of this user's review
+ * states"), paged with .range() so PostgREST's max_rows cap (see
+ * runChunkUntruncated above) can't silently truncate it. `build` must apply
+ * a deterministic .order() so consecutive pages neither overlap nor skip
+ * rows. Unlike selectInChunks, a failed page throws instead of being logged
+ * and skipped: callers of this (the local-cache sync) must never mistake a
+ * partial result for the complete truth and overwrite good cached data with it.
+ */
+export async function selectAllPages<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+): Promise<T[]> {
+  const all: T[] = [];
+  for (let from = 0, page = 0; ; page++) {
+    // Defensive bound (a million rows) — a misbehaving endpoint ignoring .range() must fail loudly, never loop forever.
+    if (page >= 1000) throw new Error("selectAllPages: too many pages");
+    const { data, error } = await build(from, from + POSTGREST_MAX_ROWS - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    all.push(...rows);
+    // Advances by what actually came back and only stops on an empty page,
+    // so a project configured with a max_rows lower than 1000 still can't
+    // end the loop early on a short-but-not-final page.
+    if (rows.length === 0) break;
+    from += rows.length;
+  }
+  return all;
 }
 
 export interface ChapterFicheRef {

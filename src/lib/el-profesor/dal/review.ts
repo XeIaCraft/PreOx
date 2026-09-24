@@ -15,7 +15,7 @@ async function getSuspendedFlashcardIds(userId: string): Promise<Set<string>> {
   return new Set((data ?? []).map((r) => r.flashcard_id));
 }
 
-/** Array-returning wrapper around getSuspendedFlashcardIds for the offline sync (actions/offline-sync.ts) — IndexedDB/JSON-friendly, same convention as getReviewStatesByFlashcardIds. */
+/** Array-returning wrapper around getSuspendedFlashcardIds for the offline sync (lib/el-profesor/sync-data.ts) — IndexedDB/JSON-friendly, same convention as getReviewStatesByFlashcardIds. */
 export async function getSuspendedFlashcardIdsForSync(userId: string): Promise<string[]> {
   return [...(await getSuspendedFlashcardIds(userId))];
 }
@@ -108,14 +108,38 @@ export async function getDueQueue(userId: string, chapterId: string): Promise<Fl
   return due.map(({ card }) => card);
 }
 
-/** Due queue across every published chapter the user can see — for interleaved, cross-topic review instead of one chapter at a time. */
+/**
+ * Due queue across every published chapter the user can see — for
+ * interleaved, cross-topic review instead of one chapter at a time. Same
+ * per-chapter filter and most-overdue-first order as getDueQueue,
+ * concatenated chapter by chapter — but from one batched flashcard fetch
+ * plus one batched review_state fetch for the whole library (piste
+ * 2026-09-24) instead of one getDueQueue call per chapter, which meant a
+ * few hundred round trips on a real library: enough to time the page out.
+ */
 export async function getGlobalDueQueue(userId: string, chapters: Chapter[]): Promise<Flashcard[]> {
   const published = chapters.filter((c) => c.status === "published");
-  const perChapter = await Promise.all(published.map((c) => getDueQueue(userId, c.id)));
-  // Each getDueQueue result is already sorted most-overdue-first; a plain
-  // concat would still group by chapter, so re-derive due dates for a
-  // global sort instead of re-querying — cheap since queues are small.
-  return perChapter.flat();
+  const [flashcardsByChapter, suspended] = await Promise.all([
+    getActiveFlashcardsByChapterBatch(published.map((c) => c.id)),
+    getSuspendedFlashcardIds(userId),
+  ]);
+  const allFlashcardIds = [...flashcardsByChapter.values()].flat().map((f) => f.id);
+
+  const supabase = await createClient();
+  const states = await selectInChunks(allFlashcardIds, (chunk) =>
+    supabase.from("el_profesor_review_state").select("flashcard_id, due").eq("user_id", userId).in("flashcard_id", chunk)
+  );
+  const dueByCard = new Map(states.map((s) => [s.flashcard_id, s.due]));
+  const now = Date.now();
+
+  return published.flatMap((chapter) => {
+    const due = (flashcardsByChapter.get(chapter.id) ?? [])
+      .filter((card) => !suspended.has(card.id))
+      .map((card) => ({ card, dueAt: dueByCard.get(card.id) }))
+      .filter(({ dueAt }) => !dueAt || new Date(dueAt).getTime() <= now);
+    due.sort((a, b) => (a.dueAt ? new Date(a.dueAt).getTime() : now) - (b.dueAt ? new Date(b.dueAt).getTime() : now));
+    return due.map(({ card }) => card);
+  });
 }
 
 /**
@@ -176,35 +200,28 @@ export async function getNotionDueQueue(userId: string, notionId: string): Promi
  * spots, not just whatever happens to be due today.
  */
 export async function getDifficultQueue(userId: string, chapters: Chapter[]): Promise<Flashcard[]> {
-  const supabase = await createClient();
   const published = chapters.filter((c) => c.status === "published");
-  const suspended = await getSuspendedFlashcardIds(userId);
+  // Batched for the whole library at once (piste 2026-09-24) — see getGlobalDueQueue.
+  const [flashcardsByChapter, suspended] = await Promise.all([
+    getActiveFlashcardsByChapterBatch(published.map((c) => c.id)),
+    getSuspendedFlashcardIds(userId),
+  ]);
+  const flashcards = published.flatMap((c) => flashcardsByChapter.get(c.id) ?? []);
 
-  const perChapter = await Promise.all(
-    published.map(async (chapter) => {
-      const content = await getChapterContent(chapter.id, false);
-      const flashcards = activeFlashcards(content);
-      if (flashcards.length === 0) return [];
+  const supabase = await createClient();
+  const states = await selectInChunks(
+    flashcards.map((f) => f.id),
+    (chunk) => supabase.from("el_profesor_review_state").select("flashcard_id, state, lapses").eq("user_id", userId).in("flashcard_id", chunk)
+  );
+  const stateByCard = new Map(states.map((s) => [s.flashcard_id, s]));
 
-      const { data: states } = await supabase
-        .from("el_profesor_review_state")
-        .select("flashcard_id, state, lapses")
-        .eq("user_id", userId)
-        .in(
-          "flashcard_id",
-          flashcards.map((f) => f.id)
-        );
-      const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s]));
-
-      return flashcards.filter((card) => {
-        if (suspended.has(card.id)) return false;
-        const state = stateByCard.get(card.id);
-        return !!state && (state.state === "relearning" || state.lapses >= 2);
-      });
+  return shuffle(
+    flashcards.filter((card) => {
+      if (suspended.has(card.id)) return false;
+      const state = stateByCard.get(card.id);
+      return !!state && (state.state === "relearning" || state.lapses >= 2);
     })
   );
-
-  return shuffle(perChapter.flat());
 }
 
 /**
@@ -386,7 +403,7 @@ export async function getUserFsrsRetention(userId: string): Promise<number> {
 /**
  * Batched el_profesor_review_state fetch for this user across MANY flashcard
  * ids at once (chunked .in(), same pattern as getActiveFlashcardsByChapterBatch)
- * — used by the "écriture locale automatique" sync (actions/offline-sync.ts)
+ * — used by the "écriture locale automatique" sync (lib/el-profesor/sync-data.ts)
  * to seed local-db.ts's reviewState store so FlashcardReviewer can compute
  * scheduleReview() offline with the same starting state the server has.
  */
@@ -581,22 +598,29 @@ export async function getNeedsReviewCounts(chapterIds: string[]): Promise<Chapte
   if (chapterIds.length === 0) return counts;
   const supabase = await createClient();
 
-  const { data: subEntities } = await supabase.from("el_profesor_sub_entities").select("id, chapter_id").in("chapter_id", chapterIds);
-  const chapterBySubEntity = new Map((subEntities ?? []).map((s) => [s.id, s.chapter_id]));
-  const subEntityIds = (subEntities ?? []).map((s) => s.id);
+  // Chunked (piste 2026-09-24): single unbounded .in() filters over every
+  // sub-entity/fiche of the library overflowed the URL or got truncated at
+  // PostgREST's row cap, silently dropping badges.
+  const subEntities = await selectInChunks(chapterIds, (chunk) => supabase.from("el_profesor_sub_entities").select("id, chapter_id").in("chapter_id", chunk));
+  const chapterBySubEntity = new Map(subEntities.map((s) => [s.id, s.chapter_id]));
+  const subEntityIds = subEntities.map((s) => s.id);
   if (subEntityIds.length === 0) return counts;
 
-  const { data: fiches } = await supabase.from("el_profesor_fiches").select("id, sub_entity_id").in("sub_entity_id", subEntityIds);
-  const chapterByFiche = new Map((fiches ?? []).map((f) => [f.id, chapterBySubEntity.get(f.sub_entity_id)]));
-  const ficheIds = (fiches ?? []).map((f) => f.id);
+  const fiches = await selectInChunks(subEntityIds, (chunk) => supabase.from("el_profesor_fiches").select("id, sub_entity_id").in("sub_entity_id", chunk));
+  const chapterByFiche = new Map(fiches.map((f) => [f.id, chapterBySubEntity.get(f.sub_entity_id)]));
+  const ficheIds = fiches.map((f) => f.id);
   if (ficheIds.length === 0) return counts;
 
-  const [blocksRes, flashcardsRes] = await Promise.all([
-    supabase.from("el_profesor_fiche_blocks").select("fiche_id").eq("needs_review", true).eq("status", "draft").in("fiche_id", ficheIds),
-    supabase.from("el_profesor_flashcards").select("fiche_id").eq("needs_review", true).eq("status", "draft").in("fiche_id", ficheIds),
+  const [blockRows, flashcardRows] = await Promise.all([
+    selectInChunks(ficheIds, (chunk) =>
+      supabase.from("el_profesor_fiche_blocks").select("fiche_id").eq("needs_review", true).eq("status", "draft").in("fiche_id", chunk)
+    ),
+    selectInChunks(ficheIds, (chunk) =>
+      supabase.from("el_profesor_flashcards").select("fiche_id").eq("needs_review", true).eq("status", "draft").in("fiche_id", chunk)
+    ),
   ]);
 
-  for (const row of [...(blocksRes.data ?? []), ...(flashcardsRes.data ?? [])]) {
+  for (const row of [...blockRows, ...flashcardRows]) {
     const chapterId = chapterByFiche.get(row.fiche_id);
     if (!chapterId) continue;
     counts[chapterId] = (counts[chapterId] ?? 0) + 1;

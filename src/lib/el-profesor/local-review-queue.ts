@@ -24,6 +24,7 @@ import {
   getCachedChapterContent,
   getCachedSuspendedFlashcardIds,
   getAllPendingWrites,
+  type PendingWrite,
 } from "./local-db";
 import type { Flashcard, ReviewState } from "./types";
 import type { SubEntityWithFiche, ChapterDueCounts, ChapterMasteryCounts } from "./dal";
@@ -158,9 +159,13 @@ export async function getLocalReadProgressByChapter(): Promise<Record<string, nu
  * recent one wins for any given flashcard.
  */
 export async function getEffectiveSuspendedFlashcardIds(): Promise<Set<string>> {
-  const cached = (await getCachedSuspendedFlashcardIds()) ?? [];
-  const suspended = new Set(cached);
-  const pending = await getAllPendingWrites();
+  const [cached, pending] = await Promise.all([getCachedSuspendedFlashcardIds(), getAllPendingWrites()]);
+  return applyPendingExcludes(cached ?? [], pending);
+}
+
+/** Pure half of getEffectiveSuspendedFlashcardIds — for callers that already loaded the pending queue. */
+export function applyPendingExcludes(cachedIds: string[], pending: PendingWrite[]): Set<string> {
+  const suspended = new Set(cachedIds);
   for (const write of pending) {
     if (write.kind !== "exclude") continue;
     if (write.payload.excluded) suspended.add(write.payload.flashcardId);

@@ -27,7 +27,11 @@ import {
   deletePendingWrite,
   getPendingWrite,
   getCachedDashboard,
+  addLocalReviewEvent,
+  deleteLocalReviewEvent,
 } from "./local-db";
+import { cleanReviewDuration } from "./local-widgets";
+import { setFlashcardExcludedLocally } from "./local-writes";
 import { undoReview } from "@/app/apps/el-profesor/actions/review";
 import type { ReviewRating, ReviewSource, ReviewState } from "./types";
 import type { ReviewConfidence } from "@/app/apps/el-profesor/actions/review";
@@ -74,6 +78,17 @@ export async function applyLocalReview(params: {
     createdAt: now.toISOString(),
     payload: { flashcardId, chapterId, rating, source, durationMs, variantId, confidence, previousState },
   });
+  // Counted in the streak/heatmap/time widgets right away (piste 2026-09-24
+  // — "widgets en local"), until a synced review history includes it.
+  await addLocalReviewEvent({
+    id: pendingWriteId,
+    flashcardId,
+    source,
+    reviewedAt: now.toISOString(),
+    durationMs: cleanReviewDuration(durationMs),
+    rating,
+    confidence,
+  });
 
   return { pendingWriteId, previousState, nextState };
 }
@@ -89,6 +104,7 @@ export async function applyLocalReview(params: {
 export async function undoLocalReview(pendingWriteId: string): Promise<void> {
   const write = await getPendingWrite(pendingWriteId);
   if (!write || write.kind !== "review") return;
+  await deleteLocalReviewEvent(pendingWriteId);
 
   if (write.flushed) {
     await undoReview(write.payload.flashcardId, write.serverLogId, write.payload.source, write.payload.previousState);
@@ -105,12 +121,7 @@ export async function undoLocalReview(pendingWriteId: string): Promise<void> {
   await deletePendingWrite(pendingWriteId);
 }
 
-/** Queues excluding a flashcard from this user's own reviews — see PendingExcludePayload. */
+/** Excludes a flashcard from this user's own reviews — patched into the cached list right away and queued, see setFlashcardExcludedLocally. */
 export async function applyLocalExclude(flashcardId: string): Promise<void> {
-  await enqueuePendingWrite({
-    id: crypto.randomUUID(),
-    kind: "exclude",
-    createdAt: new Date().toISOString(),
-    payload: { flashcardId, excluded: true },
-  });
+  await setFlashcardExcludedLocally(flashcardId, true);
 }

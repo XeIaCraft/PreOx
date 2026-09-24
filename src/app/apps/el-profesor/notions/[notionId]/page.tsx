@@ -1,6 +1,6 @@
 import { requireElProfesorAccess } from "@/lib/el-profesor/dal";
 import { getEffectiveIsAdmin } from "@/lib/el-profesor/preview-mode";
-import { getElProfesorNotionSynthesis } from "@/app/apps/el-profesor/actions/offline-sync";
+import { getElProfesorNotionSynthesis } from "@/lib/el-profesor/sync-data";
 import { NotionSynthesisWithLocalCache } from "@/components/el-profesor/notion-synthesis-with-local-cache";
 import { ToastProvider } from "@/components/ui/toast";
 

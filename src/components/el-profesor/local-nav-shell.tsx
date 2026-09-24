@@ -22,7 +22,7 @@ import { getLastChapter } from "@/lib/el-profesor/local-prefs";
 import { DashboardWithLocalCache } from "@/components/el-profesor/dashboard-with-local-cache";
 import { BookTocWithLocalCache } from "@/components/el-profesor/book-toc-with-local-cache";
 import { ChapterViewWithLocalCache } from "@/components/el-profesor/chapter-view-with-local-cache";
-import { ReviewQueueWithLocalCache } from "@/components/el-profesor/review-queue-with-local-cache";
+import { ReviewQueueWithLocalCache, GlobalReviewWithLocalCache } from "@/components/el-profesor/review-queue-with-local-cache";
 import { ToastProvider } from "@/components/ui/toast";
 
 interface LocalNavContextValue {
@@ -105,6 +105,11 @@ export function LocalNavShell({ children }: { children: React.ReactNode }) {
           />
         </ToastProvider>
       )}
+      {view?.kind === "globalReview" && (
+        <ToastProvider>
+          <GlobalReviewWithLocalCache key={localViewKey(view)} mode={view.mode} cardsPromise={null} onCacheMiss={bail} />
+        </ToastProvider>
+      )}
       {!view && children}
     </LocalNavContext.Provider>
   );
@@ -152,7 +157,6 @@ function ShellDashboard({ onCacheMiss }: { onCacheMiss: () => void }) {
 
   return (
     <DashboardWithLocalCache
-      initialSnapshotPromise={null}
       isAdmin={ready.isAdmin}
       realIsAdmin={ready.realIsAdmin}
       previewingAsUser={ready.previewingAsUser}

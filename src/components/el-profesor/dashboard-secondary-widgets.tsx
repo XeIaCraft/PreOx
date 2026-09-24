@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
+import { LocalNavLink } from "@/components/el-profesor/local-nav-link";
 import { Sparkles, ShieldAlert, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -92,11 +92,11 @@ export function DashboardSecondaryWidgets({
           <p className="text-sm text-danger">
             {data.globalDueCount} cartes en attente de révision — la pile s&apos;accumule, un rattrapage s&apos;impose.
           </p>
-          <Link href="/apps/el-profesor/review?mode=due">
+          <LocalNavLink href="/apps/el-profesor/review?mode=due">
             <Button size="sm" variant="secondary">
               Rattraper
             </Button>
-          </Link>
+          </LocalNavLink>
         </div>
       )}
 
@@ -116,11 +116,11 @@ export function DashboardSecondaryWidgets({
                   <span className="font-medium text-foreground">{alert.chapterTitle}</span> — {alert.bookTitle} · {alert.expiredCount} carte
                   {alert.expiredCount > 1 ? "s" : ""} en retard de {alert.oldestOverdueDays}+ jours
                 </span>
-                <Link href={`/apps/el-profesor/chapters/${alert.chapterId}/review?mode=due`}>
+                <LocalNavLink href={`/apps/el-profesor/chapters/${alert.chapterId}/review?mode=due`}>
                   <Button size="sm" variant="secondary">
                     Rafraîchir
                   </Button>
-                </Link>
+                </LocalNavLink>
               </li>
             ))}
             {data.knowledgeExpiryAlerts.length > 5 && (

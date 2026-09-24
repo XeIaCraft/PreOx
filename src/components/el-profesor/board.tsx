@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, use, useEffect, useOptimistic, useState, useTransition } from "react";
+import { useEffect, useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
 import { LocalNavLink } from "@/components/el-profesor/local-nav-link";
 import Image from "next/image";
@@ -76,7 +76,7 @@ import {
   applyLocalDeleteBook,
 } from "@/lib/el-profesor/local-admin-actions";
 import { setElProfesorPreviewAsUser } from "@/app/apps/el-profesor/actions/preview";
-import { getElProfesorAiConfigData } from "@/app/apps/el-profesor/actions/offline-sync";
+import { fetchAiConfigData } from "@/lib/el-profesor/sync-api";
 import { extractChapter, extractChapterComplementary, resetStuckExtraction, resetChapterContent } from "@/app/apps/el-profesor/actions/extraction";
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
@@ -392,57 +392,85 @@ function BulkCostEstimate({
   );
 }
 
-function GeminiSettingsLoadingModal({ onClose }: { onClose: () => void }) {
-  return (
-    <Modal title="Réglages IA" onClose={onClose} size="md">
-      <p className="text-sm text-foreground-subtle">Chargement…</p>
-    </Modal>
-  );
-}
-
 const AI_CONFIG_FETCH_TIMEOUT_MS = 15_000;
 
-/** Never rejects — a genuine failure or a fetch that's still pending past the timeout both resolve to "unavailable", so use() below never throws into an unhandled rejection (this dialog has no Suspense-adjacent error boundary of its own). */
-function withTimeoutOrUnavailable<T>(promise: Promise<T>, ms: number): Promise<T | "unavailable"> {
-  const safePromise = promise.catch((): "unavailable" => "unavailable");
-  return Promise.race([safePromise, new Promise<"unavailable">((resolve) => setTimeout(() => resolve("unavailable"), ms))]);
-}
-
 /**
- * Fetches its own fresh config live, only once, the moment this actually
- * mounts (i.e. only when the settings dialog opens — this component is
- * conditionally rendered, so it mounts fresh on every open) — piste
- * 2026-09-24: this is the one deliberate exception to "no live fetch during
- * normal navigation" for the dashboard's secondary data, since an admin
- * explicitly opening AI settings is asking for genuinely current values
- * (spend, model list), and editing them is inherently an online-only action
- * anyway. The lazy useState initializer runs exactly once per mount, giving
- * a stable promise reference for use() to suspend on. Bounded by a timeout
- * (piste 2026-09-24 — suite au retour "plus de paramètres, ça charge
- * indéfiniment") so a slow/unreliable backend produces a clear error
- * instead of an infinite "Chargement…".
+ * Opens instantly from the locally cached config when there is one, and
+ * always fetches the current values alongside (piste 2026-09-24 — suite au
+ * retour "je n'ai plus accès aux réglages IA"). The fetch is a plain
+ * fetch() to the sync route handler — it used to be a Server Action, which
+ * Next.js queues behind every other pending action (background write
+ * flushes, a running sync…), so the dialog could sit on "Chargement…" until
+ * it timed out. If the fresh values differ from the cached ones they
+ * replace them (remounting the form — this lands within a second or so of
+ * opening, before anything's been typed); on close, the cache is refreshed
+ * again so a setting just saved shows up straight away next time.
  */
 function GeminiSettingsLoader({
   hasApiKey,
   aiProvider,
+  cachedConfig,
+  onConfigLoaded,
   onClose,
 }: {
   hasApiKey: boolean;
   aiProvider: ElProfesorAiProvider;
+  cachedConfig: DashboardAiConfigData | null;
+  onConfigLoaded?: (config: DashboardAiConfigData) => void;
   onClose: () => void;
 }) {
-  const [configPromise] = useState(() => withTimeoutOrUnavailable(getElProfesorAiConfigData(), AI_CONFIG_FETCH_TIMEOUT_MS));
-  const config = use(configPromise);
-  if (config === "unavailable") {
+  // Frozen at open: the parent updates its cached copy when fresh data
+  // arrives, and comparing against that moving value would flip the form's
+  // key back and forth.
+  const [initialConfig] = useState(cachedConfig);
+  const [freshConfig, setFreshConfig] = useState<DashboardAiConfigData | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAiConfigData(AI_CONFIG_FETCH_TIMEOUT_MS)
+      .then((config) => {
+        if (cancelled) return;
+        if (!config) {
+          setFailed(true);
+          return;
+        }
+        setFreshConfig(config);
+        onConfigLoaded?.(config);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Once per opening — this component mounts fresh every time the dialog opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleClose() {
+    fetchAiConfigData(AI_CONFIG_FETCH_TIMEOUT_MS)
+      .then((config) => config && onConfigLoaded?.(config))
+      .catch(() => {});
+    onClose();
+  }
+
+  const config = freshConfig ?? initialConfig;
+  if (!config) {
     return (
       <Modal title="Réglages IA" onClose={onClose} size="md">
-        <p className="text-sm text-danger">Impossible de charger les réglages — le serveur met trop de temps à répondre. Réessayez plus tard.</p>
+        {failed ? (
+          <p className="text-sm text-danger">Impossible de charger les réglages — vérifiez votre connexion et réessayez.</p>
+        ) : (
+          <p className="text-sm text-foreground-subtle">Chargement…</p>
+        )}
       </Modal>
     );
   }
-  if (!config) return null;
+  const formKey = freshConfig && initialConfig && JSON.stringify(freshConfig) !== JSON.stringify(initialConfig) ? "fresh" : "initial";
   return (
     <GeminiSettingsDialog
+      key={formKey}
       currentModel={config.geminiModel ?? "gemini-flash-latest"}
       hasApiKey={hasApiKey}
       extraKeyCount={config.geminiExtraKeyCount}
@@ -454,7 +482,7 @@ function GeminiSettingsLoader({
       hasClaudeKey={config.hasClaudeKey}
       claudeModel={config.claudeModel || "claude-sonnet-5"}
       batchJobs={config.batchJobs}
-      onClose={onClose}
+      onClose={handleClose}
     />
   );
 }
@@ -516,6 +544,7 @@ export function ElProfesorBoard({
   aiConfigData,
   notionViewData,
   onLocalBooksChange,
+  onAiConfigChange,
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
@@ -543,14 +572,17 @@ export function ElProfesorBoard({
    * is the sole owner of checking IndexedDB for these; null means nothing's
    * cached yet (rendered as an explicit "synchronisez pour les voir" state
    * by each consumer), never a pending live fetch that could hang or fail.
-   * Only GeminiSettingsLoader still does its own live fetch, lazily, when
-   * the settings dialog is actually opened — see its own doc comment.
+   * The widgets themselves are computed locally (local-widgets.ts); only
+   * the settings dialog also fetches fresh values when opened — see
+   * GeminiSettingsLoader.
    */
   secondaryData: DashboardSecondaryData | null;
   aiConfigData: DashboardAiConfigData | null;
   notionViewData: DashboardNotionViewData | null;
   /** Called with the reordered books array right after a local reorder (handleMoveBook/handleMoveChapter) persists to the cache — lets the parent (DashboardWithLocalCache) update its own snapshot state in step, so booksProp is already correct by the time the transition below resolves and useOptimistic's override lapses (otherwise the list would flash back to the old order for an instant). Undefined when this board isn't backed by the local cache at all (e.g. never synced) — the reorder still gets queued, just without a local list to keep in sync with. */
   onLocalBooksChange?: (books: BookWithChapters[]) => void;
+  /** Called with fresh AI settings whenever the settings dialog fetches them — lets the parent keep its cached copy (and IndexedDB) current. */
+  onAiConfigChange?: (config: DashboardAiConfigData) => void;
 }) {
   const { toast } = useToast();
   // Reordering only ever swaps two adjacent entries by id, in the book list
@@ -1770,9 +1802,13 @@ export function ElProfesorBoard({
         </Modal>
       )}
       {modal?.type === "gemini_settings" && (
-        <Suspense fallback={<GeminiSettingsLoadingModal onClose={() => setModal(null)} />}>
-          <GeminiSettingsLoader hasApiKey={hasGeminiKey} aiProvider={aiProvider} onClose={() => setModal(null)} />
-        </Suspense>
+        <GeminiSettingsLoader
+          hasApiKey={hasGeminiKey}
+          aiProvider={aiProvider}
+          cachedConfig={aiConfigData}
+          onConfigLoaded={onAiConfigChange}
+          onClose={() => setModal(null)}
+        />
       )}
 
       <OnboardingTour moduleKey="el-profesor" steps={EL_PROFESOR_ONBOARDING_STEPS} open={tourOpen} onOpenChange={setTourOpen} />
