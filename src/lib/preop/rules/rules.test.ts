@@ -279,3 +279,25 @@ describe("server validation of rules", () => {
     expect(ruleSchema.safeParse({ ...draft, conditions: [] }).success).toBe(false);
   });
 });
+
+describe("surgery and antecedent conditions", () => {
+  // Fictitious: aspirin in secondary prevention, kept unless the surgery bleeds a lot.
+  const aspirin = rule({
+    id: "asa",
+    conditions: [
+      { kind: "drug", atc: "B01AC06" },
+      { kind: "history", condition: "coronary", present: true },
+      { kind: "surgery", attribute: "bleedingRisk", in: ["low"] },
+    ],
+    action: { type: "info", text: "Poursuivre" },
+  });
+  const ctx = (extra: Partial<PatientContext>) => patient({ treatments: [{ id: "a", atc: "B01AC06", name: "Aspirine" }], ...extra });
+
+  it("applies when the antecedent and the surgery match, asks for them when unknown", () => {
+    expect(evaluateRule(aspirin, ctx({ conditions: { coronary: { present: true } }, surgery: { bleedingRisk: "low" } }), "2026-10-01T00:00:00Z")?.status).toBe("applies");
+    expect(evaluateRule(aspirin, ctx({ conditions: { coronary: { present: true } }, surgery: { bleedingRisk: "high" } }), "2026-10-01T00:00:00Z")).toBeNull();
+    const unknown = evaluateRule(aspirin, ctx({}), "2026-10-01T00:00:00Z");
+    expect(unknown?.status).toBe("needs_info");
+    expect(unknown!.missing.map((m) => m.label)).toEqual(["Antécédent : Coronaropathie (IDM, stent, angor)", "Risque hémorragique de la chirurgie"]);
+  });
+});

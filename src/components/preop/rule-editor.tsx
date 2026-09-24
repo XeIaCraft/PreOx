@@ -8,7 +8,8 @@ import { MultiChipGroup, Textarea } from "@/components/carnet/ui";
 import { NumberField } from "@/components/preop/ui";
 import { ATC_GROUPS, MEDICATIONS, atcLabel } from "@/lib/preop/medications";
 import { describeRule } from "@/lib/preop/rules/describe";
-import { INDICATIONS, PATIENT_VALUES, RULE_TYPES, SOURCE_LEVELS, TECHNIQUES } from "@/lib/preop/rules/types";
+import { INDICATIONS, PATIENT_VALUES, RULE_TYPES, SOURCE_LEVELS, SURGERY_ATTRIBUTES, TECHNIQUES, type SurgeryAttribute } from "@/lib/preop/rules/types";
+import { SYSTEMS, type ConditionCode } from "@/lib/preop/history";
 import type { Comparator, Condition, Indication, PatientValue, Rule, RuleAction, RuleType, SourceLevel, Technique } from "@/lib/preop/rules/types";
 
 export type RuleDraft = Omit<Rule, "created_at" | "updated_at">;
@@ -62,7 +63,7 @@ function ConditionEditor({ c, onChange, onRemove }: { c: Condition; onChange: (c
     <div className="space-y-2 rounded-[var(--radius-md)] border border-border bg-surface-muted/40 p-2.5">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">
-          {c.kind === "drug" ? "Traitement du patient" : c.kind === "technique" ? "Geste prévu" : "Valeur du patient"}
+          {c.kind === "drug" ? "Traitement du patient" : c.kind === "technique" ? "Geste prévu" : c.kind === "surgery" ? "Chirurgie" : c.kind === "history" ? "Antécédent" : "Valeur du patient"}
         </span>
         <button type="button" onClick={onRemove} className="rounded p-1 text-foreground-subtle hover:text-danger" aria-label="Retirer la condition">
           <Trash2 className="h-4 w-4" />
@@ -133,6 +134,39 @@ function ConditionEditor({ c, onChange, onRemove }: { c: Condition; onChange: (c
         <MultiChipGroup options={TECHNIQUES.map((t) => ({ code: t.code, label: t.label }))} value={c.in} onChange={(v) => onChange({ ...c, in: v as Technique[] })} />
       )}
 
+      {c.kind === "surgery" && (
+        <div className="space-y-2">
+          <Select value={c.attribute} onChange={(e) => onChange({ ...c, attribute: e.target.value as SurgeryAttribute, in: [] })}>
+            {SURGERY_ATTRIBUTES.map((a) => (
+              <option key={a.code} value={a.code}>
+                {a.label}
+              </option>
+            ))}
+          </Select>
+          <MultiChipGroup options={SURGERY_ATTRIBUTES.find((a) => a.code === c.attribute)!.values} value={c.in} onChange={(v) => onChange({ ...c, in: v })} />
+        </div>
+      )}
+
+      {c.kind === "history" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={c.present ? "yes" : "no"} onChange={(e) => onChange({ ...c, present: e.target.value === "yes" })} className="w-auto">
+            <option value="yes">présent</option>
+            <option value="no">absent</option>
+          </Select>
+          <Select value={c.condition} onChange={(e) => onChange({ ...c, condition: e.target.value as ConditionCode })} className="w-auto min-w-0 flex-1">
+            {SYSTEMS.map((sys) => (
+              <optgroup key={sys.code} label={sys.label}>
+                {sys.conditions.map((d) => (
+                  <option key={d.code} value={d.code}>
+                    {d.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </Select>
+        </div>
+      )}
+
       {c.kind === "value" && (
         <div className="flex flex-wrap items-end gap-2">
           <Select value={c.value} onChange={(e) => onChange({ ...c, value: e.target.value as PatientValue })} className="w-auto min-w-0 flex-1">
@@ -187,6 +221,12 @@ export function RuleEditor({ value, onChange }: { value: RuleDraft; onChange: (r
           </Button>
           <Button type="button" size="sm" variant="secondary" onClick={() => set({ conditions: [...value.conditions, { kind: "technique", in: ["neuraxial"] }] })}>
             <Plus className="h-3.5 w-3.5" /> Geste
+          </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={() => set({ conditions: [...value.conditions, { kind: "surgery", attribute: "bleedingRisk", in: ["high"] }] })}>
+            <Plus className="h-3.5 w-3.5" /> Chirurgie
+          </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={() => set({ conditions: [...value.conditions, { kind: "history", condition: "coronary", present: true }] })}>
+            <Plus className="h-3.5 w-3.5" /> Antécédent
           </Button>
           <Button type="button" size="sm" variant="secondary" onClick={() => set({ conditions: [...value.conditions, { kind: "value", value: "crcl", op: ">=", threshold: 30 }] })}>
             <Plus className="h-3.5 w-3.5" /> Valeur du patient

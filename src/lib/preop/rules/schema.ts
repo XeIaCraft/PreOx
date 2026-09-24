@@ -2,6 +2,7 @@
 // z.object strips unknown keys: user_id is always set by the server.
 import { z } from "zod";
 import type { Rule } from "./types";
+import { CONDITION_CODES, type ConditionCode } from "../history";
 
 const comparator = z.enum(["<", "<=", ">", ">="]);
 const technique = z.enum(["neuraxial", "deep_block", "superficial_block", "general", "sedation"]);
@@ -34,6 +35,8 @@ const condition = z.discriminatedUnion("kind", [
     op: comparator,
     threshold: z.number().min(0).max(100_000),
   }),
+  z.object({ kind: z.literal("surgery"), attribute: z.enum(["bleedingRisk", "cardiacRisk", "grade"]), in: z.array(z.enum(["low", "intermediate", "high", "minor", "major"])).min(1).max(3) }),
+  z.object({ kind: z.literal("history"), condition: z.enum(CONDITION_CODES as [ConditionCode, ...ConditionCode[]]), present: z.boolean() }),
 ]);
 
 const hours = z.number().min(0).max(24 * 60);

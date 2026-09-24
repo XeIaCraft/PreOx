@@ -2,7 +2,10 @@
 // log) in the ISBAR structure. Each section lists what's missing so
 // nothing is forgotten when handing over to the PACU or the ICU.
 
-import { consultationSummary } from "./consultation-scores";
+import { consultationScores, consultationSummary } from "./consultation-scores";
+import { conditionsSummary, substanceSummary } from "./history";
+import { EXAM_LABELS, type ExamCode } from "./exams";
+import { RISK_GRADES } from "./dossier";
 import { COMPLICATION_TYPES, EVENT_TYPES, FLUID_CATEGORIES, type Dossier } from "./dossier";
 import { durationTimers, fluidBalance, formatMinutes, lastDoses, redoseTimers } from "./intraop";
 import { INDICATIONS, TECHNIQUES } from "./rules/types";
@@ -31,17 +34,22 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
   const I: IsbarSection = { key: "I", title: "Identification", lines: [], missing: [] };
   const who = [d.initials, p.sex === "M" ? "homme" : p.sex === "F" ? "femme" : "", p.age !== undefined ? `${p.age} ans` : "", p.weightKg ? `${p.weightKg} kg` : "", p.heightCm ? `${p.heightCm} cm` : ""].filter(Boolean);
   I.lines.push(who.join(", "));
-  const summary = consultationSummary(c);
+  const scores = consultationScores(c);
+  const summary = consultationSummary(c, scores);
   if (summary.status) I.lines.push(summary.status);
-  if (!c.asa) I.missing.push("Classe ASA");
+  if (!scores.asa) I.missing.push("Classe ASA");
   if (p.allergies?.trim()) I.lines.push(`Allergies : ${p.allergies.trim()}`);
   else I.missing.push("Allergies (même « aucune connue »)");
   if (p.age === undefined || !p.weightKg) I.missing.push("Âge et poids");
 
   // S — Situation
   const S: IsbarSection = { key: "S", title: "Situation", lines: [], missing: [] };
-  const s = d.surgery;
-  if (s.name) S.lines.push(`${s.name}${s.side ? ` (${s.side})` : ""}${s.surgeon ? ` — ${s.surgeon}` : ""}`);
+  const s = d.consultation.surgery;
+  if (s.name) {
+    S.lines.push(`${s.name}${s.side ? ` (${s.side})` : ""}${s.emergency ? ", en urgence" : ""}${s.surgeon ? ` — ${s.surgeon}` : ""}`);
+    const risks = [s.cardiacRisk && `risque cardiaque ${RISK_GRADES.find((g) => g.code === s.cardiacRisk)?.label.toLowerCase()}`, s.bleedingRisk && `risque hémorragique ${RISK_GRADES.find((g) => g.code === s.bleedingRisk)?.label.toLowerCase()}`].filter(Boolean);
+    if (risks.length) S.lines.push(risks.join(", "));
+  }
   else S.missing.push("Intervention");
   const techniques = d.plan.techniques.length ? d.plan.techniques : c.techniques;
   if (techniques.length) S.lines.push(`Anesthésie : ${techniques.map((t) => TECHNIQUES.find((x) => x.code === t)?.label.split(" (")[0] ?? t).join(" + ")}`);
@@ -53,8 +61,13 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
 
   // B — Background
   const B: IsbarSection = { key: "B", title: "Antécédents", lines: [], missing: [] };
+  const conditions = conditionsSummary(c.conditions);
+  if (conditions) B.lines.push(conditions);
   if (p.history?.trim()) B.lines.push(p.history.trim());
-  else B.missing.push("Antécédents pertinents");
+  if (!conditions && !p.history?.trim()) B.missing.push("Antécédents pertinents");
+  if (p.surgicalHistory?.trim()) B.lines.push(`Chirurgie / anesthésie : ${p.surgicalHistory.trim()}`);
+  const substances = substanceSummary(c.substances);
+  if (substances) B.lines.push(substances);
   for (const t of c.treatments) {
     const indication = t.indication ? INDICATIONS.find((i) => i.code === t.indication)?.label.toLowerCase() : "";
     B.lines.push(`${t.name}${t.dailyDoseMg ? ` ${t.dailyDoseMg} mg/j` : ""}${indication ? ` (${indication})` : ""}${t.lastDoseAt ? ` — dernière prise ${new Date(t.lastDoseAt).toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}`);
@@ -71,6 +84,10 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
 
   // A — Assessment
   const A: IsbarSection = { key: "A", title: "Évaluation", lines: [], missing: [] };
+  const available = Object.entries(c.exams)
+    .filter(([, e]) => e?.status === "available")
+    .map(([code, e]) => `${EXAM_LABELS[code as ExamCode]?.split(" (")[0] ?? code}${e?.note ? ` : ${e.note}` : ""}`);
+  if (available.length) A.lines.push(`Examens : ${available.join(" ; ")}`);
   const doses = lastDoses(d, now);
   if (doses.length) A.lines.push(`Dernières doses : ${doses.map((x) => `${x.name} ${x.dose} à ${hhmm(x.at)}`).join(" ; ")}`);
   for (const r of redoseTimers(d, now)) {
@@ -110,7 +127,7 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
 }
 
 export function isbarText(d: Dossier, sections: IsbarSection[]): string {
-  const head = `Transmission — ${d.initials}${d.surgery.name ? ` — ${d.surgery.name}` : ""}`;
+  const head = `Transmission — ${d.initials}${d.consultation.surgery.name ? ` — ${d.consultation.surgery.name}` : ""}`;
   return [head, ...sections.map((s) => `${s.key} — ${s.title}\n${s.lines.map((l) => `• ${l}`).join("\n")}`)].join("\n\n");
 }
 

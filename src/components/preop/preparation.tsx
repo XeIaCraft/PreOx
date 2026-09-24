@@ -3,79 +3,24 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, BookmarkPlus, CalendarCheck2, CalendarPlus, CalendarX2, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
-import { ChipGroup, MultiChipGroup, ToggleChip } from "@/components/carnet/ui";
+import { Select } from "@/components/ui/input";
+import { MultiChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { useToast } from "@/components/ui/toast";
 import { useCarnet } from "@/components/carnet/carnet-provider";
-import { FieldLabel, NumberField, Panel, formatDateTime } from "@/components/preop/ui";
+import { FieldLabel, Panel, formatDateTime } from "@/components/preop/ui";
 import { PlanEditor } from "@/components/preop/plan-editor";
+import { SurgeryPanel } from "@/components/preop/surgery-panel";
 import { evaluateConsultation } from "@/components/preop/consultation";
 import type { ProtocolInput } from "@/components/preop/use-protocols";
-import { OPERATION_CATEGORIES, REGIONAL_TYPES, TECHNICAL_ACTS } from "@/lib/carnet/referentiel";
+import { REGIONAL_TYPES, TECHNICAL_ACTS } from "@/lib/carnet/referentiel";
 import { defaultParticipation, defaultTutorId, formatDateFr, stageForDate, stageLabel } from "@/lib/carnet/logic";
 import { deleteRow, patchRow, putRow } from "@/lib/carnet/mutations";
 import { plannedCaseFromDossier, suggestedRegionalTypes } from "@/lib/preop/carnet-link";
-import { KCE_SEVERITIES, RISK_GRADES, dossierDate, type Dossier, type RiskGrade, type Surgery } from "@/lib/preop/dossier";
+import { dossierDate, type Dossier } from "@/lib/preop/dossier";
 import { formatHours } from "@/lib/preop/rules/describe";
 import type { Protocol } from "@/lib/preop/protocols";
 import type { Rule } from "@/lib/preop/rules/types";
 import { cn } from "@/lib/utils";
-
-function SurgeryPanel({ s, onChange }: { s: Surgery; onChange: (s: Surgery) => void }) {
-  const set = (patch: Partial<Surgery>) => onChange({ ...s, ...patch });
-  return (
-    <Panel title="Intervention">
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
-        <label className="block space-y-1">
-          <FieldLabel>Intervention</FieldLabel>
-          <Input defaultValue={s.name} onChange={(e) => set({ name: e.target.value })} placeholder="ex. PTG, cholécystectomie cœlioscopique" />
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block space-y-1">
-            <FieldLabel>Côté</FieldLabel>
-            <Input defaultValue={s.side} onChange={(e) => set({ side: e.target.value })} placeholder="droit, gauche…" />
-          </label>
-          <label className="block space-y-1">
-            <FieldLabel>Chirurgien</FieldLabel>
-            <Input defaultValue={s.surgeon} onChange={(e) => set({ surgeon: e.target.value })} />
-          </label>
-        </div>
-        <label className="block space-y-1">
-          <FieldLabel>Catégorie (carnet)</FieldLabel>
-          <Select value={s.category} onChange={(e) => set({ category: e.target.value })}>
-            <option value="">—</option>
-            {OPERATION_CATEGORIES.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.code} — {c.short ?? c.label}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <NumberField label="Durée prévue" unit="h" value={s.durationHours} onChange={(v) => set({ durationHours: v })} />
-          <label className="block space-y-1">
-            <FieldLabel>Position</FieldLabel>
-            <Input defaultValue={s.position} onChange={(e) => set({ position: e.target.value })} placeholder="DD, DL, ventral…" />
-          </label>
-        </div>
-      </div>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-3">
-        <div className="space-y-1.5">
-          <FieldLabel>Sévérité (KCE)</FieldLabel>
-          <ChipGroup size="sm" options={KCE_SEVERITIES} value={s.kce ?? null} onChange={(v) => set({ kce: v ?? undefined })} allowClear />
-        </div>
-        <div className="space-y-1.5">
-          <FieldLabel>Risque hémorragique</FieldLabel>
-          <ChipGroup size="sm" options={RISK_GRADES} value={s.bleedingRisk ?? null} onChange={(v) => set({ bleedingRisk: (v ?? undefined) as RiskGrade | undefined })} allowClear />
-        </div>
-        <div className="space-y-1.5">
-          <FieldLabel>Risque cardiaque</FieldLabel>
-          <ChipGroup size="sm" options={RISK_GRADES} value={s.cardiacRisk ?? null} onChange={(v) => set({ cardiacRisk: (v ?? undefined) as RiskGrade | undefined })} allowClear />
-        </div>
-      </div>
-    </Panel>
-  );
-}
 
 /** What the rule library says for this patient — the reminders to act on before the day. */
 function RuleReminders({ d, rules }: { d: Dossier; rules: Rule[] }) {
@@ -247,7 +192,7 @@ export function PreparationView({
       protocolId: p.id,
       protocolName: p.name,
       plan: structuredClone(p.content),
-      surgery: { ...d.surgery, name: d.surgery.name || p.surgery, category: d.surgery.category || p.operation_category },
+      consultation: { ...d.consultation, surgery: { ...d.consultation.surgery, name: d.consultation.surgery.name || p.surgery, category: d.consultation.surgery.category || p.operation_category } },
     });
     setPlanKey((k) => k + 1);
   }
@@ -255,7 +200,7 @@ export function PreparationView({
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-start">
       <div className="space-y-4">
-        <SurgeryPanel key={`surgery-${d.id}-${planKey}`} s={d.surgery} onChange={(surgery) => onChange({ ...d, surgery })} />
+        <SurgeryPanel key={`surgery-${d.id}-${planKey}`} title="Intervention" s={d.consultation.surgery} onChange={(surgery) => onChange({ ...d, consultation: { ...d.consultation, surgery } })} />
         <Panel
           title="Protocole"
           actions={
@@ -264,10 +209,10 @@ export function PreparationView({
                 size="sm"
                 variant="ghost"
                 onClick={async () => {
-                  const name = prompt("Nom du nouveau protocole", d.surgery.name ? `${d.surgery.name}` : "");
+                  const name = prompt("Nom du nouveau protocole", d.consultation.surgery.name ? `${d.consultation.surgery.name}` : "");
                   if (!name?.trim()) return;
                   try {
-                    await onSaveProtocol({ id: crypto.randomUUID(), name: name.trim(), surgery: d.surgery.name, operation_category: d.surgery.category, hospital: d.consultation.hospital, content: d.plan, source: "" });
+                    await onSaveProtocol({ id: crypto.randomUUID(), name: name.trim(), surgery: d.consultation.surgery.name, operation_category: d.consultation.surgery.category, hospital: d.consultation.hospital, content: d.plan, source: "" });
                     toast("Plan enregistré comme protocole (sans données patient).", { variant: "success" });
                   } catch (err) {
                     toast(err instanceof Error ? err.message : "Enregistrement impossible.", { variant: "error" });

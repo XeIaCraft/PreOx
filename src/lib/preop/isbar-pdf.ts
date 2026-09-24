@@ -59,7 +59,7 @@ export async function buildIsbarPdf(d: Dossier, sections: IsbarSection[], fontBy
 
   text(`Transmission — ${d.initials}`, M, 18, accent);
   y -= 20;
-  const sub = [d.surgery.name, generatedAt.toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })].filter(Boolean).join(" · ");
+  const sub = [d.consultation.surgery.name, generatedAt.toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })].filter(Boolean).join(" · ");
   text(sub, M, 10, muted);
   y -= 22;
 

@@ -1,6 +1,7 @@
 // A rule of the library: short, structured so the app can apply it, and
 // always tied to its source. Rules are written by the user from a verified
 // answer (an AI search tool, a guideline PDF) — never generated in bulk.
+import type { ConditionCode } from "../history";
 
 import type { Sex } from "../scores";
 
@@ -96,7 +97,19 @@ export type Condition =
       monthsSinceEvent?: { op: Comparator; months: number };
     }
   | { kind: "technique"; in: Technique[] }
-  | { kind: "value"; value: PatientValue; op: Comparator; threshold: number };
+  | { kind: "value"; value: PatientValue; op: Comparator; threshold: number }
+  /** The intervention: bleeding risk, ESC cardiac risk or grade among the listed ones. */
+  | { kind: "surgery"; attribute: SurgeryAttribute; in: string[] }
+  /** An antecedent of the consultation, present or absent. */
+  | { kind: "history"; condition: ConditionCode; present: boolean };
+
+export type SurgeryAttribute = "bleedingRisk" | "cardiacRisk" | "grade";
+
+export const SURGERY_ATTRIBUTES: { code: SurgeryAttribute; label: string; values: { code: string; label: string }[] }[] = [
+  { code: "bleedingRisk", label: "Risque hémorragique de la chirurgie", values: [{ code: "low", label: "faible" }, { code: "high", label: "élevé" }] },
+  { code: "cardiacRisk", label: "Risque cardiaque de la chirurgie (ESC)", values: [{ code: "low", label: "faible" }, { code: "intermediate", label: "intermédiaire" }, { code: "high", label: "élevé" }] },
+  { code: "grade", label: "Grade de la chirurgie", values: [{ code: "minor", label: "mineure" }, { code: "intermediate", label: "intermédiaire" }, { code: "major", label: "majeure" }] },
+];
 
 export type RuleType = "stop_before" | "resume_after" | "requirement" | "exam" | "info";
 
@@ -173,4 +186,7 @@ export interface PatientContext {
   plannedAt?: string;
   /** Current hospital, for local protocols. */
   hospital?: string;
+  surgery?: Partial<Record<SurgeryAttribute, string>>;
+  /** Structured antecedents (tri-state). */
+  conditions?: Partial<Record<ConditionCode, { present: boolean }>>;
 }

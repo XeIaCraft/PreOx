@@ -5,7 +5,13 @@ import { AlertTriangle, CircleHelp, FolderPlus, MessageSquareQuote, Plus, Rotate
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, MultiChipGroup } from "@/components/carnet/ui";
-import { FieldLabel, NumberField, RiskPill, ScoreCard, SourceBadge, TextArea, YesNoChip, formatDateTime, localToIso, toLocalInput } from "@/components/preop/ui";
+import { FieldLabel, NumberField, Panel, RiskPill, ScoreCard, SourceBadge, TextArea, YesNoChip, formatDateTime, localToIso, toLocalInput } from "@/components/preop/ui";
+import { SurgeryPanel } from "@/components/preop/surgery-panel";
+import { ConditionsEditor, SubstancesEditor } from "@/components/preop/history-editor";
+import { ConclusionPanel, ExamsPanel } from "@/components/preop/exams-panel";
+import { ASA_REFERENCE } from "@/lib/preop/asa";
+import { consultationSummary, type ConsultationScores } from "@/lib/preop/consultation-scores";
+import type { ExamResult } from "@/lib/preop/exams";
 import {
   APFEL_ITEMS,
   APFEL_REFERENCE,
@@ -31,6 +37,9 @@ import {
   type Sex,
 } from "@/lib/preop/scores";
 import { consultationScores } from "@/lib/preop/consultation-scores";
+import { conditionsSummary, substanceSummary } from "@/lib/preop/history";
+import { RISK_GRADES } from "@/lib/preop/dossier";
+import { SURGERY_GRADES } from "@/lib/preop/surgeries";
 import { emptyConsultation, type ConsultationState } from "@/lib/preop/dossier";
 import { evaluate, indicationLabel, type EvaluationResult } from "@/lib/preop/rules/engine";
 import { describeRule, formatHours } from "@/lib/preop/rules/describe";
@@ -52,6 +61,8 @@ export function evaluateConsultation(rules: Rule[], c: ConsultationState): Evalu
     techniques: c.techniques,
     plannedAt: localToIso(c.plannedAt),
     hospital: c.hospital || undefined,
+    surgery: { bleedingRisk: c.surgery.bleedingRisk, cardiacRisk: c.surgery.cardiacRisk, grade: c.surgery.kce },
+    conditions: c.conditions,
   });
 }
 
@@ -167,6 +178,85 @@ function TreatmentsEditor({ treatments, onChange }: { treatments: PatientTreatme
   );
 }
 
+/** At a glance, always in view on a large screen: who, what, the risks, the tests. */
+function Synthesis({ s, asa, results, exams }: { s: ConsultationState; asa: number | null; results: ConsultationScores["results"]; exams: ExamResult }) {
+  const summary = consultationSummary(s);
+  const surg = s.surgery;
+  const pills: [string, { label: string; level: ConsultationScores["results"]["rcri"]["level"] }][] = [
+    ["Lee", results.rcri],
+    ["STOP-BANG", results.stopBang],
+    ["ARISCAT", results.ariscat],
+    ["Apfel", results.apfel],
+    ["Masque", results.mask],
+    ["Laryngoscopie", results.airway],
+  ];
+  const conditions = conditionsSummary(s.conditions);
+  const substances = substanceSummary(s.substances);
+  const toRequest = exams.recommendations.filter((r) => (s.exams[r.code]?.status ?? "todo") === "todo");
+  return (
+    <Panel title="Synthèse">
+      <dl className="space-y-1.5 text-sm">
+        {surg.name && (
+          <div>
+            <dt className="text-xs text-foreground-subtle">Intervention</dt>
+            <dd className="text-foreground">
+              {surg.name}
+              {surg.emergency ? " (urgence)" : ""}
+              <span className="block text-xs text-foreground-muted">
+                {[
+                  surg.kce && `grade ${SURGERY_GRADES.find((g) => g.code === surg.kce)?.label.toLowerCase()}`,
+                  surg.cardiacRisk && `risque cardiaque ${RISK_GRADES.find((g) => g.code === surg.cardiacRisk)?.label.toLowerCase()}`,
+                  surg.bleedingRisk && `risque hémorragique ${RISK_GRADES.find((g) => g.code === surg.bleedingRisk)?.label.toLowerCase()}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            </dd>
+          </div>
+        )}
+        {(summary.status || asa) && (
+          <div>
+            <dt className="text-xs text-foreground-subtle">Statut</dt>
+            <dd className="text-foreground">{summary.status}</dd>
+          </div>
+        )}
+        {conditions && (
+          <div>
+            <dt className="text-xs text-foreground-subtle">Antécédents</dt>
+            <dd className="text-foreground">{conditions}</dd>
+          </div>
+        )}
+        {substances && (
+          <div>
+            <dt className="text-xs text-foreground-subtle">Assuétudes</dt>
+            <dd className="text-foreground">{substances}</dd>
+          </div>
+        )}
+        {summary.airway && (
+          <div>
+            <dt className="text-xs text-foreground-subtle">Voies aériennes</dt>
+            <dd className="text-foreground">{summary.airway}</dd>
+          </div>
+        )}
+      </dl>
+      <div className="flex flex-wrap gap-1.5">
+        {pills.map(([name, r]) =>
+          r.label ? (
+            <RiskPill key={name} level={r.level}>
+              {name} : {r.label}
+            </RiskPill>
+          ) : null
+        )}
+      </div>
+      {toRequest.length > 0 && (
+        <p className="text-xs text-foreground-muted">
+          <span className="font-medium text-foreground">Examens à demander :</span> {toRequest.map((r) => r.label.split(" (")[0]).join(", ")}
+        </p>
+      )}
+    </Panel>
+  );
+}
+
 /**
  * The consultation form, controlled: the unsaved consultation (below) and
  * a patient dossier both use it. Scores compute as you tap, the rule
@@ -196,7 +286,7 @@ export function ConsultationForm({
   const set = (patch: Partial<ConsultationState>) => onChange({ ...s, ...patch });
   const p = s.patient;
 
-  const { derived, merged, results } = useMemo(() => consultationScores(s), [s]);
+  const { derived, merged, results, asaSuggestion, asa, exams } = useMemo(() => consultationScores(s), [s]);
   const sb = merged.stopBang;
   const lee = merged.rcri;
   const ap = merged.apfel;
@@ -229,6 +319,9 @@ export function ConsultationForm({
         <NumberField label="Plaquettes" unit="G/L" value={p.platelets} onChange={(v) => set({ patient: { ...p, platelets: v } })} />
         <NumberField label="INR" value={p.inr} onChange={(v) => set({ patient: { ...p, inr: v } })} />
         <NumberField label="SpO₂" unit="%" value={p.spo2} onChange={(v) => set({ patient: { ...p, spo2: v } })} />
+        <NumberField label="PA systolique" unit="mmHg" value={p.sbp} onChange={(v) => set({ patient: { ...p, sbp: v } })} />
+        <NumberField label="PA diastolique" unit="mmHg" value={p.dbp} onChange={(v) => set({ patient: { ...p, dbp: v } })} />
+        <NumberField label="Fréquence cardiaque" unit="/min" value={p.hr} onChange={(v) => set({ patient: { ...p, hr: v } })} />
       </div>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-[var(--radius-md)] bg-surface-muted/60 px-3 py-2 text-xs sm:grid-cols-3">
         {[
@@ -245,33 +338,40 @@ export function ConsultationForm({
           </div>
         ))}
       </dl>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
-        <TextArea label="Allergies" value={p.allergies} onChange={(v) => set({ patient: { ...p, allergies: v } })} placeholder="ex. aucune connue, latex, pénicilline (urticaire)" />
-        <TextArea label="Antécédents" value={p.history} onChange={(v) => set({ patient: { ...p, history: v } })} placeholder="ex. FA, DT2 sous insuline, SAOS appareillé" />
-      </div>
+      <TextArea label="Allergies" value={p.allergies} onChange={(v) => set({ patient: { ...p, allergies: v } })} placeholder="ex. aucune connue, latex, pénicilline (urticaire)" />
     </section>
   );
 
-  const planFields = (
-    <section key={`plan-${resetKey}`} className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-surface p-3 sm:p-4">
-      <h2 className="font-serif-display text-lg font-medium text-foreground">Traitements et geste prévu</h2>
+  const surgeryFields = (
+    <SurgeryPanel
+      key={`surgery-${resetKey}`}
+      s={s.surgery}
+      onChange={(surgery) => set({ surgery })}
+      extra={
+        <>
+          <div className="space-y-1.5">
+            <FieldLabel>Technique envisagée</FieldLabel>
+            <MultiChipGroup options={TECHNIQUES.map((t) => ({ code: t.code, label: t.label }))} value={s.techniques} onChange={(v) => set({ techniques: v as Technique[] })} />
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
+            <label className="block space-y-1">
+              <FieldLabel>Date et heure prévues</FieldLabel>
+              <Input type="datetime-local" value={s.plannedAt} onChange={(e) => set({ plannedAt: e.target.value })} />
+            </label>
+            <label className="block space-y-1">
+              <FieldLabel>Hôpital (protocoles locaux)</FieldLabel>
+              <Input value={s.hospital} onChange={(e) => set({ hospital: e.target.value })} placeholder="ex. CHU Tivoli" />
+            </label>
+          </div>
+        </>
+      }
+    />
+  );
+
+  const treatmentFields = (
+    <Panel key={`treatments-${resetKey}`} title="Traitements">
       <TreatmentsEditor treatments={s.treatments} onChange={(treatments) => set({ treatments })} />
-      <div className="space-y-1.5">
-        <p className="text-xs font-medium uppercase tracking-wide text-foreground-subtle">Technique prévue</p>
-        <MultiChipGroup options={TECHNIQUES.map((t) => ({ code: t.code, label: t.label }))} value={s.techniques} onChange={(v) => set({ techniques: v as Technique[] })} />
-      </div>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
-        <label className="block space-y-1">
-          <span className="block text-xs font-medium uppercase tracking-wide text-foreground-subtle">Date et heure prévues</span>
-          <Input type="datetime-local" value={s.plannedAt} onChange={(e) => set({ plannedAt: e.target.value })} />
-        </label>
-        <label className="block space-y-1">
-          <span className="block text-xs font-medium uppercase tracking-wide text-foreground-subtle">Hôpital (protocoles locaux)</span>
-          <Input value={s.hospital} onChange={(e) => set({ hospital: e.target.value })} placeholder="ex. CHU Tivoli" />
-        </label>
-      </div>
-      <TextArea label="Notes de consultation" value={s.notes} onChange={(notes) => set({ notes })} rows={3} placeholder="Examen clinique, éléments à transmettre, informations données au patient…" />
-    </section>
+    </Panel>
   );
 
   const findingsPanel = (
@@ -394,9 +494,30 @@ export function ConsultationForm({
   const scores = (
     <div key={`scores-${resetKey}`} className="space-y-2">
       <h2 className="font-serif-display text-lg font-medium text-foreground">Scores</h2>
-      <ScoreCard title="ASA" summary={s.asa ? ASA_CLASSES[s.asa - 1].label : ""} level={s.asa && s.asa >= 3 ? "intermediate" : "info"}>
+      <ScoreCard
+        title="ASA"
+        summary={asa ? `${ASA_CLASSES[asa - 1].label}${s.surgery.emergency ? "E" : ""}${s.asa ? "" : " · suggéré"}` : ""}
+        level={asa && asa >= 3 ? "intermediate" : "info"}
+        reference={ASA_REFERENCE}
+        defaultOpen
+      >
         <ChipGroup size="sm" options={ASA_CLASSES.slice(0, 5).map((c) => ({ code: c.code, label: c.label, title: c.detail }))} value={s.asa ?? null} onChange={(v) => set({ asa: v ?? undefined })} allowClear />
-        {s.asa && <p className="text-xs text-foreground-muted">{ASA_CLASSES[s.asa - 1].detail}</p>}
+        {asaSuggestion.asa && (
+          <div className="rounded-[var(--radius-md)] bg-surface-muted/60 px-3 py-2 text-xs text-foreground-muted">
+            <p className="font-medium text-foreground">
+              Suggestion : {ASA_CLASSES[asaSuggestion.asa - 1].label}
+              {s.asa && s.asa !== asaSuggestion.asa ? ` (vous avez choisi ${ASA_CLASSES[s.asa - 1].label})` : ""}
+            </p>
+            <ul className="mt-0.5 list-disc pl-4">
+              {asaSuggestion.reasons.map((r, i) => (
+                <li key={i}>
+                  {r.label} → {ASA_CLASSES[r.asa - 1].label}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {asa && <p className="text-xs text-foreground-muted">{ASA_CLASSES[asa - 1].detail}</p>}
       </ScoreCard>
 
       <ScoreCard
@@ -449,7 +570,7 @@ export function ConsultationForm({
             { code: "questionable" as const, label: "Antécédent douteux" },
             { code: "definite" as const, label: "Intubation difficile connue" },
           ]}
-          value={s.airway.difficultIntubationHistory ?? null}
+          value={s.airway.difficultIntubationHistory ?? (s.conditions.difficult_airway?.present === true ? "definite" : s.conditions.difficult_airway?.present === false ? "none" : null)}
           onChange={(v) => set({ airway: { ...s.airway, difficultIntubationHistory: v ?? undefined } })}
           allowClear
         />
@@ -488,7 +609,7 @@ export function ConsultationForm({
         <div className="flex flex-wrap gap-1.5">
           <YesNoChip label="Infection respiratoire le mois précédent" value={s.ariscat.respiratoryInfectionLastMonth} onChange={(v) => set({ ariscat: { ...s.ariscat, respiratoryInfectionLastMonth: v } })} />
           <YesNoChip label="Hb ≤ 10 g/dL" value={s.ariscat.anemia ?? (p.hb !== undefined ? p.hb <= 10 : undefined)} derived={s.ariscat.anemia === undefined && p.hb !== undefined} onChange={(v) => set({ ariscat: { ...s.ariscat, anemia: v } })} />
-          <YesNoChip label="Urgence" value={s.ariscat.emergency} onChange={(v) => set({ ariscat: { ...s.ariscat, emergency: v } })} />
+          <YesNoChip label="Urgence" value={s.ariscat.emergency ?? s.surgery.emergency} derived={s.ariscat.emergency === undefined && s.surgery.emergency !== undefined} onChange={(v) => set({ ariscat: { ...s.ariscat, emergency: v } })} />
         </div>
         <ChipGroup
           size="sm"
@@ -497,12 +618,12 @@ export function ConsultationForm({
             { code: "upper_abdominal" as const, label: "Abdominale haute" },
             { code: "intrathoracic" as const, label: "Intrathoracique" },
           ]}
-          value={s.ariscat.incision ?? null}
+          value={s.ariscat.incision ?? s.surgery.incision ?? null}
           onChange={(v) => set({ ariscat: { ...s.ariscat, incision: v ?? undefined } })}
           allowClear
         />
         <div className="grid grid-cols-2 gap-2">
-          <NumberField label="Durée prévue" unit="h" value={s.ariscat.durationHours} onChange={(v) => set({ ariscat: { ...s.ariscat, durationHours: v } })} />
+          <NumberField key={`dur-${s.surgery.durationHours}`} label="Durée prévue" unit="h" value={s.ariscat.durationHours ?? s.surgery.durationHours} onChange={(v) => set({ ariscat: { ...s.ariscat, durationHours: v } })} />
         </div>
         <p className="text-xs text-foreground-subtle">Âge et SpO₂ repris des données du patient. Score : {results.ariscat.value}</p>
       </ScoreCard>
@@ -519,7 +640,8 @@ export function ConsultationForm({
       <ScoreCard title="CHA₂DS₂-VASc · risque thromboembolique (FA)" summary={results.cha.label} level={results.cha.level} missing={results.cha.missing} reference={CHA2DS2VASC_REFERENCE.label}>
         <ItemsGrid
           items={{ heartFailure: "Insuffisance cardiaque", hypertension: "HTA", diabetes: "Diabète", strokeTiaThromboembolism: "AVC, AIT ou embolie", vascularDisease: "Maladie vasculaire" }}
-          answers={s.cha}
+          answers={merged.cha.merged}
+          derivedKeys={merged.cha.derivedKeys}
           onChange={(v) => set({ cha: v })}
         />
         <p className="text-xs text-foreground-subtle">Âge et sexe repris des données du patient.</p>
@@ -532,33 +654,28 @@ export function ConsultationForm({
   );
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-start">
-        <div className="space-y-4">
-          {patientFields}
-          {planFields}
-          <div className="lg:hidden">{findingsPanel}</div>
-          {scores}
-        </div>
-        <div className="hidden lg:sticky lg:top-4 lg:block">
-          {findingsPanel}
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {[
-              ["STOP-BANG", results.stopBang],
-              ["Lee", results.rcri],
-              ["Apfel", results.apfel],
-              ["ARISCAT", results.ariscat],
-              ["Masque", results.mask],
-            ].map(([name, r]) => {
-              const res = r as typeof results.rcri;
-              return res.label ? (
-                <RiskPill key={name as string} level={res.level}>
-                  {name as string} : {res.label}
-                </RiskPill>
-              ) : null;
-            })}
-          </div>
-        </div>
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-start">
+      <div className="space-y-4">
+        {patientFields}
+        {surgeryFields}
+        <ConditionsEditor
+          key={`conditions-${resetKey}`}
+          conditions={s.conditions}
+          onChange={(conditions) => set({ conditions })}
+          sex={p.sex}
+          patient={p}
+          onPatient={(patient) => set({ patient })}
+        />
+        <SubstancesEditor key={`substances-${resetKey}`} value={s.substances} onChange={(substances) => set({ substances })} />
+        {treatmentFields}
+        <div className="lg:hidden">{findingsPanel}</div>
+        {scores}
+        <ExamsPanel key={`exams-${resetKey}`} result={exams} exams={s.exams} onChange={(e) => set({ exams: e })} />
+        <ConclusionPanel key={`conclusion-${resetKey}`} value={s.conclusion} onChange={(conclusion) => set({ conclusion })} notes={s.notes} onNotes={(notes) => set({ notes })} />
+      </div>
+      <div className="hidden space-y-3 lg:sticky lg:top-4 lg:block">
+        <Synthesis s={s} asa={asa} results={results} exams={exams} />
+        {findingsPanel}
       </div>
     </div>
   );

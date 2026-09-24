@@ -12,7 +12,8 @@
 
 import { cockcroftGault, bmi, ckdEpi2021 } from "../scores";
 import { atcMatches } from "../medications";
-import { INDICATIONS, PATIENT_VALUES, SOURCE_LEVELS, TECHNIQUES } from "./types";
+import { INDICATIONS, PATIENT_VALUES, SOURCE_LEVELS, SURGERY_ATTRIBUTES, TECHNIQUES } from "./types";
+import { CONDITION_DEFS } from "../history";
 import type { Comparator, Condition, PatientContext, PatientTreatment, PatientValue, Rule, SourceLevel, Technique } from "./types";
 
 export interface MissingInfo {
@@ -118,6 +119,19 @@ function evaluateCondition(c: Condition, ctx: PatientContext, now: string): Cond
   if (c.kind === "technique") {
     if (ctx.techniques.length === 0) return { truth: "unknown", missing: [{ key: "technique", label: "Technique anesthésique prévue" }], matched: [] };
     return { truth: ctx.techniques.some((t) => c.in.includes(t)), missing: [], matched: [] };
+  }
+
+  if (c.kind === "surgery") {
+    const v = ctx.surgery?.[c.attribute];
+    const label = SURGERY_ATTRIBUTES.find((a) => a.code === c.attribute)?.label ?? c.attribute;
+    if (!v) return { truth: "unknown", missing: [{ key: `surgery:${c.attribute}`, label }], matched: [] };
+    return { truth: c.in.includes(v), missing: [], matched: [] };
+  }
+
+  if (c.kind === "history") {
+    const e = ctx.conditions?.[c.condition];
+    if (!e) return { truth: "unknown", missing: [{ key: `history:${c.condition}`, label: `Antécédent : ${CONDITION_DEFS.get(c.condition)?.label ?? c.condition}` }], matched: [] };
+    return { truth: e.present === c.present, missing: [], matched: [] };
   }
 
   if (c.kind === "value") {

@@ -36,7 +36,7 @@ function theatreDossier(): Dossier {
   const d = emptyDossier("dm");
   d.consultation.patient = { age: 72, sex: "M", weightKg: 88, heightCm: 176, allergies: "Aucune connue", history: "FA, DT2, HTA" };
   d.consultation.asa = 3;
-  d.surgery = { ...d.surgery, name: "PTG", side: "droite", surgeon: "Dr X" };
+  d.consultation.surgery = { ...d.consultation.surgery, name: "PTG", side: "droite", surgeon: "Dr X" };
   d.plan.techniques = ["neuraxial", "sedation"];
   d.plan.tourniquetAlertMin = 120;
   d.plan.drugs = [drug({ id: "cefa", name: "Céfazoline", phase: "antibio", doseMode: "fixed", amount: 2, unit: "g", redoseEveryMin: 240 })];

@@ -27,6 +27,10 @@ import {
   type ScoreResult,
 } from "./scores";
 import type { ConsultationState } from "./dossier";
+import { anyOf, has, qualified } from "./history";
+import { suggestAsa } from "./asa";
+import { recommendExams } from "./exams";
+import { atcMatches } from "./medications";
 
 type YesNo<K extends string> = Partial<Record<K, boolean>>;
 
@@ -59,15 +63,46 @@ export function consultationScores(c: ConsultationState) {
     egfr: p.age !== undefined && p.sex && p.creatinineMgDl ? ckdEpi2021({ age: p.age, sex: p.sex, creatinineMgDl: p.creatinineMgDl }) : undefined,
   };
 
+  const cond = c.conditions;
+  const sub = c.substances;
+  const surgery = c.surgery;
   const merged = {
     stopBang: withDerived(c.stopBang, {
+      pressure: has(cond, "hypertension"),
       bmiOver35: derived.bmi !== undefined ? derived.bmi > 35 : undefined,
       ageOver50: p.age !== undefined ? p.age > 50 : undefined,
       male: p.sex ? p.sex === "M" : undefined,
     }),
-    rcri: withDerived(c.rcri, { creatinineOver2: p.creatinineMgDl !== undefined ? p.creatinineMgDl > 2 : undefined }),
-    apfel: withDerived(c.apfel, { female: p.sex ? p.sex === "F" : undefined }),
-    hasBled: withDerived(c.hasBled, { elderly: p.age !== undefined ? p.age > 65 : undefined }),
+    rcri: withDerived(c.rcri, {
+      highRiskSurgery: surgery.rcriHighRisk,
+      ischemicHeartDisease: has(cond, "coronary"),
+      heartFailure: has(cond, "heart_failure"),
+      cerebrovascularDisease: has(cond, "stroke"),
+      insulin: has(cond, "diabetes_insulin"),
+      creatinineOver2: p.creatinineMgDl !== undefined ? p.creatinineMgDl > 2 : undefined,
+    }),
+    apfel: withDerived(c.apfel, {
+      female: p.sex ? p.sex === "F" : undefined,
+      nonSmoker: sub.tobacco ? sub.tobacco !== "current" : undefined,
+      history: has(cond, "ponv"),
+    }),
+    hasBled: withDerived(c.hasBled, {
+      hypertension: has(cond, "hypertension") === false ? false : qualified(cond, "hypertension", "poorlyControlled") || undefined,
+      renal: anyOf(cond, ["dialysis"]) || qualified(cond, "ckd", "severe") || (has(cond, "ckd") === false && has(cond, "dialysis") === false ? false : undefined),
+      liver: has(cond, "cirrhosis"),
+      stroke: has(cond, "stroke"),
+      bleeding: has(cond, "bleeding_disorder"),
+      elderly: p.age !== undefined ? p.age > 65 : undefined,
+      drugs: c.treatments.some((t) => atcMatches(t.atc, "B01AC") || atcMatches(t.atc, "M01A")) || undefined,
+      alcohol: sub.alcoholUnitsPerWeek !== undefined ? sub.alcoholUnitsPerWeek >= 8 : undefined,
+    }),
+    cha: withDerived(c.cha, {
+      heartFailure: has(cond, "heart_failure"),
+      hypertension: has(cond, "hypertension"),
+      diabetes: anyOf(cond, ["diabetes_oral", "diabetes_insulin"]),
+      strokeTiaThromboembolism: has(cond, "stroke"),
+      vascularDisease: anyOf(cond, ["coronary", "pad"]),
+    }),
     mask: withDerived(c.maskVentilation, {
       bmiOver26: derived.bmi !== undefined ? derived.bmi > 26 : undefined,
       ageOver55: p.age !== undefined ? p.age > 55 : undefined,
@@ -76,20 +111,33 @@ export function consultationScores(c: ConsultationState) {
     }),
   };
 
+  const airwayHistory = c.airway.difficultIntubationHistory ?? (has(cond, "difficult_airway") === true ? "definite" : has(cond, "difficult_airway") === false ? "none" : undefined);
   const results = {
     stopBang: stopBang(merged.stopBang.merged),
     rcri: rcri(merged.rcri.merged),
     dasi: dasi(c.dasi),
-    ariscat: ariscat({ ...c.ariscat, age: c.ariscat.age ?? p.age, spo2: c.ariscat.spo2 ?? p.spo2, anemia: c.ariscat.anemia ?? (p.hb !== undefined ? p.hb <= 10 : undefined) }),
+    ariscat: ariscat({
+      ...c.ariscat,
+      age: c.ariscat.age ?? p.age,
+      spo2: c.ariscat.spo2 ?? p.spo2,
+      anemia: c.ariscat.anemia ?? (p.hb !== undefined ? p.hb <= 10 : undefined),
+      incision: c.ariscat.incision ?? surgery.incision,
+      durationHours: c.ariscat.durationHours ?? surgery.durationHours,
+      emergency: c.ariscat.emergency ?? surgery.emergency,
+    }),
     apfel: apfel(merged.apfel.merged),
     hemstop: hemstop(c.hemstop),
-    cha: cha2ds2vasc({ ...c.cha, age: p.age, sex: p.sex }),
+    cha: cha2ds2vasc({ ...merged.cha.merged, age: p.age, sex: p.sex }),
     hasBled: hasBled(merged.hasBled.merged),
-    airway: elGanzouri({ ...c.airway, mallampati: c.airway.mallampati ?? c.mallampati, weightKg: c.airway.weightKg ?? p.weightKg }),
+    airway: elGanzouri({ ...c.airway, difficultIntubationHistory: airwayHistory, mallampati: c.airway.mallampati ?? c.mallampati, weightKg: c.airway.weightKg ?? p.weightKg }),
     mask: maskVentilation(merged.mask.merged),
   };
 
-  return { derived, merged, results };
+  const asaSuggestion = suggestAsa(p, cond, sub);
+  const asa = c.asa ?? asaSuggestion.asa;
+  const exams = recommendExams({ consultation: c, asa, mets: results.dasi.missing === 0 && results.dasi.value > 0 ? results.dasi.mets : undefined });
+
+  return { derived, merged, results, asaSuggestion, asa, exams };
 }
 
 export type ConsultationScores = ReturnType<typeof consultationScores>;
@@ -108,7 +156,7 @@ export interface ConsultationSummary {
 export function consultationSummary(c: ConsultationState, scores = consultationScores(c)): ConsultationSummary {
   const r = scores.results;
   return {
-    status: [c.asa ? ASA_CLASSES[c.asa - 1].label : "", c.nyha ? `NYHA ${["I", "II", "III", "IV"][c.nyha - 1]}` : "", c.frailty ? `CFS ${c.frailty} (${CLINICAL_FRAILTY_SCALE[c.frailty - 1].detail.toLowerCase()})` : ""]
+    status: [scores.asa ? `${ASA_CLASSES[scores.asa - 1].label}${c.surgery.emergency ? "E" : ""}${c.asa ? "" : " (suggéré)"}` : "", c.nyha ? `NYHA ${["I", "II", "III", "IV"][c.nyha - 1]}` : "", c.frailty ? `CFS ${c.frailty} (${CLINICAL_FRAILTY_SCALE[c.frailty - 1].detail.toLowerCase()})` : ""]
       .filter(Boolean)
       .join(" · "),
     airway: [c.mallampati ? `Mallampati ${MALLAMPATI_CLASSES[c.mallampati - 1].label}` : "", r.airway.level === "high" ? r.airway.label.toLowerCase() : "", r.mask.level === "high" ? r.mask.label.toLowerCase() : ""]

@@ -6,6 +6,8 @@ import type { AriscatInput, ElGanzouriInput, Sex } from "./scores";
 import type { APFEL_ITEMS, DASI_ITEMS, HAS_BLED_ITEMS, HEMSTOP_ITEMS, RCRI_ITEMS, STOP_BANG_ITEMS } from "./scores";
 import type { PatientTreatment, Technique } from "./rules/types";
 import { emptyProtocolContent, type ProtocolContent } from "./protocols";
+import type { Conditions, Substances } from "./history";
+import type { SurgeryGrade } from "./surgeries";
 
 type YesNo<K extends string> = Partial<Record<K, boolean>>;
 
@@ -19,12 +21,42 @@ export interface ConsultationPatient {
   platelets?: number;
   inr?: number;
   spo2?: number;
+  /** Blood pressure and heart rate at the consultation. */
+  sbp?: number;
+  dbp?: number;
+  hr?: number;
   allergies?: string;
+  /** Other antecedents, free text (the structured ones are in `conditions`). */
   history?: string;
+  /** Previous operations and anaesthesias, free text. */
+  surgicalHistory?: string;
+}
+
+export type ExamStatus = "todo" | "requested" | "available" | "not_needed";
+
+export interface ExamState {
+  status: ExamStatus;
+  /** Result or date, free text. */
+  note?: string;
+}
+
+export type ConsultationDecision = "fit" | "optimise" | "postpone" | "";
+
+export interface ConsultationConclusion {
+  decision: ConsultationDecision;
+  /** Anaesthesia proposed and discussed with the patient. */
+  proposal: string;
+  fastingGiven?: boolean;
+  informationGiven?: boolean;
+  consent?: boolean;
 }
 
 export interface ConsultationState {
   patient: ConsultationPatient;
+  conditions: Conditions;
+  substances: Substances;
+  surgery: Surgery;
+  /** Chosen ASA class; when absent the suggestion (asa.ts) is shown. */
   asa?: number;
   mallampati?: 1 | 2 | 3 | 4;
   nyha?: number;
@@ -41,15 +73,26 @@ export interface ConsultationState {
   hasBled: YesNo<keyof typeof HAS_BLED_ITEMS>;
   treatments: PatientTreatment[];
   techniques: Technique[];
+  exams: Partial<Record<string, ExamState>>;
+  conclusion: ConsultationConclusion;
   /** datetime-local value ("2026-10-08T08:00"), local time. */
   plannedAt: string;
   hospital: string;
   notes: string;
 }
 
+export function emptySurgery(): Surgery {
+  return { name: "", category: "", side: "", surgeon: "", position: "" };
+}
+
 export function emptyConsultation(): ConsultationState {
   return {
     patient: {},
+    conditions: {},
+    substances: {},
+    surgery: emptySurgery(),
+    exams: {},
+    conclusion: { decision: "", proposal: "" },
     airway: {},
     maskVentilation: {},
     stopBang: {},
@@ -76,10 +119,15 @@ export interface Surgery {
   category: string;
   side: string;
   surgeon: string;
-  /** KCE severity of the procedure. */
-  kce?: "minor" | "intermediate" | "major";
+  /** Severity grade of the procedure (minor / intermediate / major), as in the KCE / NICE preop testing grids. */
+  kce?: SurgeryGrade;
+  /** Surgical cardiac risk class (ESC 2022). */
   cardiacRisk?: RiskGrade;
   bleedingRisk?: RiskGrade;
+  /** Lee index "high-risk surgery": intraperitoneal, intrathoracic or suprainguinal vascular. */
+  rcriHighRisk?: boolean;
+  incision?: "peripheral" | "upper_abdominal" | "intrathoracic";
+  emergency?: boolean;
   durationHours?: number;
   position: string;
 }
@@ -226,8 +274,8 @@ export interface Dossier {
   /** First letter of the surname + first letter of the first name. */
   initials: string;
   status: DossierStatus;
+  /** Includes the intervention (consultation.surgery). */
   consultation: ConsultationState;
-  surgery: Surgery;
   plan: ProtocolContent;
   /** Protocol the plan was started from. */
   protocolId: string | null;
@@ -247,7 +295,6 @@ export function emptyDossier(initials: string, consultation: ConsultationState =
     initials: initials.trim().toUpperCase().slice(0, 4),
     status: "consultation",
     consultation,
-    surgery: { name: "", category: "", side: "", surgeon: "", position: "" },
     plan: emptyProtocolContent(),
     protocolId: null,
     protocolName: "",
@@ -259,18 +306,27 @@ export function emptyDossier(initials: string, consultation: ConsultationState =
   };
 }
 
+export function upgradeConsultation(c: Partial<ConsultationState> | undefined): ConsultationState {
+  const base = emptyConsultation();
+  return { ...base, ...c, surgery: { ...base.surgery, ...c?.surgery }, conclusion: { ...base.conclusion, ...c?.conclusion } };
+}
+
 /** Dossiers saved by an older version get the fields added since. */
 export function upgradeDossier(d: Dossier): Dossier {
   const base = emptyDossier(d.initials);
-  return {
+  // The intervention used to live on the dossier itself.
+  const legacy = d as Dossier & { surgery?: Surgery };
+  const consultation = upgradeConsultation(legacy.surgery && !d.consultation?.surgery ? { ...d.consultation, surgery: legacy.surgery } : d.consultation);
+  const next = {
     ...base,
     ...d,
-    consultation: { ...emptyConsultation(), ...d.consultation },
-    surgery: { ...base.surgery, ...d.surgery },
+    consultation,
     plan: { ...base.plan, ...d.plan },
     intraop: { ...base.intraop, ...d.intraop },
     transmission: { ...base.transmission, ...d.transmission },
   };
+  delete (next as { surgery?: Surgery }).surgery;
+  return next;
 }
 
 /** The planned date of a dossier (YYYY-MM-DD), from the consultation's planned date-time. */

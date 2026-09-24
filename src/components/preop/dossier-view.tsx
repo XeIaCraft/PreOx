@@ -59,7 +59,7 @@ export function DossierView({
         </Button>
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-tint font-mono text-sm font-semibold text-primary-strong">{d.initials}</span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-foreground">{d.surgery.name || "Intervention à préciser"}</p>
+          <p className="truncate text-sm font-medium text-foreground">{d.consultation.surgery.name || "Intervention à préciser"}</p>
           <p className="truncate text-xs text-foreground-subtle">{when}</p>
         </div>
         <Select value={d.status} onChange={(e) => onChange({ ...d, status: e.target.value as DossierStatus })} className="h-8 w-auto px-2 text-xs" aria-label="Statut du dossier">

@@ -1,7 +1,8 @@
 // A structured rule, read back in plain French — shown before saving it
 // ("this is what the app understood") and in the library.
 import { atcLabel } from "../medications";
-import { INDICATIONS, PATIENT_VALUES, TECHNIQUES } from "./types";
+import { INDICATIONS, PATIENT_VALUES, SURGERY_ATTRIBUTES, TECHNIQUES } from "./types";
+import { CONDITION_DEFS } from "../history";
 import type { Comparator, Condition, RuleAction } from "./types";
 
 const OP: Record<Comparator, string> = { "<": "<", "<=": "≤", ">": ">", ">=": "≥" };
@@ -13,6 +14,11 @@ export function formatHours(hours: number): string {
 
 export function describeCondition(c: Condition): string {
   if (c.kind === "technique") return `geste : ${c.in.map((t) => TECHNIQUES.find((x) => x.code === t)?.label.toLowerCase() ?? t).join(" ou ")}`;
+  if (c.kind === "surgery") {
+    const a = SURGERY_ATTRIBUTES.find((x) => x.code === c.attribute);
+    return `${(a?.label ?? c.attribute).toLowerCase()} : ${c.in.map((v) => a?.values.find((x) => x.code === v)?.label ?? v).join(" ou ")}`;
+  }
+  if (c.kind === "history") return `antécédent ${c.present ? "" : "absent : "}${(CONDITION_DEFS.get(c.condition)?.label ?? c.condition).toLowerCase()}`;
   if (c.kind === "value") {
     const v = PATIENT_VALUES.find((x) => x.code === c.value);
     return `${v?.label ?? c.value} ${OP[c.op]} ${c.threshold}${v?.unit ? ` ${v.unit}` : ""}`;

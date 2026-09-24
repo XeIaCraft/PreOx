@@ -213,7 +213,7 @@ function DossierCard({ d, onOpen }: { d: Dossier; onOpen: () => void }) {
       <button type="button" onClick={onOpen} className="flex w-full items-center gap-3 rounded-[var(--radius-lg)] border border-border bg-surface p-3 text-left transition-colors hover:border-border-strong hover:bg-surface-muted/50">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-tint font-mono text-sm font-semibold text-primary-strong">{d.initials}</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-foreground">{d.surgery.name || "Intervention à préciser"}</span>
+          <span className="block truncate text-sm font-medium text-foreground">{d.consultation.surgery.name || "Intervention à préciser"}</span>
           <span className="block truncate text-xs text-foreground-subtle">
             {dossierWhen(d)}
             {d.protocolName ? ` · ${d.protocolName}` : ""}

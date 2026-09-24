@@ -12,7 +12,7 @@ function prepared() {
   const d = emptyDossier("dm");
   d.consultation.patient = { age: 72, sex: "M", weightKg: 88, heightCm: 176 };
   d.consultation.plannedAt = "2026-10-08T08:00";
-  d.surgery = { ...d.surgery, name: "PTG", side: "droite", category: "K" };
+  d.consultation.surgery = { ...d.consultation.surgery, name: "PTG", side: "droite", category: "K" };
   d.plan.techniques = ["neuraxial", "sedation"];
   d.plan.drugs = [newDrug({ name: "Bupivacaïne hyperbare", route: "intrathecal", doseMode: "fixed", amount: 10 }), newDrug({ name: "Céfazoline", doseMode: "fixed", amount: 2, unit: "g" }), newDrug({ name: "Propofol", doseMode: "per_kg", amount: 1, weightBasis: "ideal" })];
   return d;
