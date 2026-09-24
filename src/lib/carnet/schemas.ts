@@ -3,7 +3,8 @@
 // can never smuggle a user_id or another column in — the server sets
 // user_id itself.
 import { z } from "zod";
-import { OPERATION_CATEGORIES, REGIONAL_TYPES, TECHNICAL_ACTS, ABSENCE_CATEGORIES, ACTIVITY_COUNTERS } from "./referentiel";
+import { OPERATION_CATEGORIES, REGIONAL_TYPES, TECHNICAL_ACTS, ABSENCE_CATEGORIES, ACTIVITY_COUNTERS, OTHER_CODES } from "./referentiel";
+import { DRUG_ROUTES } from "./pharmaco";
 import type { CarnetCollection } from "./types";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date invalide");
@@ -11,6 +12,9 @@ const optionalDate = date.nullable();
 const text = (max = 2000) => z.string().max(max);
 const id = z.uuid();
 const timestamp = z.string().max(40);
+
+// PNG data URL of a drawn signature — bounded to keep one row reasonable.
+const pngDataUrl = z.string().startsWith("data:image/png;base64,").max(400_000);
 
 const codes = (options: { code: string }[]) => z.enum(options.map((o) => o.code) as [string, ...string[]]);
 const counts = (keys: string[]) => z.record(z.string(), z.number().min(0).max(100000)).refine((r) => Object.keys(r).every((k) => keys.includes(k)), "Clé inconnue");
@@ -27,6 +31,7 @@ export const profileSchema = z.object({
   university: text(300),
   graduation_year: z.number().int().min(1950).max(2100).nullable(),
   pre_training_activities: text(10000),
+  signature: z.union([z.literal(""), pngDataUrl]),
 });
 
 const supervisorSchema = z.object({
@@ -44,8 +49,8 @@ const stageSchema = z.object({
   hospital: text(300).min(1, "Lieu requis"),
   city: text(200),
   sector: text(200),
-  activity: text(200),
   coordinator_id: id.nullable(),
+  supervisor_id: id.nullable(),
   training_year: z.number().int().min(1).max(8),
   start_date: date,
   end_date: optionalDate,
@@ -73,9 +78,15 @@ const signatureSchema = z.object({
   id,
   supervisor_id: id.nullable(),
   supervisor_name: text(300).min(1),
-  // PNG data URL of the drawn signature — bounded to keep one row reasonable.
-  image: z.string().startsWith("data:image/png;base64,").max(400_000),
+  image: pngDataUrl,
   signed_at: timestamp,
+});
+
+const unique = (list: string[]) => new Set(list).size === list.length;
+
+const caseDetailsSchema = z.object({
+  drugs: z.array(z.object({ name: text(120).min(1), route: codes(DRUG_ROUTES), dose: text(120) })).max(60).optional(),
+  procedures: z.array(text(60)).max(80).optional(),
 });
 
 const caseBase = z.object({
@@ -87,15 +98,17 @@ const caseBase = z.object({
     operation_category: codes(OPERATION_CATEGORIES),
     pediatric_under_4: z.boolean(),
     general_anesthesia: z.boolean(),
-    regional_type: codes(REGIONAL_TYPES).nullable(),
-    technical_act: codes(TECHNICAL_ACTS).nullable(),
+    regional_types: z.array(codes(REGIONAL_TYPES)).max(REGIONAL_TYPES.length).refine(unique, "Doublon"),
+    technical_acts: z.array(codes(TECHNICAL_ACTS)).max(TECHNICAL_ACTS.length).refine(unique, "Doublon"),
+    other_labels: z.record(codes(OTHER_CODES.map((code) => ({ code }))), text(300)),
+    details: caseDetailsSchema,
     participation: z.union([z.literal(1), z.literal(2), z.literal(3)]),
     tutor_id: id.nullable(),
     signature_id: id.nullable(),
     notes: text(2000),
     created_at: timestamp,
   });
-const caseSchema = caseBase.refine((c) => c.general_anesthesia || c.regional_type !== null || c.technical_act !== null, "Technique d'anesthésie requise");
+const caseSchema = caseBase.refine((c) => c.general_anesthesia || c.regional_types.length > 0 || c.technical_acts.length > 0, "Technique d'anesthésie requise");
 
 const dutySchema = z.object({
   id,

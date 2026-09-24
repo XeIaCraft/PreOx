@@ -9,6 +9,7 @@ import { requireProfile } from "@/lib/auth/dal";
 import { getAppBySlugForProfile } from "@/lib/apps";
 import { createClient } from "@/lib/supabase/server";
 import { profileSchema, ROW_SCHEMAS, PATCH_SCHEMAS } from "./schemas";
+import { upgradePatch, upgradeProfile, upgradeRow } from "./compat";
 import { emptyCarnetData, type CarnetCollection, type CarnetData, type CarnetMutation, type CarnetMutationResult } from "./types";
 import type { Profile } from "@/lib/supabase/types";
 
@@ -88,7 +89,7 @@ function failure(m: CarnetMutation, error: string, retryable: boolean): CarnetMu
 
 async function applyOne(supabase: Supabase, userId: string, m: CarnetMutation): Promise<CarnetMutationResult> {
   if (m.collection === "profile") {
-    const parsed = profileSchema.safeParse(m.row);
+    const parsed = profileSchema.safeParse(upgradeProfile(m.row));
     if (!parsed.success) return failure(m, parsed.error.issues[0]?.message ?? "Profil invalide", false);
     const { error } = await supabase.from("carnet_profiles").upsert({ ...parsed.data, user_id: userId }, { onConflict: "user_id" });
     return error ? failure(m, error.message, !isPermanent(error.code)) : { id: m.id, ok: true };
@@ -98,7 +99,7 @@ async function applyOne(supabase: Supabase, userId: string, m: CarnetMutation): 
   if (!table) return failure(m, "Collection inconnue", false);
 
   if (m.op === "put") {
-    const parsed = ROW_SCHEMAS[m.collection].safeParse(m.row);
+    const parsed = ROW_SCHEMAS[m.collection].safeParse(upgradeRow(m.collection, m.row));
     if (!parsed.success) return failure(m, parsed.error.issues[0]?.message ?? "Données invalides", false);
     const onConflict = m.collection === "years" ? "user_id,training_year" : "id";
     const { error } = await supabase.from(table).upsert({ ...parsed.data, user_id: userId } as never, { onConflict });
@@ -106,7 +107,7 @@ async function applyOne(supabase: Supabase, userId: string, m: CarnetMutation): 
   }
 
   if (m.op === "patch") {
-    const parsed = PATCH_SCHEMAS[m.collection].safeParse(m.patch);
+    const parsed = PATCH_SCHEMAS[m.collection].safeParse(upgradePatch(m.collection, m.patch));
     if (!parsed.success) return failure(m, parsed.error.issues[0]?.message ?? "Données invalides", false);
     if (Object.keys(parsed.data).length === 0) return { id: m.id, ok: true };
     const { error } = await supabase.from(table).update(parsed.data as never).eq("id", m.rowId).eq("user_id", userId);

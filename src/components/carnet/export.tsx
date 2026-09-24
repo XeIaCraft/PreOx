@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Database, FileDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -16,6 +16,12 @@ export function ExportView() {
   const years = [...new Set(data.stages.map((s) => s.training_year))].sort((a, b) => a - b);
   const [year, setYear] = useState<number | "all">(years.at(-1) ?? "all");
   const [busy, setBusy] = useState(false);
+  // Fetch the blank form now (the service worker keeps it), so the export also works offline later.
+  useEffect(() => {
+    import("@/lib/carnet/pdf")
+      .then((m) => m.loadCarnetPdfAssets())
+      .catch(() => {});
+  }, []);
   const yearStageIds = new Set(data.stages.filter((s) => year === "all" || s.training_year === year).map((s) => s.id));
   const pending = pendingSignatureCount({
     cases: data.cases.filter((c) => yearStageIds.has(c.stage_id)),
@@ -52,9 +58,10 @@ export function ExportView() {
         <div>
           <p className="font-medium text-foreground">Carnet de stage officiel (PDF)</p>
           <p className="mt-1 text-sm text-foreground-muted">
-            Toutes les sections du carnet, dans l&apos;ordre du formulaire : identification, grilles d&apos;évaluation (en-tête rempli, à compléter par le
-            maître de stage), activités connexes, cours, séminaires, publications, relevé des prestations avec les signatures, journal de gardes,
-            rapport d&apos;activité, évaluations personnelles et absences.
+            Le formulaire officiel de la Commission, page par page, rempli avec vos données : couverture, déclaration et stages, identification,
+            grilles d&apos;évaluation (en-tête rempli, grille à compléter par le maître de stage), activités connexes, cours, séminaires,
+            publications, relevé des prestations avec les signatures, jours de garde, rapport d&apos;activité, évaluations personnelles et
+            absences. Les pages à répéter (relevé, gardes, grilles…) le sont comme des photocopies de la page vierge.
           </p>
         </div>
         <ChipGroup

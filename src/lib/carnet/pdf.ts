@@ -1,61 +1,181 @@
 "use client";
 
 // PDF export of the carnet, generated on the device with pdf-lib (loaded
-// on demand) — works offline, nothing to wait for on the server. Mirrors
-// the official carnet's sections and order: cover + declaration, contents,
-// identification, stage evaluation grids (header pre-filled, body left
-// blank for the maître de stage), related activities, courses, seminars,
-// publications, record of cases (with each supervisor's signature image),
-// days of duty, activity report, personal evaluation, absences.
-import type { PDFDocument, PDFFont, PDFImage, PDFPage } from "pdf-lib";
-import {
-  ABSENCE_CATEGORIES,
-  COMPETENCE_LEVELS,
-  EVALUATION_GRID,
-  OPERATION_CATEGORIES,
-  PARTICIPATION_DEGREES,
-  caseCode,
-  supervisorName,
-} from "./referentiel";
+// on demand) — works offline, nothing to wait for on the server.
+//
+// The official form itself is the page: public/carnet/modele-carnet-de-stage.pdf
+// is the Commission's .doc (Carnet_de_stage_anesthesie-reanimation.doc)
+// converted to PDF as is, and every page of the export is one of its pages
+// with the candidate's data written on top, where a pen would go — nothing
+// of the form is redrawn or re-laid out. Pages meant to be repeated
+// (evaluation grid per stage, record of cases, duties, related activities,
+// personal evaluation per stage) are repeated like photocopies of the
+// blank page. Text is set in Carlito (metric twin of the form's Calibri),
+// in a pen blue. A field whose text doesn't fit its space, even smaller,
+// is cut and continued in full in an annex at the end.
+import type { PDFDocument, PDFEmbeddedPage, PDFFont, PDFImage, PDFPage } from "pdf-lib";
+import { caseCode, supervisorName } from "./referentiel";
 import { activityReport, caseNumbers, formatDateFr, localDateIso, REPORT_YEARS, sortStages } from "./logic";
 import type { CarnetData, CarnetStage } from "./types";
 
-const A4: [number, number] = [595.28, 841.89];
-const A4_LANDSCAPE: [number, number] = [841.89, 595.28];
-const MARGIN = 40;
-const INK = { r: 0.08, g: 0.12, b: 0.2 };
-const MUTED = { r: 0.4, g: 0.43, b: 0.48 };
-const RULE = { r: 0.72, g: 0.74, b: 0.78 };
-const SHADE = { r: 0.93, g: 0.94, b: 0.96 };
+export const TEMPLATE_URL = "/carnet/modele-carnet-de-stage.pdf";
+export const FONT_URL = "/carnet/carlito.ttf";
 
-// Characters the standard PDF fonts (WinAnsi) can draw beyond Latin-1.
-const WIN_ANSI_EXTRA = new Set("€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ");
-const REPLACEMENTS: Record<string, string> = { "≤": "<=", "≥": ">=", "−": "-", "→": "->", "✓": "v", " ": " ", " ": " " };
+export interface CarnetPdfAssets {
+  template: ArrayBuffer | Uint8Array;
+  font: ArrayBuffer | Uint8Array;
+}
 
-/** Standard fonts only encode WinAnsi — anything else would make pdf-lib throw, so it's mapped to the closest drawable text. */
-export function toWinAnsi(input: string): string {
+let assetsPromise: Promise<CarnetPdfAssets> | null = null;
+
+/** The blank form and its font, fetched once (and kept by the service worker for offline exports). */
+export function loadCarnetPdfAssets(): Promise<CarnetPdfAssets> {
+  if (!assetsPromise) {
+    const get = async (url: string) => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${url}: ${res.status}`);
+      return res.arrayBuffer();
+    };
+    assetsPromise = Promise.all([get(TEMPLATE_URL), get(FONT_URL)])
+      .then(([template, font]) => ({ template, font }))
+      .catch((err) => {
+        assetsPromise = null;
+        throw err;
+      });
+  }
+  return assetsPromise;
+}
+
+// ---------------------------------------------------------------------------
+// Template geometry — measured on the form (points, origin top-left).
+// ---------------------------------------------------------------------------
+
+/** 0-based page indexes in the template. */
+const TPL = {
+  cover: 0,
+  declaration: 1,
+  contents: 2,
+  identification: 3,
+  grid: [4, 5],
+  activity: 6,
+  courses: 8,
+  seminars: 9,
+  publications: 10,
+  legend: 11,
+  casesFirst: 12,
+  cases: 13,
+  duties: 28,
+  report: [32, 33, 34],
+  review: 35,
+  absences: 36,
+} as const;
+
+const CASES_TABLE = { cols: [36.9, 79.4, 157.4, 277.9, 355.8, 502.7, 590.2, 677.7, 809.4], top: 133.3, rowHeight: 31, rows: 12 };
+const DUTIES_TABLE = { cols: [65.5, 205.4, 345.3, 485.3, 625.2, 765.2], top: 106.4, rowHeight: 31, rows: 13 };
+const COURSES_TABLE = { cols: [65.5, 165.4, 265.4, 365.3, 465.3, 565.2, 665.2, 765.2], top: 210.4, rowHeight: 13.95, rows: 21 };
+const SEMINARS_TABLE = { cols: [65.5, 182.1, 298.7, 415.3, 531.9, 648.5, 765.2], top: 161.3, rowHeight: 13.95, rows: 24 };
+const DECLARATION_ROWS = [455.7, 483.2, 511.5, 539.0, 567.3, 595.6, 623.9];
+const DECLARATION_COLS = [65.5, 191.4, 425.3, 538.4];
+
+/** Rapport d'activité: row key (logic.activityReport) → [report page 0..2, top, bottom]. */
+const REPORT_ROWS: Record<string, [number, number, number]> = {
+  cat_A: [0, 117.6, 133.3],
+  cat_B: [0, 133.3, 149.1],
+  cat_C: [0, 149.1, 164.8],
+  cat_D: [0, 164.8, 180.6],
+  cat_E: [0, 180.6, 196.3],
+  cat_F: [0, 196.3, 212.1],
+  cat_G: [0, 212.1, 227.8],
+  cat_I: [0, 227.8, 243.6],
+  cat_J1: [0, 243.6, 259.3],
+  cat_J2: [0, 259.3, 275.1],
+  cat_K: [0, 275.1, 290.8],
+  cat_L: [0, 290.8, 306.6],
+  cat_X: [0, 306.6, 323.1],
+  total1: [0, 323.3, 339.6],
+  H: [0, 339.8, 366.2],
+  N: [0, 400.7, 416.5],
+  alr_plexus_brachial: [0, 416.5, 432.2],
+  alr_membre_inferieur: [0, 432.2, 462.0],
+  alr_caudale: [0, 462.0, 477.8],
+  alr_peridurale: [0, 477.8, 493.5],
+  alr_alriv: [0, 493.5, 509.3],
+  alr_rachianesthesie: [1, 87.0, 102.8],
+  alr_autre_alr: [1, 102.8, 118.5],
+  alr_total: [1, 118.5, 134.3],
+  act_voie_centrale: [1, 134.3, 150.0],
+  act_autres: [1, 150.0, 166.5],
+  total2: [1, 166.7, 183.0],
+  counter_soins_intensifs: [1, 217.5, 233.3],
+  counter_smur: [1, 233.3, 249.0],
+  counter_smur_intra: [1, 249.0, 278.8],
+  counter_urgences_extra: [1, 278.8, 308.6],
+  counter_analgesie_aigue: [1, 308.6, 338.4],
+  counter_uspa: [1, 338.4, 368.2],
+  counter_algologie: [1, 368.2, 384.0],
+  counter_consultations_preop: [1, 384.0, 413.8],
+  echo_alr: [1, 413.8, 429.5],
+  echo_vasculaire: [1, 429.5, 445.3],
+  echo_cardiaque: [1, 445.3, 461.0],
+  fibroscopie: [1, 461.0, 476.8],
+  videolaryngoscope: [1, 476.8, 492.5],
+  intubation_difficile_autre: [1, 492.5, 508.3],
+  duty_on_site: [2, 153.1, 168.8],
+  duty_on_call: [2, 168.8, 185.3],
+  duty_total: [2, 185.5, 201.8],
+};
+const REPORT_YEAR_COLS = [375.7, 443.7, 511.7, 579.8, 647.8, 715.9];
+const REPORT_DUTY_YEAR_COLS = [375.7, 432.4, 478.8, 531.6, 578.0, 715.9];
+const REPORT_TOTAL_COL: [number, number] = [715.9, 760.7];
+
+const PEN = { r: 0.07, g: 0.16, b: 0.52 };
+
+// ---------------------------------------------------------------------------
+// Writing on a template page
+// ---------------------------------------------------------------------------
+
+interface Overflow {
+  where: string;
+  text: string;
+}
+
+interface Ctx {
+  lib: typeof import("pdf-lib");
+  doc: PDFDocument;
+  font: PDFFont;
+  pages: Map<number, PDFEmbeddedPage>;
+  glyphs: Set<number>;
+  overflow: Overflow[];
+  images: Map<string, PDFImage>;
+}
+
+interface TextOpts {
+  size?: number;
+  /** Smallest size tried before cutting the text. */
+  minSize?: number;
+  align?: "left" | "center" | "right";
+  /** Horizontal span [x0, x1] of the form's dotted line to blank out before writing — like typing into the form. */
+  clear?: [number, number];
+  /** Name of the field, for the annex if the text doesn't fit. */
+  where?: string;
+}
+
+/** Characters the embedded font has no glyph for become their unaccented form, or disappear (emoji…). */
+function printable(ctx: Ctx, input: string): string {
   let out = "";
-  for (const ch of input.replace(/\r/g, "")) {
-    if (REPLACEMENTS[ch] !== undefined) out += REPLACEMENTS[ch];
-    else if (ch === "\n" || ch === "\t") out += ch === "\t" ? " " : ch;
-    else if ((ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) <= 126) || (ch.charCodeAt(0) >= 160 && ch.charCodeAt(0) <= 255) || WIN_ANSI_EXTRA.has(ch)) out += ch;
+  for (const ch of input.replace(/\r/g, "").replace(/\t/g, " ")) {
+    if (ch === "\n" || ctx.glyphs.has(ch.codePointAt(0)!)) out += ch;
     else {
       const stripped = ch.normalize("NFD").replace(/[̀-ͯ]/g, "");
-      out += /^[\x20-\x7e]+$/.test(stripped) ? stripped : "?";
+      if (stripped && [...stripped].every((c) => ctx.glyphs.has(c.codePointAt(0)!))) out += stripped;
     }
   }
   return out;
 }
 
-interface Fonts {
-  regular: PDFFont;
-  bold: PDFFont;
-  italic: PDFFont;
-}
-
-function wrap(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+function wrapLines(font: PDFFont, text: string, size: number, maxWidth: number): string[] {
   const lines: string[] = [];
-  for (const paragraph of toWinAnsi(text).split("\n")) {
+  for (const paragraph of text.split("\n")) {
     const words = paragraph.split(/\s+/).filter(Boolean);
     if (words.length === 0) {
       lines.push("");
@@ -63,7 +183,6 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
     }
     let line = "";
     for (let word of words) {
-      // Hard-break a single word longer than the column.
       while (font.widthOfTextAtSize(word, size) > maxWidth && word.length > 1) {
         let cut = word.length - 1;
         while (cut > 1 && font.widthOfTextAtSize(word.slice(0, cut), size) > maxWidth) cut--;
@@ -83,221 +202,218 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
     }
     lines.push(line);
   }
+  while (lines.length > 1 && lines.at(-1) === "") lines.pop();
   return lines;
 }
 
-interface Column {
-  header: string;
-  /** Fraction of the available width. */
-  width: number;
-  align?: "left" | "center" | "right";
-}
-
-interface Cell {
-  text?: string;
-  image?: PDFImage;
-  bold?: boolean;
-}
-
-/** Page cursor with automatic page breaks. */
-class Writer {
-  page!: PDFPage;
-  y = 0;
-  private landscape = false;
-
+class Sheet {
   constructor(
-    private doc: PDFDocument,
-    readonly fonts: Fonts,
-    private rgb: (r: number, g: number, b: number) => ReturnType<typeof import("pdf-lib").rgb>
+    readonly page: PDFPage,
+    private ctx: Ctx
   ) {}
 
-  get width() {
-    return this.page.getWidth() - 2 * MARGIN;
+  private get height() {
+    return this.page.getHeight();
   }
 
-  newPage(landscape = false) {
-    this.landscape = landscape;
-    this.page = this.doc.addPage(landscape ? A4_LANDSCAPE : A4);
-    this.y = this.page.getHeight() - MARGIN;
+  private color() {
+    return this.ctx.lib.rgb(PEN.r, PEN.g, PEN.b);
   }
 
-  ensure(height: number) {
-    if (this.y - height < MARGIN + 14) this.newPage(this.landscape);
+  whiteout(x0: number, top: number, x1: number, bottom: number) {
+    this.page.drawRectangle({ x: x0, y: this.height - bottom, width: x1 - x0, height: bottom - top, color: this.ctx.lib.rgb(1, 1, 1) });
   }
 
-  color(c: { r: number; g: number; b: number }) {
-    return this.rgb(c.r, c.g, c.b);
-  }
-
-  text(content: string, opts: { size?: number; font?: PDFFont; color?: typeof INK; x?: number; maxWidth?: number; gapAfter?: number; align?: "left" | "center" } = {}) {
-    const size = opts.size ?? 10;
-    const font = opts.font ?? this.fonts.regular;
-    const x = opts.x ?? MARGIN;
-    const maxWidth = opts.maxWidth ?? this.width - (x - MARGIN);
-    const lineHeight = size * 1.3;
-    for (const line of wrap(content, font, size, maxWidth)) {
-      this.ensure(lineHeight);
-      const lineX = opts.align === "center" ? MARGIN + (this.width - font.widthOfTextAtSize(line, size)) / 2 : x;
-      this.page.drawText(line, { x: lineX, y: this.y - size, size, font, color: this.color(opts.color ?? INK) });
-      this.y -= lineHeight;
+  /** One line of text on a baseline; shrinks down to minSize to fit maxWidth, then cuts (full text to the annex). */
+  line(raw: string | null | undefined, x: number, baseline: number, maxWidth: number, opts: TextOpts = {}) {
+    const text = printable(this.ctx, (raw ?? "").replace(/\s*\n\s*/g, " ").trim());
+    if (!text) return;
+    const font = this.ctx.font;
+    let size = opts.size ?? 10;
+    const minSize = opts.minSize ?? Math.min(size, 7);
+    while (size > minSize && font.widthOfTextAtSize(text, size) > maxWidth) size -= 0.25;
+    let shown = text;
+    if (font.widthOfTextAtSize(shown, size) > maxWidth) {
+      while (shown.length > 1 && font.widthOfTextAtSize(`${shown}…`, size) > maxWidth) shown = shown.slice(0, -1);
+      shown = `${shown.trimEnd()}…`;
+      if (opts.where) this.ctx.overflow.push({ where: opts.where, text });
     }
-    this.y -= opts.gapAfter ?? 0;
+    const width = font.widthOfTextAtSize(shown, size);
+    const left = opts.align === "center" ? x + (maxWidth - width) / 2 : opts.align === "right" ? x + maxWidth - width : x;
+    if (opts.clear) this.whiteout(opts.clear[0], baseline - 9.5, opts.clear[1], baseline + 3);
+    this.page.drawText(shown, { x: left, y: this.height - baseline, size, font, color: this.color() });
   }
 
-  /** "Libellé : valeur" pair, label in muted small caps style. */
-  field(label: string, value: string) {
-    this.text(label, { size: 8, color: MUTED });
-    this.text(value || "—", { size: 10.5, gapAfter: 6 });
-  }
-
-  heading(title: string, subtitle?: string) {
-    this.ensure(50);
-    this.text(title, { size: 15, font: this.fonts.bold });
-    if (subtitle) this.text(subtitle, { size: 9, font: this.fonts.italic, color: MUTED });
-    this.y -= 4;
-    this.page.drawLine({ start: { x: MARGIN, y: this.y }, end: { x: MARGIN + this.width, y: this.y }, thickness: 0.8, color: this.color(RULE) });
-    this.y -= 12;
-  }
-
-  gap(h: number) {
-    this.y -= h;
-  }
-
-  box(x: number, y: number, w: number, h: number, fill?: typeof SHADE) {
-    this.page.drawRectangle({ x, y, width: w, height: h, borderWidth: 0.6, borderColor: this.color(RULE), color: fill ? this.color(fill) : undefined });
-  }
-
-  table(columns: Column[], rows: Cell[][], opts: { size?: number; minRowHeight?: number } = {}) {
-    const size = opts.size ?? 8;
-    const pad = 3;
-    const lineHeight = size * 1.25;
-    const minRow = opts.minRowHeight ?? 16;
-    const widths = columns.map((c) => c.width * this.width);
-
-    const drawHeader = () => {
-      const headerLines = columns.map((c, i) => wrap(c.header, this.fonts.bold, size, widths[i] - 2 * pad));
-      const h = Math.max(...headerLines.map((l) => l.length)) * lineHeight + 2 * pad;
-      this.ensure(h + minRow);
-      let x = MARGIN;
-      columns.forEach((c, i) => {
-        this.box(x, this.y - h, widths[i], h, SHADE);
-        headerLines[i].forEach((line, j) => {
-          const lw = this.fonts.bold.widthOfTextAtSize(line, size);
-          const hx = c.align === "right" ? x + widths[i] - pad - lw : c.align === "center" ? x + (widths[i] - lw) / 2 : x + pad;
-          this.page.drawText(line, { x: hx, y: this.y - pad - (j + 1) * lineHeight + 2, size, font: this.fonts.bold, color: this.color(INK) });
-        });
-        x += widths[i];
-      });
-      this.y -= h;
-    };
-
-    drawHeader();
-    for (const row of rows) {
-      const cellLines = row.map((cell, i) => (cell.text ? wrap(cell.text, cell.bold ? this.fonts.bold : this.fonts.regular, size, widths[i] - 2 * pad) : []));
-      const h = Math.max(minRow, ...cellLines.map((l) => l.length * lineHeight + 2 * pad));
-      if (this.y - h < MARGIN + 14) {
-        this.newPage(this.landscape);
-        drawHeader();
-      }
-      let x = MARGIN;
-      row.forEach((cell, i) => {
-        this.box(x, this.y - h, widths[i], h);
-        const align = columns[i].align ?? "left";
-        cellLines[i].forEach((line, j) => {
-          const font = cell.bold ? this.fonts.bold : this.fonts.regular;
-          const w = font.widthOfTextAtSize(line, size);
-          const tx = align === "right" ? x + widths[i] - pad - w : align === "center" ? x + (widths[i] - w) / 2 : x + pad;
-          this.page.drawText(line, { x: tx, y: this.y - pad - (j + 1) * lineHeight + 2, size, font, color: this.color(INK) });
-        });
-        if (cell.image) {
-          const maxW = widths[i] - 2 * pad;
-          const maxH = h - 2 * pad;
-          const scale = Math.min(maxW / cell.image.width, maxH / cell.image.height);
-          const iw = cell.image.width * scale;
-          const ih = cell.image.height * scale;
-          this.page.drawImage(cell.image, { x: x + (widths[i] - iw) / 2, y: this.y - h + (h - ih) / 2, width: iw, height: ih });
-        }
-        x += widths[i];
-      });
-      this.y -= h;
+  /** Wrapped text in a box; shrinks, then cuts (full text to the annex). */
+  box(raw: string | null | undefined, x0: number, top: number, x1: number, bottom: number, opts: TextOpts & { valign?: "top" | "middle" } = {}) {
+    const text = printable(this.ctx, (raw ?? "").trim());
+    if (!text) return;
+    const font = this.ctx.font;
+    const width = x1 - x0;
+    const height = bottom - top;
+    let size = opts.size ?? 10;
+    const minSize = opts.minSize ?? Math.min(size, 7);
+    const leading = (s: number) => s * 1.18;
+    let lines = wrapLines(font, text, size, width);
+    while (size > minSize && lines.length * leading(size) > height) {
+      size -= 0.25;
+      lines = wrapLines(font, text, size, width);
     }
-    this.y -= 10;
+    const capacity = Math.max(1, Math.floor(height / leading(size)));
+    if (lines.length > capacity) {
+      lines = lines.slice(0, capacity);
+      let last = lines[capacity - 1];
+      while (last.length > 1 && font.widthOfTextAtSize(`${last}…`, size) > width) last = last.slice(0, -1);
+      lines[capacity - 1] = `${last.trimEnd()}…`;
+      if (opts.where) this.ctx.overflow.push({ where: opts.where, text });
+    }
+    const blockHeight = lines.length * leading(size);
+    const firstTop = opts.valign === "middle" ? top + (height - blockHeight) / 2 : top;
+    lines.forEach((l, i) => {
+      const w = font.widthOfTextAtSize(l, size);
+      const left = opts.align === "center" ? x0 + (width - w) / 2 : opts.align === "right" ? x1 - w : x0;
+      const baseline = firstTop + i * leading(size) + size * 0.92;
+      this.page.drawText(l, { x: left, y: this.height - baseline, size, font, color: this.color() });
+    });
+  }
+
+  /** Text in a table cell, vertically centred, with inner padding. */
+  cell(text: string | null | undefined, x0: number, top: number, x1: number, bottom: number, opts: TextOpts = {}) {
+    this.box(text, x0 + 3, top + 1.5, x1 - 3, bottom - 1.5, { valign: "middle", ...opts });
+  }
+
+  image(img: PDFImage, x0: number, top: number, x1: number, bottom: number) {
+    const scale = Math.min((x1 - x0) / img.width, (bottom - top) / img.height);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    this.page.drawImage(img, { x: x0 + (x1 - x0 - w) / 2, y: this.height - top - (bottom - top + h) / 2, width: w, height: h });
+  }
+
+  cross(cx: number, cy: number, r: number) {
+    const color = this.color();
+    const y = this.height - cy;
+    this.page.drawLine({ start: { x: cx - r, y: y - r }, end: { x: cx + r, y: y + r }, thickness: 1.8, color });
+    this.page.drawLine({ start: { x: cx - r, y: y + r }, end: { x: cx + r, y: y - r }, thickness: 1.8, color });
+  }
+
+  ellipse(x0: number, top: number, x1: number, bottom: number) {
+    this.page.drawEllipse({ x: (x0 + x1) / 2, y: this.height - (top + bottom) / 2, xScale: (x1 - x0) / 2, yScale: (bottom - top) / 2, borderColor: this.color(), borderWidth: 1.2 });
   }
 }
 
-async function createDoc(title: string) {
+/**
+ * `pageIndexes`: the template pages the export uses — embedded all at once
+ * so they share the form's fonts and images instead of copying them per page.
+ */
+async function createCtx(assets: CarnetPdfAssets, title: string, pageIndexes: number[]): Promise<{ ctx: Ctx; template: PDFDocument }> {
   const lib = await import("pdf-lib");
+  const fontkit = (await import("@pdf-lib/fontkit")).default;
+  const template = await lib.PDFDocument.load(assets.template);
   const doc = await lib.PDFDocument.create();
+  doc.registerFontkit(fontkit);
   doc.setTitle(title);
   doc.setCreator("PreOx — Carnet de stage");
-  const fonts: Fonts = {
-    regular: await doc.embedFont(lib.StandardFonts.Helvetica),
-    bold: await doc.embedFont(lib.StandardFonts.HelveticaBold),
-    italic: await doc.embedFont(lib.StandardFonts.HelveticaOblique),
-  };
-  return { doc, writer: new Writer(doc, fonts, lib.rgb), lib };
+  doc.setProducer("PreOx");
+  // Not subset: pdf-lib's subsetting drops glyphs of this font (letters vanish); the whole font compresses to ~350 KB.
+  // Ligatures off: Carlito's "ti"/"fi" ligatures come out with a gap in pdf-lib's layout.
+  const font = await doc.embedFont(assets.font, { features: { liga: false, clig: false, dlig: false } });
+  const indexes = [...new Set(pageIndexes)];
+  const embedded = await doc.embedPages(indexes.map((i) => template.getPage(i)));
+  const pages = new Map(indexes.map((index, i) => [index, embedded[i]]));
+  return { ctx: { lib, doc, font, pages, glyphs: new Set(font.getCharacterSet()), overflow: [], images: new Map() }, template };
 }
 
-function numberPages(doc: PDFDocument, font: PDFFont, rgbFn: (r: number, g: number, b: number) => ReturnType<typeof import("pdf-lib").rgb>) {
-  const pages = doc.getPages();
-  pages.forEach((page, i) => {
-    const label = `${i + 1} / ${pages.length}`;
-    page.drawText(label, { x: page.getWidth() - MARGIN - font.widthOfTextAtSize(label, 8), y: 20, size: 8, font, color: rgbFn(MUTED.r, MUTED.g, MUTED.b) });
-  });
+/** A new page of the export: a copy of template page `index` (embedded once, stamped on each copy), ready to be written on. */
+async function addTemplatePage(ctx: Ctx, template: PDFDocument, index: number): Promise<Sheet> {
+  let embedded = ctx.pages.get(index);
+  if (!embedded) {
+    embedded = await ctx.doc.embedPage(template.getPage(index));
+    ctx.pages.set(index, embedded);
+  }
+  const page = ctx.doc.addPage([embedded.width, embedded.height]);
+  page.drawPage(embedded, { x: 0, y: 0 });
+  return new Sheet(page, ctx);
 }
+
+async function signatureImage(ctx: Ctx, key: string, dataUrl: string | null | undefined): Promise<PDFImage | undefined> {
+  if (!dataUrl) return undefined;
+  if (!ctx.images.has(key)) {
+    try {
+      ctx.images.set(key, await ctx.doc.embedPng(dataUrl));
+    } catch {
+      return undefined;
+    }
+  }
+  return ctx.images.get(key);
+}
+
+/** Fields cut on the form, in full — plain pages after the form. */
+function addAnnex(ctx: Ctx) {
+  if (ctx.overflow.length === 0) return;
+  const { lib, doc, font } = ctx;
+  const ink = lib.rgb(0.1, 0.1, 0.1);
+  const [W, H] = [595.28, 841.89];
+  const margin = 70.9;
+  let page = doc.addPage([W, H]);
+  let y = 80;
+  const write = (text: string, size: number, gap: number) => {
+    for (const l of wrapLines(font, printable(ctx, text), size, W - 2 * margin)) {
+      if (y + size > H - 60) {
+        page = doc.addPage([W, H]);
+        y = 80;
+      }
+      page.drawText(l, { x: margin, y: H - y - size * 0.92, size, font, color: ink });
+      y += size * 1.25;
+    }
+    y += gap;
+  };
+  write("Annexe — suite des champs du carnet", 16, 6);
+  write("Textes trop longs pour la place prévue sur le formulaire, reproduits ici en entier.", 10, 14);
+  for (const o of ctx.overflow) {
+    write(o.where, 11, 2);
+    write(o.text, 10, 12);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sections
+// ---------------------------------------------------------------------------
 
 function fullName(data: CarnetData): string {
   return [data.profile?.first_name, data.profile?.last_name].filter(Boolean).join(" ");
 }
 
-function stagePeriod(stage: CarnetStage): string {
-  return `du ${formatDateFr(stage.start_date)} au ${stage.end_date ? formatDateFr(stage.end_date) : "…"}`;
+function yearLabel(year: number): string {
+  return `${year}${year === 1 ? "re" : "e"} année`;
 }
 
-/** The two "Stages hospitaliers" pages for one stage — header pre-filled, grid blank, for the maître de stage to fill in by hand. */
-function drawEvaluationGrid(w: Writer, data: CarnetData, stage: CarnetStage) {
-  w.newPage();
-  w.heading("Stages hospitaliers en anesthésiologie ou réanimation", "Anaesthesia or Intensive Care Hospital Training");
-  const coordinator = data.supervisors.find((s) => s.id === stage.coordinator_id);
-  const rows: [string, string][] = [
-    ["Nom et prénom du MSF", fullName(data)],
-    ["Année de formation", `${stage.training_year}${stage.training_year === 1 ? "re" : "e"} année`],
-    ["Date", stagePeriod(stage)],
-    ["Lieu de stage", [stage.hospital, stage.city].filter(Boolean).join(", ")],
-    ["Secteur", stage.sector],
-    ["Maître de stage", supervisorName(coordinator)],
-  ];
-  for (const [label, value] of rows) w.text(`${label} : ${value || "……………………………………"}`, { size: 10, gapAfter: 1 });
-  w.gap(6);
-  w.text(
-    "Utilisation de la grille : cotation sur une échelle de 1 à 5 : ≤ 2 : échec, 3 : satisfaisant pour le niveau de formation, 4 : niveau supérieur pour l'année de formation, 5 : niveau exceptionnel pour l'année de formation.",
-    { size: 8.5, font: w.fonts.italic, gapAfter: 8 }
-  );
-  const columns: Column[] = [
-    { header: "", width: 0.64 },
-    ...["1", "2", "3", "4", "5", "N/A*"].map((h) => ({ header: h, width: 0.06, align: "center" as const })),
-  ];
-  for (const section of EVALUATION_GRID) {
-    columns[0] = { header: section.title, width: 0.64 };
-    w.table(columns, [...section.items.map((item) => [{ text: item }, {}, {}, {}, {}, {}, {}]), [{ text: section.overall, bold: true }, {}, {}, {}, {}, {}, {}]], { size: 8, minRowHeight: 17 });
-  }
-  w.ensure(150);
-  w.text("CONCLUSION", { size: 10, font: w.fonts.bold });
-  w.text("Le niveau de compétence actuel est évalué par rapport à son année de formation comme :", { size: 9 });
-  w.text(COMPETENCE_LEVELS.join("  ·  "), { size: 8.5, color: MUTED, gapAfter: 4 });
-  w.text("Note : ……… / 5", { size: 10, gapAfter: 8 });
-  w.text("APPRÉCIATION GLOBALE : ……… / 100", { size: 10, font: w.fonts.bold, gapAfter: 8 });
-  w.text("COMMENTAIRES", { size: 10, font: w.fonts.bold });
-  w.ensure(110);
-  w.box(MARGIN, w.y - 100, w.width, 100);
-  w.gap(108);
-  w.text("* N/A : non applicable, non évaluable", { size: 8, color: MUTED, gapAfter: 10 });
-  w.ensure(60);
-  w.text("Date : …………………………………", { size: 10, gapAfter: 14 });
-  const y = w.y;
-  w.page.drawText(toWinAnsi("Signature du Maître de Stage"), { x: MARGIN, y: y - 10, size: 10, font: w.fonts.regular, color: w.color(INK) });
-  w.page.drawText(toWinAnsi("Signature du/de la candidat(e)"), { x: MARGIN + w.width / 2, y: y - 10, size: 10, font: w.fonts.regular, color: w.color(INK) });
-  w.gap(50);
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out.length > 0 ? out : [[]];
+}
+
+async function fillGrid(ctx: Ctx, template: PDFDocument, data: CarnetData, stage: CarnetStage) {
+  const first = await addTemplatePage(ctx, template, TPL.grid[0]);
+  const where = `Grille d'évaluation — ${stage.hospital}`;
+  // "Nom et prénom du MSF" — the MSF (médecin spécialiste en formation) is the candidate.
+  first.line(fullName(data), 186, 147.4, 314, { size: 11, clear: [183, 500.5], where });
+  first.line(yearLabel(stage.training_year), 170, 174.3, 110, { size: 11, clear: [168.3, 280.5] });
+  first.line(formatDateFr(stage.start_date), 365, 174.3, 54, { size: 11, clear: [363.2, 419.5] });
+  if (stage.end_date) first.line(formatDateFr(stage.end_date), 437, 174.3, 64, { size: 11, clear: [435.1, 501.8] });
+  first.line([stage.hospital, stage.city].filter(Boolean).join(", "), 139, 201.2, 142, { size: 11, clear: [137.2, 281.8], where });
+  first.line(stage.sector, 360, 201.2, 145, { size: 11, clear: [358.2, 505.6], where });
+  const second = await addTemplatePage(ctx, template, TPL.grid[1]);
+  const supervisor = data.supervisors.find((s) => s.id === stage.supervisor_id);
+  second.line(supervisorName(supervisor), 76, 714, 200, { size: 10 });
+}
+
+/** The two "Stages hospitaliers" pages for one stage — header filled in, grid left for the maître de stage. */
+export async function buildEvaluationGridPdf(data: CarnetData, stage: CarnetStage, assets?: CarnetPdfAssets): Promise<Uint8Array> {
+  const { ctx, template } = await createCtx(assets ?? (await loadCarnetPdfAssets()), `Grille d'évaluation — ${stage.hospital}`, [...TPL.grid]);
+  await fillGrid(ctx, template, data, stage);
+  addAnnex(ctx);
+  return ctx.doc.save();
 }
 
 function downloadPdf(bytes: Uint8Array, filename: string) {
@@ -321,14 +437,6 @@ function slug(s: string): string {
     .replace(/^-|-$/g, "");
 }
 
-/** Blank evaluation grid for one stage, header pre-filled — to print and hand to the maître de stage. */
-export async function buildEvaluationGridPdf(data: CarnetData, stage: CarnetStage): Promise<Uint8Array> {
-  const { doc, writer, lib } = await createDoc(`Grille d'évaluation — ${stage.hospital}`);
-  drawEvaluationGrid(writer, data, stage);
-  numberPages(doc, writer.fonts.regular, lib.rgb);
-  return doc.save();
-}
-
 export async function downloadEvaluationGrid(data: CarnetData, stage: CarnetStage): Promise<void> {
   downloadPdf(await buildEvaluationGridPdf(data, stage), `grille-evaluation-${slug(stage.hospital)}-${stage.start_date}.pdf`);
 }
@@ -347,311 +455,278 @@ export async function downloadCarnet(data: CarnetData, trainingYear: number | "a
   downloadPdf(await buildCarnetPdf(data, trainingYear), `carnet-de-stage-${trainingYear === "all" ? "complet" : `annee-${trainingYear}`}${name ? `-${slug(name)}` : ""}.pdf`);
 }
 
-export async function buildCarnetPdf(data: CarnetData, trainingYear: number | "all"): Promise<Uint8Array> {
-  const { doc, writer: w, lib } = await createDoc("Carnet de stage — Anesthésie-Réanimation");
+export async function buildCarnetPdf(data: CarnetData, trainingYear: number | "all", assets?: CarnetPdfAssets): Promise<Uint8Array> {
+  const { ctx, template } = await createCtx(
+    assets ?? (await loadCarnetPdfAssets()),
+    "Carnet de stage — Anesthésie-Réanimation",
+    Object.values(TPL).flatMap((v) => (typeof v === "number" ? [v] : [...v]))
+  );
   const stages = sortStages(data.stages)
     .reverse()
     .filter((s) => trainingYear === "all" || s.training_year === trainingYear);
   const stageIds = new Set(stages.map((s) => s.id));
+  const stageById = new Map(data.stages.map((s) => [s.id, s]));
   const from = stages[0]?.start_date ?? "0000-01-01";
   const to = stages.reduce((max, s) => (s.end_date && s.end_date > max ? s.end_date : max), stages.at(-1)?.end_date ?? "9999-12-31");
-  const name = fullName(data);
-  const numbers = caseNumbers(data.cases, data.stages);
   const supervisors = new Map(data.supervisors.map((s) => [s.id, s]));
-  const stageById = new Map(data.stages.map((s) => [s.id, s]));
-  const signatureImages = new Map<string, PDFImage>();
-  for (const s of data.signatures) {
-    try {
-      signatureImages.set(s.id, await doc.embedPng(s.image));
-    } catch {
-      // Unreadable image — the row keeps the signer's name and date instead.
+  const signatures = new Map(data.signatures.map((s) => [s.id, s]));
+  const p = data.profile;
+  const today = formatDateFr(localDateIso());
+  const candidateSignature = await signatureImage(ctx, "candidate", p?.signature);
+
+  // --- Cover: year(s) ticked, contact block -------------------------------------------------------
+  const cover = await addTemplatePage(ctx, template, TPL.cover);
+  const years = [...new Set(stages.map((s) => s.training_year))].sort((a, b) => a - b);
+  for (const y of years) {
+    const row = Math.min(y, 6) - 1;
+    cover.cross(94.6, 532.8 + row * 34.8, 5.2);
+    if (y > 5) cover.line(`(${yearLabel(y)})`, 182, 537 + row * 34.8, 30, { size: 11 });
+  }
+  cover.line(p?.last_name, 250, 504.4, 268, { size: 11 });
+  cover.line(p?.first_name, 262, 526.8, 256, { size: 11 });
+  cover.line(p?.email, 283, 549.1, 235, { size: 11 });
+  cover.line(p?.phone, 274, 571.5, 244, { size: 11 });
+
+  // --- Declaration + stages table + coordinator ------------------------------------------------------
+  const coordinatorIds = [...new Set(stages.map((s) => s.coordinator_id).filter((id): id is string => !!id))];
+  const coordinatorNames = coordinatorIds.map((id) => supervisorName(supervisors.get(id))).filter(Boolean);
+  for (const [pageIndex, group] of chunk(stages, 6).entries()) {
+    const page = await addTemplatePage(ctx, template, TPL.declaration);
+    if (pageIndex === 0) {
+      page.line(fullName(data), 134, 290.3, 162, { size: 11, clear: [131.4, 298.2] });
+      page.line(today, 102, 344.1, 150, { size: 11 });
+      if (candidateSignature) page.image(candidateSignature, 125, 356, 290, 402);
+    }
+    group.forEach((stage, i) => {
+      const top = DECLARATION_ROWS[i];
+      const bottom = DECLARATION_ROWS[i + 1];
+      page.whiteout(DECLARATION_COLS[0] + 1, top + 1, DECLARATION_COLS[1] - 1, bottom - 1);
+      page.line(`Du ${formatDateFr(stage.start_date)}`, 70.9, top + 11.5, 115, { size: 10.5 });
+      page.line(`Au ${stage.end_date ? formatDateFr(stage.end_date) : "../../…."}`, 70.9, top + 23.5, 115, { size: 10.5 });
+      page.cell([stage.hospital, stage.city].filter(Boolean).join(", "), DECLARATION_COLS[1], top, DECLARATION_COLS[2], bottom, { size: 10.5, minSize: 7.5, where: "Page 2 — lieu de stage" });
+      page.cell(stage.sector, DECLARATION_COLS[2], top, DECLARATION_COLS[3], bottom, { size: 10.5, minSize: 7.5, where: "Page 2 — activité" });
+    });
+    page.line(coordinatorNames.join(" / "), 106.3, 694, 250, { size: 11 });
+  }
+
+  await addTemplatePage(ctx, template, TPL.contents);
+
+  // --- Identification --------------------------------------------------------------------------------
+  const id = await addTemplatePage(ctx, template, TPL.identification);
+  id.line(p?.last_name, 230, 242.9, 295, { size: 12 });
+  id.line(p?.first_name, 230, 294.2, 295, { size: 12 });
+  id.line(p?.nationality, 230, 345.5, 295, { size: 12 });
+  id.line([p?.birth_place, formatDateFr(p?.birth_date)].filter(Boolean).join(", "), 230, 396.8, 295, { size: 12 });
+  id.box(
+    (p?.addresses ?? []).map((a) => `${a.address}${a.since ? ` (depuis le ${formatDateFr(a.since)})` : ""}`).join("\n"),
+    70.9,
+    473,
+    525,
+    566,
+    { size: 11.5, minSize: 8, where: "Identification — adresse et changements éventuels" }
+  );
+  id.line(p?.university, 306, 584.9, 219, { size: 12, where: "Identification — diplôme" });
+  id.line(p?.graduation_year ? String(p.graduation_year) : "", 185, 636.2, 200, { size: 12 });
+  id.box(p?.pre_training_activities, 70.9, 727, 525, 758, { size: 10, minSize: 7.5, where: "Identification — activités professionnelles avant les stages" });
+
+  // --- Evaluation grids: one pair of pages per stage ---------------------------------------------------
+  if (stages.length === 0) {
+    await addTemplatePage(ctx, template, TPL.grid[0]);
+    await addTemplatePage(ctx, template, TPL.grid[1]);
+  }
+  for (const stage of stages) await fillGrid(ctx, template, data, stage);
+
+  // --- Related activities: one page each -----------------------------------------------------------------
+  const activities = data.related_activities
+    .filter((a) => trainingYear === "all" || inRange(a.start_date, from, to))
+    .sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""));
+  for (const a of activities.length > 0 ? activities : [null]) {
+    const page = await addTemplatePage(ctx, template, TPL.activity);
+    if (!a) continue;
+    const where = `Activités connexes — ${a.nature}`;
+    page.line(a.nature, 125, 288.9, 400, { size: 11, where });
+    page.line(a.institution, 125, 329.2, 400, { size: 11, where });
+    page.line(a.city, 125, 369.6, 400, { size: 11 });
+    page.line(formatDateFr(a.start_date), 125, 409.9, 118, { size: 11 });
+    page.line(formatDateFr(a.end_date), 270, 409.9, 120, { size: 11 });
+    page.box(a.appraisal, 70.9, 469, 525, 530, { size: 10.5, minSize: 7.5, where: `${where} — appréciation` });
+    page.line(a.responsible, 172, 544.4, 142, { size: 10.5, where });
+  }
+
+  // --- Courses and seminars ---------------------------------------------------------------------------------
+  const courses = data.courses
+    .filter((c) => trainingYear === "all" || inRange(c.start_date, from, to))
+    .sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""));
+  const period = (a: string | null, b: string | null) => (b && b !== a ? `${formatDateFr(a)} – ${formatDateFr(b)}` : formatDateFr(a));
+  for (const group of chunk(courses.filter((c) => c.kind === "course"), COURSES_TABLE.rows)) {
+    const page = await addTemplatePage(ctx, template, TPL.courses);
+    const t = COURSES_TABLE;
+    group.forEach((c, i) => {
+      const top = t.top + i * t.rowHeight;
+      const where = `Cours suivis — ${c.subject}`;
+      [period(c.start_date, c.end_date), c.city, c.institution, c.subject, c.exam_result, c.teacher].forEach((value, col) =>
+        page.cell(value, t.cols[col], top, t.cols[col + 1], top + t.rowHeight, { size: 9, minSize: 6.5, where })
+      );
+    });
+  }
+  for (const group of chunk(courses.filter((c) => c.kind === "seminar"), SEMINARS_TABLE.rows)) {
+    const page = await addTemplatePage(ctx, template, TPL.seminars);
+    const t = SEMINARS_TABLE;
+    group.forEach((c, i) => {
+      const top = t.top + i * t.rowHeight;
+      const where = `Présentation de séminaires — ${c.subject}`;
+      [period(c.start_date, c.end_date), c.city, c.institution, c.subject, c.teacher].forEach((value, col) =>
+        page.cell(value, t.cols[col], top, t.cols[col + 1], top + t.rowHeight, { size: 9, minSize: 6.5, where })
+      );
+    });
+  }
+
+  // --- Publications: one per "-" line of the form, more lines below if needed ---------------------------------
+  const publications = data.publications
+    .filter((pub) => trainingYear === "all" || inRange(pub.pub_date, from, to))
+    .sort((a, b) => (a.pub_date ?? "").localeCompare(b.pub_date ?? ""));
+  {
+    let page = await addTemplatePage(ctx, template, TPL.publications);
+    let lineTop = 155.3;
+    let onFirstPage = true;
+    for (const [i, pub] of publications.entries()) {
+      const text = [pub.title, pub.details, pub.pub_date ? `(${formatDateFr(pub.pub_date)})` : ""].filter(Boolean).join(" — ");
+      const lines = Math.min(4, wrapLines(ctx.font, printable(ctx, text), 11, 425).length);
+      const height = Math.max(24.4, lines * 13 + 11.4);
+      if (lineTop + height > 740) {
+        page = await addTemplatePage(ctx, template, TPL.publications);
+        lineTop = 155.3;
+        onFirstPage = false;
+      }
+      // The form prints two "-" lines; the next ones get the same dash.
+      if (!onFirstPage || i >= 2 || lineTop > 180) page.line("-", 88.9, lineTop + 19, 10, { size: 20 });
+      page.box(text, 100, lineTop + 6.8, 525, lineTop + 6.8 + lines * 13 + 1, { size: 11, minSize: 8, where: `Publications — ${pub.title}` });
+      lineTop += height;
     }
   }
-  const signatures = new Map(data.signatures.map((s) => [s.id, s]));
 
-  // --- Cover ---------------------------------------------------------------
-  w.newPage();
-  for (const line of [
-    "MINISTÈRE DE LA FÉDÉRATION WALLONIE-BRUXELLES",
-    "Administration générale de l'Enseignement (AGE)",
-    "Direction de l'Agrément des Prestataires de Soins de Santé",
-    "Commission d'agrément en anesthésie – réanimation",
-  ]) {
-    w.text(line, { size: 9, color: MUTED });
-  }
-  w.gap(60);
-  w.text("CARNET DE STAGE", { size: 26, font: w.fonts.bold, align: "center" });
-  w.text("ANESTHÉSIE – RÉANIMATION", { size: 16, align: "center", gapAfter: 10 });
-  w.text(trainingYear === "all" ? "Ensemble de la formation" : `${trainingYear}${trainingYear === 1 ? "re" : "e"} année`, { size: 13, font: w.fonts.bold, align: "center", gapAfter: 30 });
-  w.text(
-    "Ce carnet de stage doit être renvoyé à la fin de l'année de stage à l'Administration de la Fédération Wallonie-Bruxelles au plus tard six mois après l'achèvement de l'année de stage, à l'adresse : Direction de l'Agrément des Prestataires de Soins de Santé — Commission d'agrément en Anesthésie-Réanimation, Rue Adolphe Lavallée 1, 1080 Bruxelles.",
-    { size: 9, gapAfter: 16 }
-  );
-  w.text(`Je, soussigné(e), ${name || "……………………………………"}, déclare que les informations contenues dans le présent formulaire sont exactes.`, { size: 10, gapAfter: 8 });
-  w.text(`Date : ${formatDateFr(localDateIso())}`, { size: 10, gapAfter: 4 });
-  w.text("Signature :", { size: 10, gapAfter: 30 });
-  w.table(
-    [
-      { header: "Période de stage", width: 0.3 },
-      { header: "Lieu de stage", width: 0.45 },
-      { header: "Activité", width: 0.25 },
-    ],
-    stages.map((s) => [{ text: stagePeriod(s) }, { text: [s.hospital, s.sector, s.city].filter(Boolean).join(" – ") }, { text: s.activity }]),
-    { size: 9, minRowHeight: 18 }
-  );
-  const coordinators = [...new Set(stages.map((s) => supervisorName(supervisors.get(s.coordinator_id ?? ""))).filter(Boolean))];
-  w.text(`Maître de stage coordinateur : ${coordinators.join(", ") || "……………………………………"}          Signature :`, { size: 10 });
+  await addTemplatePage(ctx, template, TPL.legend);
 
-  // --- Contents ------------------------------------------------------------
-  w.newPage();
-  w.heading("Table des matières", "Contents");
-  [
-    "I. Identification",
-    "II. Stages hospitaliers en anesthésiologie ou réanimation",
-    "III. Activités connexes",
-    "IV. Cours suivis",
-    "V. Présentations de séminaires",
-    "VI. Publications ou communications",
-    "VII. Relevé des prestations",
-    "VIII. Journal de gardes",
-    "Rapport d'activité",
-    "IX. Évaluation personnelle",
-    "Récapitulatif des absences",
-  ].forEach((line) => w.text(line, { size: 11, gapAfter: 4 }));
-
-  // --- I. Identification -----------------------------------------------------
-  w.newPage();
-  w.heading("I. Identification", "Union européenne des médecins spécialistes — Spécialité : Anesthésiologie – Réanimation");
-  const p = data.profile;
-  w.field("Nom / Name", p?.last_name ?? "");
-  w.field("Prénom(s) / Christian name", p?.first_name ?? "");
-  w.field("Nationalité / Nationality", p?.nationality ?? "");
-  w.field("Lieu et date de naissance / Place and date of birth", [p?.birth_place, formatDateFr(p?.birth_date)].filter(Boolean).join(", "));
-  w.field(
-    "Adresse et changements éventuels / Address, changes if any",
-    (p?.addresses ?? []).map((a) => (a.since ? `${a.address} (depuis le ${formatDateFr(a.since)})` : a.address)).join("\n")
-  );
-  w.field("Diplôme de médecine de l'université de / Qualifying diploma", p?.university ?? "");
-  w.field("Année de diplôme / Year of qualification", p?.graduation_year ? String(p.graduation_year) : "");
-  w.field("Activités professionnelles depuis la fin de l'université jusqu'au début des stages", p?.pre_training_activities ?? "");
-  w.field("Adresse mail · Téléphone", [p?.email, p?.phone].filter(Boolean).join(" · "));
-
-  // --- II. Evaluation grids ----------------------------------------------------
-  for (const stage of stages) drawEvaluationGrid(w, data, stage);
-
-  // --- III. Related activities ------------------------------------------------
-  w.newPage();
-  w.heading("III. Activités connexes", "Services d'aide médicale urgente, travaux de laboratoire, clinique de la douleur, acupuncture, etc.");
-  const activities = data.related_activities.filter((a) => trainingYear === "all" || inRange(a.start_date, from, to)).sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""));
-  if (activities.length === 0) w.text("Aucune.", { color: MUTED });
-  for (const a of activities) {
-    w.ensure(120);
-    w.field("Nature", a.nature);
-    w.field("Institution · Ville", [a.institution, a.city].filter(Boolean).join(" · "));
-    w.field("Date", a.start_date || a.end_date ? `du ${formatDateFr(a.start_date)} au ${formatDateFr(a.end_date)}` : "");
-    w.field("Appréciation", a.appraisal);
-    w.text(`Médecin responsable : ${a.responsible || "……………………"}          Signature :`, { size: 10, gapAfter: 14 });
-  }
-
-  // --- IV / V. Courses and seminars ---------------------------------------------
-  w.newPage(true);
-  w.heading("IV. Cours suivis", "Attended courses");
-  const courses = data.courses.filter((c) => trainingYear === "all" || inRange(c.start_date, from, to)).sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""));
-  w.table(
-    [
-      { header: "Dates", width: 0.13 },
-      { header: "Ville", width: 0.1 },
-      { header: "Institution", width: 0.15 },
-      { header: "Sujet", width: 0.27 },
-      { header: "Examens / Résultats", width: 0.11 },
-      { header: "Chargé d'enseignement", width: 0.13 },
-      { header: "Signature", width: 0.11 },
-    ],
-    courses
-      .filter((c) => c.kind === "course")
-      .map((c) => [
-        { text: c.end_date && c.end_date !== c.start_date ? `${formatDateFr(c.start_date)} – ${formatDateFr(c.end_date)}` : formatDateFr(c.start_date) },
-        { text: c.city },
-        { text: c.institution },
-        { text: c.subject },
-        { text: c.exam_result },
-        { text: c.teacher },
-        {},
-      ]),
-    { minRowHeight: 22 }
-  );
-  w.heading("V. Présentations de séminaires", "Presentations at seminars");
-  w.table(
-    [
-      { header: "Date", width: 0.11 },
-      { header: "Ville", width: 0.12 },
-      { header: "Institution", width: 0.17 },
-      { header: "Sujet", width: 0.33 },
-      { header: "Professeur", width: 0.15 },
-      { header: "Signature", width: 0.12 },
-    ],
-    courses.filter((c) => c.kind === "seminar").map((c) => [{ text: formatDateFr(c.start_date) }, { text: c.city }, { text: c.institution }, { text: c.subject }, { text: c.teacher }, {}]),
-    { minRowHeight: 22 }
-  );
-
-  // --- VI. Publications ---------------------------------------------------------
-  w.newPage();
-  w.heading("VI. Publications ou communications", "Papers read or published");
-  const publications = data.publications.filter((pub) => trainingYear === "all" || inRange(pub.pub_date, from, to)).sort((a, b) => (a.pub_date ?? "").localeCompare(b.pub_date ?? ""));
-  if (publications.length === 0) w.text("Aucune.", { color: MUTED });
-  publications.forEach((pub, i) => {
-    w.text(`${i + 1}. ${pub.title}${pub.pub_date ? ` (${formatDateFr(pub.pub_date)})` : ""}`, { size: 10, font: w.fonts.bold });
-    if (pub.details) w.text(pub.details, { size: 9, color: MUTED });
-    w.gap(6);
-  });
-
-  // --- VII. Record of cases -------------------------------------------------------
-  w.newPage();
-  w.heading("VII. Relevé des prestations", "Record of cases — explications pour la colonne 6 (catégorie/degré)");
-  w.table(
-    [
-      { header: "Catégorie", width: 0.15, align: "center" },
-      { header: "Signification", width: 0.85 },
-    ],
-    [
-      ...OPERATION_CATEGORIES.map((c) => [{ text: c.code === "X" ? "(X)" : c.code }, { text: c.label }]),
-      [{ text: "H" }, { text: "Pédiatrie (moins de 4 ans) — ajouté après la catégorie" }],
-      [{ text: "N" }, { text: "Anesthésie générale ou sédation" }],
-      [{ text: "O" }, { text: "Anesthésie loco-régionale" }],
-      [{ text: "P" }, { text: "Anesthésie péridurale" }],
-      [{ text: "T" }, { text: "Acte technique seul (voie centrale, échographie, intubation difficile…)" }],
-    ],
-    { size: 9 }
-  );
-  w.text("Degré de participation : " + PARTICIPATION_DEGREES.map((d) => `${d.code} = ${d.label}`).join(" · "), { size: 9, gapAfter: 4 });
-  w.text("Exemple : opération césarienne sous anesthésie péridurale supervisée : BP2", { size: 9, font: w.fonts.italic });
-
+  // --- Record of cases (with each tutor's signature) -----------------------------------------------------------
+  const numbers = caseNumbers(data.cases, data.stages);
   const cases = data.cases
     .filter((c) => stageIds.has(c.stage_id))
-    .sort((a, b) => a.case_date.localeCompare(b.case_date) || a.created_at.localeCompare(b.created_at));
-  w.newPage(true);
-  w.heading("VII. Relevé des prestations", "Record of cases");
-  w.table(
-    [
-      { header: "N°", width: 0.05, align: "right" },
-      { header: "Date", width: 0.09 },
-      { header: "Hôpital", width: 0.15 },
-      { header: "Initiales patient", width: 0.08 },
-      { header: "Opération", width: 0.26 },
-      { header: "Catégorie / Degré", width: 0.09, align: "center" },
-      { header: "Tuteur (S.C.T.)", width: 0.15 },
-      { header: "Signature", width: 0.13 },
-    ],
-    cases.map((c) => {
+    .sort(
+      (a, b) =>
+        (stageById.get(a.stage_id)?.training_year ?? 0) - (stageById.get(b.stage_id)?.training_year ?? 0) ||
+        a.case_date.localeCompare(b.case_date) ||
+        a.created_at.localeCompare(b.created_at)
+    );
+  for (const [pageIndex, group] of chunk(cases, CASES_TABLE.rows).entries()) {
+    const page = await addTemplatePage(ctx, template, pageIndex === 0 ? TPL.casesFirst : TPL.cases);
+    const t = CASES_TABLE;
+    for (const [i, c] of group.entries()) {
+      const top = t.top + i * t.rowHeight;
+      const bottom = top + t.rowHeight;
+      const col = (n: number) => [t.cols[n], top, t.cols[n + 1], bottom] as const;
+      const where = `Relevé des prestations — cas n° ${numbers.get(c.id)} du ${formatDateFr(c.case_date)}`;
+      page.cell(String(numbers.get(c.id) ?? ""), ...col(0), { size: 10, align: "center" });
+      page.cell(formatDateFr(c.case_date), ...col(1), { size: 10 });
+      page.cell(stageById.get(c.stage_id)?.hospital, ...col(2), { size: 9.5, minSize: 7, where });
+      page.cell(c.patient_initials, ...col(3), { size: 10 });
+      page.cell(c.operation, ...col(4), { size: 9.5, minSize: 7, where });
+      page.cell(caseCode(c), ...col(5), { size: 11, align: "center" });
+      page.cell(supervisorName(supervisors.get(c.tutor_id ?? "")), ...col(6), { size: 9.5, minSize: 7 });
       const signature = c.signature_id ? signatures.get(c.signature_id) : undefined;
-      const image = c.signature_id ? signatureImages.get(c.signature_id) : undefined;
-      return [
-        { text: String(numbers.get(c.id) ?? "") },
-        { text: formatDateFr(c.case_date) },
-        { text: stageById.get(c.stage_id)?.hospital ?? "" },
-        { text: c.patient_initials },
-        { text: c.operation },
-        { text: caseCode(c) },
-        { text: supervisorName(supervisors.get(c.tutor_id ?? "")) },
-        image ? { image } : { text: signature ? `${signature.supervisor_name}, ${formatDateFr(signature.signed_at.slice(0, 10))}` : "" },
-      ];
-    }),
-    { size: 8, minRowHeight: 20 }
-  );
+      const image = signature ? await signatureImage(ctx, signature.id, signature.image) : undefined;
+      if (image) page.image(image, t.cols[7] + 4, top + 2, t.cols[8] - 4, bottom - 2);
+    }
+  }
 
-  // --- VIII. Days of duty ------------------------------------------------------------
-  w.newPage(true);
-  w.heading("VIII. Journal de gardes", "Days of duty");
-  const duties = data.duties.filter((d) => stageIds.has(d.stage_id)).sort((a, b) => a.duty_date.localeCompare(b.duty_date));
-  w.table(
-    [
-      { header: "Date", width: 0.1 },
-      { header: "Ville", width: 0.13 },
-      { header: "Institution", width: 0.22 },
-      { header: "Type", width: 0.13 },
-      { header: "Chef de service", width: 0.24 },
-      { header: "Signature", width: 0.18 },
-    ],
-    duties.map((d) => {
-      const image = d.signature_id ? signatureImages.get(d.signature_id) : undefined;
+  // --- Days of duty --------------------------------------------------------------------------------------------
+  const duties = data.duties.filter((d) => stageIds.has(d.stage_id)).sort((a, b) => a.duty_date.localeCompare(b.duty_date) || a.created_at.localeCompare(b.created_at));
+  for (const group of chunk(duties, DUTIES_TABLE.rows)) {
+    const page = await addTemplatePage(ctx, template, TPL.duties);
+    const t = DUTIES_TABLE;
+    for (const [i, d] of group.entries()) {
+      const top = t.top + i * t.rowHeight;
+      const bottom = top + t.rowHeight;
+      page.cell(`${formatDateFr(d.duty_date)}\n${d.duty_type === "on_site" ? "sur place" : "à domicile (rappelable)"}`, t.cols[0], top, t.cols[1], bottom, { size: 9.5, minSize: 7.5 });
+      page.cell(d.city, t.cols[1], top, t.cols[2], bottom, { size: 10, minSize: 7 });
+      page.cell(d.institution, t.cols[2], top, t.cols[3], bottom, { size: 10, minSize: 7 });
+      page.cell(d.head_of_department, t.cols[3], top, t.cols[4], bottom, { size: 10, minSize: 7 });
       const signature = d.signature_id ? signatures.get(d.signature_id) : undefined;
-      return [
-        { text: formatDateFr(d.duty_date) },
-        { text: d.city },
-        { text: d.institution },
-        { text: d.duty_type === "on_site" ? "Sur place" : "À domicile" },
-        { text: d.head_of_department },
-        image ? { image } : { text: signature?.supervisor_name ?? "" },
-      ];
-    }),
-    { size: 8, minRowHeight: 20 }
-  );
-
-  // --- Activity report (whole training) ------------------------------------------------
-  w.newPage(true);
-  w.heading("Rapport d'activité", "À compléter pour l'ensemble de la formation");
-  for (const section of activityReport(data)) {
-    w.table(
-      [
-        { header: section.title, width: 0.52 },
-        ...Array.from({ length: REPORT_YEARS }, (_, i) => ({ header: `Année ${i + 1}`, width: 0.08, align: "right" as const })),
-        { header: "TOTAL", width: 0.08, align: "right" as const },
-      ],
-      section.rows.map((r) => [{ text: r.label, bold: r.emphasis }, ...r.byYear.map((n) => ({ text: n ? String(n) : "" })), { text: String(r.total), bold: true }]),
-      { size: 8, minRowHeight: 14 }
-    );
+      const image = signature ? await signatureImage(ctx, signature.id, signature.image) : undefined;
+      if (image) page.image(image, t.cols[4] + 4, top + 2, t.cols[5] - 4, bottom - 2);
+    }
   }
-  w.gap(10);
-  w.text("Date et signature du candidat                    Signature du Maître de stage coordinateur                    Signature du Maître de stage local", { size: 9 });
 
-  // --- IX. Personal evaluation -------------------------------------------------------------
-  for (const stage of stages) {
+  // --- Activity report (whole training) ------------------------------------------------------------------------------
+  const reportPages: Sheet[] = [];
+  for (const index of TPL.report) reportPages.push(await addTemplatePage(ctx, template, index));
+  // Years of the training so far get a figure (0 included); later years stay blank.
+  const yearsSoFar = new Set(data.stages.map((s) => Math.min(s.training_year, REPORT_YEARS)));
+  for (const row of activityReport(data).flatMap((s) => s.rows)) {
+    const place = REPORT_ROWS[row.key];
+    if (!place) continue;
+    const [pageOffset, top, bottom] = place;
+    const page = reportPages[pageOffset];
+    const cols = row.key.startsWith("duty_") ? REPORT_DUTY_YEAR_COLS : REPORT_YEAR_COLS;
+    row.byYear.forEach((n, i) => {
+      if (n === 0 && !yearsSoFar.has(i + 1)) return;
+      page.line(String(n).replace(".", ","), cols[i] + 2, bottom - 3.5, cols[i + 1] - cols[i] - 4, { size: 11, align: "center" });
+    });
+    // The form's total cell shows a computed "0": replaced by the real total.
+    page.whiteout(REPORT_TOTAL_COL[0] + 1, top + 1, REPORT_TOTAL_COL[1] - 1, bottom - 1);
+    page.line(String(row.total).replace(".", ","), REPORT_TOTAL_COL[0] + 2, bottom - 3.5, REPORT_TOTAL_COL[1] - REPORT_TOTAL_COL[0] - 4, { size: 11, align: "center" });
+  }
+  const lastReport = reportPages[2];
+  const pubTitles = printable(ctx, publications.map((pub) => pub.title).join(" ; "));
+  if (pubTitles) {
+    const lines = wrapLines(ctx.font, pubTitles, 10, 380);
+    lastReport.line(lines[0], 378, 249, 380, { size: 10 });
+    if (lines.length > 1) lastReport.line(lines.slice(1).join(" "), 378, 283.5, 380, { size: 10, where: "Rapport d'activité — titres des publications" });
+  }
+  if (candidateSignature) lastReport.image(candidateSignature, 72, 365, 185, 405);
+  lastReport.line(today, 84.8, 418, 110, { size: 10.5 });
+
+  // --- Personal evaluation: one page per stage -------------------------------------------------------------------------
+  for (const stage of stages.length > 0 ? stages : [null]) {
+    const page = await addTemplatePage(ctx, template, TPL.review);
+    if (!stage) continue;
     const review = data.stage_reviews.find((r) => r.stage_id === stage.id);
-    w.newPage();
-    w.heading("IX. Évaluation personnelle", "Personal report");
-    w.field("Lieu de stage / Training place", `${[stage.hospital, stage.sector].filter(Boolean).join(" – ")} (${stagePeriod(stage)})`);
-    w.field("Impression globale du stage", review?.global_impression ?? "");
-    w.field("Ce que vous avez aimé", review?.liked ?? "");
-    w.field("Ce que vous n'avez pas aimé", review?.disliked ?? "");
-    w.field("Que changeriez-vous résolument si on vous en donnait la possibilité ?", review?.would_change ?? "");
-    w.field("Si vous en aviez l'occasion, y retourneriez-vous en stage ?", review?.would_return === null || review?.would_return === undefined ? "" : review.would_return ? "OUI" : "NON");
-    const score = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(v));
-    w.table(
-      [
-        { header: "", width: 0.85 },
-        { header: "COTE", width: 0.15, align: "center" },
-      ],
-      [
-        [{ text: "Le travail clinique vous a paru intéressant (0 pas du tout – 10 exceptionnellement intéressant)" }, { text: score(review?.score_interest) }],
-        [{ text: "Les diplômés assurant votre encadrement ont-ils fourni une guidance clinique (0 insuffisante – 10 excellente)" }, { text: score(review?.score_clinical_guidance) }],
-        [{ text: "L'ambiance de travail vous a paru (0 exécrable – 10 idyllique)" }, { text: score(review?.score_atmosphere) }],
-        [{ text: "Les diplômés assurant votre encadrement vous ont-ils fourni une guidance théorique (0 jamais – 10 en permanence)" }, { text: score(review?.score_theoretical_guidance) }],
-        [
-          { text: "Responsabilités cliniques confiées : de -5 (beaucoup trop peu) à +5 (beaucoup trop), l'idéal se situant à 0" },
-          { text: review?.score_responsibilities === null || review?.score_responsibilities === undefined ? "" : `${review.score_responsibilities > 0 ? "+" : ""}${review.score_responsibilities}` },
-        ],
-      ],
-      { size: 9, minRowHeight: 22 }
-    );
+    const where = `Évaluation personnelle — ${stage.hospital}`;
+    const place = [stage.hospital, stage.sector].filter(Boolean).join(" – ");
+    page.line(`${place} (du ${formatDateFr(stage.start_date)}${stage.end_date ? ` au ${formatDateFr(stage.end_date)}` : ""})`, 145, 89.2, 380, { size: 11, where });
+    if (!review) continue;
+    page.box(review.global_impression, 70.9, 148, 525, 171, { size: 10.5, minSize: 7.5, where: `${where} — impression globale` });
+    page.box(review.liked, 70.9, 202, 525, 265, { size: 10.5, minSize: 7.5, where: `${where} — ce que vous avez aimé` });
+    page.box(review.disliked, 70.9, 296, 525, 346, { size: 10.5, minSize: 7.5, where: `${where} — ce que vous n'avez pas aimé` });
+    page.box(review.would_change, 70.9, 377, 525, 427, { size: 10.5, minSize: 7.5, where: `${where} — ce que vous changeriez` });
+    if (review.would_return === true) page.ellipse(350.5, 426.5, 374, 443.5);
+    if (review.would_return === false) page.ellipse(377, 426.5, 405.5, 443.5);
+    const scores = [review.score_interest, review.score_clinical_guidance, review.score_atmosphere, review.score_theoretical_guidance, review.score_responsibilities];
+    const rows = [483.0, 523.9, 578.2, 605.6, 659.9, 741.1];
+    scores.forEach((score, i) => {
+      if (score === null || score === undefined) return;
+      page.cell(i === 4 && score > 0 ? `+${score}` : String(score), 524.5, rows[i], 573.3, rows[i + 1], { size: 13, align: "center" });
+    });
   }
 
-  // --- Absences (whole training) -------------------------------------------------------------
-  w.newPage();
-  w.heading("Récapitulatif des absences", "À compléter pour l'ensemble de la formation");
-  const years = Array.from({ length: Math.max(REPORT_YEARS, ...data.years.map((y) => y.training_year)) }, (_, i) => i + 1);
-  const yearRow = new Map(data.years.map((y) => [y.training_year, y]));
-  w.table(
-    [{ header: "", width: 0.1, align: "center" }, ...years.map((y) => ({ header: `Année ${y}`, width: 0.9 / years.length, align: "right" as const }))],
-    ABSENCE_CATEGORIES.map((c) => [{ text: c.code, bold: true }, ...years.map((y) => ({ text: yearRow.get(y)?.absences[c.code] !== undefined ? String(yearRow.get(y)!.absences[c.code]).replace(".", ",") : "" }))]),
-    { size: 9, minRowHeight: 18 }
-  );
-  for (const c of ABSENCE_CATEGORIES) w.text(`${c.code} = ${c.label}`, { size: 8.5 });
-  w.text("En jours de travail (1 par journée pleine, 0,5 par demi-jour).", { size: 8.5, font: w.fonts.italic, gapAfter: 16 });
-  w.text(`NOM : ${p?.last_name ?? ""}`, { size: 10 });
-  w.text(`Prénom : ${p?.first_name ?? ""}`, { size: 10 });
-  w.text(`Adresse mail : ${p?.email ?? ""}`, { size: 10 });
-  w.text(`Téléphone : ${p?.phone ?? ""}`, { size: 10 });
+  // --- Absences (whole training) ----------------------------------------------------------------------------------------
+  const absences = await addTemplatePage(ctx, template, TPL.absences);
+  const absenceCols = [85.1, 148.3, 211.5, 274.7, 337.9, 401.1, 464.3, 527.6];
+  const absenceRows = [144.9, 164.7, 184.6, 204.4, 224.3, 244.1, 264.0];
+  for (const y of data.years) {
+    const col = y.training_year - 1;
+    if (col < 0 || col >= absenceCols.length - 1) continue;
+    if (y.training_year > 5) {
+      // "Année …" columns: the "…" becomes the year.
+      absences.whiteout(absenceCols[col] + 36, 131, absenceCols[col + 1] - 1, 143);
+      absences.line(String(y.training_year), absenceCols[col] + 37, 141, 20, { size: 11 });
+    }
+    ["A", "B", "C", "D", "E", "F"].forEach((code, row) => {
+      const value = y.absences[code];
+      if (value === undefined) return;
+      absences.cell(String(value).replace(".", ","), absenceCols[col], absenceRows[row], absenceCols[col + 1], absenceRows[row + 1], { size: 11, align: "center" });
+    });
+  }
 
-  numberPages(doc, w.fonts.regular, lib.rgb);
-  return doc.save();
+  addAnnex(ctx);
+  return ctx.doc.save();
 }

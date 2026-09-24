@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { useCarnet } from "@/components/carnet/carnet-provider";
 import { Field, SectionTitle, Textarea } from "@/components/carnet/ui";
+import { SignaturePad } from "@/components/carnet/signature-pad";
 import { putProfile } from "@/lib/carnet/mutations";
 import type { CarnetProfile } from "@/lib/carnet/types";
 
@@ -22,6 +23,7 @@ const EMPTY: CarnetProfile = {
   university: "",
   graduation_year: null,
   pre_training_activities: "",
+  signature: "",
 };
 
 /** The carnet's "Identification" page (and the contact block of its last page). Filled once. */
@@ -29,9 +31,11 @@ export function ProfileView() {
   const { data, commit } = useCarnet();
   const { toast } = useToast();
   const [profile, setProfile] = useState<CarnetProfile>(() => data.profile ?? EMPTY);
+  const [redraw, setRedraw] = useState(false);
   const set = (patch: Partial<CarnetProfile>) => setProfile((p) => ({ ...p, ...patch }));
 
   function save() {
+    setRedraw(false);
     commit([putProfile({ ...profile, addresses: profile.addresses.filter((a) => a.address.trim()) })]);
     toast("Identification enregistrée.", { variant: "success" });
   }
@@ -115,6 +119,25 @@ export function ProfileView() {
 
       <Field label="Activités professionnelles depuis la fin de l'université jusqu'au début des stages" hint="Nature, lieu, date, examens, résultats.">
         <Textarea rows={5} value={profile.pre_training_activities} onChange={(e) => set({ pre_training_activities: e.target.value })} />
+      </Field>
+
+      <Field label="Votre signature" hint="Reportée sur la déclaration (page 2) et le rapport d'activité du carnet exporté.">
+        {profile.signature && !redraw ? (
+          <div className="flex flex-wrap items-end gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element -- stored data URL, nothing for next/image to optimize */}
+            <img src={profile.signature} alt="Votre signature" className="h-20 rounded border border-border bg-white object-contain p-1" />
+            <Button type="button" variant="ghost" size="sm" onClick={() => setRedraw(true)}>
+              Refaire
+            </Button>
+            <Button type="button" variant="ghost" size="sm" className="text-danger" onClick={() => set({ signature: "" })}>
+              Effacer
+            </Button>
+          </div>
+        ) : (
+          <div className="max-w-md">
+            <SignaturePad onChange={(png) => set({ signature: png ?? "" })} />
+          </div>
+        )}
       </Field>
 
       <div className="flex justify-end">

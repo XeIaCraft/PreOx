@@ -10,8 +10,8 @@ import { useCarnet } from "@/components/carnet/carnet-provider";
 import { SupervisorPicker } from "@/components/carnet/supervisor-picker";
 import { ChipGroup, EmptyState, Field, SectionTitle, Textarea } from "@/components/carnet/ui";
 import { deleteRow, putRow } from "@/lib/carnet/mutations";
-import { STAGE_ACTIVITIES, supervisorName } from "@/lib/carnet/referentiel";
-import { formatDateFr, localDateIso, sortStages } from "@/lib/carnet/logic";
+import { STAGE_SECTORS, supervisorName } from "@/lib/carnet/referentiel";
+import { defaultCoordinatorId, defaultStageSupervisorId, formatDateFr, localDateIso, sortStages } from "@/lib/carnet/logic";
 import type { CarnetStage, CarnetStageReview } from "@/lib/carnet/types";
 
 const YEAR_OPTIONS = [1, 2, 3, 4, 5, 6].map((y) => ({ code: y, label: `${y}${y === 1 ? "re" : "e"} année` }));
@@ -21,14 +21,27 @@ export function StageFormModal({ initial, onClose, onSaved }: { initial?: Carnet
   const last = sortStages(data.stages)[0];
   const [hospital, setHospital] = useState(initial?.hospital ?? "");
   const [city, setCity] = useState(initial?.city ?? "");
-  const [sector, setSector] = useState(initial?.sector ?? "");
-  const [activity, setActivity] = useState(initial?.activity ?? "Anesthésie");
+  const [sector, setSector] = useState(initial?.sector ?? "Anesthésie");
   const [year, setYear] = useState<number | null>(initial?.training_year ?? last?.training_year ?? 1);
   const [start, setStart] = useState(initial?.start_date ?? localDateIso());
   const [end, setEnd] = useState(initial?.end_date ?? "");
-  const [coordinatorId, setCoordinatorId] = useState<string | null>(initial?.coordinator_id ?? last?.coordinator_id ?? null);
+  // The coordinator is the same for the whole training unless it changes: carried over, shown compactly with a "Changer" link.
+  const [coordinatorId, setCoordinatorId] = useState<string | null>(initial ? initial.coordinator_id : defaultCoordinatorId(data.stages));
+  const [editCoordinator, setEditCoordinator] = useState(!coordinatorId);
+  // The stage's own maître de stage depends on hospital + department: suggested from a previous stage there until picked by hand.
+  const [pickedSupervisor, setPickedSupervisor] = useState<{ id: string | null } | null>(initial ? { id: initial.supervisor_id } : null);
+  const supervisorId = pickedSupervisor ? pickedSupervisor.id : defaultStageSupervisorId(data.stages, hospital, sector);
   const [error, setError] = useState<string | null>(null);
   const knownHospitals = [...new Set(data.stages.map((s) => s.hospital))];
+  const knownSectors = [...new Set([...STAGE_SECTORS, ...data.stages.map((s) => s.sector).filter(Boolean)])];
+  const coordinator = data.supervisors.find((s) => s.id === coordinatorId);
+
+  function changeHospital(value: string) {
+    setHospital(value);
+    // Same hospital as a previous stage: its city too.
+    const known = data.stages.find((s) => s.hospital.trim().toLowerCase() === value.trim().toLowerCase());
+    if (known && !city.trim()) setCity(known.city);
+  }
 
   function save() {
     if (!hospital.trim()) return setError("Indiquez le lieu de stage.");
@@ -39,8 +52,8 @@ export function StageFormModal({ initial, onClose, onSaved }: { initial?: Carnet
       hospital: hospital.trim(),
       city: city.trim(),
       sector: sector.trim(),
-      activity: activity.trim(),
       coordinator_id: coordinatorId,
+      supervisor_id: supervisorId,
       training_year: year,
       start_date: start,
       end_date: end || null,
@@ -62,7 +75,7 @@ export function StageFormModal({ initial, onClose, onSaved }: { initial?: Carnet
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Lieu de stage (hôpital)">
-            <Input value={hospital} onChange={(e) => setHospital(e.target.value)} list="carnet-hospitals" placeholder="ex. CHU Saint-Pierre" className="h-11" />
+            <Input value={hospital} onChange={(e) => changeHospital(e.target.value)} list="carnet-hospitals" placeholder="ex. CHU Saint-Pierre" className="h-11" />
             <datalist id="carnet-hospitals">
               {knownHospitals.map((h) => (
                 <option key={h} value={h} />
@@ -72,18 +85,15 @@ export function StageFormModal({ initial, onClose, onSaved }: { initial?: Carnet
           <Field label="Ville">
             <Input value={city} onChange={(e) => setCity(e.target.value)} className="h-11" />
           </Field>
-          <Field label="Secteur">
-            <Input value={sector} onChange={(e) => setSector(e.target.value)} placeholder="ex. Bloc opératoire, pédiatrie…" className="h-11" />
-          </Field>
-          <Field label="Activité">
-            <Input value={activity} onChange={(e) => setActivity(e.target.value)} list="carnet-activities" className="h-11" />
-            <datalist id="carnet-activities">
-              {STAGE_ACTIVITIES.map((a) => (
-                <option key={a} value={a} />
-              ))}
-            </datalist>
-          </Field>
         </div>
+        <Field label="Secteur / activité">
+          <Input value={sector} onChange={(e) => setSector(e.target.value)} list="carnet-sectors" placeholder="ex. Anesthésie, Soins intensifs, Algologie…" className="h-11" />
+          <datalist id="carnet-sectors">
+            {knownSectors.map((a) => (
+              <option key={a} value={a} />
+            ))}
+          </datalist>
+        </Field>
         <Field label="Année de formation">
           <ChipGroup options={YEAR_OPTIONS} value={year} onChange={setYear} size="sm" />
         </Field>
@@ -95,9 +105,21 @@ export function StageFormModal({ initial, onClose, onSaved }: { initial?: Carnet
             <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="h-11" />
           </Field>
         </div>
-        <Field label="Maître de stage coordinateur">
-          <SupervisorPicker value={coordinatorId} onChange={setCoordinatorId} hospital={hospital} defaultRole="Maître de stage coordinateur" />
+        <Field label="Maître de stage du service" hint="Celui qui évalue ce stage (grille d'évaluation) — propre à l'hôpital et au service.">
+          <SupervisorPicker value={supervisorId} onChange={(id) => setPickedSupervisor({ id })} hospital={hospital} defaultRole="Maître de stage" />
         </Field>
+        {editCoordinator ? (
+          <Field label="Maître de stage coordinateur" hint="Le même pendant toute la formation : il sera repris automatiquement pour les stages suivants.">
+            <SupervisorPicker value={coordinatorId} onChange={setCoordinatorId} hospital={hospital} defaultRole="Maître de stage coordinateur" />
+          </Field>
+        ) : (
+          <p className="text-sm text-foreground-muted">
+            Coordinateur : <span className="font-medium text-foreground">{supervisorName(coordinator) || "—"}</span>{" "}
+            <button type="button" onClick={() => setEditCoordinator(true)} className="ml-1 text-xs font-medium text-primary hover:underline">
+              Changer
+            </button>
+          </p>
+        )}
         {error && <p className="text-sm text-danger">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>
@@ -219,7 +241,7 @@ export function StagesView({ activeStageId, onActivate, onDownloadGrid }: { acti
           {stages.map((stage) => {
             const cases = data.cases.filter((c) => c.stage_id === stage.id).length;
             const duties = data.duties.filter((d) => d.stage_id === stage.id).length;
-            const coordinator = data.supervisors.find((s) => s.id === stage.coordinator_id);
+            const supervisor = data.supervisors.find((s) => s.id === stage.supervisor_id);
             const hasReview = data.stage_reviews.some((r) => r.stage_id === stage.id);
             const isActive = stage.id === activeStageId;
             return (
@@ -227,13 +249,13 @@ export function StagesView({ activeStageId, onActivate, onDownloadGrid }: { acti
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-medium text-foreground">{stage.hospital}</p>
-                    <p className="text-sm text-foreground-muted">{[stage.sector, stage.city, stage.activity].filter(Boolean).join(" · ")}</p>
+                    <p className="text-sm text-foreground-muted">{[stage.sector, stage.city].filter(Boolean).join(" · ")}</p>
                     <p className="mt-1 text-xs text-foreground-subtle">
                       {stage.training_year}
                       {stage.training_year === 1 ? "re" : "e"} année · du {formatDateFr(stage.start_date)}
                       {stage.end_date ? ` au ${formatDateFr(stage.end_date)}` : " (en cours)"}
                     </p>
-                    <p className="text-xs text-foreground-subtle">Maître de stage : {supervisorName(coordinator) || "—"}</p>
+                    <p className="text-xs text-foreground-subtle">Maître de stage : {supervisorName(supervisor) || "—"}</p>
                     <p className="mt-1 text-xs text-foreground-muted">
                       {cases} cas · {duties} garde{duties > 1 ? "s" : ""}
                     </p>

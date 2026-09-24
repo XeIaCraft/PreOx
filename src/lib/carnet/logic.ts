@@ -3,7 +3,8 @@
 // tested (logic.test.ts): applying queued local changes, case numbering,
 // the tutor pre-fill rule, grouping of what still needs a signature, and
 // the official activity report.
-import { OPERATION_CATEGORIES, REGIONAL_TYPES, TECHNICAL_ACTS, ACTIVITY_COUNTERS } from "./referentiel";
+import { OPERATION_CATEGORIES, REGIONAL_TYPES, ACTIVITY_COUNTERS } from "./referentiel";
+import { upgradePatch, upgradeProfile, upgradeRow } from "./compat";
 import type { CarnetCase, CarnetCollection, CarnetData, CarnetDuty, CarnetMutation, CarnetStage } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -34,6 +35,7 @@ export function formatDateFr(iso: string | null | undefined): string {
 const SET_NULL_REFERENCES: Partial<Record<CarnetCollection, { collection: CarnetCollection; field: string }[]>> = {
   supervisors: [
     { collection: "stages", field: "coordinator_id" },
+    { collection: "stages", field: "supervisor_id" },
     { collection: "cases", field: "tutor_id" },
     { collection: "duties", field: "supervisor_id" },
     { collection: "signatures", field: "supervisor_id" },
@@ -51,25 +53,27 @@ function withRows<C extends CarnetCollection>(data: CarnetData, collection: C, r
 /** Applies one queued change to the local copy — the same effect the server will have once it receives it. */
 export function applyMutation(data: CarnetData, m: CarnetMutation): CarnetData {
   if (m.collection === "profile") {
-    return m.op === "put" ? { ...data, profile: m.row } : data;
+    return m.op === "put" ? { ...data, profile: upgradeProfile(m.row) } : data;
   }
   const collection = m.collection;
   const rows = data[collection] as { id: string }[];
 
   if (m.op === "put") {
+    const row = upgradeRow(collection, m.row) as { id: string };
     let next = rows;
     // carnet_years is unique per training year: a second row for the same year replaces the first, as the server's upsert does.
     if (collection === "years") {
-      const year = (m.row as { training_year?: number }).training_year;
-      next = next.filter((r) => (r as unknown as { training_year: number }).training_year !== year || r.id === m.row.id);
+      const year = (row as { training_year?: number }).training_year;
+      next = next.filter((r) => (r as unknown as { training_year: number }).training_year !== year || r.id === row.id);
     }
-    const exists = next.some((r) => r.id === m.row.id);
-    next = exists ? next.map((r) => (r.id === m.row.id ? { ...m.row } : r)) : [...next, { ...m.row }];
+    const exists = next.some((r) => r.id === row.id);
+    next = exists ? next.map((r) => (r.id === row.id ? row : r)) : [...next, row];
     return withRows(data, collection, next as never);
   }
 
   if (m.op === "patch") {
-    return withRows(data, collection, rows.map((r) => (r.id === m.rowId ? { ...r, ...m.patch } : r)) as never);
+    const patch = upgradePatch(collection, m.patch);
+    return withRows(data, collection, rows.map((r) => (r.id === m.rowId ? { ...r, ...patch } : r)) as never);
   }
 
   // delete
@@ -159,7 +163,7 @@ export interface OperationSuggestion {
   operation: string;
   count: number;
   /** Category, technique and pediatric flag of the most recent case with this operation — re-applied when the suggestion is picked. */
-  last: Pick<CarnetCase, "operation_category" | "general_anesthesia" | "regional_type" | "technical_act">;
+  last: Pick<CarnetCase, "operation_category" | "general_anesthesia" | "regional_types" | "technical_acts" | "other_labels" | "details">;
 }
 
 function normalize(s: string): string {
@@ -197,7 +201,14 @@ export function operationSuggestions(cases: CarnetCase[], query: string, limit =
     .map(([, v]) => ({
       operation: v.operation,
       count: v.count,
-      last: { operation_category: v.last.operation_category, general_anesthesia: v.last.general_anesthesia, regional_type: v.last.regional_type, technical_act: v.last.technical_act },
+      last: {
+        operation_category: v.last.operation_category,
+        general_anesthesia: v.last.general_anesthesia,
+        regional_types: v.last.regional_types,
+        technical_acts: v.last.technical_acts,
+        other_labels: v.last.other_labels,
+        details: v.last.details,
+      },
     }));
 }
 
@@ -256,6 +267,8 @@ export function pendingSignatureCount(data: Pick<CarnetData, "cases" | "duties">
 // ---------------------------------------------------------------------------
 
 export interface ReportRow {
+  /** Stable key, used to place the row on the official form (pdf.ts). */
+  key: string;
   label: string;
   /** Count per training year 1..5 (index 0 = year 1); years above 5 fold into the 5th column like the paper form's last column. */
   byYear: number[];
@@ -271,50 +284,104 @@ export interface ReportSection {
 
 export const REPORT_YEARS = 5;
 
-function row(label: string, counts: number[], emphasis = false): ReportRow {
-  return { label, byYear: counts, total: counts.reduce((a, b) => a + b, 0), emphasis };
+function row(key: string, label: string, counts: number[], emphasis = false): ReportRow {
+  return { key, label, byYear: counts, total: counts.reduce((a, b) => a + b, 0), emphasis };
 }
 
-function countBy<T>(items: T[], yearOf: (item: T) => number, match: (item: T) => boolean): number[] {
+function countBy<T>(items: T[], yearOf: (item: T) => number, weight: (item: T) => number): number[] {
   const counts = Array.from({ length: REPORT_YEARS }, () => 0);
   for (const item of items) {
-    if (!match(item)) continue;
+    const w = weight(item);
+    if (!w) continue;
     const y = Math.min(Math.max(yearOf(item), 1), REPORT_YEARS);
-    counts[y - 1]++;
+    counts[y - 1] += w;
   }
   return counts;
 }
 
-/** Mirrors the carnet's "Rapport d'activité" page: tables I (patients by surgical category), II (techniques) and III (other domains), plus duties. */
+const sum = (...lists: number[][]) => lists[0].map((_, i) => lists.reduce((n, l) => n + l[i], 0));
+
+/** Acts of section II "* Autres" (T): any technical act but the central line and ultrasound for a block (reported in section III with the rest). */
+const OTHER_TECHNIQUE_ACTS = new Set(["echo_vasculaire", "echo_cardiaque", "fibroscopie", "videolaryngoscope", "intubation_difficile_autre", "autre_acte"]);
+
+/**
+ * Mirrors the carnet's "Rapport d'activité" row by row: I (patients by
+ * surgical category), II (techniques: general, each regional type, central
+ * lines, other acts), III (other activity domains — entered per year — plus
+ * ultrasound and difficult airway counts from the case log) and duties.
+ * A case with several regional techniques counts once in each of their
+ * rows, and every technique counts in TOTAL 2 (which must be ≥ TOTAL 1).
+ */
 export function activityReport(data: Pick<CarnetData, "cases" | "duties" | "stages" | "years">): ReportSection[] {
   const yearOfStage = new Map(data.stages.map((s) => [s.id, s.training_year]));
   const caseYear = (c: CarnetCase) => yearOfStage.get(c.stage_id) ?? 1;
   const dutyYear = (d: CarnetDuty) => yearOfStage.get(d.stage_id) ?? 1;
   const cases = data.cases;
+  const count = (weight: (c: CarnetCase) => number | boolean) => countBy(cases, caseYear, (c) => Number(weight(c)));
+  const hasAct = (code: string) => (c: CarnetCase) => c.technical_acts.includes(code);
 
-  const categoryRows = OPERATION_CATEGORIES.map((cat) => row(`${cat.code === "X" ? "" : `${cat.code} `}${cat.label}`, countBy(cases, caseYear, (c) => c.operation_category === cat.code)));
-  const total1 = row('TOTAL 1 (inclut les enfants "H")', countBy(cases, caseYear, () => true), true);
-  const pediatric = row("H Enfants de moins de 4 ans", countBy(cases, caseYear, (c) => c.pediatric_under_4));
+  const categoryRows = OPERATION_CATEGORIES.map((cat) =>
+    row(`cat_${cat.code}`, cat.code === "X" ? "Anesthésies pour autres procédures" : `${cat.code} ${cat.label}`, count((c) => c.operation_category === cat.code))
+  );
+  const total1 = row("total1", 'TOTAL 1 (doit inclure les enfants "H")', count(() => true), true);
+  const pediatric = row("H", "H Enfants de moins de 4 ans", count((c) => c.pediatric_under_4));
 
-  const regionalRows = REGIONAL_TYPES.map((t) => row(`ALR – ${t.label}`, countBy(cases, caseYear, (c) => c.regional_type === t.code)));
-  const regionalTotal = row("Total ALR", countBy(cases, caseYear, (c) => c.regional_type !== null), true);
-  const general = row("N Anesthésies générales ou sédations", countBy(cases, caseYear, (c) => c.general_anesthesia));
-  const actRows = TECHNICAL_ACTS.map((t) => row(t.label, countBy(cases, caseYear, (c) => c.technical_act === t.code)));
-  const techniquesTotal = general.byYear.map((n, i) => n + regionalTotal.byYear[i] + actRows.reduce((sum, r) => sum + r.byYear[i], 0));
+  const general = row("N", "N Anesthésies générales ou sédations", count((c) => c.general_anesthesia));
+  const regionalRows = REGIONAL_TYPES.map((t) => row(`alr_${t.code}`, `O ALR – ${t.label}`, count((c) => c.regional_types.includes(t.code))));
+  const regionalTotal = row("alr_total", "Total ALR", sum(...regionalRows.map((r) => r.byYear)), true);
+  const centralLines = row("act_voie_centrale", "Voies centrales", count(hasAct("voie_centrale")));
+  const otherActs = row("act_autres", "T Autres actes techniques", count((c) => c.technical_acts.filter((a) => OTHER_TECHNIQUE_ACTS.has(a)).length));
+  const total2 = row("total2", "TOTAL 2 (doit être ≥ au total 1)", sum(general.byYear, regionalTotal.byYear, centralLines.byYear, otherActs.byYear), true);
 
   const counterRows = ACTIVITY_COUNTERS.map((counter) => {
     const counts = Array.from({ length: REPORT_YEARS }, () => 0);
     for (const y of data.years) counts[Math.min(Math.max(y.training_year, 1), REPORT_YEARS) - 1] += y.activity_counts[counter.code] ?? 0;
-    return row(`${counter.domain} – ${counter.label}`, counts);
+    return row(`counter_${counter.code}`, `${counter.domain} – ${counter.label}`, counts);
   });
+  const echoRows = [
+    row("echo_alr", "Échographie pour ALR", count(hasAct("echo_alr"))),
+    row("echo_vasculaire", "Échographie accès vasculaire", count(hasAct("echo_vasculaire"))),
+    row("echo_cardiaque", "Échographie cardiaque", count(hasAct("echo_cardiaque"))),
+  ];
+  const airwayRows = [
+    row("fibroscopie", "Intubations difficiles – fibroscopies", count(hasAct("fibroscopie"))),
+    row("videolaryngoscope", "Intubations difficiles – Glidescope / vidéolaryngoscope", count(hasAct("videolaryngoscope"))),
+    row("intubation_difficile_autre", "Intubations difficiles – autres", count(hasAct("intubation_difficile_autre"))),
+  ];
 
-  const onSite = row("Gardes sur place", countBy(data.duties, dutyYear, (d) => d.duty_type === "on_site"));
-  const onCall = row("Gardes à domicile, rappelables", countBy(data.duties, dutyYear, (d) => d.duty_type === "on_call"));
+  const onSite = row("duty_on_site", "Gardes sur place", countBy(data.duties, dutyYear, (d) => Number(d.duty_type === "on_site")));
+  const onCall = row("duty_on_call", "Gardes à domicile, rappelables", countBy(data.duties, dutyYear, (d) => Number(d.duty_type === "on_call")));
 
   return [
     { title: "I. Patients anesthésiés", rows: [...categoryRows, total1, pediatric] },
-    { title: "II. Techniques utilisées", rows: [general, ...regionalRows, regionalTotal, ...actRows, row("TOTAL 2 (doit être ≥ au total 1)", techniquesTotal, true)] },
-    { title: "III. Autres domaines d'activité", rows: counterRows },
-    { title: "Gardes", rows: [onSite, onCall, row("TOTAL", onSite.byYear.map((n, i) => n + onCall.byYear[i]), true)] },
+    { title: "II. Techniques utilisées", rows: [general, ...regionalRows, regionalTotal, centralLines, otherActs, total2] },
+    { title: "III. Autres domaines d'activité", rows: [...counterRows, ...echoRows, ...airwayRows] },
+    { title: "Gardes", rows: [onSite, onCall, row("duty_total", "TOTAL", sum(onSite.byYear, onCall.byYear), true)] },
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Stage pre-fill
+// ---------------------------------------------------------------------------
+
+/** The coordinator stays the same for the whole training unless it changes: the most recent stage's one. */
+export function defaultCoordinatorId(stages: CarnetStage[]): string | null {
+  return sortStages(stages).find((s) => s.coordinator_id)?.coordinator_id ?? null;
+}
+
+/** A stage's own maître de stage depends on the hospital and the department: the one of the latest stage there (same sector first). */
+export function defaultStageSupervisorId(stages: CarnetStage[], hospital: string, sector: string): string | null {
+  const h = normalize(hospital);
+  if (!h) return null;
+  const sameHospital = sortStages(stages).filter((s) => s.supervisor_id && normalize(s.hospital) === h);
+  const sec = normalize(sector);
+  return (sameHospital.find((s) => normalize(s.sector) === sec) ?? (sec ? undefined : sameHospital[0]))?.supervisor_id ?? null;
+}
+
+/** Every drug recorded in past cases, oldest first — feeds the drug suggestions (most used first, with the route used last). */
+export function drugHistory(cases: CarnetCase[]): { name: string; route: string }[] {
+  return [...cases]
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    .flatMap((c) => c.details?.drugs ?? [])
+    .map((d) => ({ name: d.name, route: d.route }));
 }

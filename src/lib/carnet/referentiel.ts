@@ -29,7 +29,7 @@ export const OPERATION_CATEGORIES: Option[] = [
   { code: "X", label: "Anesthésie pour autres procédures (endoscopie, radiologie…)", short: "Autres proc." },
 ];
 
-/** Regional technique types, as split in the "Rapport d'activité". Péridurales export as "P" in column 6 (legend), every other type as "O". */
+/** Regional technique types, as split in the "Rapport d'activité" — several per case possible. Péridurales export as "P" in column 6 (legend), every other type as "O". */
 export const REGIONAL_TYPES: Option[] = [
   { code: "plexus_brachial", label: "Plexus brachial" },
   { code: "membre_inferieur", label: "Bloc crural / fémoral / poplité / cheville", short: "Bloc membre inf." },
@@ -40,9 +40,15 @@ export const REGIONAL_TYPES: Option[] = [
   { code: "autre_alr", label: "Autre ALR" },
 ];
 
-/** Technical acts and advanced airway / ultrasound skills counted in the "Rapport d'activité". */
+/**
+ * Technical acts and advanced airway / ultrasound skills counted in the
+ * "Rapport d'activité" — several per case possible. "echo_alr" (ultrasound
+ * for a regional block, "Echographie pour ALR" in the report) is offered
+ * next to the regional techniques in the entry form.
+ */
 export const TECHNICAL_ACTS: Option[] = [
   { code: "voie_centrale", label: "Voie centrale" },
+  { code: "echo_alr", label: "Échographie pour ALR", short: "Échoguidée" },
   { code: "echo_vasculaire", label: "Échographie – accès vasculaire", short: "Écho vasculaire" },
   { code: "echo_cardiaque", label: "Échographie cardiaque", short: "Écho cardiaque" },
   { code: "fibroscopie", label: "Intubation difficile – fibroscopie", short: "Fibroscopie" },
@@ -50,6 +56,9 @@ export const TECHNICAL_ACTS: Option[] = [
   { code: "intubation_difficile_autre", label: "Intubation difficile – autre technique", short: "ID autre" },
   { code: "autre_acte", label: "Autre acte technique" },
 ];
+
+/** Choices whose free-text precision ("Autre : …") can be typed in the entry form, stored in CarnetCase.other_labels. */
+export const OTHER_CODES = ["autre_alr", "intubation_difficile_autre", "autre_acte"] as const;
 
 export const PARTICIPATION_DEGREES: { code: 1 | 2 | 3; label: string; short: string }[] = [
   { code: 1, label: "Participation passive", short: "Passive" },
@@ -83,8 +92,8 @@ export const ACTIVITY_COUNTERS: { code: string; domain: string; label: string }[
   { code: "consultations_preop", domain: "Consultations préopératoires", label: "Consultations" },
 ];
 
-/** Stage "Activité" presets for the cover page table (free text still allowed). */
-export const STAGE_ACTIVITIES = ["Anesthésie", "Soins intensifs", "Urgences / SMUR", "Algologie", "Recherche", "Autre"];
+/** Presets of a stage's "Secteur / activité" (the cover page's "Activité" column and the grid's "Secteur" are the same thing) — free text still allowed. */
+export const STAGE_SECTORS = ["Anesthésie", "Anesthésie pédiatrique", "Anesthésie obstétricale", "Anesthésie cardiaque", "Soins intensifs", "Urgences / SMUR", "Algologie", "Recherche"];
 
 /**
  * Evaluation grid of the "Stages hospitaliers" pages, filled by hand by the
@@ -142,8 +151,6 @@ function labelOf(options: Option[], code: string | null | undefined): string {
 }
 
 export const operationCategoryLabel = (code: string) => labelOf(OPERATION_CATEGORIES, code);
-export const regionalTypeLabel = (code: string | null) => labelOf(REGIONAL_TYPES, code);
-export const technicalActLabel = (code: string | null) => labelOf(TECHNICAL_ACTS, code);
 
 /**
  * Column 6 of the official "Relevé des prestations": surgical category,
@@ -151,21 +158,33 @@ export const technicalActLabel = (code: string | null) => labelOf(TECHNICAL_ACTS
  * under epidural is "BP2" (the carnet's own example), a knee arthroscopy
  * under general anaesthesia plus a femoral block done alone is "KNO3",
  * a child under 4 adds "H" right after the category ("AHN2").
+ * Several regional techniques still give a single letter.
  */
 export function caseCode(c: {
   operation_category: string;
   pediatric_under_4: boolean;
   general_anesthesia: boolean;
-  regional_type: string | null;
-  technical_act: string | null;
+  regional_types: string[];
+  technical_acts: string[];
   participation: number;
 }): string {
   let code = c.operation_category;
   if (c.pediatric_under_4) code += "H";
   if (c.general_anesthesia) code += "N";
-  if (c.regional_type) code += c.regional_type === "peridurale" ? "P" : "O";
-  if (c.technical_act && !c.general_anesthesia && !c.regional_type) code += "T";
+  // One letter for the regional part: "P" as soon as there's an epidural (also combined spinal-epidural), else "O".
+  if (c.regional_types.length > 0) code += c.regional_types.includes("peridurale") ? "P" : "O";
+  if (c.technical_acts.length > 0 && !c.general_anesthesia && c.regional_types.length === 0) code += "T";
   return `${code}${c.participation}`;
+}
+
+/** "Rachianesthésie + Péridurale", with the free-text precision of "Autre" choices. */
+export function techniqueLabels(options: Option[], codes: string[], otherLabels: Partial<Record<string, string>>, useShort = true): string[] {
+  return codes.map((code) => {
+    const option = options.find((o) => o.code === code);
+    const base = (useShort ? option?.short : undefined) ?? option?.label ?? code;
+    const other = otherLabels[code]?.trim();
+    return other ? `${base} (${other})` : base;
+  });
 }
 
 export function supervisorName(s: { first_name: string; last_name: string } | null | undefined): string {

@@ -31,7 +31,9 @@ self.addEventListener("fetch", (event) => {
   // Same-origin static build assets are hashed/immutable — cache-first,
   // filling the cache on first fetch, so a page that's already been
   // visited doesn't go blank offline just because a chunk was never cached.
-  if (event.request.method === "GET" && url.origin === self.location.origin && url.pathname.startsWith("/_next/static/")) {
+  // Same for the blank official carnet form and its font (public/carnet/),
+  // so the PDF export also works offline once the export screen was opened.
+  if (event.request.method === "GET" && url.origin === self.location.origin && (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/carnet/"))) {
     event.respondWith(
       caches.match(event.request).then(
         (cached) =>

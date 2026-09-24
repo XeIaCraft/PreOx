@@ -10,7 +10,8 @@ import { useCarnet } from "@/components/carnet/carnet-provider";
 import { CaseForm } from "@/components/carnet/case-form";
 import { EmptyState, SectionTitle } from "@/components/carnet/ui";
 import { deleteRow, patchRow } from "@/lib/carnet/mutations";
-import { caseCode, operationCategoryLabel, regionalTypeLabel, supervisorName, technicalActLabel } from "@/lib/carnet/referentiel";
+import { REGIONAL_TYPES, TECHNICAL_ACTS, caseCode, operationCategoryLabel, supervisorName, techniqueLabels } from "@/lib/carnet/referentiel";
+import { detailsSummary, isEmptyDetails } from "@/components/carnet/case-details";
 import { caseNumbers, formatDateFr, localDateIso, stageLabel } from "@/lib/carnet/logic";
 import type { CarnetCase, CarnetStage } from "@/lib/carnet/types";
 
@@ -78,9 +79,14 @@ export function CaseEditModal({ kase, onClose }: { kase: CarnetCase; onClose: ()
           <dt className="text-foreground-subtle">Catégorie</dt>
           <dd>
             <span className="font-mono">{caseCode(kase)}</span> — {operationCategoryLabel(kase.operation_category)}
-            {kase.regional_type && `, ${regionalTypeLabel(kase.regional_type)}`}
-            {kase.technical_act && `, ${technicalActLabel(kase.technical_act)}`}
+            {[...techniqueLabels(REGIONAL_TYPES, kase.regional_types, kase.other_labels, false), ...techniqueLabels(TECHNICAL_ACTS, kase.technical_acts, kase.other_labels, false)].map((l) => `, ${l}`).join("")}
           </dd>
+          {!isEmptyDetails(kase.details) && (
+            <>
+              <dt className="text-foreground-subtle">Détails</dt>
+              <dd>{detailsSummary(kase.details)}</dd>
+            </>
+          )}
           <dt className="text-foreground-subtle">Tuteur</dt>
           <dd>{supervisorName(tutor) || "—"}</dd>
           <dt className="text-foreground-subtle">Signature</dt>

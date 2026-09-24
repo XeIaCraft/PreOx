@@ -13,6 +13,7 @@
 // and a change the server refuses for good disappears with a visible notice
 // instead of blocking the queue.
 import { applyMutations, applyMutation } from "./logic";
+import { upgradeData } from "./compat";
 import { emptyCarnetData, type CarnetData, type CarnetMutation, type CarnetMutationResult } from "./types";
 
 const DB_NAME = "preox-carnet";
@@ -154,7 +155,7 @@ export class CarnetStore {
       idbGet<CarnetMutation[]>(this.keys.queue),
       idbGet<string>(this.keys.syncedAt),
     ]);
-    this.base = { ...emptyCarnetData(), ...(base ?? {}) };
+    this.base = upgradeData({ ...emptyCarnetData(), ...(base ?? {}) });
     this.queue = queue ?? [];
     this.emit({ ready: base !== null, lastSyncedAt: syncedAt });
     await this.sync();
@@ -230,7 +231,7 @@ export class CarnetStore {
       }
 
       const fresh = await requestJson<CarnetData>("/api/carnet/sync");
-      this.base = { ...emptyCarnetData(), ...fresh };
+      this.base = upgradeData({ ...emptyCarnetData(), ...fresh });
       this.lastRefreshAt = Date.now();
       const syncedAt = new Date().toISOString();
       await Promise.all([this.persist(), idbSet([[this.keys.syncedAt, syncedAt]])]);

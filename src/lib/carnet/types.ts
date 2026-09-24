@@ -21,6 +21,8 @@ export interface CarnetProfile {
   university: string;
   graduation_year: number | null;
   pre_training_activities: string;
+  /** Signature du candidat (PNG en data URL, "" si pas encore dessinée). */
+  signature: string;
 }
 
 export interface CarnetSupervisor {
@@ -37,9 +39,12 @@ export interface CarnetStage {
   id: string;
   hospital: string;
   city: string;
+  /** Secteur / activité du stage (ex. « Anesthésie – bloc opératoire », « Soins intensifs »). */
   sector: string;
-  activity: string;
+  /** Maître de stage coordinateur — le même pendant toute la formation, sauf changement (repris du stage précédent). */
   coordinator_id: string | null;
+  /** Maître de stage du stage — dépend de l'hôpital et du service. */
+  supervisor_id: string | null;
   training_year: number;
   start_date: string;
   end_date: string | null;
@@ -78,13 +83,34 @@ export interface CarnetCase {
   operation_category: string;
   pediatric_under_4: boolean;
   general_anesthesia: boolean;
-  regional_type: string | null;
-  technical_act: string | null;
+  /** Codes de REGIONAL_TYPES — plusieurs possibles (ex. rachianesthésie + bloc). */
+  regional_types: string[];
+  /** Codes de TECHNICAL_ACTS — plusieurs possibles. */
+  technical_acts: string[];
+  /** Précision libre facultative des choix « Autre », par code (autre_alr, autre_acte, intubation_difficile_autre). */
+  other_labels: Partial<Record<string, string>>;
+  /** Détail facultatif : produits administrés et procédures (pour soi, jamais exporté dans le carnet officiel). */
+  details: CaseDetails;
   participation: 1 | 2 | 3;
   tutor_id: string | null;
   signature_id: string | null;
   notes: string;
   created_at: string;
+}
+
+export interface CaseDrug {
+  /** Nom du produit (catalogue ou saisie libre). */
+  name: string;
+  /** Code de DRUG_ROUTES : bolus IV, PSE, AIVOC, périnerveux… */
+  route: string;
+  /** Dose / concentration, texte libre facultatif (ex. « 2 mg/kg », « 0,5 % 20 ml »). */
+  dose: string;
+}
+
+export interface CaseDetails {
+  drugs?: CaseDrug[];
+  /** Codes de PROCEDURES (induction, voies aériennes, entretien, monitorage, ALR…). */
+  procedures?: string[];
 }
 
 export type DutyType = "on_site" | "on_call";

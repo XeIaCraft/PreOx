@@ -7,11 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useCarnet } from "@/components/carnet/carnet-provider";
 import { SupervisorPicker } from "@/components/carnet/supervisor-picker";
-import { ChipGroup, Field, ToggleChip } from "@/components/carnet/ui";
+import { CaseDetailsEditor } from "@/components/carnet/case-details";
+import { ChipGroup, Field, MultiChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { OPERATION_CATEGORIES, REGIONAL_TYPES, TECHNICAL_ACTS, PARTICIPATION_DEGREES, caseCode } from "@/lib/carnet/referentiel";
-import { defaultParticipation, defaultTutorId, localDateIso, operationSuggestions, shiftDateIso } from "@/lib/carnet/logic";
+import { defaultParticipation, defaultTutorId, drugHistory, formatDateFr, localDateIso, operationSuggestions, shiftDateIso } from "@/lib/carnet/logic";
 import { putRow } from "@/lib/carnet/mutations";
-import type { CarnetCase, CarnetStage } from "@/lib/carnet/types";
+import type { CarnetCase, CarnetStage, CaseDetails } from "@/lib/carnet/types";
 
 export interface CaseDraft {
   case_date: string;
@@ -21,9 +22,12 @@ export interface CaseDraft {
   pediatric_under_4: boolean;
   general_anesthesia: boolean;
   regional: boolean;
-  regional_type: string | null;
+  regional_types: string[];
   technical: boolean;
-  technical_act: string | null;
+  /** Includes "echo_alr" (offered in the regional panel as "Échoguidée"). */
+  technical_acts: string[];
+  other_labels: Partial<Record<string, string>>;
+  details: CaseDetails;
   participation: 1 | 2 | 3 | null;
   tutor_id: string | null;
   notes: string;
@@ -37,10 +41,12 @@ function draftFromCase(c: CarnetCase): CaseDraft {
     operation_category: c.operation_category,
     pediatric_under_4: c.pediatric_under_4,
     general_anesthesia: c.general_anesthesia,
-    regional: c.regional_type !== null,
-    regional_type: c.regional_type,
-    technical: c.technical_act !== null,
-    technical_act: c.technical_act,
+    regional: c.regional_types.length > 0,
+    regional_types: c.regional_types,
+    technical: c.technical_acts.some((a) => a !== "echo_alr"),
+    technical_acts: c.technical_acts,
+    other_labels: c.other_labels,
+    details: c.details,
     participation: c.participation,
     tutor_id: c.tutor_id,
     notes: c.notes,
@@ -53,8 +59,8 @@ export function draftProblems(d: CaseDraft): string[] {
   if (!d.operation.trim()) problems.push("l'opération");
   if (!d.operation_category) problems.push("la catégorie");
   if (!d.general_anesthesia && !d.regional && !d.technical) problems.push("la technique");
-  if (d.regional && !d.regional_type) problems.push("le type d'ALR");
-  if (d.technical && !d.technical_act) problems.push("le type d'acte");
+  if (d.regional && d.regional_types.length === 0) problems.push("le type d'ALR");
+  if (d.technical && !d.technical_acts.some((a) => a !== "echo_alr")) problems.push("le type d'acte");
   if (!d.participation) problems.push("le degré de participation");
   return problems;
 }
@@ -62,7 +68,39 @@ export function draftProblems(d: CaseDraft): string[] {
 const DEGREE_OPTIONS = PARTICIPATION_DEGREES.map((d) => ({ code: d.code, label: `${d.code} · ${d.short}`, title: d.label }));
 const CATEGORY_OPTIONS = OPERATION_CATEGORIES.map((c) => ({ code: c.code, label: `${c.code} ${c.short ?? c.label}`, title: c.label }));
 const REGIONAL_OPTIONS = REGIONAL_TYPES.map((t) => ({ code: t.code, label: t.short ?? t.label, title: t.label }));
-const ACT_OPTIONS = TECHNICAL_ACTS.map((t) => ({ code: t.code, label: t.short ?? t.label, title: t.label }));
+const ACT_OPTIONS = TECHNICAL_ACTS.filter((t) => t.code !== "echo_alr").map((t) => ({ code: t.code, label: t.short ?? t.label, title: t.label }));
+const ACT_CODES = new Set(ACT_OPTIONS.map((o) => o.code));
+
+/** What gets saved: techniques of a closed panel are dropped, and so are "Autre" precisions of unselected choices. */
+function savedTechniques(d: CaseDraft) {
+  const regional_types = d.regional ? d.regional_types : [];
+  const technical_acts = d.technical_acts.filter((a) => (a === "echo_alr" ? d.regional : d.technical && ACT_CODES.has(a)));
+  const selected = new Set([...regional_types, ...technical_acts]);
+  const other_labels = Object.fromEntries(Object.entries(d.other_labels).filter(([code, text]) => selected.has(code) && text?.trim()).map(([code, text]) => [code, text!.trim()]));
+  return { regional_types, technical_acts, other_labels };
+}
+
+/** Free-text precision under an "Autre" choice — optional. */
+function OtherInput({ code, label, draft, set }: { code: string; label: string; draft: CaseDraft; set: (patch: Partial<CaseDraft>) => void }) {
+  return (
+    <Input
+      value={draft.other_labels[code] ?? ""}
+      onChange={(e) => set({ other_labels: { ...draft.other_labels, [code]: e.target.value.slice(0, 300) } })}
+      placeholder={`${label} : préciser (facultatif)`}
+      className="mt-2 h-9 text-sm"
+      aria-label={`${label} — précision`}
+    />
+  );
+}
+
+/** Drops empty lists and blank doses' whitespace so an untouched section stores {}. */
+function cleanDetails(details: CaseDetails): CaseDetails {
+  const out: CaseDetails = {};
+  const drugs = (details.drugs ?? []).map((d) => ({ ...d, dose: d.dose.trim() })).filter((d) => d.name.trim());
+  if (drugs.length) out.drugs = drugs;
+  if (details.procedures?.length) out.procedures = [...new Set(details.procedures)];
+  return out;
+}
 
 /**
  * The case entry form — the screen used most, so everything aims at one
@@ -99,9 +137,11 @@ export function CaseForm({
       pediatric_under_4: false,
       general_anesthesia: true,
       regional: false,
-      regional_type: null,
+      regional_types: [],
       technical: false,
-      technical_act: null,
+      technical_acts: [],
+      other_labels: {},
+      details: {},
       participation: defaultParticipation(data.cases, stage.id),
       tutor_id: defaultTutorId(data.cases, stage.id, date),
       notes: "",
@@ -112,6 +152,14 @@ export function CaseForm({
   const initialsRef = useRef<HTMLInputElement>(null);
 
   const suggestions = useMemo(() => operationSuggestions(data.cases, draft.operation), [data.cases, draft.operation]);
+  const history = useMemo(() => drugHistory(data.cases), [data.cases]);
+  // The protocol offered for copy: the last case with the same operation, else the last one entered on this stage.
+  const previous = useMemo(() => {
+    const op = draft.operation.trim().toLowerCase();
+    const candidates = data.cases.filter((c) => c.id !== initial?.id && c.details && (c.details.drugs?.length || c.details.procedures?.length)).sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const match = (op && candidates.find((c) => c.operation.trim().toLowerCase() === op)) || candidates.find((c) => c.stage_id === stage.id);
+    return match ? { label: `« ${match.operation} » du ${formatDateFr(match.case_date)}`, details: match.details } : null;
+  }, [data.cases, draft.operation, initial?.id, stage.id]);
   const tutorUsage = useMemo(() => {
     const usage = new Map<string, number>();
     for (const c of stageCases) if (c.tutor_id) usage.set(c.tutor_id, (usage.get(c.tutor_id) ?? 0) + 1);
@@ -140,8 +188,8 @@ export function CaseForm({
       operation_category: draft.operation_category!,
       pediatric_under_4: draft.pediatric_under_4,
       general_anesthesia: draft.general_anesthesia,
-      regional_type: draft.regional ? draft.regional_type : null,
-      technical_act: draft.technical ? draft.technical_act : null,
+      ...savedTechniques(draft),
+      details: cleanDetails(draft.details),
       participation: draft.participation!,
       tutor_id: draft.tutor_id,
       signature_id: initial?.signature_id ?? null,
@@ -151,7 +199,7 @@ export function CaseForm({
     commit([putRow("cases", row)]);
     onSaved?.(row, isNew);
     if (isNew) {
-      setDraft((d) => ({ ...d, patient_initials: "", operation: "", pediatric_under_4: false, notes: "" }));
+      setDraft((d) => ({ ...d, patient_initials: "", operation: "", pediatric_under_4: false, notes: "", details: {} }));
       setTriedSave(false);
       initialsRef.current?.focus();
     }
@@ -162,8 +210,7 @@ export function CaseForm({
         operation_category: draft.operation_category,
         pediatric_under_4: draft.pediatric_under_4,
         general_anesthesia: draft.general_anesthesia,
-        regional_type: draft.regional ? draft.regional_type : null,
-        technical_act: draft.technical ? draft.technical_act : null,
+        ...savedTechniques(draft),
         participation: draft.participation,
       })
     : null;
@@ -236,10 +283,11 @@ export function CaseForm({
                       operation: s.operation,
                       operation_category: s.last.operation_category,
                       general_anesthesia: s.last.general_anesthesia,
-                      regional: s.last.regional_type !== null,
-                      regional_type: s.last.regional_type,
-                      technical: s.last.technical_act !== null,
-                      technical_act: s.last.technical_act,
+                      regional: s.last.regional_types.length > 0,
+                      regional_types: s.last.regional_types,
+                      technical: s.last.technical_acts.some((a) => a !== "echo_alr"),
+                      technical_acts: s.last.technical_acts,
+                      other_labels: s.last.other_labels,
                     });
                     setShowSuggestions(false);
                   }}
@@ -270,21 +318,36 @@ export function CaseForm({
           <ToggleChip pressed={draft.general_anesthesia} onChange={(v) => set({ general_anesthesia: v })}>
             AG / sédation
           </ToggleChip>
-          <ToggleChip pressed={draft.regional} onChange={(v) => set({ regional: v, regional_type: v ? draft.regional_type : null })}>
+          <ToggleChip pressed={draft.regional} onChange={(v) => set({ regional: v })}>
             ALR
           </ToggleChip>
-          <ToggleChip pressed={draft.technical} onChange={(v) => set({ technical: v, technical_act: v ? draft.technical_act : null })}>
+          <ToggleChip pressed={draft.technical} onChange={(v) => set({ technical: v })}>
             Acte technique
           </ToggleChip>
         </div>
         {draft.regional && (
-          <div className="mt-2 rounded-[var(--radius-md)] border border-border bg-surface-muted/50 p-2">
-            <ChipGroup options={REGIONAL_OPTIONS} value={draft.regional_type} onChange={(v) => set({ regional_type: v })} size="sm" />
+          <div className="mt-2 space-y-2 rounded-[var(--radius-md)] border border-border bg-surface-muted/50 p-2">
+            <MultiChipGroup options={REGIONAL_OPTIONS} value={draft.regional_types} onChange={(v) => set({ regional_types: v })} />
+            {draft.regional_types.includes("autre_alr") && <OtherInput code="autre_alr" label="Autre ALR" draft={draft} set={set} />}
+            <label className="flex min-h-9 items-center gap-2 text-xs text-foreground">
+              <Switch
+                checked={draft.technical_acts.includes("echo_alr")}
+                onCheckedChange={(v) => set({ technical_acts: v ? [...draft.technical_acts, "echo_alr"] : draft.technical_acts.filter((a) => a !== "echo_alr") })}
+                aria-label="ALR échoguidée"
+              />
+              Échoguidée
+            </label>
           </div>
         )}
         {draft.technical && (
           <div className="mt-2 rounded-[var(--radius-md)] border border-border bg-surface-muted/50 p-2">
-            <ChipGroup options={ACT_OPTIONS} value={draft.technical_act} onChange={(v) => set({ technical_act: v })} size="sm" />
+            <MultiChipGroup
+              options={ACT_OPTIONS}
+              value={draft.technical_acts.filter((a) => ACT_CODES.has(a))}
+              onChange={(v) => set({ technical_acts: [...draft.technical_acts.filter((a) => !ACT_CODES.has(a)), ...v] })}
+            />
+            {draft.technical_acts.includes("intubation_difficile_autre") && <OtherInput code="intubation_difficile_autre" label="Intubation difficile, autre technique" draft={draft} set={set} />}
+            {draft.technical_acts.includes("autre_acte") && <OtherInput code="autre_acte" label="Autre acte" draft={draft} set={set} />}
           </div>
         )}
       </Field>
@@ -296,6 +359,16 @@ export function CaseForm({
       <Field label="Tuteur" hint={!draft.tutor_id ? "Sans tuteur, le cas ne pourra pas être présenté à la signature." : undefined}>
         <SupervisorPicker value={draft.tutor_id} onChange={(id) => set({ tutor_id: id })} hospital={stage.hospital} usage={tutorUsage} />
       </Field>
+
+      <CaseDetailsEditor
+        key={initial?.id ?? "new"}
+        value={draft.details}
+        onChange={(details) => set({ details })}
+        history={history}
+        general={draft.general_anesthesia}
+        regional={draft.regional}
+        previous={previous}
+      />
 
       {!isNew && (
         <Field label="Remarque (non exportée)">

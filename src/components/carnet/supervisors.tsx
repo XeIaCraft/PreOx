@@ -70,7 +70,10 @@ export function SupervisorsView() {
     const add = (id: string | null) => id && counts.set(id, (counts.get(id) ?? 0) + 1);
     data.cases.forEach((c) => add(c.tutor_id));
     data.duties.forEach((d) => add(d.supervisor_id));
-    data.stages.forEach((s) => add(s.coordinator_id));
+    data.stages.forEach((s) => {
+      add(s.coordinator_id);
+      add(s.supervisor_id);
+    });
     return counts;
   }, [data.cases, data.duties, data.stages]);
   const q = query.trim().toLowerCase();

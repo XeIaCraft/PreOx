@@ -10,6 +10,8 @@ import {
   pendingSignatureCount,
   stageForDate,
   activityReport,
+  defaultCoordinatorId,
+  defaultStageSupervisorId,
   shiftDateIso,
   formatDateFr,
 } from "./logic";
@@ -17,7 +19,7 @@ import { caseCode } from "./referentiel";
 import { emptyCarnetData, type CarnetCase, type CarnetDuty, type CarnetStage, type CarnetMutation } from "./types";
 
 function stage(id: string, start: string, end: string | null, year = 1): CarnetStage {
-  return { id, hospital: `H-${id}`, city: "", sector: "", activity: "", coordinator_id: null, training_year: year, start_date: start, end_date: end, created_at: `${start}T00:00:00Z` };
+  return { id, hospital: `H-${id}`, city: "", sector: "", coordinator_id: null, supervisor_id: null, training_year: year, start_date: start, end_date: end, created_at: `${start}T00:00:00Z` };
 }
 
 let seq = 0;
@@ -32,8 +34,10 @@ function kase(partial: Partial<CarnetCase> = {}): CarnetCase {
     operation_category: "A",
     pediatric_under_4: false,
     general_anesthesia: true,
-    regional_type: null,
-    technical_act: null,
+    regional_types: [],
+    technical_acts: [],
+    other_labels: {},
+    details: {},
     participation: 2,
     tutor_id: null,
     signature_id: null,
@@ -129,13 +133,13 @@ describe("pre-fill", () => {
 
   it("suggests past operations by frequency, accent-insensitively, with their last category", () => {
     const cases = [
-      kase({ operation: "Césarienne", operation_category: "B", general_anesthesia: false, regional_type: "rachianesthesie" }),
-      kase({ operation: "cesarienne ", operation_category: "B", general_anesthesia: false, regional_type: "peridurale" }),
+      kase({ operation: "Césarienne", operation_category: "B", general_anesthesia: false, regional_types: ["rachianesthesie"] }),
+      kase({ operation: "cesarienne ", operation_category: "B", general_anesthesia: false, regional_types: ["peridurale"] }),
       kase({ operation: "Cholécystectomie" }),
     ];
     const s = operationSuggestions(cases, "ces");
     expect(s).toHaveLength(1);
-    expect(s[0]).toMatchObject({ count: 2, last: { operation_category: "B", regional_type: "peridurale" } });
+    expect(s[0]).toMatchObject({ count: 2, last: { operation_category: "B", regional_types: ["peridurale"] } });
     expect(operationSuggestions(cases, "")[0].count).toBe(2);
   });
 });
@@ -168,10 +172,12 @@ describe("pending signatures", () => {
 
 describe("case code (column 6)", () => {
   it("reproduces the carnet's own example and combinations", () => {
-    expect(caseCode({ operation_category: "B", pediatric_under_4: false, general_anesthesia: false, regional_type: "peridurale", technical_act: null, participation: 2 })).toBe("BP2");
-    expect(caseCode({ operation_category: "K", pediatric_under_4: false, general_anesthesia: true, regional_type: "membre_inferieur", technical_act: null, participation: 3 })).toBe("KNO3");
-    expect(caseCode({ operation_category: "A", pediatric_under_4: true, general_anesthesia: true, regional_type: null, technical_act: null, participation: 1 })).toBe("AHN1");
-    expect(caseCode({ operation_category: "X", pediatric_under_4: false, general_anesthesia: false, regional_type: null, technical_act: "voie_centrale", participation: 3 })).toBe("XT3");
+    const c = { pediatric_under_4: false, general_anesthesia: false, regional_types: [] as string[], technical_acts: [] as string[] };
+    expect(caseCode({ ...c, operation_category: "B", regional_types: ["peridurale"], participation: 2 })).toBe("BP2");
+    expect(caseCode({ ...c, operation_category: "K", general_anesthesia: true, regional_types: ["membre_inferieur", "plexus_brachial"], technical_acts: ["echo_alr"], participation: 3 })).toBe("KNO3");
+    expect(caseCode({ ...c, operation_category: "A", pediatric_under_4: true, general_anesthesia: true, participation: 1 })).toBe("AHN1");
+    expect(caseCode({ ...c, operation_category: "X", technical_acts: ["voie_centrale", "echo_vasculaire"], participation: 3 })).toBe("XT3");
+    expect(caseCode({ ...c, operation_category: "B", regional_types: ["rachianesthesie", "peridurale"], participation: 2 })).toBe("BP2");
   });
 });
 
@@ -179,18 +185,55 @@ describe("activity report", () => {
   it("counts cases per category, techniques and duties per training year", () => {
     const stages = [stage("s1", "2025-01-01", null, 1), stage("s2", "2026-01-01", null, 2)];
     const cases = [
-      kase({ stage_id: "s1", operation_category: "B", general_anesthesia: false, regional_type: "peridurale" }),
-      kase({ stage_id: "s2", operation_category: "K", general_anesthesia: true, regional_type: "membre_inferieur", pediatric_under_4: true }),
+      kase({ stage_id: "s1", operation_category: "B", general_anesthesia: false, regional_types: ["peridurale"] }),
+      kase({ stage_id: "s2", operation_category: "K", general_anesthesia: true, regional_types: ["membre_inferieur", "plexus_brachial"], technical_acts: ["echo_alr"], pediatric_under_4: true }),
+      kase({ stage_id: "s2", operation_category: "X", general_anesthesia: false, technical_acts: ["voie_centrale", "echo_vasculaire", "fibroscopie"] }),
     ];
     const report = activityReport({ cases, duties: [duty({ stage_id: "s2", duty_type: "on_call" })], stages, years: [{ id: "y", training_year: 2, absences: {}, activity_counts: { smur: 4 } }] });
-    const find = (label: string) => report.flatMap((s) => s.rows).find((r) => r.label.startsWith(label))!;
-    expect(find("B ").byYear).toEqual([1, 0, 0, 0, 0]);
-    expect(find("TOTAL 1").total).toBe(2);
-    expect(find("H ").byYear).toEqual([0, 1, 0, 0, 0]);
-    expect(find("Total ALR").total).toBe(2);
-    expect(find("TOTAL 2").total).toBe(3);
-    expect(find("SMUR –").byYear).toEqual([0, 4, 0, 0, 0]);
-    expect(find("Gardes à domicile").total).toBe(1);
+    const find = (key: string) => report.flatMap((s) => s.rows).find((r) => r.key === key)!;
+    expect(find("cat_B").byYear).toEqual([1, 0, 0, 0, 0]);
+    expect(find("total1").total).toBe(3);
+    expect(find("H").byYear).toEqual([0, 1, 0, 0, 0]);
+    expect(find("alr_total").total).toBe(3);
+    expect(find("act_voie_centrale").total).toBe(1);
+    // Echo vasculaire + fibroscopie: technical acts other than the central line and the block's ultrasound.
+    expect(find("act_autres").total).toBe(2);
+    expect(find("total2").total).toBe(1 + 3 + 1 + 2);
+    expect(find("echo_alr").total).toBe(1);
+    expect(find("fibroscopie").total).toBe(1);
+    expect(find("counter_smur").byYear).toEqual([0, 4, 0, 0, 0]);
+    expect(find("duty_on_call").total).toBe(1);
+  });
+});
+
+describe("stage pre-fill", () => {
+  it("keeps the coordinator and finds the department's own maître de stage", () => {
+    const a = { ...stage("a", "2025-01-01", "2025-06-30"), hospital: "CHU Saint-Pierre", sector: "Anesthésie", coordinator_id: "coord", supervisor_id: "msA" };
+    const b = { ...stage("b", "2025-07-01", null), hospital: "Erasme", sector: "Soins intensifs", coordinator_id: "coord", supervisor_id: "msB" };
+    expect(defaultCoordinatorId([a, b])).toBe("coord");
+    expect(defaultCoordinatorId([])).toBeNull();
+    expect(defaultStageSupervisorId([a, b], "chu saint-pierre", "anesthésie")).toBe("msA");
+    expect(defaultStageSupervisorId([a, b], "CHU Saint-Pierre", "Soins intensifs")).toBeNull();
+    expect(defaultStageSupervisorId([a, b], "Erasme", "")).toBe("msB");
+  });
+});
+
+describe("offline changes written before the v2 schema", () => {
+  it("upgrades single regional type / act and merges a stage's activity into its sector", () => {
+    const legacyCase = { ...kase({ id: "old" }), regional_type: "rachianesthesie", technical_act: null } as Record<string, unknown>;
+    delete legacyCase.regional_types;
+    delete legacyCase.technical_acts;
+    delete legacyCase.other_labels;
+    delete legacyCase.details;
+    let data = applyMutation(emptyCarnetData(), { ...meta, collection: "cases", op: "put", row: legacyCase as { id: string } });
+    expect(data.cases[0]).toMatchObject({ regional_types: ["rachianesthesie"], technical_acts: [], other_labels: {}, details: {} });
+    expect("regional_type" in data.cases[0]).toBe(false);
+    data = applyMutation(data, { ...meta, collection: "cases", op: "patch", rowId: "old", patch: { technical_act: "voie_centrale" } });
+    expect(data.cases[0].technical_acts).toEqual(["voie_centrale"]);
+    const legacyStage = { ...stage("st", "2025-01-01", null), sector: "Bloc", activity: "Anesthésie" } as Record<string, unknown>;
+    delete legacyStage.supervisor_id;
+    data = applyMutation(data, { ...meta, collection: "stages", op: "put", row: legacyStage as { id: string } });
+    expect(data.stages[0]).toMatchObject({ sector: "Bloc – Anesthésie", supervisor_id: null });
   });
 });
 

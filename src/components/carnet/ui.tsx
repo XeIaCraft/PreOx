@@ -43,6 +43,42 @@ export function ChipGroup<T extends string | number>({
   );
 }
 
+/** Multiple choice: each chip toggles its code in or out of `value`. */
+export function MultiChipGroup({
+  options,
+  value,
+  onChange,
+  className,
+}: {
+  options: { code: string; label: string; title?: string }[];
+  value: string[];
+  onChange: (value: string[]) => void;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-wrap gap-1.5", className)}>
+      {options.map((o) => {
+        const selected = value.includes(o.code);
+        return (
+          <button
+            key={o.code}
+            type="button"
+            title={o.title}
+            aria-pressed={selected}
+            onClick={() => onChange(selected ? value.filter((v) => v !== o.code) : [...value, o.code])}
+            className={cn(
+              "min-h-9 rounded-[var(--radius-md)] border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+              selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-surface text-foreground hover:bg-surface-muted"
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Independent on/off chip (multi-select groups). */
 export function ToggleChip({ pressed, onChange, children, className }: { pressed: boolean; onChange: (pressed: boolean) => void; children: React.ReactNode; className?: string }) {
   return (
