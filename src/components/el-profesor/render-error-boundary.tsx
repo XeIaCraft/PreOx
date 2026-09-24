@@ -10,11 +10,11 @@ import { Alert } from "@/components/ui/alert";
  * (React defers rendering a <Component/>, so an error thrown while
  * actually rendering it happens outside that try/catch entirely; this is
  * exactly what the `react-hooks/error-boundaries` lint rule warns about).
- * Added 2026-08-28 for glossaire/journal after a server-side try/catch
- * around their data fetching produced zero change — the crash survived
- * private browsing and a different browser too, ruling out caching, which
- * points at a render-time bug in GlossaryView/CaseJournalView (or a child)
- * rather than in the data fetch itself.
+ * Added 2026-08-28 for the glossaire after a server-side try/catch around
+ * its data fetching produced zero change — the crash survived private
+ * browsing and a different browser too, ruling out caching, which points at
+ * a render-time bug in GlossaryView (or a child) rather than in the data
+ * fetch itself.
  *
  * `compact` (added 2026-08-29): the dashboard's own secondary widgets
  * (DashboardSecondaryWidgets/DashboardNotionView in board.tsx — same crash

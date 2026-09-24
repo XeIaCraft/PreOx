@@ -24,7 +24,6 @@ import type {
   ElProfesorAiProvider,
   SubEntityWithFiche,
   AdjacentNotionEntry,
-  CaseJournalEntryWithNotion,
 } from "@/lib/el-profesor/dal";
 import type {
   Flashcard,
@@ -155,7 +154,6 @@ export interface DashboardNotionViewData {
   readiness: Record<string, NotionReadiness>;
   recommendations: Record<string, NotionRecommendation[]>;
   doseCalculators: Record<string, DoseCalculator[]>;
-  caseCounts: Record<string, number>;
   /** Read % + FSRS mastery per notion (piste 2026-08-29 — visible directement sur chaque carte de notion). */
   progress: Record<string, NotionProgressEntry>;
 }
@@ -192,10 +190,4 @@ export interface NotionSynthesisSnapshot {
   nextNotion: AdjacentNotionEntry | null;
   readProgress: number;
   masteryProgress: MasteryProgress;
-}
-
-/** The /apps/el-profesor/journal screen's full data — this user's own case journal entries, small enough (and personal enough) to cache as one blob rather than per-entry. */
-export interface CaseJournalSnapshot {
-  entries: CaseJournalEntryWithNotion[];
-  notions: { id: string; name: string }[];
 }

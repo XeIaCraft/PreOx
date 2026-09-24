@@ -14,7 +14,6 @@ import {
   getElProfesorNotionViewData,
   getElProfesorAiConfigData,
   getElProfesorNotionsPageData,
-  getElProfesorCaseJournalData,
 } from "@/app/apps/el-profesor/actions/offline-sync";
 import {
   setCachedDashboard,
@@ -25,7 +24,6 @@ import {
   setCachedNotionViewData,
   setCachedAiConfigData,
   setCachedNotionsPage,
-  setCachedCaseJournal,
   getCachedDashboard,
   getCachedChapterLastModifiedTimestamps,
   getAllCachedChapterContent,
@@ -113,31 +111,25 @@ export function SyncModal({
     await setCachedDashboard(snapshot);
 
     // Dashboard secondary widgets (activity, notions, AI config/batch jobs —
-    // piste 2026-09-24 — widgets hors ligne) — best-effort, cached
-    // independently of the chapter content below so one failing here never
-    // blocks the rest of the sync; a shell-driven dashboard render just
-    // falls back to its own live fetch if this didn't manage to cache
-    // anything yet.
-    try {
-      const [secondaryData, notionViewData, aiConfigData, caseJournalData, notionsPageData] = await Promise.all([
-        getElProfesorSecondaryDashboardData(),
-        getElProfesorNotionViewData(),
-        snapshot.effectiveIsAdmin ? getElProfesorAiConfigData() : Promise.resolve(null),
-        getElProfesorCaseJournalData(),
-        snapshot.effectiveIsAdmin ? getElProfesorNotionsPageData() : Promise.resolve(null),
-      ]);
-      await Promise.all([
-        setCachedSecondaryDashboardData(snapshot.effectiveIsAdmin, secondaryData),
-        setCachedNotionViewData(notionViewData),
-        setCachedAiConfigData(snapshot.effectiveIsAdmin, aiConfigData),
-        setCachedCaseJournal(caseJournalData),
-        notionsPageData ? setCachedNotionsPage(notionsPageData) : Promise.resolve(),
-      ]);
-    } catch {
-      // Best-effort — the widgets/journal/notions screens simply keep
-      // showing whatever was cached before (or their loading state, on a
-      // first-ever sync).
-    }
+    // piste 2026-09-24 — widgets hors ligne) — each fetched and cached
+    // INDEPENDENTLY (Promise.allSettled, not Promise.all): bundling them all
+    // into one Promise.all meant a single one failing (e.g. the notions
+    // admin bundle) silently dropped every other one too, including the ones
+    // that had actually succeeded — exactly what made "Synchronisé il y a X
+    // min" show while every widget still said "synchronisez pour les voir".
+    // A failure here is counted and surfaced in the final message instead of
+    // being swallowed silently.
+    const secondaryResults = await Promise.allSettled([
+      getElProfesorSecondaryDashboardData().then((data) => setCachedSecondaryDashboardData(snapshot.effectiveIsAdmin, data)),
+      getElProfesorNotionViewData().then((data) => setCachedNotionViewData(data)),
+      snapshot.effectiveIsAdmin
+        ? getElProfesorAiConfigData().then((data) => setCachedAiConfigData(snapshot.effectiveIsAdmin, data))
+        : Promise.resolve(),
+      snapshot.effectiveIsAdmin
+        ? getElProfesorNotionsPageData().then((data) => (data ? setCachedNotionsPage(data) : undefined))
+        : Promise.resolve(),
+    ]);
+    const secondaryFailures = secondaryResults.filter((r) => r.status === "rejected").length;
 
     // Only published chapters are ever opened via la lecture d'un chapitre —
     // no point downloading content for one still en cours d'extraction.
@@ -198,10 +190,19 @@ export function SyncModal({
       const cached = await getCachedDashboard();
       setPhase("done");
       if (cached) onSynced(cached, cached.syncedAt);
+      const messages: string[] = [];
       if (failed > 0) {
-        setErrorMessage(
-          `${failed} chapitre${failed > 1 ? "s" : ""} n'${failed > 1 ? "ont" : "a"} pas pu être synchronisé${failed > 1 ? "s" : ""} — relancez la synchronisation plus tard pour les récupérer.`
+        messages.push(
+          `${failed} chapitre${failed > 1 ? "s" : ""} n'${failed > 1 ? "ont" : "a"} pas pu être synchronisé${failed > 1 ? "s" : ""}.`
         );
+      }
+      if (secondaryFailures > 0) {
+        messages.push(
+          `${secondaryFailures} donnée${secondaryFailures > 1 ? "s" : ""} secondaire${secondaryFailures > 1 ? "s" : ""} (statistiques, notions, config IA...) n'${secondaryFailures > 1 ? "ont" : "a"} pas pu être synchronisée${secondaryFailures > 1 ? "s" : ""}.`
+        );
+      }
+      if (messages.length > 0) {
+        setErrorMessage(`${messages.join(" ")} Relancez la synchronisation plus tard pour les récupérer.`);
       }
     } catch {
       setErrorMessage("Impossible de synchroniser le contenu des chapitres — vérifiez votre connexion et réessayez.");

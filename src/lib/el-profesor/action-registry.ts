@@ -14,7 +14,6 @@
 // integration (review/bookmark/note/readingPosition/exclude).
 import { moveBook, moveChapter, renameChapter, deleteChapter, deleteBook } from "@/app/apps/el-profesor/actions/library";
 import { bulkPublishChapters } from "@/app/apps/el-profesor/actions/extraction";
-import { addCaseJournalEntry, updateCaseJournalEntry, deleteCaseJournalEntry } from "@/app/apps/el-profesor/actions/case-journal";
 
 export const ACTION_REGISTRY = {
   "library.moveBook": moveBook,
@@ -23,9 +22,6 @@ export const ACTION_REGISTRY = {
   "library.deleteChapter": deleteChapter,
   "library.deleteBook": deleteBook,
   "library.bulkPublishChapters": bulkPublishChapters,
-  "caseJournal.add": addCaseJournalEntry,
-  "caseJournal.update": updateCaseJournalEntry,
-  "caseJournal.delete": deleteCaseJournalEntry,
 } as const;
 
 export type RegisteredActionName = keyof typeof ACTION_REGISTRY;

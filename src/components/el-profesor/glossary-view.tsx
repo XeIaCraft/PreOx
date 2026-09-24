@@ -9,7 +9,6 @@ import {
   Landmark,
   Calculator,
   TriangleAlert,
-  NotebookPen,
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
@@ -186,7 +185,6 @@ export function NotionList({
   readiness,
   recommendations,
   doseCalculators,
-  caseCounts,
   progress = {},
   isAdmin = false,
 }: {
@@ -196,7 +194,6 @@ export function NotionList({
   readiness: Record<string, NotionReadiness>;
   recommendations: Record<string, NotionRecommendation[]>;
   doseCalculators: Record<string, DoseCalculatorEntry[]>;
-  caseCounts: Record<string, number>;
   /** Read % + FSRS mastery % per notion (piste 2026-08-29), rendered via NotionProgressBars. Optional/defaulted so callers that haven't fetched it yet (none currently) don't break. */
   progress?: Record<string, NotionProgressEntry>;
   /** Rename/reorder/merge controls only make sense for admins — everyone else sees the plain read-only listing. */
@@ -317,13 +314,6 @@ export function NotionList({
                   className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary-tint px-2.5 py-1 text-xs font-medium text-primary-strong hover:bg-primary-tint/70"
                 >
                   <GraduationCap className="h-3.5 w-3.5" /> Réviser ce thème
-                </Link>
-                <Link
-                  href={`/apps/el-profesor/journal?notionId=${notion.id}`}
-                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-foreground-subtle hover:text-foreground"
-                  title="Mon journal de cas pour cette notion"
-                >
-                  <NotebookPen className="h-3.5 w-3.5" /> {caseCounts[notion.id] ? `${caseCounts[notion.id]} cas` : "Cas"}
                 </Link>
               </div>
             </div>

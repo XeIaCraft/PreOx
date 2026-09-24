@@ -29,7 +29,7 @@ export function DashboardNotionView({ data, isAdmin = false }: { data: Dashboard
 
   if (!data) return <p className="mt-6 text-sm text-foreground-subtle">Notions indisponibles — synchronisez pour les voir.</p>;
 
-  const { categories, readiness, recommendations, doseCalculators, caseCounts, progress } = data;
+  const { categories, readiness, recommendations, doseCalculators, progress } = data;
 
   return (
     <div>
@@ -55,7 +55,6 @@ export function DashboardNotionView({ data, isAdmin = false }: { data: Dashboard
             readiness={readiness}
             recommendations={recommendations}
             doseCalculators={doseCalculators}
-            caseCounts={caseCounts}
             progress={progress}
             isAdmin={isAdmin}
           />

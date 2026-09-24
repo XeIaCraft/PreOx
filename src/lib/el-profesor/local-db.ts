@@ -19,7 +19,6 @@ import type {
   DashboardNotionViewData,
   DashboardAiConfigData,
   NotionsPageSnapshot,
-  CaseJournalSnapshot,
 } from "./dashboard-types";
 import type { ReviewState, ReviewRating, ReviewSource } from "./types";
 import type { ReviewConfidence } from "@/app/apps/el-profesor/actions/review";
@@ -43,7 +42,6 @@ const SECONDARY_DASHBOARD_STORE = "secondaryDashboard";
 const NOTION_VIEW_DATA_STORE = "notionViewData";
 const AI_CONFIG_DATA_STORE = "aiConfigData";
 const NOTIONS_PAGE_STORE = "notionsPage";
-const CASE_JOURNAL_STORE = "caseJournal";
 const ENTITIES_STORE = "entities";
 const DASHBOARD_KEY = "singleton";
 const SUSPENDED_FLASHCARD_IDS_KEY = "singleton";
@@ -51,7 +49,6 @@ const SECONDARY_DASHBOARD_KEY = "singleton";
 const NOTION_VIEW_DATA_KEY = "singleton";
 const AI_CONFIG_DATA_KEY = "singleton";
 const NOTIONS_PAGE_KEY = "singleton";
-const CASE_JOURNAL_KEY = "singleton";
 
 type WithSyncedAt<T> = T & { syncedAt: string };
 /** lastModifiedAt is the *server's* timestamp for this chapter at download time (el_profesor_chapter_last_modified) — compared against a fresh server value on the next sync (piste 2026-09-24 — synchronisation delta) to decide whether this chapter needs re-downloading at all. Distinct from syncedAt, which is only ever "when did we last write this" from the client's own clock. */
@@ -77,7 +74,6 @@ function openDb(): Promise<IDBDatabase | null> {
         if (!db.objectStoreNames.contains(NOTION_VIEW_DATA_STORE)) db.createObjectStore(NOTION_VIEW_DATA_STORE);
         if (!db.objectStoreNames.contains(AI_CONFIG_DATA_STORE)) db.createObjectStore(AI_CONFIG_DATA_STORE);
         if (!db.objectStoreNames.contains(NOTIONS_PAGE_STORE)) db.createObjectStore(NOTIONS_PAGE_STORE);
-        if (!db.objectStoreNames.contains(CASE_JOURNAL_STORE)) db.createObjectStore(CASE_JOURNAL_STORE);
         if (!db.objectStoreNames.contains(ENTITIES_STORE)) db.createObjectStore(ENTITIES_STORE);
       };
       request.onsuccess = () => resolve(request.result);
@@ -230,15 +226,6 @@ export async function getCachedNotionsPage(): Promise<NotionsPageSnapshot | null
 
 export async function setCachedNotionsPage(data: NotionsPageSnapshot): Promise<void> {
   await putEntries(NOTIONS_PAGE_STORE, [[NOTIONS_PAGE_KEY, data]]);
-}
-
-/** This user's own case journal entries + the notion list used to filter/link them. */
-export async function getCachedCaseJournal(): Promise<CaseJournalSnapshot | null> {
-  return getValue<CaseJournalSnapshot>(CASE_JOURNAL_STORE, CASE_JOURNAL_KEY);
-}
-
-export async function setCachedCaseJournal(data: CaseJournalSnapshot): Promise<void> {
-  await putEntries(CASE_JOURNAL_STORE, [[CASE_JOURNAL_KEY, data]]);
 }
 
 /**
@@ -545,7 +532,6 @@ export async function clearLocalCache(): Promise<void> {
           NOTION_VIEW_DATA_STORE,
           AI_CONFIG_DATA_STORE,
           NOTIONS_PAGE_STORE,
-          CASE_JOURNAL_STORE,
           ENTITIES_STORE,
         ];
         const tx = db.transaction(stores, "readwrite");

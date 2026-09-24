@@ -32,7 +32,6 @@ import {
   Share2,
   Files,
   ListChecks,
-  Brain,
   Keyboard,
   Maximize2,
   FileText,
@@ -50,7 +49,6 @@ import {
   ZoomIn,
   MessageCircle,
   Languages,
-  Stethoscope,
   Undo2,
   Timer,
   PenLine,
@@ -58,7 +56,6 @@ import {
   FileSearch,
   Upload,
   Siren,
-  NotebookPen,
   Volume2,
   EyeOff,
   Landmark,
@@ -140,14 +137,13 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
           </p>
           <p className="font-medium text-foreground">Barre du haut</p>
           <p>
-            En dessous d&apos;une certaine largeur d&apos;écran, le guide, le tutoriel, le journal de cas et les cartes exclues (ainsi
-            que les entrées admin ci-dessous) se regroupent dans un seul menu{" "}
+            En dessous d&apos;une certaine largeur d&apos;écran, le guide, le tutoriel et les cartes exclues (ainsi que les entrées
+            admin ci-dessous) se regroupent dans un seul menu{" "}
             <Menu className="inline h-3.5 w-3.5 align-text-bottom" /> pour ne pas surcharger l&apos;écran — les mêmes fonctions, juste
             rangées.
           </p>
           <ul className="space-y-1.5">
             <IconRow icon={HelpCircle}>Revoir le tutoriel de bienvenue.</IconRow>
-            <IconRow icon={NotebookPen}>Votre journal de cas cliniques, strictement privé, relié librement aux notions (voir plus bas).</IconRow>
             <IconRow icon={BellOff}>Vos flashcards que vous avez exclues de la révision.</IconRow>
             {isAdmin && (
               <>
@@ -281,11 +277,8 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
                 <IconRow icon={Link2}>Copier un lien vers cette fiche.</IconRow>
                 <IconRow icon={Share2}>Rendre la fiche consultable via un lien public (réversible).</IconRow>
                 <IconRow icon={Files}>Imprimer tout le chapitre.</IconRow>
-                <IconRow icon={ListChecks}>Mode quiz — QCM généré à partir des flashcards du chapitre (dès 4 cartes publiées).</IconRow>
-                <IconRow icon={Brain}>Carte mentale générée par IA du chapitre (à la demande, jamais enregistrée).</IconRow>
+                <IconRow icon={ListChecks}>Mode quiz — en cours de révision, temporairement indisponible.</IconRow>
                 <IconRow icon={Languages}>Traduire la fiche à la volée (jamais enregistrée).</IconRow>
-                <IconRow icon={Stethoscope}>Générer un cas clinique d&apos;entraînement à partir de la fiche.</IconRow>
-                <IconRow icon={ListChecks}>Générer des questions type concours à partir de la fiche.</IconRow>
               </ul>
             </>
           )}
@@ -372,9 +365,8 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
           <p>
             La vue « Par notion » du tableau de bord (accessible à tous) liste ces notions avec un raccourci{" "}
             <GraduationCap className="inline h-3.5 w-3.5 align-text-bottom" /> pour réviser directement ce thème (flashcards
-            mélangées de tous les livres liés), un badge « Prêt / À consolider / Fragile » qui estime votre préparation à partir des
-            flashcards déjà maîtrisées, et un compteur <NotebookPen className="inline h-3.5 w-3.5 align-text-bottom" /> vers vos cas
-            cliniques personnels liés à cette notion.
+            mélangées de tous les livres liés) et un badge « Prêt / À consolider / Fragile » qui estime votre préparation à partir des
+            flashcards déjà maîtrisées.
           </p>
           <p>
             Certaines notions affichent aussi des <Landmark className="inline h-3.5 w-3.5 align-text-bottom" /> recommandations

@@ -5,9 +5,8 @@ import { useRouter } from "next/navigation";
 import { LocalNavLink } from "@/components/el-profesor/local-nav-link";
 import { useLocalNav } from "@/components/el-profesor/local-nav-shell";
 import { matchLocalRoute } from "@/lib/el-profesor/local-nav-routes";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, LayoutTemplate, LayoutList, BookOpenText, ListTree, SlidersHorizontal, AlignJustify, Check, Gauge, RotateCcw } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, PenSquare, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, LayoutTemplate, LayoutList, BookOpenText, ListTree, SlidersHorizontal, AlignJustify, Check, Gauge, RotateCcw } from "lucide-react";
 import { QuizMode } from "@/components/el-profesor/quiz-mode";
-import { MindMapDialog } from "@/components/el-profesor/mind-map-dialog";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -421,8 +420,11 @@ export function ChapterView({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [printTarget, setPrintTarget] = useState<"single" | "chapter">("single");
+  // Mode quiz temporarily disabled (piste 2026-09-24, à la demande de
+  // l'utilisateur — les questions générées ne sont pas encore assez
+  // fiables) — no menu entry sets this true anymore, kept wired so
+  // re-enabling it later is just restoring that one button.
   const [quizOpen, setQuizOpen] = useState(false);
-  const [mindMapOpen, setMindMapOpen] = useState(false);
   // Mobile/tablet "browse all fiches" sheet (requested 2026-08-28 — the
   // cramped horizontal-scroll pill row below lg made the chapter's other
   // fiches all but invisible). Desktop keeps its always-visible sidebar list.
@@ -974,12 +976,7 @@ export function ChapterView({
               </Button>
             )}
             {isAdmin && selected?.fiche && (
-              <StudyToolsButtons
-                ficheTitle={selected.fiche.title}
-                subEntityName={selected.name}
-                blocks={selected.fiche.blocks}
-                onOpen={() => setOptionsMenuOpen(false)}
-              />
+              <StudyToolsButtons ficheTitle={selected.fiche.title} blocks={selected.fiche.blocks} onOpen={() => setOptionsMenuOpen(false)} />
             )}
             {isAdmin && (
               <Button
@@ -998,26 +995,11 @@ export function ChapterView({
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-start"
-                onClick={() => {
-                  setOptionsMenuOpen(false);
-                  setQuizOpen(true);
-                }}
+                className="w-full justify-start opacity-50"
+                disabled
+                title="En cours de révision — les questions générées ne sont pas encore assez fiables. Revient bientôt."
               >
-                <ListChecks className="h-3.5 w-3.5" /> Mode quiz
-              </Button>
-            )}
-            {isAdmin && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => {
-                  setOptionsMenuOpen(false);
-                  setMindMapOpen(true);
-                }}
-              >
-                <Brain className="h-3.5 w-3.5" /> Carte mentale du chapitre
+                <ListChecks className="h-3.5 w-3.5" /> Mode quiz (bientôt)
               </Button>
             )}
           </div>
@@ -1317,7 +1299,6 @@ export function ChapterView({
         })()}
 
       {quizOpen && <QuizMode cards={publishedFlashcards} onClose={() => setQuizOpen(false)} />}
-      {mindMapOpen && <MindMapDialog chapterId={chapterId} onClose={() => setMindMapOpen(false)} />}
 
       {contributingFlashcard && selected && (
         <ProposeFlashcardDialog

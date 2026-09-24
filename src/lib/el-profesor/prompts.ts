@@ -298,62 +298,6 @@ Réponds uniquement avec le JSON demandé (un champ "text"), structuré exacteme
 `.trim();
 }
 
-/** On-demand clinical-vignette generation from a fiche's content, to practice reasoning about a chapter's clinical implications. Item 13 of the backlog. */
-export function buildClinicalCasePrompt(subEntityName: string, ficheText: string): string {
-  return `
-${EXPERT_READER_CONTEXT}
-
-Voici le contenu déjà rédigé pour la sous-entité « ${subEntityName} » :
-« ${ficheText} »
-
-Ta tâche : rédige UN cas clinique d'entraînement réaliste et pertinent qui met en application ce contenu précis, pour faire pratiquer le raisonnement clinique plutôt que le simple rappel. Structure attendue :
-1. Un court vignette clinique (contexte patient, présentation, éléments cliniques pertinents — invente des détails plausibles et cohérents, jamais absurdes).
-2. 2 à 4 questions progressives qui testent la compréhension et la décision clinique à partir de ce cas (diagnostic, conduite à tenir, priorisation, piège à éviter...).
-3. Les réponses attendues à ces questions, avec une brève justification qui s'appuie sur le contenu de la fiche.
-
-Format de sortie : TEXTE BRUT uniquement, pas de Markdown — utilise des sauts de ligne et une numérotation simple pour structurer.
-
-Réponds uniquement avec le JSON demandé (un champ "text"), structuré exactement selon le schéma fourni.
-`.trim();
-}
-
-/** On-demand exam-style question generation from a fiche's content — ephemeral, never persisted. Item 8 of the backlog. */
-export function buildExamQuestionsPrompt(subEntityName: string, ficheText: string): string {
-  return `
-${EXPERT_READER_CONTEXT}
-
-Voici le contenu déjà rédigé pour la sous-entité « ${subEntityName} » :
-« ${ficheText} »
-
-Ta tâche : rédige 3 à 5 questions dans le style d'un concours/examen d'anesthésie-réanimation (registre européen UEMS/EBA/EDAIC), à partir UNIQUEMENT de ce contenu. Varie les formats pertinents pour ce contenu (QCM à une bonne réponse avec distracteurs plausibles, question à réponse courte, question de type "quelle est la conduite à tenir"...). Pour chaque question :
-1. L'énoncé complet (avec les options si QCM).
-2. La bonne réponse.
-3. Une justification brève qui s'appuie sur le contenu de la fiche, y compris pourquoi les distracteurs sont incorrects si pertinent.
-
-Format de sortie : TEXTE BRUT uniquement, pas de Markdown — numérote les questions.
-
-Réponds uniquement avec le JSON demandé (un champ "text"), structuré exactement selon le schéma fourni.
-`.trim();
-}
-
-/** On-demand mind map from a chapter's already-written content — ephemeral, never persisted. Item 2 of the backlog. Fixed two-level tree (central topic → branches → leaf points), not open recursion, to keep the Gemini response schema simple and the rendering predictable. */
-export function buildMindMapPrompt(chapterTitle: string, subEntitySummaries: { name: string; text: string }[]): string {
-  const content = subEntitySummaries.map((s) => `### ${s.name}\n${s.text}`).join("\n\n");
-  return `
-${EXPERT_READER_CONTEXT}
-
-Voici le contenu déjà rédigé pour le chapitre « ${chapterTitle} » :
-
-${content}
-
-Ta tâche : construis une carte mentale de ce chapitre pour aider à en mémoriser la structure d'ensemble.
-- "central" : le thème central du chapitre, en 2-5 mots.
-- "branches" : 4 à 8 branches principales (les grands axes/notions du chapitre), chacune avec un "label" court et 2-6 "children" (des points clés courts, une idée par point — pas des phrases longues).
-
-Réponds uniquement avec le JSON demandé, structuré exactement selon le schéma fourni.
-`.trim();
-}
-
 export function buildNotionCategorizationPrompt(ficheTitle: string, ficheText: string, existingNotionNames: string[]): string {
   return `
 Tu catégorises le contenu médical d'une fiche de révision par "notions" transversales — des concepts qui peuvent apparaître dans plusieurs chapitres ou plusieurs livres différents (ex: "Hyperkaliémie", "Choc anaphylactique", "Anticoagulants et chirurgie", "Ventilation protectrice"). Le but : pouvoir un jour comparer entre eux tous les passages de la bibliothèque qui parlent de la même notion, même extraits de livres différents.

@@ -55,7 +55,6 @@ import {
   getNotionReadiness,
   getNotionRecommendations,
   getDoseCalculators,
-  getCaseJournalCountsByNotion,
   getNotionProgressBatch,
   getNotionSummaries,
   getContradictions,
@@ -67,7 +66,6 @@ import {
   getAdjacentNotions,
   getNotionReadProgress,
   getNotionMasteryProgress,
-  getCaseJournalEntries,
   getElProfesorGeminiModel,
   getElProfesorGeminiExtraKeyCount,
   getElProfesorGeminiFallbackModel,
@@ -87,7 +85,6 @@ import type {
   DashboardNotionViewData,
   NotionsPageSnapshot,
   NotionSynthesisSnapshot,
-  CaseJournalSnapshot,
 } from "@/lib/el-profesor/dashboard-types";
 import type { ReviewState } from "@/lib/el-profesor/types";
 
@@ -346,15 +343,14 @@ async function loadSecondaryDashboardData(
 async function loadNotionViewData(profileId: string): Promise<DashboardNotionViewData> {
   const notions = await getGlossary();
   const notionIds = notions.map((n) => n.notion.id);
-  const [categories, readiness, recommendations, doseCalculators, caseCounts, progress] = await Promise.all([
+  const [categories, readiness, recommendations, doseCalculators, progress] = await Promise.all([
     getNotionCategories(),
     getNotionReadiness(profileId, notions),
     getNotionRecommendations(notionIds),
     getDoseCalculators(notionIds),
-    getCaseJournalCountsByNotion(profileId, notionIds),
     getNotionProgressBatch(profileId, notionIds),
   ]);
-  return { notions, categories, readiness, recommendations, doseCalculators, caseCounts, progress };
+  return { notions, categories, readiness, recommendations, doseCalculators, progress };
 }
 
 async function loadAiConfigData(): Promise<DashboardAiConfigData> {
@@ -448,11 +444,4 @@ export async function getElProfesorNotionSynthesis(notionId: string): Promise<No
     readProgress,
     masteryProgress,
   };
-}
-
-/** Same data journal/page.tsx builds — this user's own case journal entries + the notion list used to filter/link them. getCaseJournalEntries relies on RLS alone (no internal auth check), so this export must gate access itself — an exported Server Action is reachable directly regardless of what a page-level guard elsewhere "intends". */
-export async function getElProfesorCaseJournalData(): Promise<CaseJournalSnapshot> {
-  await requireElProfesorAccess();
-  const [entries, notionSummaries] = await Promise.all([getCaseJournalEntries(), getGlossary()]);
-  return { entries, notions: notionSummaries.map((s) => ({ id: s.notion.id, name: s.notion.name })) };
 }

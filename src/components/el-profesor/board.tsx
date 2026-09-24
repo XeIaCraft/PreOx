@@ -32,7 +32,6 @@ import {
   GitBranch,
   Scissors,
   BookText,
-  NotebookPen,
   RotateCcw,
   ChevronRight,
   History,
@@ -238,11 +237,6 @@ function HeaderMenu({
             <Button variant="ghost" size="sm" className="w-full justify-start" onClick={onOpenTour}>
               <HelpCircle className="h-3.5 w-3.5" /> Revoir le tutoriel
             </Button>
-            <Link href="/apps/el-profesor/journal" prefetch={false}>
-              <Button variant="ghost" size="sm" className="w-full justify-start">
-                <NotebookPen className="h-3.5 w-3.5" /> Mon journal de cas
-              </Button>
-            </Link>
             <Link href="/apps/el-profesor/suspended" prefetch={false}>
               <Button variant="ghost" size="sm" className="w-full justify-start">
                 <BellOff className="h-3.5 w-3.5" /> Cartes exclues
@@ -406,6 +400,14 @@ function GeminiSettingsLoadingModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+const AI_CONFIG_FETCH_TIMEOUT_MS = 15_000;
+
+/** Never rejects — a genuine failure or a fetch that's still pending past the timeout both resolve to "unavailable", so use() below never throws into an unhandled rejection (this dialog has no Suspense-adjacent error boundary of its own). */
+function withTimeoutOrUnavailable<T>(promise: Promise<T>, ms: number): Promise<T | "unavailable"> {
+  const safePromise = promise.catch((): "unavailable" => "unavailable");
+  return Promise.race([safePromise, new Promise<"unavailable">((resolve) => setTimeout(() => resolve("unavailable"), ms))]);
+}
+
 /**
  * Fetches its own fresh config live, only once, the moment this actually
  * mounts (i.e. only when the settings dialog opens — this component is
@@ -415,7 +417,10 @@ function GeminiSettingsLoadingModal({ onClose }: { onClose: () => void }) {
  * explicitly opening AI settings is asking for genuinely current values
  * (spend, model list), and editing them is inherently an online-only action
  * anyway. The lazy useState initializer runs exactly once per mount, giving
- * a stable promise reference for use() to suspend on.
+ * a stable promise reference for use() to suspend on. Bounded by a timeout
+ * (piste 2026-09-24 — suite au retour "plus de paramètres, ça charge
+ * indéfiniment") so a slow/unreliable backend produces a clear error
+ * instead of an infinite "Chargement…".
  */
 function GeminiSettingsLoader({
   hasApiKey,
@@ -426,8 +431,15 @@ function GeminiSettingsLoader({
   aiProvider: ElProfesorAiProvider;
   onClose: () => void;
 }) {
-  const [configPromise] = useState(() => getElProfesorAiConfigData());
+  const [configPromise] = useState(() => withTimeoutOrUnavailable(getElProfesorAiConfigData(), AI_CONFIG_FETCH_TIMEOUT_MS));
   const config = use(configPromise);
+  if (config === "unavailable") {
+    return (
+      <Modal title="Réglages IA" onClose={onClose} size="md">
+        <p className="text-sm text-danger">Impossible de charger les réglages — le serveur met trop de temps à répondre. Réessayez plus tard.</p>
+      </Modal>
+    );
+  }
   if (!config) return null;
   return (
     <GeminiSettingsDialog
@@ -917,11 +929,6 @@ export function ElProfesorBoard({
             <Button variant="ghost" size="icon" onClick={() => setTourOpen(true)} aria-label="Revoir le tutoriel" title="Revoir le tutoriel">
               <HelpCircle className="h-4 w-4" />
             </Button>
-            <Link href="/apps/el-profesor/journal" prefetch={false}>
-              <Button variant="ghost" size="icon" aria-label="Mon journal de cas" title="Mon journal de cas">
-                <NotebookPen className="h-4 w-4" />
-              </Button>
-            </Link>
             <Link href="/apps/el-profesor/suspended" prefetch={false}>
               <Button variant="ghost" size="icon" aria-label="Cartes exclues de mes révisions" title="Cartes exclues de mes révisions">
                 <BellOff className="h-4 w-4" />

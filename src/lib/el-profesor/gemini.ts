@@ -15,9 +15,6 @@ import {
   buildNotionUpdateCheckPrompt,
   buildWeaknessSynthesisPrompt,
   buildFicheTranslationPrompt,
-  buildClinicalCasePrompt,
-  buildExamQuestionsPrompt,
-  buildMindMapPrompt,
   buildChapterSplitPrompt,
   buildChapterInternalSplitPrompt,
   buildPageOcrPrompt,
@@ -263,27 +260,6 @@ const SYNTHESIS_RESPONSE_SCHEMA = {
     text: { type: "STRING" },
   },
   required: ["text"],
-};
-
-// Fixed two-level tree (not open recursion — Gemini's structured output
-// doesn't support self-referencing schemas) — item 2 of the backlog.
-const MIND_MAP_RESPONSE_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    central: { type: "STRING" },
-    branches: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          label: { type: "STRING" },
-          children: { type: "ARRAY", items: { type: "STRING" } },
-        },
-        required: ["label", "children"],
-      },
-    },
-  },
-  required: ["central", "branches"],
 };
 
 const VERIFICATION_RESPONSE_SCHEMA = {
@@ -872,36 +848,6 @@ export async function generateWeaknessSynthesis(
 export async function translateFicheText(config: GeminiRotationConfig, ficheTitle: string, ficheText: string, targetLanguage: string): Promise<{ text: string }> {
   const instructions = buildFicheTranslationPrompt(ficheTitle, ficheText, targetLanguage);
   const { result } = await textRotation<{ text: string }>(config, instructions, SYNTHESIS_RESPONSE_SCHEMA);
-  return result;
-}
-
-/** On-demand clinical-vignette generation from a fiche's content — ephemeral, never persisted. Rotates on quota/capacity errors. Item 13 of the backlog. */
-export async function generateClinicalCase(config: GeminiRotationConfig, subEntityName: string, ficheText: string): Promise<{ text: string }> {
-  const instructions = buildClinicalCasePrompt(subEntityName, ficheText);
-  const { result } = await textRotation<{ text: string }>(config, instructions, SYNTHESIS_RESPONSE_SCHEMA);
-  return result;
-}
-
-/** On-demand exam-style question generation from a fiche's content — ephemeral, never persisted. Rotates on quota/capacity errors. Item 8 of the backlog. */
-export async function generateExamQuestions(config: GeminiRotationConfig, subEntityName: string, ficheText: string): Promise<{ text: string }> {
-  const instructions = buildExamQuestionsPrompt(subEntityName, ficheText);
-  const { result } = await textRotation<{ text: string }>(config, instructions, SYNTHESIS_RESPONSE_SCHEMA);
-  return result;
-}
-
-export interface MindMap {
-  central: string;
-  branches: { label: string; children: string[] }[];
-}
-
-/** On-demand chapter mind map — ephemeral, never persisted. Rotates on quota/capacity errors. Item 2 of the backlog. */
-export async function generateMindMap(
-  config: GeminiRotationConfig,
-  chapterTitle: string,
-  subEntitySummaries: { name: string; text: string }[]
-): Promise<MindMap> {
-  const instructions = buildMindMapPrompt(chapterTitle, subEntitySummaries);
-  const { result } = await textRotation<MindMap>(config, instructions, MIND_MAP_RESPONSE_SCHEMA);
   return result;
 }
 
