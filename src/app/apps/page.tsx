@@ -96,6 +96,7 @@ export default async function AppsPage() {
                 <Link
                   key={item.key}
                   href={item.href}
+                  prefetch={false}
                   className="flex items-center gap-2 rounded-full border border-accent/30 bg-accent-tint px-3 py-1.5 text-sm text-accent hover:border-accent/50"
                 >
                   {item.icon}
@@ -141,6 +142,7 @@ export default async function AppsPage() {
                 <Link
                   key={app.id}
                   href={`/apps/${app.slug}`}
+                  prefetch={false}
                   className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-foreground-muted hover:border-primary/30 hover:text-foreground"
                 >
                   {renderIcon(app.icon, "h-3.5 w-3.5")}

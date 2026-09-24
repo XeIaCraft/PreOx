@@ -87,7 +87,7 @@ export function AppCard({ app, pinned }: { app: AppWithAccess; pinned: boolean }
 
   if (href) {
     return (
-      <Link href={href} className={cn(baseClasses, "hover:border-primary/30 hover:shadow-[0_8px_24px_-16px_rgba(20,30,25,0.25)]")}>
+      <Link href={href} className={cn(baseClasses, "hover:border-primary/30 hover:shadow-[0_8px_24px_-16px_rgba(20,30,25,0.25)]")} prefetch={false}>
         {content}
       </Link>
     );

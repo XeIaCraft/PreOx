@@ -30,5 +30,12 @@ export function LocalNavLink({ href, onClick, ...linkProps }: ComponentProps<typ
     nav.navigateLocally(hrefString);
   }
 
-  return <Link href={href} onClick={handleClick} {...linkProps} />;
+  // Prefetch is pure waste here: on a plain click this never reaches Next's
+  // router at all (handled entirely client-side above), so a prefetched RSC
+  // payload for this href is never consumed — and El Profesor's layout does
+  // a slow, fully dynamic auth chain before returning anything, so every
+  // prefetched link normally means a real, expensive server round trip the
+  // instant it scrolls into view. Explicitly overridable via linkProps for
+  // the rare case a caller has a reason to (none do today).
+  return <Link href={href} onClick={handleClick} prefetch={false} {...linkProps} />;
 }

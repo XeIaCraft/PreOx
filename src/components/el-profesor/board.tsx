@@ -226,7 +226,7 @@ function HeaderMenu({
         // so reusing it sidesteps that whole class of positioning bugs.
         <Modal title="Menu" onClose={() => setOpen(false)} size="sm">
           <div className="-m-4 flex flex-col gap-0.5 p-2" onClick={() => setOpen(false)}>
-            <Link href="/apps/el-profesor/guide">
+            <Link href="/apps/el-profesor/guide" prefetch={false}>
               <Button variant="ghost" size="sm" className="w-full justify-start">
                 <BookText className="h-3.5 w-3.5" /> Guide d&apos;utilisation
               </Button>
@@ -234,12 +234,12 @@ function HeaderMenu({
             <Button variant="ghost" size="sm" className="w-full justify-start" onClick={onOpenTour}>
               <HelpCircle className="h-3.5 w-3.5" /> Revoir le tutoriel
             </Button>
-            <Link href="/apps/el-profesor/journal">
+            <Link href="/apps/el-profesor/journal" prefetch={false}>
               <Button variant="ghost" size="sm" className="w-full justify-start">
                 <NotebookPen className="h-3.5 w-3.5" /> Mon journal de cas
               </Button>
             </Link>
-            <Link href="/apps/el-profesor/suspended">
+            <Link href="/apps/el-profesor/suspended" prefetch={false}>
               <Button variant="ghost" size="sm" className="w-full justify-start">
                 <BellOff className="h-3.5 w-3.5" /> Cartes exclues
               </Button>
@@ -247,17 +247,17 @@ function HeaderMenu({
             {isAdmin && (
               <>
                 <div className="my-1 border-t border-border" />
-                <Link href="/apps/el-profesor/notions">
+                <Link href="/apps/el-profesor/notions" prefetch={false}>
                   <Button variant="ghost" size="sm" className="w-full justify-start">
                     <Tag className="h-3.5 w-3.5" /> Notions et contradictions
                   </Button>
                 </Link>
-                <Link href="/apps/el-profesor/quality">
+                <Link href="/apps/el-profesor/quality" prefetch={false}>
                   <Button variant="ghost" size="sm" className="w-full justify-start">
                     <Gauge className="h-3.5 w-3.5" /> Tableau de bord qualité
                   </Button>
                 </Link>
-                <Link href="/apps/el-profesor/archived">
+                <Link href="/apps/el-profesor/archived" prefetch={false}>
                   <Button variant="ghost" size="sm" className="w-full justify-start">
                     <Archive className="h-3.5 w-3.5" /> Livres archivés
                   </Button>
@@ -877,7 +877,7 @@ export function ElProfesorBoard({
 
           {/* Desktop: full icon row, unchanged. Collapsed into HeaderMenu below sm — see that component's doc comment. */}
           <div className="hidden items-center gap-2 sm:flex">
-            <Link href="/apps/el-profesor/guide">
+            <Link href="/apps/el-profesor/guide" prefetch={false}>
               <Button variant="ghost" size="icon" aria-label="Guide d'utilisation" title="Guide d'utilisation">
                 <BookText className="h-4 w-4" />
               </Button>
@@ -885,29 +885,29 @@ export function ElProfesorBoard({
             <Button variant="ghost" size="icon" onClick={() => setTourOpen(true)} aria-label="Revoir le tutoriel" title="Revoir le tutoriel">
               <HelpCircle className="h-4 w-4" />
             </Button>
-            <Link href="/apps/el-profesor/journal">
+            <Link href="/apps/el-profesor/journal" prefetch={false}>
               <Button variant="ghost" size="icon" aria-label="Mon journal de cas" title="Mon journal de cas">
                 <NotebookPen className="h-4 w-4" />
               </Button>
             </Link>
-            <Link href="/apps/el-profesor/suspended">
+            <Link href="/apps/el-profesor/suspended" prefetch={false}>
               <Button variant="ghost" size="icon" aria-label="Cartes exclues de mes révisions" title="Cartes exclues de mes révisions">
                 <BellOff className="h-4 w-4" />
               </Button>
             </Link>
             {isAdmin && (
               <>
-                <Link href="/apps/el-profesor/notions">
+                <Link href="/apps/el-profesor/notions" prefetch={false}>
                   <Button variant="ghost" size="icon" aria-label="Notions et contradictions" title="Notions et contradictions">
                     <Tag className="h-4 w-4" />
                   </Button>
                 </Link>
-                <Link href="/apps/el-profesor/quality">
+                <Link href="/apps/el-profesor/quality" prefetch={false}>
                   <Button variant="ghost" size="icon" aria-label="Tableau de bord qualité" title="Tableau de bord qualité">
                     <Gauge className="h-4 w-4" />
                   </Button>
                 </Link>
-                <Link href="/apps/el-profesor/archived">
+                <Link href="/apps/el-profesor/archived" prefetch={false}>
                   <Button variant="ghost" size="icon" aria-label="Livres archivés" title="Livres archivés">
                     <Archive className="h-4 w-4" />
                   </Button>
@@ -1414,7 +1414,7 @@ export function ElProfesorBoard({
                           </Button>
                         )}
                       {isAdmin && chapter.status === "draft_ready" && (
-                        <Link href={`/apps/el-profesor/chapters/${chapter.id}/admin-review`}>
+                        <Link href={`/apps/el-profesor/chapters/${chapter.id}/admin-review`} prefetch={false}>
                           <Button size="sm">
                             <ClipboardCheck className="h-3.5 w-3.5" /> Relire &amp; publier
                           </Button>
@@ -1456,7 +1456,7 @@ export function ElProfesorBoard({
                       {isAdmin && (
                         <MoreActionsMenu>
                           {chapter.status === "published" && (
-                            <Link href={`/apps/el-profesor/chapters/${chapter.id}/admin-review`}>
+                            <Link href={`/apps/el-profesor/chapters/${chapter.id}/admin-review`} prefetch={false}>
                               <Button variant="ghost" size="sm" className="w-full justify-start">
                                 <Pencil className="h-3.5 w-3.5" /> Éditer
                               </Button>

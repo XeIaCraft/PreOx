@@ -17,7 +17,7 @@ export function HubHeader({ profile, section }: { profile: Profile; section?: st
           overflowing/clipping on narrow phones instead of silently hiding content. */}
       <div className="mx-auto flex h-auto min-h-16 max-w-6xl flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-2 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <Link href="/apps" className="shrink-0">
+          <Link href="/apps" className="shrink-0" prefetch={false}>
             <Logo />
           </Link>
           {section && (
@@ -30,7 +30,7 @@ export function HubHeader({ profile, section }: { profile: Profile; section?: st
 
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {profile.role === "admin" && (
-            <Link href="/admin">
+            <Link href="/admin" prefetch={false}>
               <Button variant="secondary" size="sm">
                 <ShieldCheck className="h-4 w-4" />
                 <span className="hidden sm:inline">Administration</span>
@@ -38,7 +38,7 @@ export function HubHeader({ profile, section }: { profile: Profile; section?: st
             </Link>
           )}
 
-          <Link href="/profile" className="flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-surface-muted">
+          <Link href="/profile" className="flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-surface-muted" prefetch={false}>
             <span className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-tint text-primary-strong">
               {profile.avatar_url ? (
                 <Image src={profile.avatar_url} alt="" fill sizes="32px" className="object-cover" />
