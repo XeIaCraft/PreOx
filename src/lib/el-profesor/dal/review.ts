@@ -15,6 +15,11 @@ async function getSuspendedFlashcardIds(userId: string): Promise<Set<string>> {
   return new Set((data ?? []).map((r) => r.flashcard_id));
 }
 
+/** Array-returning wrapper around getSuspendedFlashcardIds for the offline sync (actions/offline-sync.ts) — IndexedDB/JSON-friendly, same convention as getReviewStatesByFlashcardIds. */
+export async function getSuspendedFlashcardIdsForSync(userId: string): Promise<string[]> {
+  return [...(await getSuspendedFlashcardIds(userId))];
+}
+
 /** Excludes a flashcard from this user's own reviews (scheduled, global due, carnet d'erreurs, carte du jour, free review). */
 export async function suspendFlashcard(userId: string, flashcardId: string): Promise<void> {
   const supabase = await createClient();

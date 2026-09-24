@@ -17,16 +17,19 @@ import type { ReviewState, ReviewRating, ReviewSource } from "./types";
 import type { ReviewConfidence } from "@/app/apps/el-profesor/actions/review";
 
 const DB_NAME = "el-profesor-cache";
-// Bumped for the local-first write queue (piste 2026-09-24 — "écriture
-// locale automatique") — onupgradeneeded below only creates whichever
-// stores don't exist yet, so a v1 database gains the two new ones without
-// losing what's already cached.
-const DB_VERSION = 2;
+// Bumped for the "à jour" bug fix (piste 2026-09-24 — "module 100% local")
+// — a new store for suspended-flashcard ids, needed so due/free queues can
+// be computed fully locally (local-review-queue.ts). onupgradeneeded below
+// only creates whichever stores don't exist yet, so an older database gains
+// the new one without losing what's already cached.
+const DB_VERSION = 3;
 const DASHBOARD_STORE = "dashboard";
 const CHAPTER_CONTENT_STORE = "chapterContent";
 const REVIEW_STATE_STORE = "reviewState";
 const PENDING_WRITES_STORE = "pendingWrites";
+const SUSPENDED_FLASHCARD_IDS_STORE = "suspendedFlashcardIds";
 const DASHBOARD_KEY = "singleton";
+const SUSPENDED_FLASHCARD_IDS_KEY = "singleton";
 
 type WithSyncedAt<T> = T & { syncedAt: string };
 
@@ -45,6 +48,7 @@ function openDb(): Promise<IDBDatabase | null> {
         if (!db.objectStoreNames.contains(CHAPTER_CONTENT_STORE)) db.createObjectStore(CHAPTER_CONTENT_STORE);
         if (!db.objectStoreNames.contains(REVIEW_STATE_STORE)) db.createObjectStore(REVIEW_STATE_STORE);
         if (!db.objectStoreNames.contains(PENDING_WRITES_STORE)) db.createObjectStore(PENDING_WRITES_STORE);
+        if (!db.objectStoreNames.contains(SUSPENDED_FLASHCARD_IDS_STORE)) db.createObjectStore(SUSPENDED_FLASHCARD_IDS_STORE);
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(null);
@@ -148,6 +152,43 @@ async function getAllValues<T>(storeName: string): Promise<T[]> {
   }
 }
 
+/** Single transaction, keys + values together — needed wherever the stored value doesn't already carry its own key (chapterContent's values don't embed a chapterId field), so a plain getAllValues() zip against a separately-fetched getAllKeys() could theoretically race across two transactions. */
+async function getAllEntries<T>(storeName: string): Promise<[string, T][]> {
+  const db = await openDb();
+  if (!db) return [];
+  try {
+    return await new Promise<[string, T][]>((resolve) => {
+      try {
+        const tx = db.transaction(storeName, "readonly");
+        const store = tx.objectStore(storeName);
+        const keysRequest = store.getAllKeys();
+        const valuesRequest = store.getAll();
+        let keys: string[] | null = null;
+        let values: T[] | null = null;
+        function maybeResolve() {
+          if (keys && values) resolve(keys.map((key, i) => [key, values![i]]));
+        }
+        keysRequest.onsuccess = () => {
+          keys = (keysRequest.result as string[] | undefined) ?? [];
+          maybeResolve();
+        };
+        valuesRequest.onsuccess = () => {
+          values = (valuesRequest.result as T[] | undefined) ?? [];
+          maybeResolve();
+        };
+        tx.onerror = () => resolve([]);
+        tx.onabort = () => resolve([]);
+      } catch {
+        resolve([]);
+      }
+    });
+  } catch {
+    return [];
+  } finally {
+    db.close();
+  }
+}
+
 async function deleteEntries(storeName: string, keys: string[]): Promise<void> {
   if (keys.length === 0) return;
   const db = await openDb();
@@ -187,6 +228,18 @@ export async function pruneChapterContent(validChapterIds: string[]): Promise<vo
   await deleteEntries(CHAPTER_CONTENT_STORE, staleKeys);
 }
 
+/** Every cached chapter's content at once, keyed by chapterId — needed to compute due/mastery counts across the whole library (local-review-queue.ts) without one IndexedDB read per chapter. */
+export async function getAllCachedChapterContent(): Promise<Map<string, WithSyncedAt<ChapterContentSnapshot>>> {
+  const entries = await getAllEntries<WithSyncedAt<ChapterContentSnapshot>>(CHAPTER_CONTENT_STORE);
+  return new Map(entries);
+}
+
+/** Every cached review state at once, keyed by flashcardId (each ReviewState already embeds its own flashcardId, so no key/value zip is needed here). */
+export async function getAllCachedReviewStates(): Promise<Map<string, ReviewState>> {
+  const all = await getAllValues<ReviewState>(REVIEW_STATE_STORE);
+  return new Map(all.map((state) => [state.flashcardId, state]));
+}
+
 // ============================================================================
 // Local-first writes (piste 2026-09-24 — "écriture locale automatique") —
 // the "vue utilisateur" write surface only (review answers, bookmarks,
@@ -219,6 +272,15 @@ export async function pruneReviewState(validFlashcardIds: string[]): Promise<voi
   const existingKeys = await getAllKeys(REVIEW_STATE_STORE);
   const staleKeys = existingKeys.filter((id) => !validSet.has(id));
   await deleteEntries(REVIEW_STATE_STORE, staleKeys);
+}
+
+/** This user's excluded-from-reviews flashcard ids, synced alongside the rest of the library — local-review-queue.ts overlays not-yet-flushed "exclude" PendingWrites on top of this to compute due/free queues fully locally. */
+export async function getCachedSuspendedFlashcardIds(): Promise<string[] | null> {
+  return getValue<string[]>(SUSPENDED_FLASHCARD_IDS_STORE, SUSPENDED_FLASHCARD_IDS_KEY);
+}
+
+export async function setCachedSuspendedFlashcardIds(ids: string[]): Promise<void> {
+  await putEntries(SUSPENDED_FLASHCARD_IDS_STORE, [[SUSPENDED_FLASHCARD_IDS_KEY, ids]]);
 }
 
 export interface PendingReviewPayload {
@@ -289,40 +351,15 @@ export async function deletePendingWrite(id: string): Promise<void> {
   await deleteEntries(PENDING_WRITES_STORE, [id]);
 }
 
-/** Delta-patches one chapter's cached due/mastery counts after a local review — cheaper and just as correct as a full recompute, since only this one flashcard's bucket changed. Preserves the dashboard's existing syncedAt (this isn't a real sync). */
-export async function patchDashboardCountsForReview(
-  chapterId: string,
-  dueDelta: number,
-  masteryBucketFrom: "new" | "learning" | "acquired",
-  masteryBucketTo: "new" | "learning" | "acquired"
-): Promise<void> {
-  const current = await getCachedDashboard();
-  if (!current) return;
-
-  const nextDueCounts = { ...current.dueCounts, [chapterId]: Math.max(0, (current.dueCounts[chapterId] ?? 0) + dueDelta) };
-
-  const currentMastery = current.masteryCounts[chapterId] ?? { total: 0, new: 0, learning: 0, acquired: 0 };
-  const nextMasteryForChapter = { ...currentMastery };
-  if (masteryBucketFrom !== masteryBucketTo) {
-    nextMasteryForChapter[masteryBucketFrom] = Math.max(0, nextMasteryForChapter[masteryBucketFrom] - 1);
-    nextMasteryForChapter[masteryBucketTo] = nextMasteryForChapter[masteryBucketTo] + 1;
-  }
-  const nextMasteryCounts = { ...current.masteryCounts, [chapterId]: nextMasteryForChapter };
-
-  await putEntries(DASHBOARD_STORE, [[DASHBOARD_KEY, { ...current, dueCounts: nextDueCounts, masteryCounts: nextMasteryCounts }]]);
-}
-
 export async function clearLocalCache(): Promise<void> {
   const db = await openDb();
   if (!db) return;
   try {
     await new Promise<void>((resolve) => {
       try {
-        const tx = db.transaction([DASHBOARD_STORE, CHAPTER_CONTENT_STORE, REVIEW_STATE_STORE, PENDING_WRITES_STORE], "readwrite");
-        tx.objectStore(DASHBOARD_STORE).clear();
-        tx.objectStore(CHAPTER_CONTENT_STORE).clear();
-        tx.objectStore(REVIEW_STATE_STORE).clear();
-        tx.objectStore(PENDING_WRITES_STORE).clear();
+        const stores = [DASHBOARD_STORE, CHAPTER_CONTENT_STORE, REVIEW_STATE_STORE, PENDING_WRITES_STORE, SUSPENDED_FLASHCARD_IDS_STORE];
+        const tx = db.transaction(stores, "readwrite");
+        for (const store of stores) tx.objectStore(store).clear();
         tx.oncomplete = () => resolve();
         tx.onerror = () => resolve();
         tx.onabort = () => resolve();

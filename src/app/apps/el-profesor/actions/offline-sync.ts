@@ -31,6 +31,7 @@ import {
   getChapterContentBatch,
   getUserFsrsRetention,
   getReviewStatesByFlashcardIds,
+  getSuspendedFlashcardIdsForSync,
 } from "@/lib/el-profesor/dal";
 import type { DashboardSnapshot, ChapterContentSnapshot } from "@/lib/el-profesor/dashboard-types";
 import type { ReviewState } from "@/lib/el-profesor/types";
@@ -176,4 +177,16 @@ export async function getElProfesorReviewStateBatch(flashcardIds: string[]): Pro
   const profile = await requireElProfesorAccess();
   if (flashcardIds.length === 0) return {};
   return getReviewStatesByFlashcardIds(profile.id, flashcardIds);
+}
+
+/**
+ * This user's excluded-from-reviews flashcard ids (piste 2026-09-24 —
+ * correctif du bug "à jour"): synced once per full sync so
+ * local-review-queue.ts can compute due/free queues and due/mastery counts
+ * fully locally, with the same "suspended" semantics getDueQueue/
+ * getFreeReviewQueue apply server-side.
+ */
+export async function getElProfesorSuspendedFlashcardIds(): Promise<string[]> {
+  const profile = await requireElProfesorAccess();
+  return getSuspendedFlashcardIdsForSync(profile.id);
 }

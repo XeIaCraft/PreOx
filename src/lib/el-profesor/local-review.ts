@@ -10,12 +10,19 @@
 // (local-db.ts's pendingWrites store) and replayed by sync-queue.ts, so
 // nothing here talks to the network directly except undoLocalReview's
 // already-flushed fallback.
+//
+// This used to also delta-patch the dashboard's cached due/mastery counts
+// (patchDashboardCountsForReview) after each review — removed as the fix
+// for the "à jour" bug: those counts are now always computed fresh from
+// this same reviewState store (local-review-queue.ts's
+// computeLocalDueCounts/computeLocalMasteryCounts) whenever the dashboard
+// renders, so writing reviewState here is all that's needed — no separate
+// number to keep in sync by hand.
 import { scheduleReview } from "./fsrs";
 import {
   getCachedReviewState,
   setCachedReviewState,
   deleteCachedReviewState,
-  patchDashboardCountsForReview,
   enqueuePendingWrite,
   deletePendingWrite,
   getPendingWrite,
@@ -24,18 +31,6 @@ import {
 import { undoReview } from "@/app/apps/el-profesor/actions/review";
 import type { ReviewRating, ReviewSource, ReviewState } from "./types";
 import type { ReviewConfidence } from "@/app/apps/el-profesor/actions/review";
-
-function masteryBucket(state: ReviewState | null): "new" | "learning" | "acquired" {
-  if (!state) return "new";
-  // Mirrors getMasteryCountsByChapter's exact bucketing (dal/review.ts):
-  // "review" = acquired, "learning"/"relearning" = learning. A row is only
-  // ever written after a first review, so state is never "new" here.
-  return state.state === "review" ? "acquired" : "learning";
-}
-
-function isDueNow(state: ReviewState | null, now: number): boolean {
-  return !state || new Date(state.due).getTime() <= now;
-}
 
 export interface LocalReviewResult {
   pendingWriteId: string;
@@ -47,12 +42,11 @@ export interface LocalReviewResult {
  * Applies one flashcard review entirely against the local cache: computes
  * the next FSRS state (source === "scheduled" only — "free"/"exam" reviews
  * never touch the schedule, same as submitReview), writes it to reviewState,
- * delta-patches this chapter's cached due/mastery counts, and queues the
- * real write for sync-queue.ts's next flush.
+ * and queues the real write for sync-queue.ts's next flush.
  */
 export async function applyLocalReview(params: {
   flashcardId: string;
-  /** Null for cross-chapter sessions (révision globale, carnet d'erreurs) — see PendingReviewPayload's doc comment. */
+  /** Kept for the eventual server write's own bookkeeping — no longer used for any local dashboard patch (see file doc comment). */
   chapterId: string | null;
   rating: ReviewRating;
   source: ReviewSource;
@@ -71,11 +65,6 @@ export async function applyLocalReview(params: {
     const update = scheduleReview(previousState, rating, now, retention);
     nextState = { flashcardId, ...update };
     await setCachedReviewState(flashcardId, nextState);
-
-    if (chapterId) {
-      const dueDelta = (isDueNow(nextState, now.getTime()) ? 1 : 0) - (isDueNow(previousState, now.getTime()) ? 1 : 0);
-      await patchDashboardCountsForReview(chapterId, dueDelta, masteryBucket(previousState), masteryBucket(nextState));
-    }
   }
 
   const pendingWriteId = crypto.randomUUID();
@@ -91,11 +80,11 @@ export async function applyLocalReview(params: {
 
 /**
  * Reverts a review. If sync-queue.ts hasn't flushed it to the server yet,
- * this is entirely local (restore the cached FSRS state, undo the dashboard
- * patch, drop the queued write). If it has already been flushed — possible
- * but rare given the ~30s flush interval versus how quickly someone actually
- * hits "undo" — falls back to the real undoReview Server Action using the
- * log id sync-queue.ts recorded when it flushed this entry.
+ * this is entirely local (restore the cached FSRS state, drop the queued
+ * write). If it has already been flushed — possible but rare given the ~30s
+ * flush interval versus how quickly someone actually hits "undo" — falls
+ * back to the real undoReview Server Action using the log id sync-queue.ts
+ * recorded when it flushed this entry.
  */
 export async function undoLocalReview(pendingWriteId: string): Promise<void> {
   const write = await getPendingWrite(pendingWriteId);
@@ -107,16 +96,10 @@ export async function undoLocalReview(pendingWriteId: string): Promise<void> {
     return;
   }
 
-  const { flashcardId, chapterId, source, previousState } = write.payload;
+  const { flashcardId, source, previousState } = write.payload;
   if (source === "scheduled") {
-    const now = Date.now();
-    const stateBeingUndone = await getCachedReviewState(flashcardId);
     if (previousState) await setCachedReviewState(flashcardId, previousState);
     else await deleteCachedReviewState(flashcardId);
-    if (chapterId) {
-      const dueDelta = (isDueNow(previousState, now) ? 1 : 0) - (isDueNow(stateBeingUndone, now) ? 1 : 0);
-      await patchDashboardCountsForReview(chapterId, dueDelta, masteryBucket(stateBeingUndone), masteryBucket(previousState));
-    }
   }
 
   await deletePendingWrite(pendingWriteId);

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { BookTocView } from "@/components/el-profesor/book-toc-view";
-import { getCachedDashboard, getCachedChapterContent } from "@/lib/el-profesor/local-db";
+import { getCachedDashboard, getCachedChapterContent, getAllCachedReviewStates } from "@/lib/el-profesor/local-db";
+import { computeLocalMasteryCounts } from "@/lib/el-profesor/local-review-queue";
 import type { BookTableOfContents, BookTocChapter } from "@/lib/el-profesor/dal/library";
 
 function TocSkeleton() {
@@ -48,6 +49,15 @@ export function BookTocWithLocalCache({ bookId, tocPromise }: { bookId: string; 
       if (contents.some((c) => !c)) return null;
 
       const contentByChapterId = new Map(publishedChapters.map((c, i) => [c.id, contents[i]!]));
+      // Mastery is computed fresh from this book's cached chapter content +
+      // review state (piste 2026-09-24 — correctif du bug "à jour"), rather
+      // than trusting dashboard.masteryCounts's frozen numbers, which only
+      // ever reflected the state at the last "Synchroniser".
+      const reviewStates = await getAllCachedReviewStates();
+      const masteryCounts = computeLocalMasteryCounts(
+        new Map([...contentByChapterId].map(([id, c]) => [id, c.subEntities])),
+        reviewStates
+      );
       const tocChapters: BookTocChapter[] = book.chapters.map((chapter) => {
         const content = contentByChapterId.get(chapter.id);
         return {
@@ -55,7 +65,7 @@ export function BookTocWithLocalCache({ bookId, tocPromise }: { bookId: string; 
           chapterTitle: chapter.title,
           status: chapter.status,
           subEntities: content ? content.subEntities.map((s) => ({ id: s.id, name: s.name, hasFiche: Boolean(s.fiche) })) : [],
-          mastery: dashboard.masteryCounts[chapter.id] ?? { total: 0, new: 0, learning: 0, acquired: 0 },
+          mastery: masteryCounts[chapter.id] ?? { total: 0, new: 0, learning: 0, acquired: 0 },
         };
       });
 

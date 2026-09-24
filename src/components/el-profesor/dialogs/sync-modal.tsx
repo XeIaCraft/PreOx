@@ -4,11 +4,17 @@ import { useState } from "react";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { getElProfesorDashboardSnapshot, getElProfesorChapterContentBatch, getElProfesorReviewStateBatch } from "@/app/apps/el-profesor/actions/offline-sync";
+import {
+  getElProfesorDashboardSnapshot,
+  getElProfesorChapterContentBatch,
+  getElProfesorReviewStateBatch,
+  getElProfesorSuspendedFlashcardIds,
+} from "@/app/apps/el-profesor/actions/offline-sync";
 import {
   setCachedDashboard,
   setCachedChapterContentBatch,
   setCachedReviewStateBatch,
+  setCachedSuspendedFlashcardIds,
   getCachedDashboard,
   pruneChapterContent,
   pruneReviewState,
@@ -62,7 +68,13 @@ export function SyncModal({
 
     let snapshot: DashboardSnapshot;
     try {
-      snapshot = await getElProfesorDashboardSnapshot();
+      const [dashboardSnapshot, suspendedIds] = await Promise.all([getElProfesorDashboardSnapshot(), getElProfesorSuspendedFlashcardIds()]);
+      snapshot = dashboardSnapshot;
+      // Suspended-flashcard ids (piste 2026-09-24 — correctif du bug "à
+      // jour") — needed by local-review-queue.ts to compute due/free queues
+      // and due/mastery counts fully locally, with the same "excluded"
+      // semantics getDueQueue/getFreeReviewQueue apply server-side.
+      await setCachedSuspendedFlashcardIds(suspendedIds);
     } catch {
       setErrorMessage("Impossible de récupérer le tableau de bord — vérifiez votre connexion et réessayez.");
       setPhase("error");
