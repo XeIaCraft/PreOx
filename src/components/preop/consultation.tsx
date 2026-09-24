@@ -1,17 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CircleHelp, MessageSquareQuote, Plus, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, CircleHelp, FolderPlus, MessageSquareQuote, Plus, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, MultiChipGroup } from "@/components/carnet/ui";
-import { NumberField, RiskPill, ScoreCard, SourceBadge, YesNoChip } from "@/components/preop/ui";
+import { FieldLabel, NumberField, RiskPill, ScoreCard, SourceBadge, TextArea, YesNoChip, formatDateTime, localToIso, toLocalInput } from "@/components/preop/ui";
 import {
   APFEL_ITEMS,
   APFEL_REFERENCE,
   ARISCAT_REFERENCE,
   ASA_CLASSES,
   CHA2DS2VASC_REFERENCE,
+  CLINICAL_FRAILTY_SCALE,
   DASI_ITEMS,
   DASI_REFERENCE,
   EL_GANZOURI_REFERENCE,
@@ -20,30 +21,18 @@ import {
   HEMSTOP_ITEMS,
   HEMSTOP_REFERENCE,
   MALLAMPATI_CLASSES,
+  MASK_VENTILATION_ITEMS,
+  MASK_VENTILATION_REFERENCE,
+  NYHA_CLASSES,
   RCRI_ITEMS,
   RCRI_REFERENCE,
   STOP_BANG_ITEMS,
   STOP_BANG_REFERENCE,
-  adjustedBodyWeight,
-  apfel,
-  ariscat,
-  bmi,
-  cha2ds2vasc,
-  ckdEpi2021,
-  cockcroftGault,
-  dasi,
-  elGanzouri,
-  hasBled,
-  hemstop,
-  idealBodyWeight,
-  leanBodyWeight,
-  rcri,
-  stopBang,
-  type AriscatInput,
-  type ElGanzouriInput,
   type Sex,
 } from "@/lib/preop/scores";
-import { evaluate, indicationLabel } from "@/lib/preop/rules/engine";
+import { consultationScores } from "@/lib/preop/consultation-scores";
+import { emptyConsultation, type ConsultationState } from "@/lib/preop/dossier";
+import { evaluate, indicationLabel, type EvaluationResult } from "@/lib/preop/rules/engine";
 import { describeRule, formatHours } from "@/lib/preop/rules/describe";
 import { questionForMissingStop, type QuestionInput } from "@/lib/preop/rules/question";
 import { INDICATIONS, TECHNIQUES, type Indication, type PatientTreatment, type Rule, type Technique } from "@/lib/preop/rules/types";
@@ -52,78 +41,18 @@ import { cn } from "@/lib/utils";
 
 type YesNo<K extends string> = Partial<Record<K, boolean>>;
 
-interface Patient {
-  age?: number;
-  sex?: Sex;
-  weightKg?: number;
-  heightCm?: number;
-  creatinineMgDl?: number;
-  hb?: number;
-  platelets?: number;
-  inr?: number;
-  spo2?: number;
-}
-
-interface ConsultationState {
-  patient: Patient;
-  asa?: number;
-  mallampati?: 1 | 2 | 3 | 4;
-  airway: ElGanzouriInput;
-  stopBang: YesNo<keyof typeof STOP_BANG_ITEMS>;
-  rcri: YesNo<keyof typeof RCRI_ITEMS>;
-  dasi: YesNo<keyof typeof DASI_ITEMS>;
-  ariscat: AriscatInput;
-  apfel: YesNo<keyof typeof APFEL_ITEMS>;
-  hemstop: YesNo<keyof typeof HEMSTOP_ITEMS>;
-  cha: { heartFailure?: boolean; hypertension?: boolean; diabetes?: boolean; strokeTiaThromboembolism?: boolean; vascularDisease?: boolean };
-  hasBled: YesNo<keyof typeof HAS_BLED_ITEMS>;
-  treatments: PatientTreatment[];
-  techniques: Technique[];
-  plannedAt: string;
-  hospital: string;
-}
-
-const EMPTY: ConsultationState = {
-  patient: {},
-  airway: {},
-  stopBang: {},
-  rcri: {},
-  dasi: {},
-  ariscat: {},
-  apfel: {},
-  hemstop: {},
-  cha: {},
-  hasBled: {},
-  treatments: [],
-  techniques: [],
-  plannedAt: "",
-  hospital: "",
-};
-
+const ROMAN = ["I", "II", "III", "IV"];
 const round = (n: number, d = 0) => Math.round(n * 10 ** d) / 10 ** d;
 
-export function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("fr-BE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-/** "2026-10-08T08:00" (datetime-local, local time) → ISO, or undefined. */
-function localToIso(value: string): string | undefined {
-  if (!value) return undefined;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
-}
-
-/** Yes/no items: what the patient data already answers fills the gaps (never overrides an explicit answer). */
-function withDerived<K extends string>(answers: YesNo<K>, derived: Partial<Record<K, boolean | undefined>>): { merged: YesNo<K>; derivedKeys: Set<K> } {
-  const merged = { ...answers };
-  const derivedKeys = new Set<K>();
-  for (const [k, v] of Object.entries(derived) as [K, boolean | undefined][]) {
-    if (merged[k] === undefined && v !== undefined) {
-      merged[k] = v;
-      derivedKeys.add(k);
-    }
-  }
-  return { merged, derivedKeys };
+/** The rule library applied to a consultation (treatments, gesture, date, hospital). */
+export function evaluateConsultation(rules: Rule[], c: ConsultationState): EvaluationResult {
+  return evaluate(rules, {
+    ...c.patient,
+    treatments: c.treatments,
+    techniques: c.techniques,
+    plannedAt: localToIso(c.plannedAt),
+    hospital: c.hospital || undefined,
+  });
 }
 
 function ItemsGrid<K extends string>({
@@ -238,84 +167,49 @@ function TreatmentsEditor({ treatments, onChange }: { treatments: PatientTreatme
   );
 }
 
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 /**
- * Consultation: nothing is saved (the patient may never come through your
- * theatre). Scores compute as you tap, the rule library is applied to the
- * treatments and the planned gesture, missing information and situations
- * without a rule are listed — with a question ready to paste into an AI
- * search tool.
+ * The consultation form, controlled: the unsaved consultation (below) and
+ * a patient dossier both use it. Scores compute as you tap, the rule
+ * library is applied to the treatments and the planned gesture, missing
+ * information and situations without a rule are listed — with a question
+ * ready to paste into an AI search tool.
+ *
+ * Text and number fields are uncontrolled (typing "1," isn't rewritten):
+ * change `formKey` to reload them from `value`.
  */
-export function ConsultationView({ rules, onAskQuestion }: { rules: Rule[]; onAskQuestion: (q: QuestionInput) => void }) {
-  const [s, setS] = useState<ConsultationState>(EMPTY);
-  const [resetKey, setResetKey] = useState(0);
-  const set = (patch: Partial<ConsultationState>) => setS((x) => ({ ...x, ...patch }));
+export function ConsultationForm({
+  value: s,
+  onChange,
+  rules,
+  onAskQuestion,
+  formKey = 0,
+  patientActions,
+}: {
+  value: ConsultationState;
+  onChange: (next: ConsultationState) => void;
+  rules: Rule[];
+  onAskQuestion: (q: QuestionInput) => void;
+  formKey?: number | string;
+  patientActions?: React.ReactNode;
+}) {
+  const resetKey = formKey;
+  const set = (patch: Partial<ConsultationState>) => onChange({ ...s, ...patch });
   const p = s.patient;
 
-  const derived = useMemo(() => {
-    const hasBody = p.weightKg && p.heightCm;
-    return {
-      bmi: hasBody ? bmi(p.weightKg!, p.heightCm!) : undefined,
-      ibw: p.sex && p.heightCm ? idealBodyWeight(p.sex, p.heightCm) : undefined,
-      lbw: p.sex && hasBody ? leanBodyWeight(p.sex, p.weightKg!, p.heightCm!) : undefined,
-      abw: p.sex && hasBody ? adjustedBodyWeight(p.sex, p.weightKg!, p.heightCm!) : undefined,
-      crcl: p.age !== undefined && p.weightKg && p.sex && p.creatinineMgDl ? cockcroftGault({ age: p.age, weightKg: p.weightKg, sex: p.sex, creatinineMgDl: p.creatinineMgDl }) : undefined,
-      egfr: p.age !== undefined && p.sex && p.creatinineMgDl ? ckdEpi2021({ age: p.age, sex: p.sex, creatinineMgDl: p.creatinineMgDl }) : undefined,
-    };
-  }, [p]);
+  const { derived, merged, results } = useMemo(() => consultationScores(s), [s]);
+  const sb = merged.stopBang;
+  const lee = merged.rcri;
+  const ap = merged.apfel;
+  const hb = merged.hasBled;
+  const mv = merged.mask;
 
-  const sb = withDerived(s.stopBang, {
-    bmiOver35: derived.bmi !== undefined ? derived.bmi > 35 : undefined,
-    ageOver50: p.age !== undefined ? p.age > 50 : undefined,
-    male: p.sex ? p.sex === "M" : undefined,
-  });
-  const lee = withDerived(s.rcri, { creatinineOver2: p.creatinineMgDl !== undefined ? p.creatinineMgDl > 2 : undefined });
-  const ap = withDerived(s.apfel, { female: p.sex ? p.sex === "F" : undefined });
-  const hb = withDerived(s.hasBled, { elderly: p.age !== undefined ? p.age > 65 : undefined });
-
-  const results = {
-    stopBang: stopBang(sb.merged),
-    rcri: rcri(lee.merged),
-    dasi: dasi(s.dasi),
-    ariscat: ariscat({ ...s.ariscat, age: s.ariscat.age ?? p.age, spo2: s.ariscat.spo2 ?? p.spo2, anemia: s.ariscat.anemia ?? (p.hb !== undefined ? p.hb <= 10 : undefined) }),
-    apfel: apfel(ap.merged),
-    hemstop: hemstop(s.hemstop),
-    cha: cha2ds2vasc({ ...s.cha, age: p.age, sex: p.sex }),
-    hasBled: hasBled(hb.merged),
-    airway: elGanzouri({ ...s.airway, mallampati: s.airway.mallampati ?? s.mallampati, weightKg: s.airway.weightKg ?? p.weightKg }),
-  };
-
-  const evaluation = useMemo(
-    () =>
-      evaluate(rules, {
-        ...p,
-        treatments: s.treatments,
-        techniques: s.techniques,
-        plannedAt: localToIso(s.plannedAt),
-        hospital: s.hospital || undefined,
-      }),
-    [rules, p, s.treatments, s.techniques, s.plannedAt, s.hospital]
-  );
+  const evaluation = useMemo(() => evaluateConsultation(rules, s), [rules, s]);
 
   const patientFields = (
     <section key={`patient-${resetKey}`} className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-surface p-3 sm:p-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-serif-display text-lg font-medium text-foreground">Patient</h2>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            setS(EMPTY);
-            setResetKey((k) => k + 1);
-          }}
-        >
-          <RotateCcw className="h-3.5 w-3.5" /> Nouvelle consultation
-        </Button>
+        {patientActions && <div className="flex flex-wrap items-center gap-1.5">{patientActions}</div>}
       </div>
       <ChipGroup
         size="sm"
@@ -351,6 +245,10 @@ export function ConsultationView({ rules, onAskQuestion }: { rules: Rule[]; onAs
           </div>
         ))}
       </dl>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
+        <TextArea label="Allergies" value={p.allergies} onChange={(v) => set({ patient: { ...p, allergies: v } })} placeholder="ex. aucune connue, latex, pénicilline (urticaire)" />
+        <TextArea label="Antécédents" value={p.history} onChange={(v) => set({ patient: { ...p, history: v } })} placeholder="ex. FA, DT2 sous insuline, SAOS appareillé" />
+      </div>
     </section>
   );
 
@@ -372,6 +270,7 @@ export function ConsultationView({ rules, onAskQuestion }: { rules: Rule[]; onAs
           <Input value={s.hospital} onChange={(e) => set({ hospital: e.target.value })} placeholder="ex. CHU Tivoli" />
         </label>
       </div>
+      <TextArea label="Notes de consultation" value={s.notes} onChange={(notes) => set({ notes })} rows={3} placeholder="Examen clinique, éléments à transmettre, informations données au patient…" />
     </section>
   );
 
@@ -501,6 +400,24 @@ export function ConsultationView({ rules, onAskQuestion }: { rules: Rule[]; onAs
       </ScoreCard>
 
       <ScoreCard
+        title="NYHA · fragilité (Clinical Frailty Scale)"
+        summary={[s.nyha ? `NYHA ${ROMAN[s.nyha - 1]}` : "", s.frailty ? `CFS ${s.frailty}` : ""].filter(Boolean).join(" · ")}
+        level={(s.nyha ?? 0) >= 3 || (s.frailty ?? 0) >= 5 ? "intermediate" : "info"}
+        reference="Clinical Frailty Scale : Rockwood et al., CMAJ 2005"
+      >
+        <div className="space-y-1.5">
+          <FieldLabel>Dyspnée (NYHA)</FieldLabel>
+          <ChipGroup size="sm" options={NYHA_CLASSES.map((c) => ({ code: c.code as number, label: ROMAN[c.code - 1], title: c.detail }))} value={s.nyha ?? null} onChange={(v) => set({ nyha: v ?? undefined })} allowClear />
+          {s.nyha && <p className="text-xs text-foreground-muted">{NYHA_CLASSES[s.nyha - 1].detail}</p>}
+        </div>
+        <div className="space-y-1.5">
+          <FieldLabel>Fragilité (CFS 1–9)</FieldLabel>
+          <ChipGroup size="sm" options={CLINICAL_FRAILTY_SCALE.map((c) => ({ code: c.code as number, label: String(c.code), title: c.detail }))} value={s.frailty ?? null} onChange={(v) => set({ frailty: v ?? undefined })} allowClear />
+          {s.frailty && <p className="text-xs text-foreground-muted">{CLINICAL_FRAILTY_SCALE[s.frailty - 1].detail}</p>}
+        </div>
+      </ScoreCard>
+
+      <ScoreCard
         title="Voies aériennes · Mallampati, El-Ganzouri"
         summary={[s.mallampati ? `Mallampati ${MALLAMPATI_CLASSES[s.mallampati - 1].label}` : "", results.airway.label].filter(Boolean).join(" · ")}
         level={results.airway.level === "high" || (s.mallampati ?? 0) >= 3 ? "high" : "info"}
@@ -536,7 +453,20 @@ export function ConsultationView({ rules, onAskQuestion }: { rules: Rule[]; onAs
           onChange={(v) => set({ airway: { ...s.airway, difficultIntubationHistory: v ?? undefined } })}
           allowClear
         />
-        <p className="text-xs text-foreground-subtle">Le Cormack-Lehane se note à la laryngoscopie, dans la préparation du cas.</p>
+        <p className="text-xs text-foreground-subtle">Le Cormack-Lehane se note à la laryngoscopie, dans l&apos;onglet Bloc du dossier.</p>
+      </ScoreCard>
+
+      <ScoreCard title="Ventilation au masque · Langeron" summary={results.mask.label} level={results.mask.level} missing={results.mask.missing} reference={MASK_VENTILATION_REFERENCE.label}>
+        <ItemsGrid
+          items={MASK_VENTILATION_ITEMS}
+          answers={mv.merged}
+          derivedKeys={mv.derivedKeys}
+          onChange={(v) => {
+            // Snoring is shared with STOP-BANG: answering it here answers it there too.
+            set({ maskVentilation: v, stopBang: v.snoring !== undefined && v.snoring !== mv.merged.snoring ? { ...s.stopBang, snoring: v.snoring } : s.stopBang });
+          }}
+        />
+        <p className="text-xs text-foreground-subtle">Deux critères ou plus : ventilation au masque difficile prévisible.</p>
       </ScoreCard>
 
       <ScoreCard title="STOP-BANG · apnée du sommeil" summary={results.stopBang.label || (results.stopBang.value ? `${results.stopBang.value} / 8` : "")} level={results.stopBang.level} missing={results.stopBang.missing} reference={STOP_BANG_REFERENCE.label}>
@@ -603,9 +533,6 @@ export function ConsultationView({ rules, onAskQuestion }: { rules: Rule[]; onAs
 
   return (
     <div className="space-y-4">
-      <p className="rounded-[var(--radius-md)] bg-surface-muted px-3 py-2 text-xs text-foreground-muted">
-        Rien n&apos;est enregistré : cette consultation disparaît quand vous la quittez. Utilisez les initiales seulement si vous notez quelque chose ailleurs.
-      </p>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-start">
         <div className="space-y-4">
           {patientFields}
@@ -621,8 +548,9 @@ export function ConsultationView({ rules, onAskQuestion }: { rules: Rule[]; onAs
               ["Lee", results.rcri],
               ["Apfel", results.apfel],
               ["ARISCAT", results.ariscat],
+              ["Masque", results.mask],
             ].map(([name, r]) => {
-              const res = r as ReturnType<typeof rcri>;
+              const res = r as typeof results.rcri;
               return res.label ? (
                 <RiskPill key={name as string} level={res.level}>
                   {name as string} : {res.label}
@@ -632,6 +560,92 @@ export function ConsultationView({ rules, onAskQuestion }: { rules: Rule[]; onAs
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The consultation when nothing is kept: the patient may never come
+ * through your theatre. « Garder » turns it into a dossier (initials only,
+ * encrypted on this device).
+ */
+export function ConsultationView({
+  rules,
+  onAskQuestion,
+  onKeep,
+}: {
+  rules: Rule[];
+  onAskQuestion: (q: QuestionInput) => void;
+  onKeep: (initials: string, consultation: ConsultationState) => Promise<void>;
+}) {
+  const [s, setS] = useState<ConsultationState>(emptyConsultation);
+  const [formKey, setFormKey] = useState(0);
+  const [keeping, setKeeping] = useState(false);
+  const [initials, setInitials] = useState("");
+  const [busy, setBusy] = useState(false);
+  const validInitials = /^[a-zA-ZÀ-ÿ]{2}$/.test(initials.trim());
+
+  function reset() {
+    setS(emptyConsultation());
+    setFormKey((k) => k + 1);
+    setKeeping(false);
+    setInitials("");
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] bg-surface-muted px-3 py-2">
+        <p className="min-w-0 flex-1 text-xs text-foreground-muted">
+          Rien n&apos;est enregistré tant que vous ne gardez pas la consultation. Si vous la gardez : initiales seulement, chiffrée sur cet appareil.
+        </p>
+        {keeping ? (
+          <form
+            className="flex items-center gap-1.5"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!validInitials) return;
+              setBusy(true);
+              try {
+                await onKeep(initials.trim(), s);
+                reset();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <Input
+              autoFocus
+              value={initials}
+              onChange={(e) => setInitials(e.target.value.slice(0, 2))}
+              placeholder="Initiales (NP)"
+              aria-label="Initiales : première lettre du nom puis du prénom"
+              className="h-8 w-32 uppercase"
+            />
+            <Button size="sm" type="submit" disabled={!validInitials || busy}>
+              Garder
+            </Button>
+            <Button size="sm" variant="ghost" type="button" onClick={() => setKeeping(false)} aria-label="Annuler">
+              <X className="h-4 w-4" />
+            </Button>
+          </form>
+        ) : (
+          <Button size="sm" variant="secondary" onClick={() => setKeeping(true)}>
+            <FolderPlus className="h-3.5 w-3.5" /> Garder dans un dossier
+          </Button>
+        )}
+      </div>
+      <ConsultationForm
+        value={s}
+        onChange={setS}
+        rules={rules}
+        onAskQuestion={onAskQuestion}
+        formKey={formKey}
+        patientActions={
+          <Button variant="ghost" size="sm" onClick={reset}>
+            <RotateCcw className="h-3.5 w-3.5" /> Nouvelle consultation
+          </Button>
+        }
+      />
     </div>
   );
 }

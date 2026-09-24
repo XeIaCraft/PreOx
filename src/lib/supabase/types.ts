@@ -726,6 +726,7 @@ export type CarnetYearRow = WithUser<import("@/lib/carnet/types").CarnetYear> & 
 
 // -- "Préop" module ------------------------------------------------------------
 export type PreopRuleRow = WithUser<import("@/lib/preop/rules/types").Rule>;
+export type PreopProtocolRow = WithUser<import("@/lib/preop/protocols").Protocol>;
 
 export type Database = {
   public: {
@@ -1184,6 +1185,12 @@ export type Database = {
         Row: PreopRuleRow;
         Insert: Partial<PreopRuleRow> & { id: string; user_id: string; statement: string };
         Update: Partial<PreopRuleRow>;
+        Relationships: [];
+      };
+      preop_protocols: {
+        Row: PreopProtocolRow;
+        Insert: Partial<PreopProtocolRow> & { id: string; user_id: string; name: string };
+        Update: Partial<PreopProtocolRow>;
         Relationships: [];
       };
     };

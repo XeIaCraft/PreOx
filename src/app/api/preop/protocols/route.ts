@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { deleteRule, listRules, requirePreopAccess, saveRule } from "@/lib/preop/dal";
+import { deleteProtocol, listProtocols, requirePreopAccess, saveProtocol } from "@/lib/preop/dal";
 import { isSameOrigin } from "@/lib/preop/same-origin";
 
-// Rule library of the "Préop" module: GET lists this user's rules, POST
+// Protocol library of the "Préop" module: GET lists this user's protocols, POST
 // creates or replaces one, DELETE removes one (?id=). Plain HTTP, same
 // pattern as the carnet's sync endpoint.
 export const dynamic = "force-dynamic";
@@ -12,9 +12,9 @@ const NO_STORE = { "Cache-Control": "no-store" };
 export async function GET() {
   const profile = await requirePreopAccess();
   try {
-    return NextResponse.json({ rules: await listRules(profile.id) }, { headers: NO_STORE });
+    return NextResponse.json({ protocols: await listProtocols(profile.id) }, { headers: NO_STORE });
   } catch (err) {
-    console.error("[preop/rules] list failed:", err);
+    console.error("[preop/protocols] list failed:", err);
     return NextResponse.json({ error: "Échec du chargement." }, { status: 500, headers: NO_STORE });
   }
 }
@@ -28,8 +28,8 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Corps invalide." }, { status: 400, headers: NO_STORE });
   }
-  const result = await saveRule(profile.id, (body as { rule?: unknown })?.rule);
-  return result.ok ? NextResponse.json({ rule: result.rule }, { headers: NO_STORE }) : NextResponse.json({ error: result.error }, { status: 422, headers: NO_STORE });
+  const result = await saveProtocol(profile.id, (body as { protocol?: unknown })?.protocol);
+  return result.ok ? NextResponse.json({ protocol: result.protocol }, { headers: NO_STORE }) : NextResponse.json({ error: result.error }, { status: 422, headers: NO_STORE });
 }
 
 export async function DELETE(request: NextRequest) {
@@ -38,10 +38,10 @@ export async function DELETE(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
   if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: "Identifiant invalide." }, { status: 400, headers: NO_STORE });
   try {
-    await deleteRule(profile.id, id);
+    await deleteProtocol(profile.id, id);
     return NextResponse.json({ ok: true }, { headers: NO_STORE });
   } catch (err) {
-    console.error("[preop/rules] delete failed:", err);
+    console.error("[preop/protocols] delete failed:", err);
     return NextResponse.json({ error: "Suppression impossible." }, { status: 500, headers: NO_STORE });
   }
 }

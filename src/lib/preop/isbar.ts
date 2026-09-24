@@ -2,7 +2,7 @@
 // log) in the ISBAR structure. Each section lists what's missing so
 // nothing is forgotten when handing over to the PACU or the ICU.
 
-import { ASA_CLASSES, MALLAMPATI_CLASSES } from "./scores";
+import { consultationSummary } from "./consultation-scores";
 import { COMPLICATION_TYPES, EVENT_TYPES, FLUID_CATEGORIES, type Dossier } from "./dossier";
 import { durationTimers, fluidBalance, formatMinutes, lastDoses, redoseTimers } from "./intraop";
 import { INDICATIONS, TECHNIQUES } from "./rules/types";
@@ -31,8 +31,9 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
   const I: IsbarSection = { key: "I", title: "Identification", lines: [], missing: [] };
   const who = [d.initials, p.sex === "M" ? "homme" : p.sex === "F" ? "femme" : "", p.age !== undefined ? `${p.age} ans` : "", p.weightKg ? `${p.weightKg} kg` : "", p.heightCm ? `${p.heightCm} cm` : ""].filter(Boolean);
   I.lines.push(who.join(", "));
-  if (c.asa) I.lines.push(`${ASA_CLASSES[c.asa - 1].label} (${ASA_CLASSES[c.asa - 1].detail.toLowerCase()})`);
-  else I.missing.push("Classe ASA");
+  const summary = consultationSummary(c);
+  if (summary.status) I.lines.push(summary.status);
+  if (!c.asa) I.missing.push("Classe ASA");
   if (p.allergies?.trim()) I.lines.push(`Allergies : ${p.allergies.trim()}`);
   else I.missing.push("Allergies (même « aucune connue »)");
   if (p.age === undefined || !p.weightKg) I.missing.push("Âge et poids");
@@ -58,8 +59,9 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
     const indication = t.indication ? INDICATIONS.find((i) => i.code === t.indication)?.label.toLowerCase() : "";
     B.lines.push(`${t.name}${t.dailyDoseMg ? ` ${t.dailyDoseMg} mg/j` : ""}${indication ? ` (${indication})` : ""}${t.lastDoseAt ? ` — dernière prise ${new Date(t.lastDoseAt).toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}`);
   }
+  if (summary.risks) B.lines.push(summary.risks);
   const airway = [
-    c.mallampati ? `Mallampati ${MALLAMPATI_CLASSES[c.mallampati - 1].label}` : "",
+    summary.airway,
     d.intraop.cormack ? `Cormack ${d.intraop.cormack}` : "",
     d.intraop.airwayDevice,
     d.intraop.airwayNote,

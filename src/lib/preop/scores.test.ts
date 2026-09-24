@@ -13,6 +13,7 @@ import {
   hemstop,
   idealBodyWeight,
   leanBodyWeight,
+  maskVentilation,
   rcri,
   stopBang,
 } from "./scores";
@@ -100,5 +101,13 @@ describe("scores", () => {
       value: 5,
       level: "high",
     });
+  });
+});
+
+describe("difficult mask ventilation (Langeron)", () => {
+  it("predicts it from 2 criteria, stays open while it could still get there", () => {
+    expect(maskVentilation({ beard: true, snoring: true })).toMatchObject({ value: 2, level: "high" });
+    expect(maskVentilation({ beard: true }).label).toBe("");
+    expect(maskVentilation({ beard: true, bmiOver26: false, edentulous: false, ageOver55: false, snoring: false }).label).toBe("Pas de prédiction de difficulté");
   });
 });

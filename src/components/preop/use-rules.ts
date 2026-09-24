@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Rule } from "@/lib/preop/rules/types";
+import { readCache as readAny, request, writeCache as writeAny } from "./api";
 
 // The rule library in the browser: shown at once from the last copy kept
 // on the device (so the consultation also works offline), refreshed from
@@ -10,36 +11,8 @@ import type { Rule } from "@/lib/preop/rules/types";
 // saving needs the network, and says so when it isn't there.
 
 const CACHE_KEY = "preox:preop:rules";
-
-function readCache(): Rule[] {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    return raw ? (JSON.parse(raw) as Rule[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeCache(rules: Rule[]) {
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(rules));
-  } catch {
-    // Storage full or blocked: the library still works online.
-  }
-}
-
-async function request<T>(input: string, init?: RequestInit): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(input, { ...init, redirect: "manual", credentials: "same-origin", cache: "no-store" });
-  } catch {
-    throw new Error("Hors ligne — réessayez une fois connecté.");
-  }
-  if (res.type === "opaqueredirect") throw new Error("Session expirée — reconnectez-vous.");
-  const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
-  if (!res.ok || !body) throw new Error(body?.error ?? `Erreur serveur (${res.status}).`);
-  return body;
-}
+const readCache = () => readAny<Rule>(CACHE_KEY);
+const writeCache = (rules: Rule[]) => writeAny(CACHE_KEY, rules);
 
 export function useRules() {
   const [rules, setRules] = useState<Rule[]>([]);

@@ -401,3 +401,26 @@ export function elGanzouri(p: ElGanzouriInput): ScoreResult {
   const high = value >= 4;
   return { value, missing, label: high ? "Laryngoscopie difficile prévisible" : missing === 0 ? "Pas de prédiction de difficulté" : "", level: high ? "high" : "low" };
 }
+
+// ---------------------------------------------------------------------------
+// Difficult mask ventilation (Langeron): ≥ 2 criteria predict it
+// ---------------------------------------------------------------------------
+
+export const MASK_VENTILATION_ITEMS = {
+  beard: "Barbe",
+  bmiOver26: "IMC > 26",
+  edentulous: "Édentation",
+  ageOver55: "Âge > 55 ans",
+  snoring: "Ronflement",
+} as const;
+export type MaskVentilationItem = keyof typeof MASK_VENTILATION_ITEMS;
+
+export const MASK_VENTILATION_REFERENCE: ScoreReference = { label: "Langeron et al., Anesthesiology 2000" };
+
+export function maskVentilation(answers: Answers<MaskVentilationItem>): ScoreResult {
+  const { value, missing } = tally(answers, { beard: 1, bmiOver26: 1, edentulous: 1, ageOver55: 1, snoring: 1 });
+  if (value >= 2) return { value, missing, label: "Ventilation au masque difficile prévisible", level: "high" };
+  // Still open while the unanswered items could reach 2.
+  if (value + missing >= 2) return { value, missing, label: "", level: "low" };
+  return { value, missing, label: "Pas de prédiction de difficulté", level: "low" };
+}

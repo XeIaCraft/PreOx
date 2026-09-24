@@ -133,3 +133,68 @@ export function NumberField({
     </label>
   );
 }
+
+export function FieldLabel({ children }: { children: React.ReactNode }) {
+  return <span className="block text-xs font-medium uppercase tracking-wide text-foreground-subtle">{children}</span>;
+}
+
+/** Multi-line text, uncontrolled like NumberField (the form above it can be remounted with a key). */
+export function TextArea({
+  label,
+  value,
+  onChange,
+  placeholder,
+  rows = 2,
+}: {
+  label: string;
+  value: string | undefined;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  return (
+    <label className="block space-y-1">
+      <FieldLabel>{label}</FieldLabel>
+      <textarea
+        rows={rows}
+        placeholder={placeholder}
+        defaultValue={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="block w-full min-w-0 resize-y rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      />
+    </label>
+  );
+}
+
+/** A titled block of a screen — same look everywhere in the module. */
+export function Panel({ title, actions, children, className }: { title?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <section className={cn("space-y-3 rounded-[var(--radius-lg)] border border-border bg-surface p-3 sm:p-4", className)}>
+      {(title || actions) && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {title && <h2 className="font-serif-display text-lg font-medium text-foreground">{title}</h2>}
+          {actions && <div className="flex flex-wrap items-center gap-1.5">{actions}</div>}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+
+/** "2026-10-08T08:00" (datetime-local, local time) → ISO, or undefined. */
+export function localToIso(value: string): string | undefined {
+  if (!value) return undefined;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+/** ISO → "2026-10-08T08:00" for a datetime-local input. */
+export function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("fr-BE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}

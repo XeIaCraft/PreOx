@@ -152,9 +152,13 @@ export class CarnetStore {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private flushing: Promise<void> | null = null;
   private lastRefreshAt = 0;
+  /** Resolved once the local copy is read: a sync started before (e.g. by the online listener) must not be overwritten by it. */
+  private loaded: Promise<void>;
+  private markLoaded!: () => void;
   private readonly keys: { base: string; queue: string; syncedAt: string; rejected: string };
 
   constructor(userId: string) {
+    this.loaded = new Promise((resolve) => (this.markLoaded = resolve));
     this.keys = { base: `${userId}:base`, queue: `${userId}:queue`, syncedAt: `${userId}:syncedAt`, rejected: `${userId}:rejected` };
     this.state = {
       data: emptyCarnetData(),
@@ -187,16 +191,24 @@ export class CarnetStore {
 
   /** Reads the local copy, then syncs with the server in the background. */
   async init(): Promise<void> {
-    const [base, queue, syncedAt, rejected] = await Promise.all([
-      idbGet<CarnetData>(this.keys.base),
-      idbGet<CarnetMutation[]>(this.keys.queue),
-      idbGet<string>(this.keys.syncedAt),
-      idbGet<RejectedChange[]>(this.keys.rejected),
-    ]);
+    let read: [CarnetData | null, CarnetMutation[] | null, string | null, RejectedChange[] | null];
+    try {
+      read = await Promise.all([
+        idbGet<CarnetData>(this.keys.base),
+        idbGet<CarnetMutation[]>(this.keys.queue),
+        idbGet<string>(this.keys.syncedAt),
+        idbGet<RejectedChange[]>(this.keys.rejected),
+      ]);
+    } catch {
+      // Storage unavailable (private browsing…): start empty, the server copy still loads.
+      read = [null, null, null, null];
+    }
+    const [base, queue, syncedAt, rejected] = read;
     this.base = upgradeData({ ...emptyCarnetData(), ...(base ?? {}) });
     // Changes refused last time get another chance: the app may have been updated since.
     this.queue = [...(rejected ?? []).map((r) => r.mutation), ...(queue ?? [])];
     this.emit({ ready: base !== null, lastSyncedAt: syncedAt, rejected: [] });
+    this.markLoaded();
     if (rejected?.length) await this.persist();
     await this.sync();
     if (!this.state.status.ready) this.emit({ ready: true });
@@ -250,6 +262,7 @@ export class CarnetStore {
   }
 
   private async runSync(): Promise<void> {
+    await this.loaded;
     this.emit({ syncing: true });
     const rejected: RejectedChange[] = [];
     try {
