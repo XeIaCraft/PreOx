@@ -66,16 +66,18 @@ import { LibraryStats } from "@/components/el-profesor/learning-widgets";
 import { DashboardDailyCard, DashboardSecondaryWidgets, DashboardWidgetsSkeleton } from "@/components/el-profesor/dashboard-secondary-widgets";
 import { RenderErrorBoundary } from "@/components/el-profesor/render-error-boundary";
 import { CompactProgressBars } from "@/components/el-profesor/progress-bars";
-import { deleteBook, deleteChapter } from "@/app/apps/el-profesor/actions/library";
-import { swapBookOrder, swapChapterOrder, applyLocalMoveBook, applyLocalMoveChapter, applyLocalRenameChapter } from "@/lib/el-profesor/local-admin-actions";
-import { setElProfesorPreviewAsUser } from "@/app/apps/el-profesor/actions/preview";
 import {
-  extractChapter,
-  extractChapterComplementary,
-  resetStuckExtraction,
-  resetChapterContent,
-  bulkPublishChapters,
-} from "@/app/apps/el-profesor/actions/extraction";
+  swapBookOrder,
+  swapChapterOrder,
+  applyLocalMoveBook,
+  applyLocalMoveChapter,
+  applyLocalRenameChapter,
+  applyLocalBulkPublish,
+  applyLocalDeleteChapter,
+  applyLocalDeleteBook,
+} from "@/lib/el-profesor/local-admin-actions";
+import { setElProfesorPreviewAsUser } from "@/app/apps/el-profesor/actions/preview";
+import { extractChapter, extractChapterComplementary, resetStuckExtraction, resetChapterContent } from "@/app/apps/el-profesor/actions/extraction";
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
 import { ExtractionHistoryDialog } from "@/components/el-profesor/dialogs/extraction-history-dialog";
@@ -677,12 +679,9 @@ export function ElProfesorBoard({
     const ids = [...selectedChapterIds];
     startBulkTransition(async () => {
       applyOptimisticAction({ type: "publishChapters", chapterIds: ids });
-      const result = await bulkPublishChapters(ids);
-      if (result.error) toast(result.error, { variant: "error" });
-      else {
-        toast(result.success ?? "Chapitres publiés.", { variant: "success" });
-        setSelectedChapterIds(new Set());
-      }
+      const nextBooks = await applyLocalBulkPublish(ids);
+      if (nextBooks) onLocalBooksChange?.(nextBooks);
+      setSelectedChapterIds(new Set());
     });
   }
 
@@ -818,12 +817,13 @@ export function ElProfesorBoard({
   }
 
   function confirmDeleteChapter(chapterId: string) {
-    setPendingId(chapterId);
+    // Already confirmed by the dialog this is called from — going
+    // local-first here doesn't skip a safety step, it just stops waiting on
+    // the network once that confirmation is given.
     startTransition(async () => {
-      const result = await deleteChapter(chapterId);
-      setPendingId(null);
-      if (result.error) toast(result.error, { variant: "error" });
-      else setModal(null);
+      const nextBooks = await applyLocalDeleteChapter(chapterId);
+      if (nextBooks) onLocalBooksChange?.(nextBooks);
+      setModal(null);
     });
   }
 
@@ -841,10 +841,12 @@ export function ElProfesorBoard({
   }
 
   function confirmDeleteBook(bookId: string) {
+    // Same reasoning as confirmDeleteChapter — already confirmed by the
+    // dialog this is called from.
     startTransition(async () => {
-      const result = await deleteBook(bookId);
-      if (result.error) toast(result.error, { variant: "error" });
-      else setModal(null);
+      const nextBooks = await applyLocalDeleteBook(bookId);
+      if (nextBooks) onLocalBooksChange?.(nextBooks);
+      setModal(null);
     });
   }
 

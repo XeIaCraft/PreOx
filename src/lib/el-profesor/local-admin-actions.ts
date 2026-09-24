@@ -74,3 +74,54 @@ export async function applyLocalRenameChapter(chapterId: string, title: string):
   });
   return nextBooks;
 }
+
+/** Mirrors applyBoardAction's "publishChapters" case exactly — flips status only for chapters that are actually draft_ready, same guard bulkPublishChapters applies server-side. */
+export function publishChaptersInBooks(books: Books, chapterIds: string[]): Books {
+  const ids = new Set(chapterIds);
+  return books.map((book) => ({
+    ...book,
+    chapters: book.chapters.map((c) => (ids.has(c.id) && c.status === "draft_ready" ? { ...c, status: "published" as const } : c)),
+  }));
+}
+
+export async function applyLocalBulkPublish(chapterIds: string[]): Promise<Books | null> {
+  const nextBooks = await patchCachedDashboardBooks((books) => publishChaptersInBooks(books, chapterIds));
+  await enqueuePendingWrite({
+    id: crypto.randomUUID(),
+    kind: "adminAction",
+    createdAt: new Date().toISOString(),
+    payload: { action: "library.bulkPublishChapters", args: [chapterIds] },
+  });
+  return nextBooks;
+}
+
+function removeChapterFromBooks(books: Books, chapterId: string): Books {
+  return books.map((book) => ({ ...book, chapters: book.chapters.filter((c) => c.id !== chapterId) }));
+}
+
+/** Deletion is only ever called after the admin has already confirmed it in a dialog (see board.tsx's confirmDeleteChapter) — going local-first here doesn't skip any safety step, it just stops waiting on the network once that confirmation is given. A failed flush later (e.g. the chapter was already gone) silently no-ops, same convention as the rest of the local-first queue — the next full "Synchroniser" would restore it if it turns out to still exist server-side. */
+export async function applyLocalDeleteChapter(chapterId: string): Promise<Books | null> {
+  const nextBooks = await patchCachedDashboardBooks((books) => removeChapterFromBooks(books, chapterId));
+  await enqueuePendingWrite({
+    id: crypto.randomUUID(),
+    kind: "adminAction",
+    createdAt: new Date().toISOString(),
+    payload: { action: "library.deleteChapter", args: [chapterId] },
+  });
+  return nextBooks;
+}
+
+function removeBookFromBooks(books: Books, bookId: string): Books {
+  return books.filter((b) => b.id !== bookId);
+}
+
+export async function applyLocalDeleteBook(bookId: string): Promise<Books | null> {
+  const nextBooks = await patchCachedDashboardBooks((books) => removeBookFromBooks(books, bookId));
+  await enqueuePendingWrite({
+    id: crypto.randomUUID(),
+    kind: "adminAction",
+    createdAt: new Date().toISOString(),
+    payload: { action: "library.deleteBook", args: [bookId] },
+  });
+  return nextBooks;
+}
