@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { NotionList } from "@/components/el-profesor/glossary-view";
 import type { DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
@@ -10,13 +10,14 @@ import type { DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types"
  * the standalone /glossary page (see NotionList), embedded as an
  * alternative to the "Par livre" list rather than a separate page (added
  * 2026-08-25, replacing a repeated ask that had only ever landed as its own
- * page). Consumes notionViewDataPromise via use(), so it only ever blocks
- * on that query once this view is actually selected — see the doc comment
- * on DashboardNotionViewData.
+ * page). Read purely from cache as a plain value (piste 2026-09-24 — suite
+ * au retour "les widgets ne s'affichent jamais et finissent en erreur") —
+ * populated only by an explicit "Synchroniser", never an automatic live
+ * fetch that could hang or fail on every dashboard visit.
  */
-export function DashboardNotionView({ dataPromise, isAdmin = false }: { dataPromise: Promise<DashboardNotionViewData>; isAdmin?: boolean }) {
-  const { notions, categories, readiness, recommendations, doseCalculators, caseCounts, progress } = use(dataPromise);
+export function DashboardNotionView({ data, isAdmin = false }: { data: DashboardNotionViewData | null; isAdmin?: boolean }) {
   const [query, setQuery] = useState("");
+  const notions = useMemo(() => data?.notions ?? [], [data]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -25,6 +26,10 @@ export function DashboardNotionView({ dataPromise, isAdmin = false }: { dataProm
       ({ notion, fiches }) => notion.name.toLowerCase().includes(q) || fiches.some((f) => f.ficheTitle.toLowerCase().includes(q))
     );
   }, [notions, query]);
+
+  if (!data) return <p className="mt-6 text-sm text-foreground-subtle">Notions indisponibles — synchronisez pour les voir.</p>;
+
+  const { categories, readiness, recommendations, doseCalculators, caseCounts, progress } = data;
 
   return (
     <div>
@@ -56,17 +61,6 @@ export function DashboardNotionView({ dataPromise, isAdmin = false }: { dataProm
           />
         </div>
       )}
-    </div>
-  );
-}
-
-export function DashboardNotionViewSkeleton() {
-  return (
-    <div className="animate-pulse space-y-3">
-      <div className="h-9 rounded-[var(--radius-md)] bg-surface-muted" />
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="h-24 rounded-[var(--radius-md)] border border-border bg-surface-muted/40" />
-      ))}
     </div>
   );
 }

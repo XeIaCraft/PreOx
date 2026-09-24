@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CloudDownload, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
@@ -51,9 +51,6 @@ export function DashboardWithLocalCache({
   realIsAdmin,
   previewingAsUser,
   serverResumeChapterId,
-  secondaryDataPromise,
-  aiConfigPromise,
-  notionViewDataPromise,
   onCacheMiss,
 }: {
   /** Null when rendered by the local nav shell (local-nav-shell.tsx) rather than page.tsx directly — in that case onCacheMiss must be provided instead. */
@@ -62,10 +59,6 @@ export function DashboardWithLocalCache({
   realIsAdmin: boolean;
   previewingAsUser: boolean;
   serverResumeChapterId: string | null;
-  /** Always a real, resolving promise — page.tsx awaits none of these directly (same un-awaited-promise pattern as initialSnapshotPromise), and a shell-driven render (local-nav-shell.tsx) fetches them itself via the same Server Actions, just triggered client-side. */
-  secondaryDataPromise: Promise<DashboardSecondaryData>;
-  aiConfigPromise: Promise<DashboardAiConfigData | null>;
-  notionViewDataPromise: Promise<DashboardNotionViewData>;
   /** Called instead of awaiting initialSnapshotPromise when there's no local cache and no server promise was supplied (shell-driven render with a genuine cache miss) — the caller falls back to a real Next.js navigation. */
   onCacheMiss?: () => void;
 }) {
@@ -73,42 +66,39 @@ export function DashboardWithLocalCache({
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [checkedCache, setCheckedCache] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
-  // Cache-first substitution for the three secondary-widget promises (piste
-  // 2026-09-24 — widgets hors ligne): defaults to the promise the caller
-  // passed in (page.tsx's or the shell's live Server Action call), swapped
-  // for an already-resolved one the moment a cache hit comes back — same
-  // "cache first, live promise only as fallback" rule as the main snapshot
-  // above, so these widgets render instantly from the last sync instead of
-  // hanging behind their Suspense boundary when offline.
-  const [effectiveSecondaryDataPromise, setEffectiveSecondaryDataPromise] = useState(secondaryDataPromise);
-  const [effectiveAiConfigPromise, setEffectiveAiConfigPromise] = useState(aiConfigPromise);
-  const [effectiveNotionViewDataPromise, setEffectiveNotionViewDataPromise] = useState(notionViewDataPromise);
+  // The three secondary-widget datasets (activity/notions/AI config — piste
+  // 2026-09-24 — suite au retour "les widgets ne s'affichent jamais et
+  // finissent en erreur") are read PURELY from cache, never live-fetched as
+  // part of a normal render: unlike the main snapshot above (which falls
+  // back to a live fetch when there's no cache at all — unavoidable for a
+  // true first visit), a live fetch here had no bound on how long it could
+  // hang or how it could fail, on a route that renders on every navigation.
+  // These stay null (rendered as an explicit "pas encore synchronisé" state
+  // by their consumers) until an actual "Synchroniser" run populates them —
+  // see refreshWidgetCaches below, called both on mount and right after a
+  // sync completes.
+  const [secondaryData, setSecondaryData] = useState<DashboardSecondaryData | null>(null);
+  const [notionViewData, setNotionViewData] = useState<DashboardNotionViewData | null>(null);
+  const [aiConfigData, setAiConfigData] = useState<DashboardAiConfigData | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const refreshWidgetCaches = useCallback((forIsAdmin: boolean) => {
     // Keyed by isAdmin (the CURRENT render's effective admin/preview state,
     // not whatever a past sync happened to be) — see
     // getCachedSecondaryDashboardData's doc comment for why: without this, a
     // real admin's cached admin-only data could get served back during a
     // "preview as user" session.
-    getCachedSecondaryDashboardData(isAdmin).then((cached) => {
-      if (!cancelled && cached) setEffectiveSecondaryDataPromise(Promise.resolve(cached));
-    });
-    getCachedNotionViewData().then((cached) => {
-      if (!cancelled && cached) setEffectiveNotionViewDataPromise(Promise.resolve(cached));
-    });
-    getCachedAiConfigData(isAdmin).then((cached) => {
-      if (!cancelled && cached) setEffectiveAiConfigPromise(Promise.resolve(cached.value));
-    });
-    return () => {
-      cancelled = true;
-    };
-    // Mount-only, same rationale as the dashboard snapshot check below — a
-    // fresh sync updates these via handleSynced-equivalent props being new
-    // promises from the parent re-render (page.tsx/shell), not by reactively
-    // re-checking the cache.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    getCachedSecondaryDashboardData(forIsAdmin).then((cached) => setSecondaryData(cached));
+    getCachedNotionViewData().then((cached) => setNotionViewData(cached));
+    getCachedAiConfigData(forIsAdmin).then((cached) => setAiConfigData(cached?.value ?? null));
   }, []);
+
+  useEffect(() => {
+    // Re-checks whenever the effective admin/preview state changes (e.g.
+    // after the preview-as-user toggle, which forces a reload — see
+    // board.tsx's handleTogglePreview — but this stays correct even if that
+    // ever changes without one).
+    refreshWidgetCaches(isAdmin);
+  }, [isAdmin, refreshWidgetCaches]);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,6 +147,12 @@ export function DashboardWithLocalCache({
   function handleSynced(newSnapshot: DashboardSnapshot, newSyncedAt: string) {
     setSnapshot(newSnapshot);
     setSyncedAt(newSyncedAt);
+    // "Synchroniser" just wrote fresh secondary-widget data to the cache —
+    // without this they'd keep showing whatever (or nothing) was there
+    // before until the next full reload, which is exactly the "je dois
+    // synchroniser pour que ça s'actualise, et même là ça ne s'actualise
+    // pas" problem this was meant to fix.
+    refreshWidgetCaches(newSnapshot.effectiveIsAdmin);
   }
 
   // Keeps snapshot.books in step with a local admin reorder the instant it
@@ -197,9 +193,9 @@ export function DashboardWithLocalCache({
         realIsAdmin={realIsAdmin}
         previewingAsUser={previewingAsUser}
         serverResumeChapterId={serverResumeChapterId}
-        secondaryDataPromise={effectiveSecondaryDataPromise}
-        aiConfigPromise={effectiveAiConfigPromise}
-        notionViewDataPromise={effectiveNotionViewDataPromise}
+        secondaryData={secondaryData}
+        aiConfigData={aiConfigData}
+        notionViewData={notionViewData}
         onLocalBooksChange={handleLocalBooksChange}
       />
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Sparkles, ShieldAlert, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -24,13 +24,9 @@ const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   texte_libre: "Note",
 };
 
-export function DashboardWidgetsSkeleton() {
-  return (
-    <div className="mt-6 space-y-3" aria-hidden="true">
-      <div className="h-20 animate-pulse rounded-[var(--radius-lg)] bg-surface-muted/60" />
-      <div className="h-32 animate-pulse rounded-[var(--radius-lg)] bg-surface-muted/60" />
-    </div>
-  );
+/** Shown in place of a secondary widget when nothing's cached yet for it — piste 2026-09-24 — suite au retour "les widgets ne s'affichent jamais et finissent en erreur" : this data is read purely from cache now, populated only by an explicit "Synchroniser", never by an automatic live fetch that could hang or fail. */
+function NotSyncedYet() {
+  return <p className="mt-6 text-xs text-foreground-subtle">Statistiques indisponibles — synchronisez pour les voir.</p>;
 }
 
 /**
@@ -38,26 +34,24 @@ export function DashboardWidgetsSkeleton() {
  * (requested 2026-08-28) so it can render near the top of the dashboard
  * (next to "Reprendre la lecture" and the search bar) while the heavier
  * stats/streak/diagnostics widgets move to the bottom of the page. Both
- * components read the same dataPromise via use() — safe since it's the
- * same promise reference passed from the server, resolved once.
+ * components read the same cached data — passed as a plain value (piste
+ * 2026-09-24 — see NotSyncedYet's doc comment), not a promise.
  */
-export function DashboardDailyCard({ dataPromise }: { dataPromise: Promise<DashboardSecondaryData> }) {
-  const data = use(dataPromise);
-  return data.dailyCard ? <DailyCard card={data.dailyCard} /> : null;
+export function DashboardDailyCard({ data }: { data: DashboardSecondaryData | null }) {
+  return data?.dailyCard ? <DailyCard card={data.dailyCard} /> : null;
 }
 
 export function DashboardSecondaryWidgets({
-  dataPromise,
+  data,
   totalAcquired,
   chaptersMastered,
   isAdmin,
 }: {
-  dataPromise: Promise<DashboardSecondaryData>;
+  data: DashboardSecondaryData | null;
   totalAcquired: number;
   chaptersMastered: number;
   isAdmin: boolean;
 }) {
-  const data = use(dataPromise);
   const { toast } = useToast();
   const [pendingLeechId, setPendingLeechId] = useState<string | null>(null);
   const [isLeechPending, startLeechTransition] = useTransition();
@@ -71,6 +65,8 @@ export function DashboardSecondaryWidgets({
       else toast(result.suggestion ? `Variante ajoutée : « ${result.suggestion} »` : (result.success ?? "Variante ajoutée."), { variant: "success" });
     });
   }
+
+  if (!data) return <NotSyncedYet />;
 
   return (
     <>

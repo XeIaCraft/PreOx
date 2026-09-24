@@ -16,13 +16,13 @@ import { Alert } from "@/components/ui/alert";
  * points at a render-time bug in GlossaryView/CaseJournalView (or a child)
  * rather than in the data fetch itself.
  *
- * `compact` (added 2026-08-29): the dashboard's own streamed widgets
- * (board.tsx's `use(secondaryDataPromise)`/`use(notionViewDataPromise)`
- * sections — same crash risk, discovered while auditing for it, but never
- * actually wrapped) mount inline alongside a page the rest of which
- * rendered fine; DalLoadError's full-page shell (its own "Retour à la
- * bibliothèque" link, centered column) is wrong there — a small inline
- * alert that only replaces the failed widget's own slot is what fits.
+ * `compact` (added 2026-08-29): the dashboard's own secondary widgets
+ * (DashboardSecondaryWidgets/DashboardNotionView in board.tsx — same crash
+ * risk, discovered while auditing for it, but never actually wrapped) mount
+ * inline alongside a page the rest of which rendered fine; DalLoadError's
+ * full-page shell (its own "Retour à la bibliothèque" link, centered column)
+ * is wrong there — a small inline alert that only replaces the failed
+ * widget's own slot is what fits.
  */
 export class RenderErrorBoundary extends Component<{ children: ReactNode; fallbackTitle: string; compact?: boolean }, { error: Error | null }> {
   constructor(props: { children: ReactNode; fallbackTitle: string; compact?: boolean }) {

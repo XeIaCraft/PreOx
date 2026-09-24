@@ -24,8 +24,6 @@ import { BookTocWithLocalCache } from "@/components/el-profesor/book-toc-with-lo
 import { ChapterViewWithLocalCache } from "@/components/el-profesor/chapter-view-with-local-cache";
 import { ReviewQueueWithLocalCache } from "@/components/el-profesor/review-queue-with-local-cache";
 import { ToastProvider } from "@/components/ui/toast";
-import { getElProfesorDashboardWidgetsData } from "@/app/apps/el-profesor/actions/offline-sync";
-import type { DashboardSecondaryData, DashboardNotionViewData, DashboardAiConfigData } from "@/lib/el-profesor/dashboard-types";
 
 interface LocalNavContextValue {
   navigateLocally: (href: string) => void;
@@ -42,12 +40,30 @@ export function LocalNavShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  // Derived purely from the URL — Next's router hooks pick up
+  // Only engages after an actual local navigation (see navigateLocally
+  // below) — never on the very first render of a genuinely fresh page load
+  // or a hard reload (piste 2026-09-24 — suite au retour "je dois
+  // synchroniser pour que mes changements s'affichent"). A hard load has
+  // ALREADY paid the full server round trip to produce that HTML by the
+  // time this hydrates, so there's no speed to gain by discarding it — and
+  // discarding it was actively wrong: matching on pathname alone meant
+  // *every* load of a covered route replaced the fresh, correctly-computed
+  // server render (e.g. right after a Server Action that just changed
+  // something — a role/preview toggle, any admin mutation not yet
+  // converted to update its own local cache) with a stale IndexedDB
+  // snapshot from whenever "Synchroniser" last ran, making genuinely
+  // successful changes look like they'd silently failed until the next
+  // manual sync. The shell's actual speed benefit — skipping the server
+  // round trip — only applies to navigation that happens after the page is
+  // already loaded, which is exactly what navigateLocally's pushState
+  // covers; gating on it costs nothing.
+  const [hasNavigatedLocally, setHasNavigatedLocally] = useState(false);
+  // Derived purely from the URL once engaged — Next's router hooks pick up
   // window.history.pushState/replaceState calls (documented and supported,
   // see the file's top comment), so this recomputes on its own after
   // navigateLocally below, exactly like it does after a real navigation or
   // the browser's back/forward buttons.
-  const view = useMemo(() => matchLocalRoute(pathname, searchParams), [pathname, searchParams]);
+  const view = useMemo(() => (hasNavigatedLocally ? matchLocalRoute(pathname, searchParams) : null), [hasNavigatedLocally, pathname, searchParams]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -55,6 +71,7 @@ export function LocalNavShell({ children }: { children: React.ReactNode }) {
 
   const navigateLocally = useCallback((href: string) => {
     history.pushState(null, "", href);
+    setHasNavigatedLocally(true);
   }, []);
 
   const currentHref = `${pathname}${searchParams.size > 0 ? `?${searchParams}` : ""}`;
@@ -103,9 +120,6 @@ type ShellDashboardReady = {
   isAdmin: boolean;
   realIsAdmin: boolean;
   previewingAsUser: boolean;
-  secondaryDataPromise: Promise<DashboardSecondaryData>;
-  notionViewDataPromise: Promise<DashboardNotionViewData>;
-  aiConfigPromise: Promise<DashboardAiConfigData | null>;
 };
 
 function ShellDashboard({ onCacheMiss }: { onCacheMiss: () => void }) {
@@ -119,23 +133,10 @@ function ShellDashboard({ onCacheMiss }: { onCacheMiss: () => void }) {
         setReady("miss");
         return;
       }
-      // There's no cached equivalent for these secondary widgets yet (see
-      // the plan's risk notes), so a shell-driven dashboard fetches them the
-      // same way a real page load would — just triggered from the client
-      // instead of page.tsx. One combined call (getElProfesorDashboardWidgetsData)
-      // instead of three separate ones — the shell fetches all three at the
-      // same moment anyway, so there's no progressive-reveal reason to pay
-      // for three separate access/MFA round trips here the way page.tsx's
-      // own three-Suspense-boundaries version does. The board itself (books,
-      // due counts, mastery) still renders instantly from cache regardless.
-      const widgetsPromise = getElProfesorDashboardWidgetsData();
       setReady({
         isAdmin: cached.effectiveIsAdmin,
         realIsAdmin: cached.realIsAdmin,
         previewingAsUser: cached.previewingAsUser,
-        secondaryDataPromise: widgetsPromise.then((w) => w.secondaryData),
-        notionViewDataPromise: widgetsPromise.then((w) => w.notionViewData),
-        aiConfigPromise: widgetsPromise.then((w) => w.aiConfigData),
       });
     });
     return () => {
@@ -156,9 +157,6 @@ function ShellDashboard({ onCacheMiss }: { onCacheMiss: () => void }) {
       realIsAdmin={ready.realIsAdmin}
       previewingAsUser={ready.previewingAsUser}
       serverResumeChapterId={getLastChapter()}
-      secondaryDataPromise={ready.secondaryDataPromise}
-      aiConfigPromise={ready.aiConfigPromise}
-      notionViewDataPromise={ready.notionViewDataPromise}
       onCacheMiss={onCacheMiss}
     />
   );

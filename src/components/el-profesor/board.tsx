@@ -54,7 +54,7 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { NotesSearchDialog } from "@/components/el-profesor/notes-search-dialog";
-import { DashboardNotionView, DashboardNotionViewSkeleton } from "@/components/el-profesor/dashboard-notion-view";
+import { DashboardNotionView } from "@/components/el-profesor/dashboard-notion-view";
 import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog";
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { SplitBookDialog } from "@/components/el-profesor/dialogs/split-book-dialog";
@@ -63,7 +63,7 @@ import { RenameChapterButton } from "@/components/el-profesor/rename-chapter-but
 import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-delete-dialog";
 import { GeminiSettingsDialog } from "@/components/el-profesor/dialogs/gemini-settings-dialog";
 import { LibraryStats } from "@/components/el-profesor/learning-widgets";
-import { DashboardDailyCard, DashboardSecondaryWidgets, DashboardWidgetsSkeleton } from "@/components/el-profesor/dashboard-secondary-widgets";
+import { DashboardDailyCard, DashboardSecondaryWidgets } from "@/components/el-profesor/dashboard-secondary-widgets";
 import { RenderErrorBoundary } from "@/components/el-profesor/render-error-boundary";
 import { CompactProgressBars } from "@/components/el-profesor/progress-bars";
 import {
@@ -77,6 +77,7 @@ import {
   applyLocalDeleteBook,
 } from "@/lib/el-profesor/local-admin-actions";
 import { setElProfesorPreviewAsUser } from "@/app/apps/el-profesor/actions/preview";
+import { getElProfesorAiConfigData } from "@/app/apps/el-profesor/actions/offline-sync";
 import { extractChapter, extractChapterComplementary, resetStuckExtraction, resetChapterContent } from "@/app/apps/el-profesor/actions/extraction";
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
@@ -339,20 +340,20 @@ type ModalState =
   | null;
 
 /**
- * Piste 2026-08-24 ("chargement progressif du tableau de bord") — the
- * average-cost-per-Claude-call estimate only exists once chapters are
- * selected for a bulk batch, so its data (usage stats, spend log) is
- * streamed separately from the rest of the dashboard rather than blocking
- * initial paint. See the comment on estimatedBulkCostUsd this replaced.
+ * Cost estimate for a bulk Claude batch — reads the same cached AI config
+ * data as the rest of the dashboard (piste 2026-09-24 — plain value, not a
+ * live-fetched promise, see aiConfigData on ElProfesorBoard), so it never
+ * blocks or hangs on network: worst case ("pas encore synchronisé") is just
+ * an unavailable estimate, not a stuck spinner.
  */
 function BulkCostEstimate({
-  aiConfigPromise,
+  aiConfigData,
   selectedChapters,
 }: {
-  aiConfigPromise: Promise<DashboardAiConfigData | null>;
+  aiConfigData: DashboardAiConfigData | null;
   selectedChapters: { id: string; pdfPageCount: number | null }[];
 }) {
-  const config = use(aiConfigPromise);
+  const config = aiConfigData;
   const claudeModelKey = `claude:${config?.claudeModel || "claude-sonnet-5"}`;
   const claudeUsage = config?.geminiUsageStats?.byModel.find((m) => m.model === claudeModelKey);
   const costPerPageUsd = claudeUsage?.costPerPageUsd ?? null;
@@ -405,19 +406,28 @@ function GeminiSettingsLoadingModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Only fetched/awaited when the settings dialog actually opens — see aiConfigPromise on ElProfesorBoard. */
+/**
+ * Fetches its own fresh config live, only once, the moment this actually
+ * mounts (i.e. only when the settings dialog opens — this component is
+ * conditionally rendered, so it mounts fresh on every open) — piste
+ * 2026-09-24: this is the one deliberate exception to "no live fetch during
+ * normal navigation" for the dashboard's secondary data, since an admin
+ * explicitly opening AI settings is asking for genuinely current values
+ * (spend, model list), and editing them is inherently an online-only action
+ * anyway. The lazy useState initializer runs exactly once per mount, giving
+ * a stable promise reference for use() to suspend on.
+ */
 function GeminiSettingsLoader({
-  aiConfigPromise,
   hasApiKey,
   aiProvider,
   onClose,
 }: {
-  aiConfigPromise: Promise<DashboardAiConfigData | null>;
   hasApiKey: boolean;
   aiProvider: ElProfesorAiProvider;
   onClose: () => void;
 }) {
-  const config = use(aiConfigPromise);
+  const [configPromise] = useState(() => getElProfesorAiConfigData());
+  const config = use(configPromise);
   if (!config) return null;
   return (
     <GeminiSettingsDialog
@@ -490,9 +500,9 @@ export function ElProfesorBoard({
   serverResumeChapterId,
   readProgressByChapter,
   globalProgress,
-  secondaryDataPromise,
-  aiConfigPromise,
-  notionViewDataPromise,
+  secondaryData,
+  aiConfigData,
+  notionViewData,
   onLocalBooksChange,
 }: {
   books: BookWithChapters[];
@@ -516,16 +526,17 @@ export function ElProfesorBoard({
   /** Cross-device resume position (server-stored) — preferred over the local-only cache when present. */
   serverResumeChapterId: string | null;
   /**
-   * Piste 2026-08-24 ("chargement progressif du tableau de bord") — started
-   * server-side without being awaited, unwrapped with React's use() inside
-   * DashboardSecondaryWidgets/GeminiSettingsLoader/BulkCostEstimate below,
-   * each behind its own <Suspense> boundary, so the book list above never
-   * waits on these heavier queries.
+   * Read purely from cache (piste 2026-09-24 — suite au retour "les widgets
+   * ne s'affichent jamais et finissent en erreur") — DashboardWithLocalCache
+   * is the sole owner of checking IndexedDB for these; null means nothing's
+   * cached yet (rendered as an explicit "synchronisez pour les voir" state
+   * by each consumer), never a pending live fetch that could hang or fail.
+   * Only GeminiSettingsLoader still does its own live fetch, lazily, when
+   * the settings dialog is actually opened — see its own doc comment.
    */
-  secondaryDataPromise: Promise<DashboardSecondaryData>;
-  aiConfigPromise: Promise<DashboardAiConfigData | null>;
-  /** Same streamed-promise pattern, consumed by DashboardNotionView only once the "Par notion" toggle is selected. */
-  notionViewDataPromise: Promise<DashboardNotionViewData>;
+  secondaryData: DashboardSecondaryData | null;
+  aiConfigData: DashboardAiConfigData | null;
+  notionViewData: DashboardNotionViewData | null;
   /** Called with the reordered books array right after a local reorder (handleMoveBook/handleMoveChapter) persists to the cache — lets the parent (DashboardWithLocalCache) update its own snapshot state in step, so booksProp is already correct by the time the transition below resolves and useOptimistic's override lapses (otherwise the list would flash back to the old order for an instant). Undefined when this board isn't backed by the local cache at all (e.g. never synced) — the reorder still gets queued, just without a local list to keep in sync with. */
   onLocalBooksChange?: (books: BookWithChapters[]) => void;
 }) {
@@ -604,7 +615,20 @@ export function ElProfesorBoard({
   function handleTogglePreview() {
     startPreviewTransition(async () => {
       const result = await setElProfesorPreviewAsUser(!previewingAsUser);
-      if (result.error) toast(result.error, { variant: "error" });
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      // Force a real reload rather than relying on revalidatePath/router
+      // refresh to make this visible: whenever the local nav shell
+      // (local-nav-shell.tsx) is the one currently rendering this screen, it
+      // deliberately doesn't render the page's own server tree at all, so a
+      // background revalidation of that tree has nothing to attach to and
+      // this toggle would otherwise silently appear to do nothing. A hard
+      // reload always re-engages the real page.tsx render first (the shell
+      // only takes over again after an actual subsequent local navigation),
+      // so it's guaranteed to reflect the new preview state correctly.
+      window.location.reload();
     });
   }
 
@@ -971,9 +995,7 @@ export function ElProfesorBoard({
 
       {books.length > 0 && (
         <RenderErrorBoundary fallbackTitle="Carte du jour" compact>
-          <Suspense fallback={<DashboardWidgetsSkeleton />}>
-            <DashboardDailyCard dataPromise={secondaryDataPromise} />
-          </Suspense>
+          <DashboardDailyCard data={secondaryData} />
         </RenderErrorBoundary>
       )}
 
@@ -1062,9 +1084,7 @@ export function ElProfesorBoard({
           </span>
           {aiProvider === "claude" && (
             <>
-              <Suspense fallback={<span className="text-xs text-foreground-subtle">calcul du coût…</span>}>
-                <BulkCostEstimate aiConfigPromise={aiConfigPromise} selectedChapters={selectedChapters} />
-              </Suspense>
+              <BulkCostEstimate aiConfigData={aiConfigData} selectedChapters={selectedChapters} />
               <Button size="sm" onClick={handleBulkExtract} disabled={isBulkPending}>
                 <Sparkles className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Extraire via un lot Claude"}
               </Button>
@@ -1097,9 +1117,7 @@ export function ElProfesorBoard({
       {viewMode === "notion" && (
         <div className="mt-6">
           <RenderErrorBoundary fallbackTitle="Notions" compact>
-            <Suspense fallback={<DashboardNotionViewSkeleton />}>
-              <DashboardNotionView dataPromise={notionViewDataPromise} isAdmin={isAdmin} />
-            </Suspense>
+            <DashboardNotionView data={notionViewData} isAdmin={isAdmin} />
           </RenderErrorBoundary>
           <GlobalProgressCard progress={globalProgress} />
         </div>
@@ -1607,14 +1625,7 @@ export function ElProfesorBoard({
 
       {books.length > 0 && (
         <RenderErrorBoundary fallbackTitle="Statistiques d'apprentissage" compact>
-          <Suspense fallback={<DashboardWidgetsSkeleton />}>
-            <DashboardSecondaryWidgets
-              dataPromise={secondaryDataPromise}
-              totalAcquired={totalAcquired}
-              chaptersMastered={chaptersMastered}
-              isAdmin={isAdmin}
-            />
-          </Suspense>
+          <DashboardSecondaryWidgets data={secondaryData} totalAcquired={totalAcquired} chaptersMastered={chaptersMastered} isAdmin={isAdmin} />
         </RenderErrorBoundary>
       )}
 
@@ -1753,12 +1764,7 @@ export function ElProfesorBoard({
       )}
       {modal?.type === "gemini_settings" && (
         <Suspense fallback={<GeminiSettingsLoadingModal onClose={() => setModal(null)} />}>
-          <GeminiSettingsLoader
-            aiConfigPromise={aiConfigPromise}
-            hasApiKey={hasGeminiKey}
-            aiProvider={aiProvider}
-            onClose={() => setModal(null)}
-          />
+          <GeminiSettingsLoader hasApiKey={hasGeminiKey} aiProvider={aiProvider} onClose={() => setModal(null)} />
         </Suspense>
       )}
 
