@@ -171,6 +171,53 @@ export async function patchCachedFicheReadProgress(chapterId: string, ficheId: s
   await putEntries(CHAPTER_CONTENT_STORE, [[chapterId, { ...current, ficheReadProgress: { ...current.ficheReadProgress, [ficheId]: progressPct } }]]);
 }
 
+/** Same as patchCachedFicheReadProgress but forces the value regardless of direction — for an explicit reset (resetFicheReadProgress), which must be able to go back down to 0, unlike a passive reading update. */
+export async function setCachedFicheReadProgress(chapterId: string, ficheId: string, progressPct: number): Promise<void> {
+  const current = await getCachedChapterContent(chapterId);
+  if (!current) return;
+  await putEntries(CHAPTER_CONTENT_STORE, [[chapterId, { ...current, ficheReadProgress: { ...current.ficheReadProgress, [ficheId]: progressPct } }]]);
+}
+
+/**
+ * Full refresh of every cached chapter's ficheReadProgress/ficheMasteryProgress
+ * for whichever fiche ids are already cached somewhere (piste 2026-09-24 —
+ * suite au retour "je supprime la progression, le % reste au même niveau
+ * même après synchronisation") — unlike patchCachedFicheReadProgress above
+ * (a "never regress" optimistic local write), this OVERWRITES unconditionally
+ * with fresh server values, because it's called from "Synchroniser" as
+ * ground truth, including the case where progress went DOWN (a reset).
+ * Called with progress for every fiche id already known locally (from any
+ * previously cached chapter, whether or not that chapter's own content was
+ * re-downloaded this sync) — see getElProfesorFicheProgressBatch's doc
+ * comment for why chapter-content delta sync alone can't catch this.
+ */
+export async function patchAllCachedFicheProgress(
+  readProgressByFicheId: Record<string, number>,
+  masteryProgressByFicheId: Record<string, ChapterContentSnapshot["ficheMasteryProgress"][string]>
+): Promise<void> {
+  const all = await getAllCachedChapterContent();
+  const updates: [string, WithChapterSyncMeta<ChapterContentSnapshot>][] = [];
+  for (const [chapterId, content] of all) {
+    let changed = false;
+    const nextRead = { ...content.ficheReadProgress };
+    for (const ficheId of Object.keys(nextRead)) {
+      if (ficheId in readProgressByFicheId && nextRead[ficheId] !== readProgressByFicheId[ficheId]) {
+        nextRead[ficheId] = readProgressByFicheId[ficheId];
+        changed = true;
+      }
+    }
+    const nextMastery = { ...content.ficheMasteryProgress };
+    for (const ficheId of Object.keys(nextMastery)) {
+      if (ficheId in masteryProgressByFicheId) {
+        nextMastery[ficheId] = masteryProgressByFicheId[ficheId];
+        changed = true;
+      }
+    }
+    if (changed) updates.push([chapterId, { ...content, ficheReadProgress: nextRead, ficheMasteryProgress: nextMastery }]);
+  }
+  if (updates.length > 0) await putEntries(CHAPTER_CONTENT_STORE, updates);
+}
+
 /** Every cached chapter's own lastModifiedAt, keyed by chapterId — what the delta sync (sync-modal.tsx) diffs a fresh getElProfesorChapterLastModified() call against to decide which chapters actually need re-downloading. */
 export async function getCachedChapterLastModifiedTimestamps(): Promise<Record<string, string>> {
   const all = await getAllCachedChapterContent();

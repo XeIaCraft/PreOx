@@ -25,7 +25,7 @@ import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { getMyNote, toggleNoteShare } from "@/app/apps/el-profesor/actions/notes";
 import { toggleFicheShare } from "@/app/apps/el-profesor/actions/share";
 import { saveFicheReadProgress, resetFicheReadProgress, resetFicheMastery } from "@/app/apps/el-profesor/actions/progress";
-import { enqueuePendingWrite, patchCachedFicheReadProgress } from "@/lib/el-profesor/local-db";
+import { enqueuePendingWrite, patchCachedFicheReadProgress, setCachedFicheReadProgress } from "@/lib/el-profesor/local-db";
 import {
   getLastSubEntity,
   setLastSubEntity,
@@ -697,6 +697,12 @@ export function ChapterView({
     resetFicheReadProgress(ficheId)
       .then((result) => {
         setReadProgressByFiche((prev) => ({ ...prev, [ficheId]: 0 }));
+        // Forces the cache back to 0 too (piste 2026-09-24 — suite au retour
+        // "je supprime la progression, le % reste au même niveau même après
+        // synchronisation") — patchCachedFicheReadProgress's "never regress"
+        // rule is right for a passive reading update, but wrong here: an
+        // explicit reset must actually go down.
+        setCachedFicheReadProgress(chapterId, ficheId, 0).catch(() => {});
         toast(result.success ?? "Progression de lecture réinitialisée.", { variant: "success" });
       })
       .catch(() => toast("Impossible de réinitialiser la progression de lecture.", { variant: "error" }))

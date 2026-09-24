@@ -14,6 +14,7 @@ import {
   getElProfesorNotionViewData,
   getElProfesorAiConfigData,
   getElProfesorNotionsPageData,
+  getElProfesorFicheProgressBatch,
 } from "@/app/apps/el-profesor/actions/offline-sync";
 import {
   setCachedDashboard,
@@ -24,6 +25,7 @@ import {
   setCachedNotionViewData,
   setCachedAiConfigData,
   setCachedNotionsPage,
+  patchAllCachedFicheProgress,
   getCachedDashboard,
   getCachedChapterLastModifiedTimestamps,
   getAllCachedChapterContent,
@@ -187,6 +189,23 @@ export function SyncModal({
       await setCachedReviewStateBatch(reviewStates);
       await pruneReviewState(allFlashcardIds);
 
+      // Fiche read/mastery progress (piste 2026-09-24 — suite au retour "je
+      // supprime la progression, le % reste au même niveau même après
+      // synchronisation") — refreshed for every fiche across the whole
+      // library, same rationale as review state just above: this is
+      // per-user progress data that changes independently of the fiche's
+      // own content, so a chapter the delta sync correctly skipped
+      // re-downloading (because its content didn't change) could otherwise
+      // keep stale cached progress forever, even across repeated syncs.
+      let progressFailed = false;
+      try {
+        const allFicheIds = chapterIds.flatMap((id) => allCachedContent.get(id)?.subEntities.flatMap((s) => (s.fiche ? [s.fiche.id] : [])) ?? []);
+        const { readProgress, masteryProgress } = await getElProfesorFicheProgressBatch(allFicheIds);
+        await patchAllCachedFicheProgress(readProgress, masteryProgress);
+      } catch {
+        progressFailed = true;
+      }
+
       const cached = await getCachedDashboard();
       setPhase("done");
       if (cached) onSynced(cached, cached.syncedAt);
@@ -195,6 +214,9 @@ export function SyncModal({
         messages.push(
           `${failed} chapitre${failed > 1 ? "s" : ""} n'${failed > 1 ? "ont" : "a"} pas pu être synchronisé${failed > 1 ? "s" : ""}.`
         );
+      }
+      if (progressFailed) {
+        messages.push("Votre progression de lecture n'a pas pu être actualisée.");
       }
       if (secondaryFailures > 0) {
         messages.push(

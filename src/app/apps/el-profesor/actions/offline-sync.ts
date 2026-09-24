@@ -75,6 +75,7 @@ import {
   hasElProfesorClaudeKey,
   getElProfesorClaudeModel,
   type BookWithChapters,
+  type MasteryProgress,
 } from "@/lib/el-profesor/dal";
 import { getBatchJobs } from "@/app/apps/el-profesor/actions/batches";
 import type {
@@ -87,6 +88,26 @@ import type {
   NotionSynthesisSnapshot,
 } from "@/lib/el-profesor/dashboard-types";
 import type { ReviewState } from "@/lib/el-profesor/types";
+
+/**
+ * Resolves to `fallback` instead of rejecting — used to isolate each
+ * independent query inside a bundle (loadSecondaryDashboardData,
+ * loadNotionViewData, loadAiConfigData below) so one broken or slow query
+ * never takes the *entire* bundle down with it. Piste 2026-09-24, suite au
+ * retour "toujours pas de widget, toujours pas de réglages IA" — the exact
+ * same all-or-nothing Promise.all failure mode already fixed once in
+ * sync-modal.tsx (five independent caches bundled into one Promise.all)
+ * turned out to exist one level deeper too: each of these functions bundles
+ * 9-16 genuinely independent queries into a single Promise.all, so a single
+ * slow/failing one (e.g. a heavy usage-stats aggregation) silently failed
+ * the whole widget or the whole "Réglages IA" dialog, consistently, every
+ * time — not intermittently. Wrapping each query like this means a bad one
+ * degrades to its own empty/zeroed default instead of taking everything
+ * else down with it.
+ */
+function settled<T>(promise: Promise<T>, fallback: T): Promise<T> {
+  return promise.catch(() => fallback);
+}
 
 /** Shared by getElProfesorDashboardSnapshot and the secondary-widgets actions below, so a client-invoked (shell-driven) render of any of them sees the exact same book/chapter visibility rules as the main snapshot. */
 async function getVisibleLibrary(isAdmin: boolean): Promise<{ books: BookWithChapters[]; libraryBooks: BookWithChapters[] }> {
@@ -242,6 +263,34 @@ export async function getElProfesorReviewStateBatch(flashcardIds: string[]): Pro
 }
 
 /**
+ * Fresh read/mastery progress for a known set of fiche ids, independent of
+ * chapter content (piste 2026-09-24 — suite au retour "je supprime la
+ * progression, le % reste au même niveau même après synchronisation").
+ * ficheReadProgress/ficheMasteryProgress are cached as PART of each
+ * chapter's content (ChapterContentSnapshot), which the delta sync only
+ * re-downloads when the chapter's own CONTENT changed (getElProfesorChapterLastModified)
+ * — but progress is per-user data that changes on its own schedule
+ * (reading, reviewing, resetting), completely independent of whether the
+ * fiche's text itself changed. A chapter never flagged as "changed" would
+ * otherwise keep stale cached progress forever. sync-modal.tsx calls this
+ * for every already-cached fiche id (from every cached chapter, changed or
+ * not) on every sync, and patches it into all of them directly —
+ * unconditionally, since this is a full refresh of ground truth, not an
+ * optimistic local write.
+ */
+export async function getElProfesorFicheProgressBatch(
+  ficheIds: string[]
+): Promise<{ readProgress: Record<string, number>; masteryProgress: Record<string, MasteryProgress> }> {
+  const profile = await requireElProfesorAccess();
+  if (ficheIds.length === 0) return { readProgress: {}, masteryProgress: {} };
+  const [readProgress, masteryProgress] = await Promise.all([
+    getFicheReadProgressBatch(profile.id, ficheIds),
+    getFicheMasteryProgressBatch(profile.id, ficheIds),
+  ]);
+  return { readProgress, masteryProgress };
+}
+
+/**
  * This user's excluded-from-reviews flashcard ids (piste 2026-09-24 —
  * correctif du bug "à jour"): synced once per full sync so
  * local-review-queue.ts can compute due/free queues and due/mastery counts
@@ -303,22 +352,22 @@ async function loadSecondaryDashboardData(
     bookRecommendation,
     dueBlocks,
   ] = await Promise.all([
-    getReviewActivitySummary(profileId),
-    getOverconfidentMissCount(profileId),
-    getUpcomingReviewForecast(profileId, allChapters),
-    getGlobalDueQueue(profileId, allChapters),
-    getDifficultQueue(profileId, allChapters),
-    isAdmin ? getMostDifficultFlashcardsGlobal() : Promise.resolve([]),
-    isAdmin ? getLeechFlashcards() : Promise.resolve([]),
-    getDailyCard(profileId, allChapters),
-    getBookmarkedEntities(profileId),
-    isAdmin ? getStaleChaptersForAdmin(allChapters, libraryBooks) : Promise.resolve([]),
-    getKnowledgeExpiryAlerts(profileId, allChapters, libraryBooks),
-    getReviewTimeStats(profileId),
-    isAdmin ? getFlagStatsByBlockType() : Promise.resolve([]),
-    getOnThisDayNote(profileId),
-    getRecommendedNextBook(profileId, books),
-    getDueBlocksForUser(profileId),
+    settled(getReviewActivitySummary(profileId), { currentStreak: 0, longestStreak: 0, last12Weeks: [] }),
+    settled(getOverconfidentMissCount(profileId), 0),
+    settled(getUpcomingReviewForecast(profileId, allChapters), []),
+    settled(getGlobalDueQueue(profileId, allChapters), []),
+    settled(getDifficultQueue(profileId, allChapters), []),
+    isAdmin ? settled(getMostDifficultFlashcardsGlobal(), []) : Promise.resolve([]),
+    isAdmin ? settled(getLeechFlashcards(), []) : Promise.resolve([]),
+    settled(getDailyCard(profileId, allChapters), null),
+    settled(getBookmarkedEntities(profileId), []),
+    isAdmin ? settled(getStaleChaptersForAdmin(allChapters, libraryBooks), []) : Promise.resolve([]),
+    settled(getKnowledgeExpiryAlerts(profileId, allChapters, libraryBooks), []),
+    settled(getReviewTimeStats(profileId), { totalMs: 0, last7DaysMs: 0 }),
+    isAdmin ? settled(getFlagStatsByBlockType(), []) : Promise.resolve([]),
+    settled(getOnThisDayNote(profileId), null),
+    settled(getRecommendedNextBook(profileId, books), null),
+    settled(getDueBlocksForUser(profileId), []),
   ]);
   return {
     activity,
@@ -344,11 +393,11 @@ async function loadNotionViewData(profileId: string): Promise<DashboardNotionVie
   const notions = await getGlossary();
   const notionIds = notions.map((n) => n.notion.id);
   const [categories, readiness, recommendations, doseCalculators, progress] = await Promise.all([
-    getNotionCategories(),
-    getNotionReadiness(profileId, notions),
-    getNotionRecommendations(notionIds),
-    getDoseCalculators(notionIds),
-    getNotionProgressBatch(profileId, notionIds),
+    settled(getNotionCategories(), []),
+    settled(getNotionReadiness(profileId, notions), {}),
+    settled(getNotionRecommendations(notionIds), {}),
+    settled(getDoseCalculators(notionIds), {}),
+    settled(getNotionProgressBatch(profileId, notionIds), {}),
   ]);
   return { notions, categories, readiness, recommendations, doseCalculators, progress };
 }
@@ -356,15 +405,15 @@ async function loadNotionViewData(profileId: string): Promise<DashboardNotionVie
 async function loadAiConfigData(): Promise<DashboardAiConfigData> {
   const [geminiModel, geminiExtraKeyCount, geminiFallbackModel, geminiUsageStats, aiSpendCapUsd, currentMonthAiSpendUsd, hasClaudeKey, claudeModel, batchJobs] =
     await Promise.all([
-      getElProfesorGeminiModel(),
-      getElProfesorGeminiExtraKeyCount(),
-      getElProfesorGeminiFallbackModel(),
-      getGeminiUsageStats(),
-      getAiSpendCapUsd(),
-      getCurrentMonthAiSpendUsd(),
-      hasElProfesorClaudeKey(),
-      getElProfesorClaudeModel(),
-      getBatchJobs(),
+      settled(getElProfesorGeminiModel(), null),
+      settled(getElProfesorGeminiExtraKeyCount(), 0),
+      settled(getElProfesorGeminiFallbackModel(), null),
+      settled(getGeminiUsageStats(), null),
+      settled(getAiSpendCapUsd(), null),
+      settled(getCurrentMonthAiSpendUsd(), 0),
+      settled(hasElProfesorClaudeKey(), false),
+      settled(getElProfesorClaudeModel(), ""),
+      settled(getBatchJobs(), []),
     ]);
   return { geminiModel, geminiExtraKeyCount, geminiFallbackModel, geminiUsageStats, aiSpendCapUsd, currentMonthAiSpendUsd, hasClaudeKey, claudeModel, batchJobs };
 }
