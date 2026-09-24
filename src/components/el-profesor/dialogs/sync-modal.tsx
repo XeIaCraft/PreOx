@@ -127,9 +127,9 @@ export function SyncModal({
         snapshot.effectiveIsAdmin ? getElProfesorNotionsPageData() : Promise.resolve(null),
       ]);
       await Promise.all([
-        setCachedSecondaryDashboardData(secondaryData),
+        setCachedSecondaryDashboardData(snapshot.effectiveIsAdmin, secondaryData),
         setCachedNotionViewData(notionViewData),
-        setCachedAiConfigData(aiConfigData),
+        setCachedAiConfigData(snapshot.effectiveIsAdmin, aiConfigData),
         setCachedCaseJournal(caseJournalData),
         notionsPageData ? setCachedNotionsPage(notionsPageData) : Promise.resolve(),
       ]);

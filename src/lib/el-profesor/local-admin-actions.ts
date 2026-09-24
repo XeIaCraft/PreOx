@@ -8,7 +8,7 @@
 // (so it survives a reload, not just the current render's optimistic
 // state), then queue the real write for sync-queue.ts's next flush — no
 // network wait, works offline, syncs silently once back online.
-import { patchCachedDashboardBooks, enqueuePendingWrite } from "./local-db";
+import { patchCachedDashboardBooks, enqueuePendingWrite, purgeCachedChapterContent } from "./local-db";
 import type { DashboardSnapshot } from "./dashboard-types";
 
 type Books = DashboardSnapshot["books"];
@@ -99,9 +99,21 @@ function removeChapterFromBooks(books: Books, chapterId: string): Books {
   return books.map((book) => ({ ...book, chapters: book.chapters.filter((c) => c.id !== chapterId) }));
 }
 
-/** Deletion is only ever called after the admin has already confirmed it in a dialog (see board.tsx's confirmDeleteChapter) — going local-first here doesn't skip any safety step, it just stops waiting on the network once that confirmation is given. A failed flush later (e.g. the chapter was already gone) silently no-ops, same convention as the rest of the local-first queue — the next full "Synchroniser" would restore it if it turns out to still exist server-side. */
+/**
+ * Deletion is only ever called after the admin has already confirmed it in a
+ * dialog (see board.tsx's confirmDeleteChapter) — going local-first here
+ * doesn't skip any safety step, it just stops waiting on the network once
+ * that confirmation is given. A failed flush later (e.g. the chapter was
+ * already gone) silently no-ops, same convention as the rest of the
+ * local-first queue — the next full "Synchroniser" would restore it if it
+ * turns out to still exist server-side. Also purges the deleted chapter's
+ * own cached content/review state right away (piste 2026-09-24 — suite au
+ * code review) — otherwise it would sit in IndexedDB, orphaned, until the
+ * next full sync's prune step happened to notice it.
+ */
 export async function applyLocalDeleteChapter(chapterId: string): Promise<Books | null> {
   const nextBooks = await patchCachedDashboardBooks((books) => removeChapterFromBooks(books, chapterId));
+  await purgeCachedChapterContent([chapterId]);
   await enqueuePendingWrite({
     id: crypto.randomUUID(),
     kind: "adminAction",
@@ -115,8 +127,14 @@ function removeBookFromBooks(books: Books, bookId: string): Books {
   return books.filter((b) => b.id !== bookId);
 }
 
+/** Same purge as applyLocalDeleteChapter, for every chapter the deleted book contained. */
 export async function applyLocalDeleteBook(bookId: string): Promise<Books | null> {
-  const nextBooks = await patchCachedDashboardBooks((books) => removeBookFromBooks(books, bookId));
+  let removedChapterIds: string[] = [];
+  const nextBooks = await patchCachedDashboardBooks((books) => {
+    removedChapterIds = books.find((b) => b.id === bookId)?.chapters.map((c) => c.id) ?? [];
+    return removeBookFromBooks(books, bookId);
+  });
+  await purgeCachedChapterContent(removedChapterIds);
   await enqueuePendingWrite({
     id: crypto.randomUUID(),
     kind: "adminAction",

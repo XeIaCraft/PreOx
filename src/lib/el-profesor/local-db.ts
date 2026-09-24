@@ -179,13 +179,21 @@ export async function setCachedChapterContentBatch(entries: Record<string, Chapt
  * shell-driven render (local-nav-shell.tsx) shows real last-synced data
  * instead of hanging behind Suspense forever when offline. See
  * DashboardWithLocalCache for the cache-first substitution.
+ *
+ * Keyed by isAdmin (piste 2026-09-24 — suite au code review): several
+ * fields (staleChapters, flagStatsByBlockType, mostDifficultGlobal,
+ * leechFlashcards) are admin-only. Without this key, a sync run while
+ * actually admin would cache the admin variant, then get served back
+ * unchanged during a later "preview as user" session — defeating the point
+ * of that preview. Same rationale as NotionSynthesisWithLocalCache's
+ * entity-id suffix.
  */
-export async function getCachedSecondaryDashboardData(): Promise<DashboardSecondaryData | null> {
-  return getValue<DashboardSecondaryData>(SECONDARY_DASHBOARD_STORE, SECONDARY_DASHBOARD_KEY);
+export async function getCachedSecondaryDashboardData(isAdmin: boolean): Promise<DashboardSecondaryData | null> {
+  return getValue<DashboardSecondaryData>(SECONDARY_DASHBOARD_STORE, `${SECONDARY_DASHBOARD_KEY}:${isAdmin ? "admin" : "user"}`);
 }
 
-export async function setCachedSecondaryDashboardData(data: DashboardSecondaryData): Promise<void> {
-  await putEntries(SECONDARY_DASHBOARD_STORE, [[SECONDARY_DASHBOARD_KEY, data]]);
+export async function setCachedSecondaryDashboardData(isAdmin: boolean, data: DashboardSecondaryData): Promise<void> {
+  await putEntries(SECONDARY_DASHBOARD_STORE, [[`${SECONDARY_DASHBOARD_KEY}:${isAdmin ? "admin" : "user"}`, data]]);
 }
 
 export async function getCachedNotionViewData(): Promise<DashboardNotionViewData | null> {
@@ -202,14 +210,17 @@ export async function setCachedNotionViewData(data: DashboardNotionViewData): Pr
  * distinguishable from "never cached at all" (getValue itself returning
  * null) — getCachedAiConfigData returning null must mean the latter, or
  * DashboardWithLocalCache could never tell whether to trust an empty cache
- * or fall back to the live promise.
+ * or fall back to the live promise. Keyed by isAdmin for the same reason as
+ * getCachedSecondaryDashboardData above — this is entirely admin-only data,
+ * so a real admin's cached config must never get served back during a
+ * "preview as user" session.
  */
-export async function getCachedAiConfigData(): Promise<{ value: DashboardAiConfigData | null } | null> {
-  return getValue<{ value: DashboardAiConfigData | null }>(AI_CONFIG_DATA_STORE, AI_CONFIG_DATA_KEY);
+export async function getCachedAiConfigData(isAdmin: boolean): Promise<{ value: DashboardAiConfigData | null } | null> {
+  return getValue<{ value: DashboardAiConfigData | null }>(AI_CONFIG_DATA_STORE, `${AI_CONFIG_DATA_KEY}:${isAdmin ? "admin" : "user"}`);
 }
 
-export async function setCachedAiConfigData(value: DashboardAiConfigData | null): Promise<void> {
-  await putEntries(AI_CONFIG_DATA_STORE, [[AI_CONFIG_DATA_KEY, { value }]]);
+export async function setCachedAiConfigData(isAdmin: boolean, value: DashboardAiConfigData | null): Promise<void> {
+  await putEntries(AI_CONFIG_DATA_STORE, [[`${AI_CONFIG_DATA_KEY}:${isAdmin ? "admin" : "user"}`, { value }]]);
 }
 
 /** The /apps/el-profesor/notions admin screen's full bundle — see NotionsPageSnapshot's doc comment. Admin-only, so a non-admin simply never has anything cached here. */
@@ -362,6 +373,23 @@ export async function pruneChapterContent(validChapterIds: string[]): Promise<vo
 export async function getAllCachedChapterContent(): Promise<Map<string, WithChapterSyncMeta<ChapterContentSnapshot>>> {
   const entries = await getAllEntries<WithChapterSyncMeta<ChapterContentSnapshot>>(CHAPTER_CONTENT_STORE);
   return new Map(entries);
+}
+
+/**
+ * Drops specific chapters' cached content and their flashcards' cached
+ * review state immediately (piste 2026-09-24 — "module 100% local", suite au
+ * code review) — used right after a local-first admin delete
+ * (local-admin-actions.ts) so a deleted chapter/book doesn't keep its old
+ * content sitting in IndexedDB until the next full "Synchroniser" happens to
+ * prune it (pruneChapterContent/pruneReviewState already do this, but only
+ * as a side effect of a full sync's fresh id list).
+ */
+export async function purgeCachedChapterContent(chapterIds: string[]): Promise<void> {
+  if (chapterIds.length === 0) return;
+  const all = await getAllCachedChapterContent();
+  const flashcardIds = chapterIds.flatMap((id) => all.get(id)?.subEntities.flatMap((s) => s.fiche?.flashcards.map((f) => f.id) ?? []) ?? []);
+  await deleteEntries(CHAPTER_CONTENT_STORE, chapterIds);
+  await deleteEntries(REVIEW_STATE_STORE, flashcardIds);
 }
 
 /** Every cached review state at once, keyed by flashcardId (each ReviewState already embeds its own flashcardId, so no key/value zip is needed here). */

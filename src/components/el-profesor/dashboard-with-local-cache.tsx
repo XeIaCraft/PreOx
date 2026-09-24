@@ -86,13 +86,18 @@ export function DashboardWithLocalCache({
 
   useEffect(() => {
     let cancelled = false;
-    getCachedSecondaryDashboardData().then((cached) => {
+    // Keyed by isAdmin (the CURRENT render's effective admin/preview state,
+    // not whatever a past sync happened to be) — see
+    // getCachedSecondaryDashboardData's doc comment for why: without this, a
+    // real admin's cached admin-only data could get served back during a
+    // "preview as user" session.
+    getCachedSecondaryDashboardData(isAdmin).then((cached) => {
       if (!cancelled && cached) setEffectiveSecondaryDataPromise(Promise.resolve(cached));
     });
     getCachedNotionViewData().then((cached) => {
       if (!cancelled && cached) setEffectiveNotionViewDataPromise(Promise.resolve(cached));
     });
-    getCachedAiConfigData().then((cached) => {
+    getCachedAiConfigData(isAdmin).then((cached) => {
       if (!cancelled && cached) setEffectiveAiConfigPromise(Promise.resolve(cached.value));
     });
     return () => {
@@ -102,6 +107,7 @@ export function DashboardWithLocalCache({
     // fresh sync updates these via handleSynced-equivalent props being new
     // promises from the parent re-render (page.tsx/shell), not by reactively
     // re-checking the cache.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

@@ -19,15 +19,20 @@ function NotionSynthesisSkeleton() {
 /**
  * Cache-first wrapper for a single notion's synthesis screen (piste
  * 2026-09-24 — "module 100% local", extension aux autres écrans) — keyed by
- * notionId in local-db.ts's generic `entities` store (Part B of the plan:
- * per-entity screens that don't warrant their own dedicated store). Caching
- * here is opportunistic (written on every successful visit, like the
- * service worker's own per-URL caching) rather than pulled during
- * "Synchroniser" — there's no bounded list of "notions worth prefetching"
- * the way there is for chapters, so a notion becomes available offline once
- * it's actually been opened at least once online. The screen's own editing
- * actions (generate/publish/unpublish synthesis, edit blocks...) stay
- * server-direct — see NotionsPageWithLocalCache's doc comment for why.
+ * `notionId:admin` or `notionId:user` in local-db.ts's generic `entities`
+ * store (Part B of the plan: per-entity screens that don't warrant their own
+ * dedicated store). The isAdmin suffix matters: getNotionSynthesis includes
+ * unpublished/draft blocks only for an effective admin, so without it a real
+ * admin's cache (with drafts) could get served back during a later "preview
+ * as user" visit, defeating the whole point of that preview — the two states
+ * now cache separately and can never cross-contaminate. There's also no
+ * "Synchroniser" step for notion pages the way there is for chapters (no
+ * bounded list of "notions worth prefetching"), so the cache is shown
+ * instantly for a fast first paint but the live server promise is always
+ * awaited too and overwrites it — the only way this data would otherwise
+ * ever refresh is by clearing the whole local cache. The screen's own
+ * editing actions (generate/publish/unpublish synthesis, edit blocks...)
+ * stay server-direct — see NotionsPageWithLocalCache's doc comment for why.
  */
 export function NotionSynthesisWithLocalCache({
   notionId,
@@ -43,12 +48,15 @@ export function NotionSynthesisWithLocalCache({
 
   useEffect(() => {
     let cancelled = false;
-    getEntity<NotionSynthesisSnapshot>(ENTITY_TYPE, notionId).then((cached) => {
+    const entityId = `${notionId}:${isAdmin ? "admin" : "user"}`;
+
+    getEntity<NotionSynthesisSnapshot>(ENTITY_TYPE, entityId).then((cached) => {
       if (cancelled) return;
-      if (cached) {
-        setData(cached);
-        return;
-      }
+      if (cached) setData(cached);
+
+      // Always revalidate against the live server data, cache hit or not —
+      // see the doc comment above for why this screen needs that (no manual
+      // sync step to otherwise ever refresh it).
       initialDataPromise.then(
         (live) => {
           if (cancelled) return;
@@ -57,17 +65,19 @@ export function NotionSynthesisWithLocalCache({
             return;
           }
           setData(live);
-          void setEntity(ENTITY_TYPE, notionId, live);
+          void setEntity(ENTITY_TYPE, entityId, live);
         },
         () => {
-          if (!cancelled) setLoadError(true);
+          // Live fetch failed (offline, most likely) — only show an error if
+          // there was nothing cached to fall back on.
+          if (!cancelled && !cached) setLoadError(true);
         }
       );
     });
     return () => {
       cancelled = true;
     };
-  }, [notionId, initialDataPromise]);
+  }, [notionId, isAdmin, initialDataPromise]);
 
   if (loadError) {
     return <p className="mx-auto max-w-3xl px-4 py-8 text-sm text-danger">Impossible de charger cette notion — vérifiez votre connexion.</p>;

@@ -394,6 +394,34 @@ export async function getElProfesorAiConfigData(): Promise<DashboardAiConfigData
   return loadAiConfigData();
 }
 
+/**
+ * Same three datasets as getElProfesorSecondaryDashboardData /
+ * getElProfesorNotionViewData / getElProfesorAiConfigData, fetched together
+ * in one call — used only by the local nav shell's ShellDashboard
+ * (local-nav-shell.tsx). page.tsx keeps calling the three separately so each
+ * widget streams independently behind its own <Suspense> boundary (the book
+ * list must never wait on any of them); the shell fetches all three at the
+ * exact same moment anyway (no progressive-reveal benefit to keep them
+ * separate there), so combining them here turns three separate client→server
+ * round trips — three redundant access/MFA checks — into one.
+ */
+export async function getElProfesorDashboardWidgetsData(): Promise<{
+  secondaryData: DashboardSecondaryData;
+  notionViewData: DashboardNotionViewData;
+  aiConfigData: DashboardAiConfigData | null;
+}> {
+  const profile = await requireElProfesorAccess();
+  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
+  const { books, libraryBooks } = await getVisibleLibrary(isAdmin);
+  const allChapters = books.flatMap((b) => b.chapters);
+  const [secondaryData, notionViewData, aiConfigData] = await Promise.all([
+    loadSecondaryDashboardData(profile.id, isAdmin, allChapters, books, libraryBooks),
+    loadNotionViewData(profile.id),
+    isAdmin ? loadAiConfigData() : Promise.resolve(null),
+  ]);
+  return { secondaryData, notionViewData, aiConfigData };
+}
+
 // ============================================================================
 // Notions / journal de cas (piste 2026-09-24 — extension de "module 100%
 // local" aux autres écrans) — same "one Server Action per screen, same shape

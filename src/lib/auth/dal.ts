@@ -36,14 +36,20 @@ export const getCurrentProfile = cache(async (): Promise<Profile | null> => {
 // Split out from requireUser() so requireProfile() (below) can run this
 // alongside getCurrentProfile() instead of strictly after it — both only
 // need a user to already be known to exist (checked by the caller before
-// either starts), not each other's result.
-async function checkMfaOrRedirect() {
+// either starts), not each other's result. Wrapped in cache() like
+// getCurrentUser/getCurrentProfile above — a page that calls requireProfile()
+// (or an equivalent like requireElProfesorAccess()) more than once per
+// request (e.g. El Profesor's dashboard snapshot plus its independently
+// exported secondary-widget actions, each re-deriving its own access check)
+// would otherwise re-run this live Supabase MFA-assurance call every single
+// time instead of once per request.
+const checkMfaOrRedirect = cache(async () => {
   const supabase = await createClient();
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   if (aal && aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
     redirect("/mfa-challenge");
   }
-}
+});
 
 export async function requireUser() {
   const user = await getCurrentUser();

@@ -24,11 +24,8 @@ import { BookTocWithLocalCache } from "@/components/el-profesor/book-toc-with-lo
 import { ChapterViewWithLocalCache } from "@/components/el-profesor/chapter-view-with-local-cache";
 import { ReviewQueueWithLocalCache } from "@/components/el-profesor/review-queue-with-local-cache";
 import { ToastProvider } from "@/components/ui/toast";
-import {
-  getElProfesorSecondaryDashboardData,
-  getElProfesorAiConfigData,
-  getElProfesorNotionViewData,
-} from "@/app/apps/el-profesor/actions/offline-sync";
+import { getElProfesorDashboardWidgetsData } from "@/app/apps/el-profesor/actions/offline-sync";
+import type { DashboardSecondaryData, DashboardNotionViewData, DashboardAiConfigData } from "@/lib/el-profesor/dashboard-types";
 
 interface LocalNavContextValue {
   navigateLocally: (href: string) => void;
@@ -106,9 +103,9 @@ type ShellDashboardReady = {
   isAdmin: boolean;
   realIsAdmin: boolean;
   previewingAsUser: boolean;
-  secondaryDataPromise: ReturnType<typeof getElProfesorSecondaryDashboardData>;
-  notionViewDataPromise: ReturnType<typeof getElProfesorNotionViewData>;
-  aiConfigPromise: ReturnType<typeof getElProfesorAiConfigData>;
+  secondaryDataPromise: Promise<DashboardSecondaryData>;
+  notionViewDataPromise: Promise<DashboardNotionViewData>;
+  aiConfigPromise: Promise<DashboardAiConfigData | null>;
 };
 
 function ShellDashboard({ onCacheMiss }: { onCacheMiss: () => void }) {
@@ -122,21 +119,23 @@ function ShellDashboard({ onCacheMiss }: { onCacheMiss: () => void }) {
         setReady("miss");
         return;
       }
-      const isAdmin = cached.effectiveIsAdmin;
       // There's no cached equivalent for these secondary widgets yet (see
       // the plan's risk notes), so a shell-driven dashboard fetches them the
       // same way a real page load would — just triggered from the client
-      // instead of page.tsx. This costs the usual auth-chain round trip,
-      // but only for these widgets, behind their own <Suspense> boundaries
-      // in ElProfesorBoard — the board itself (books, due counts, mastery)
-      // still renders instantly from cache regardless.
+      // instead of page.tsx. One combined call (getElProfesorDashboardWidgetsData)
+      // instead of three separate ones — the shell fetches all three at the
+      // same moment anyway, so there's no progressive-reveal reason to pay
+      // for three separate access/MFA round trips here the way page.tsx's
+      // own three-Suspense-boundaries version does. The board itself (books,
+      // due counts, mastery) still renders instantly from cache regardless.
+      const widgetsPromise = getElProfesorDashboardWidgetsData();
       setReady({
-        isAdmin,
+        isAdmin: cached.effectiveIsAdmin,
         realIsAdmin: cached.realIsAdmin,
         previewingAsUser: cached.previewingAsUser,
-        secondaryDataPromise: getElProfesorSecondaryDashboardData(),
-        notionViewDataPromise: getElProfesorNotionViewData(),
-        aiConfigPromise: isAdmin ? getElProfesorAiConfigData() : Promise.resolve(null),
+        secondaryDataPromise: widgetsPromise.then((w) => w.secondaryData),
+        notionViewDataPromise: widgetsPromise.then((w) => w.notionViewData),
+        aiConfigPromise: widgetsPromise.then((w) => w.aiConfigData),
       });
     });
     return () => {
