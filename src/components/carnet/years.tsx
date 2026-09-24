@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCarnet } from "@/components/carnet/carnet-provider";
 import { ChipGroup, SectionTitle } from "@/components/carnet/ui";
@@ -9,22 +11,98 @@ import { ABSENCE_CATEGORIES, ACTIVITY_COUNTERS } from "@/lib/carnet/referentiel"
 import { activityReport, REPORT_YEARS } from "@/lib/carnet/logic";
 import type { CarnetYear } from "@/lib/carnet/types";
 
-function NumberInput({ value, onCommit, step = 1 }: { value: number | undefined; onCommit: (v: number | undefined) => void; step?: number }) {
-  const [text, setText] = useState(value === undefined ? "" : String(value));
+function formatNumber(n: number): string {
+  return String(Math.round(n * 100) / 100).replace(".", ",");
+}
+
+function parseNumber(text: string): number | undefined {
+  const n = Number(text.trim().replace(",", "."));
+  return text.trim() === "" || !Number.isFinite(n) ? undefined : n;
+}
+
+/**
+ * A running count: the total can be typed directly, or — end of the day,
+ * "10 more consultations" — increased without doing the sum: quick
+ * buttons (+1, +5…) or any amount. Shows what was just added, with undo.
+ */
+function CounterField({ value, onCommit, steps }: { value: number | undefined; onCommit: (v: number | undefined) => void; steps: number[] }) {
+  const [adding, setAdding] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [last, setLast] = useState<{ from: number | undefined; to: number } | null>(null);
+  const current = value ?? 0;
+
+  function add(delta: number) {
+    if (!Number.isFinite(delta) || delta === 0) return;
+    const to = Math.max(0, Math.round((current + delta) * 100) / 100);
+    setLast({ from: value, to });
+    onCommit(to);
+  }
+
   return (
-    <Input
-      type="number"
-      inputMode="decimal"
-      min={0}
-      step={step}
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => {
-        const n = text.trim() === "" ? undefined : Math.max(0, Number(text.replace(",", ".")));
-        if (n === undefined || Number.isFinite(n)) onCommit(n);
-      }}
-      className="h-10 w-24 text-right tabular-nums"
-    />
+    <div className="flex flex-col items-end gap-1.5">
+      <div className="flex items-center gap-1.5">
+        {/* key: the typed text follows increments made with the buttons */}
+        <Input
+          key={value ?? "empty"}
+          type="text"
+          inputMode="decimal"
+          defaultValue={value === undefined ? "" : formatNumber(value)}
+          onBlur={(e) => {
+            const n = parseNumber(e.target.value);
+            if (e.target.value.trim() === "") onCommit(undefined);
+            else if (n !== undefined && n !== value) onCommit(Math.max(0, n));
+          }}
+          aria-label="Total"
+          className="h-10 w-20 text-right tabular-nums"
+        />
+        <Button type="button" variant={adding ? "secondary" : "ghost"} size="sm" onClick={() => setAdding((a) => !a)} aria-expanded={adding} className="h-10">
+          <Plus className="h-4 w-4" /> Ajouter
+        </Button>
+      </div>
+      {adding && (
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {steps.map((step) => (
+            <button
+              key={step}
+              type="button"
+              onClick={() => add(step)}
+              className="min-h-9 rounded-[var(--radius-md)] border border-border bg-surface px-2.5 text-xs font-semibold tabular-nums text-foreground hover:bg-surface-muted"
+            >
+              +{formatNumber(step)}
+            </button>
+          ))}
+          <form
+            className="flex items-center gap-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const n = parseNumber(amount);
+              if (n !== undefined) add(n);
+              setAmount("");
+            }}
+          >
+            <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="autre" aria-label="Quantité à ajouter" className="h-9 w-16 text-right text-xs" />
+            <Button type="submit" size="sm" variant="secondary" className="h-9" disabled={parseNumber(amount) === undefined}>
+              OK
+            </Button>
+          </form>
+        </div>
+      )}
+      {last && last.to === value && (
+        <p className="text-xs text-foreground-subtle">
+          {formatNumber(last.from ?? 0)} → <span className="font-medium text-foreground">{formatNumber(last.to)}</span>{" "}
+          <button
+            type="button"
+            className="ml-1 font-medium text-primary hover:underline"
+            onClick={() => {
+              onCommit(last.from);
+              setLast(null);
+            }}
+          >
+            Annuler
+          </button>
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -72,13 +150,13 @@ export function YearsView() {
           <p className="text-xs text-foreground-subtle">En jours de travail : 1 par journée pleine, 0,5 par demi-jour.</p>
           <ul className="space-y-2">
             {ABSENCE_CATEGORIES.map((c) => (
-              <li key={c.code} className="flex items-center justify-between gap-3">
+              <li key={c.code} className="flex items-start justify-between gap-3">
                 <span className="text-sm text-foreground">
                   <span className="mr-1.5 font-mono text-foreground-subtle">{c.code}</span>
                   {c.label}
                   {c.code === "E" && loggedDays > 0 && <span className="block text-xs text-foreground-subtle">{loggedDays} jour(s) avec des cas ou gardes logués cette année</span>}
                 </span>
-                <NumberInput value={existing?.absences[c.code]} step={0.5} onCommit={(v) => update({ absences: { [c.code]: v } })} />
+                <CounterField value={existing?.absences[c.code]} steps={[0.5, 1, 5]} onCommit={(v) => update({ absences: { [c.code]: v } })} />
               </li>
             ))}
           </ul>
@@ -89,12 +167,12 @@ export function YearsView() {
           <p className="text-xs text-foreground-subtle">Non déductibles du relevé des cas — à compléter pour le rapport d&apos;activité.</p>
           <ul className="space-y-2">
             {ACTIVITY_COUNTERS.map((c) => (
-              <li key={c.code} className="flex items-center justify-between gap-3">
+              <li key={c.code} className="flex items-start justify-between gap-3">
                 <span className="text-sm text-foreground">
                   {c.domain}
                   <span className="block text-xs text-foreground-subtle">{c.label}</span>
                 </span>
-                <NumberInput value={existing?.activity_counts[c.code]} onCommit={(v) => update({ activity_counts: { [c.code]: v } })} />
+                <CounterField value={existing?.activity_counts[c.code]} steps={[1, 5, 10]} onCommit={(v) => update({ activity_counts: { [c.code]: v } })} />
               </li>
             ))}
           </ul>

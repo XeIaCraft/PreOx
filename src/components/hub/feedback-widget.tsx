@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { usePathname } from "next/navigation";
 import { MessageSquarePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,13 @@ import { submitFeedback } from "@/app/actions/feedback";
 // those two routes rather than fighting for the same corner.
 const HIDDEN_ON = [/^\/apps\/el-profesor\/chapters\//, /^\/apps\/el-profesor\/notions\/[^/]+/];
 
+// Modules with their own bottom navigation bar on phones (Carnet de stage):
+// the floating button would sit on the bar or on the form's save button,
+// so on phones it's only reachable from the module's own menu, which opens
+// the widget through this event.
+const NO_LAUNCHER_ON_PHONE = [/^\/apps\/carnet-de-stage/];
+export const OPEN_FEEDBACK_EVENT = "preox:open-feedback";
+
 export function FeedbackWidget() {
   const pathname = usePathname();
   const hidden = pathname != null && HIDDEN_ON.some((re) => re.test(pathname));
@@ -19,6 +26,13 @@ export function FeedbackWidget() {
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<{ type: "error" | "success"; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
+  const noLauncherOnPhone = pathname != null && NO_LAUNCHER_ON_PHONE.some((re) => re.test(pathname));
+
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_FEEDBACK_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_FEEDBACK_EVENT, onOpen);
+  }, []);
 
   if (hidden) return null;
 
@@ -46,7 +60,7 @@ export function FeedbackWidget() {
         onClick={() => setOpen(true)}
         aria-label="Signaler un problème ou laisser un retour"
         title="Signaler un problème ou laisser un retour"
-        className="fixed bottom-4 right-4 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface text-foreground-muted shadow-md hover:text-foreground"
+        className={`fixed bottom-4 right-4 z-40 h-10 w-10 items-center justify-center rounded-full border border-border bg-surface text-foreground-muted shadow-md hover:text-foreground ${noLauncherOnPhone ? "hidden sm:flex" : "flex"}`}
       >
         <MessageSquarePlus className="h-4 w-4" />
       </button>
@@ -54,7 +68,7 @@ export function FeedbackWidget() {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 w-80 rounded-[var(--radius-lg)] border border-border bg-surface p-4 shadow-xl">
+    <div className="fixed bottom-4 right-4 z-40 w-80 max-w-[calc(100vw-2rem)] rounded-[var(--radius-lg)] border border-border bg-surface p-4 shadow-xl">
       <div className="mb-2 flex items-center justify-between">
         <p className="text-sm font-medium text-foreground">Un problème ? Une idée ?</p>
         <button type="button" onClick={() => setOpen(false)} aria-label="Fermer" className="text-foreground-subtle hover:text-foreground">

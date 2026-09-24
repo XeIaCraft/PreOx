@@ -12,6 +12,7 @@ import {
   GraduationCap,
   LayoutGrid,
   ListOrdered,
+  MessageSquarePlus,
   Loader2,
   Moon,
   PenTool,
@@ -21,6 +22,7 @@ import {
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { OPEN_FEEDBACK_EVENT } from "@/components/hub/feedback-widget";
 import { Select } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { useCarnet } from "@/components/carnet/carnet-provider";
@@ -214,6 +216,15 @@ export function CarnetApp() {
             <span className="text-sm font-medium text-foreground">{n.label}</span>
           </button>
         ))}
+        {/* On phones the hub's floating feedback button is hidden here (it would cover the bottom bar). */}
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event(OPEN_FEEDBACK_EVENT))}
+          className="flex min-h-24 flex-col items-start justify-between rounded-[var(--radius-lg)] border border-dashed border-border bg-surface p-4 text-left hover:bg-surface-muted sm:hidden"
+        >
+          <MessageSquarePlus className="h-5 w-5 text-foreground-subtle" />
+          <span className="text-sm font-medium text-foreground">Signaler un problème</span>
+        </button>
       </div>
     );
 

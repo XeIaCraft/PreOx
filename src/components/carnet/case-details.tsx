@@ -58,12 +58,16 @@ export function CaseDetailsEditor({
   const suggestions = drugSuggestions(query, history, { klass, exclude: drugs.map((d) => d.name), limit: klass ? 40 : 8 });
 
   const setDrugs = (next: CaseDrug[]) => onChange({ ...value, drugs: next });
-  function addDrug(name: string, route?: string) {
+  /**
+   * `fromTyping`: added from the search field — focus stays there for the next one. A tap on a chip
+   * (frequent drugs, class list) never moves focus: that would pop the keyboard up and scroll the form.
+   */
+  function addDrug(name: string, route?: string, fromTyping = false) {
     const clean = name.trim();
     if (!clean || drugs.some((d) => d.name.toLowerCase() === clean.toLowerCase())) return;
     setDrugs([...drugs, { name: clean, route: route ?? defaultRoute(clean), dose: "" }]);
     setQuery("");
-    searchRef.current?.focus();
+    if (fromTyping) searchRef.current?.focus();
   }
   const updateDrug = (index: number, patch: Partial<CaseDrug>) => setDrugs(drugs.map((d, i) => (i === index ? { ...d, ...patch } : d)));
 
@@ -141,8 +145,8 @@ export function CaseDetailsEditor({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    if (suggestions[0] && query.trim()) addDrug(suggestions[0].name, suggestions[0].route);
-                    else addDrug(query);
+                    if (suggestions[0] && query.trim()) addDrug(suggestions[0].name, suggestions[0].route, true);
+                    else addDrug(query, undefined, true);
                   }
                 }}
                 placeholder="Ajouter un produit (ex. propofol, Dipidolor, céfazoline…)"
@@ -156,7 +160,7 @@ export function CaseDetailsEditor({
                       key={s.name}
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => addDrug(s.name, s.route)}
+                      onClick={() => addDrug(s.name, s.route, true)}
                       className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-surface-muted"
                     >
                       <span className="truncate text-foreground">{s.name}</span>
@@ -169,7 +173,7 @@ export function CaseDetailsEditor({
                 </div>
               )}
               {query.trim() && !suggestions.some((s) => s.name.toLowerCase() === query.trim().toLowerCase()) && (
-                <button type="button" onClick={() => addDrug(query)} className="mt-1 flex items-center gap-1 text-xs font-medium text-primary">
+                <button type="button" onClick={() => addDrug(query, undefined, true)} className="mt-1 flex items-center gap-1 text-xs font-medium text-primary">
                   <Plus className="h-3.5 w-3.5" /> Ajouter « {query.trim()} »
                 </button>
               )}
