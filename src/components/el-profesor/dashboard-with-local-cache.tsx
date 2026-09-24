@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { SyncModal } from "@/components/el-profesor/dialogs/sync-modal";
 import { getCachedDashboard, getCachedSecondaryDashboardData, getCachedNotionViewData, getCachedAiConfigData } from "@/lib/el-profesor/local-db";
-import { getLocalDueCounts, getLocalMasteryCounts } from "@/lib/el-profesor/local-review-queue";
+import { getLocalDueCounts, getLocalMasteryCounts, getLocalReadProgressByChapter } from "@/lib/el-profesor/local-review-queue";
 import type { DashboardSnapshot, DashboardSecondaryData, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
 
 /** "il y a 3 min" / "il y a 2 h" / "il y a 5 j" — finer-grained than the day-only timeAgoLabel elsewhere in the module, since a sync can have just happened. */
@@ -114,12 +114,17 @@ export function DashboardWithLocalCache({
         // to the snapshot's own values if nothing's cached yet to compute
         // from (e.g. dashboard synced once but no chapter content sync
         // completed).
-        const [localDueCounts, localMasteryCounts] = await Promise.all([getLocalDueCounts(), getLocalMasteryCounts()]);
+        const [localDueCounts, localMasteryCounts, localReadProgressByChapter] = await Promise.all([
+          getLocalDueCounts(),
+          getLocalMasteryCounts(),
+          getLocalReadProgressByChapter(),
+        ]);
         if (cancelled) return;
         setSnapshot({
           ...cachedSnapshot,
           dueCounts: localDueCounts ?? cachedSnapshot.dueCounts,
           masteryCounts: localMasteryCounts ?? cachedSnapshot.masteryCounts,
+          readProgressByChapter: localReadProgressByChapter ?? cachedSnapshot.readProgressByChapter,
         });
         setSyncedAt(cachedSyncedAt);
         setCheckedCache(true);

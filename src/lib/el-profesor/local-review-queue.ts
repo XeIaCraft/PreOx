@@ -32,6 +32,11 @@ function activeFlashcards(content: SubEntityWithFiche[]): Flashcard[] {
   return content.flatMap((s) => (s.fiche && !s.fiche.supersededByFicheId ? s.fiche.flashcards : []));
 }
 
+/** Same "active" scope as activeFlashcards, one level up — the fiche ids getReadProgressByChapter (dal/progress.ts) averages over. */
+function activeFicheIds(content: SubEntityWithFiche[]): string[] {
+  return content.flatMap((s) => (s.fiche && !s.fiche.supersededByFicheId ? [s.fiche.id] : []));
+}
+
 function shuffle<T>(items: T[]): T[] {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -106,6 +111,42 @@ export function computeLocalMasteryCounts(
     counts[chapterId] = { total, new: total - known, learning, acquired };
   }
   return counts;
+}
+
+/**
+ * Mirrors getReadProgressByChapter's exact formula (dal/progress.ts):
+ * average read % across the chapter's own active (non-superseded) fiches —
+ * piste 2026-09-24, suite au retour "le % de lecture par chapitre ne
+ * s'actualise pas tant que je ne synchronise pas". Reading a fiche writes
+ * its new percentage straight to the server (saveFicheReadProgress) but
+ * that alone never touched the cached snapshot this per-chapter figure
+ * comes from — patchCachedFicheReadProgress (local-db.ts), called right
+ * alongside that same save, is what keeps ficheReadProgress in the cached
+ * chapter content current, so this recomputes the correct percentage
+ * immediately instead of showing a number frozen at the last "Synchroniser".
+ */
+export function computeLocalReadProgressByChapter(contentByChapterId: Map<string, SubEntityWithFiche[]>, ficheReadProgressByChapterId: Map<string, Record<string, number>>): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const [chapterId, content] of contentByChapterId) {
+    const ficheIds = activeFicheIds(content);
+    if (ficheIds.length === 0) {
+      result[chapterId] = 0;
+      continue;
+    }
+    const ficheReadProgress = ficheReadProgressByChapterId.get(chapterId) ?? {};
+    const sum = ficheIds.reduce((acc, id) => acc + (ficheReadProgress[id] ?? 0), 0);
+    result[chapterId] = Math.round(sum / ficheIds.length);
+  }
+  return result;
+}
+
+/** Null when no chapter content is cached at all yet — callers should fall back to the snapshot's own (possibly stale) percentages in that case, rather than showing everything as 0%. */
+export async function getLocalReadProgressByChapter(): Promise<Record<string, number> | null> {
+  const allContent = await getAllCachedChapterContent();
+  if (allContent.size === 0) return null;
+  const contentByChapterId = new Map([...allContent].map(([chapterId, c]) => [chapterId, c.subEntities]));
+  const ficheReadProgressByChapterId = new Map([...allContent].map(([chapterId, c]) => [chapterId, c.ficheReadProgress]));
+  return computeLocalReadProgressByChapter(contentByChapterId, ficheReadProgressByChapterId);
 }
 
 /**

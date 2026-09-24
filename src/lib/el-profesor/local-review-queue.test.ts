@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeLocalDueQueue, computeLocalFreeQueue, computeLocalDueCounts, computeLocalMasteryCounts } from "./local-review-queue";
+import { computeLocalDueQueue, computeLocalFreeQueue, computeLocalDueCounts, computeLocalMasteryCounts, computeLocalReadProgressByChapter } from "./local-review-queue";
 import type { Flashcard, ReviewState } from "./types";
 import type { SubEntityWithFiche } from "./dal";
 
@@ -169,5 +169,36 @@ describe("computeLocalMasteryCounts", () => {
   it("returns all-zero for a chapter with no active flashcards", () => {
     const counts = computeLocalMasteryCounts(new Map([["chapter-1", []]]), new Map());
     expect(counts["chapter-1"]).toEqual({ total: 0, new: 0, learning: 0, acquired: 0 });
+  });
+});
+
+describe("computeLocalReadProgressByChapter", () => {
+  it("mirrors getReadProgressByChapter's formula: average read % across the chapter's active fiches", () => {
+    const content = [makeSubEntity("1", []), makeSubEntity("2", [])];
+    const progress = computeLocalReadProgressByChapter(
+      new Map([["chapter-1", content]]),
+      new Map([["chapter-1", { "fiche-1": 40, "fiche-2": 100 }]])
+    );
+    expect(progress["chapter-1"]).toBe(70);
+  });
+
+  it("ignores a superseded fiche, same as getReadProgressByChapter's active scope", () => {
+    const content = [makeSubEntity("1", []), makeSubEntity("2", [], "fiche-1")];
+    const progress = computeLocalReadProgressByChapter(
+      new Map([["chapter-1", content]]),
+      new Map([["chapter-1", { "fiche-1": 50, "fiche-2": 100 }]])
+    );
+    expect(progress["chapter-1"]).toBe(50);
+  });
+
+  it("returns 0 for a chapter with no active fiches", () => {
+    const progress = computeLocalReadProgressByChapter(new Map([["chapter-1", []]]), new Map());
+    expect(progress["chapter-1"]).toBe(0);
+  });
+
+  it("treats a fiche missing from the read-progress map as 0%, not as excluded from the average", () => {
+    const content = [makeSubEntity("1", []), makeSubEntity("2", [])];
+    const progress = computeLocalReadProgressByChapter(new Map([["chapter-1", content]]), new Map([["chapter-1", { "fiche-1": 60 }]]));
+    expect(progress["chapter-1"]).toBe(30);
   });
 });

@@ -25,7 +25,7 @@ import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { getMyNote, toggleNoteShare } from "@/app/apps/el-profesor/actions/notes";
 import { toggleFicheShare } from "@/app/apps/el-profesor/actions/share";
 import { saveFicheReadProgress, resetFicheReadProgress, resetFicheMastery } from "@/app/apps/el-profesor/actions/progress";
-import { enqueuePendingWrite } from "@/lib/el-profesor/local-db";
+import { enqueuePendingWrite, patchCachedFicheReadProgress } from "@/lib/el-profesor/local-db";
 import {
   getLastSubEntity,
   setLastSubEntity,
@@ -682,6 +682,11 @@ export function ChapterView({
       if (readProgressSaveTimer.current) clearTimeout(readProgressSaveTimer.current);
       readProgressSaveTimer.current = setTimeout(() => {
         saveFicheReadProgress(ficheId, next[ficheId]).catch(() => {});
+        // Keeps this chapter's cached content in step with what was just
+        // saved (piste 2026-09-24) — see patchCachedFicheReadProgress's doc
+        // comment for why: without this, the chapter card's read-% on the
+        // dashboard only ever caught up at the next "Synchroniser".
+        patchCachedFicheReadProgress(chapterId, ficheId, next[ficheId]).catch(() => {});
       }, 1500);
       return next;
     });

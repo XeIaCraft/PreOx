@@ -153,6 +153,24 @@ export async function getCachedChapterContent(chapterId: string): Promise<WithCh
   return getValue<WithChapterSyncMeta<ChapterContentSnapshot>>(CHAPTER_CONTENT_STORE, chapterId);
 }
 
+/**
+ * Patches one fiche's cached read-progress percentage in place (piste
+ * 2026-09-24 — suite au retour "le % de lecture par chapitre ne s'actualise
+ * pas") — called right alongside saveFicheReadProgress (a live, direct
+ * server write) so the chapter's cached content agrees with what was just
+ * saved instead of only catching up at the next "Synchroniser". No-ops if
+ * this chapter isn't cached at all yet (nothing to patch). Never regresses,
+ * matching getFicheReadProgressBatch's own "highest ever reached" semantics
+ * server-side — a local update should never lower what was already there.
+ */
+export async function patchCachedFicheReadProgress(chapterId: string, ficheId: string, progressPct: number): Promise<void> {
+  const current = await getCachedChapterContent(chapterId);
+  if (!current) return;
+  const existing = current.ficheReadProgress[ficheId] ?? 0;
+  if (progressPct <= existing) return;
+  await putEntries(CHAPTER_CONTENT_STORE, [[chapterId, { ...current, ficheReadProgress: { ...current.ficheReadProgress, [ficheId]: progressPct } }]]);
+}
+
 /** Every cached chapter's own lastModifiedAt, keyed by chapterId — what the delta sync (sync-modal.tsx) diffs a fresh getElProfesorChapterLastModified() call against to decide which chapters actually need re-downloading. */
 export async function getCachedChapterLastModifiedTimestamps(): Promise<Record<string, string>> {
   const all = await getAllCachedChapterContent();
