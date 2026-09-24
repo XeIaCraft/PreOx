@@ -263,6 +263,24 @@ export async function getLibrary(): Promise<BookWithChapters[]> {
   }));
 }
 
+/**
+ * Per-chapter "last modified" timestamp — the max updated_at across each
+ * chapter's own row and everything nested under it (sub-entities, fiches,
+ * blocks, flashcards), via the el_profesor_chapter_last_modified() SQL
+ * function (see its migration for why: a single grouped query beats N+1
+ * round trips or deep PostgREST embedding). Used by the "Synchroniser" delta
+ * sync (piste 2026-09-24) to skip re-downloading a chapter's content when
+ * nothing under it has actually changed since the last sync.
+ */
+export async function getChapterLastModifiedTimestamps(chapterIds: string[]): Promise<Record<string, string>> {
+  if (chapterIds.length === 0) return {};
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("el_profesor_chapter_last_modified", { p_chapter_ids: chapterIds });
+  const result: Record<string, string> = {};
+  for (const row of data ?? []) result[row.chapter_id] = row.last_modified_at;
+  return result;
+}
+
 /** Archived books (item 49 of the backlog) — hidden from the active library, listed here for the admin "Livres archivés" screen. */
 export type ArchivedBookEntry = Book & { newerEdition: { bookId: string; title: string } | null };
 

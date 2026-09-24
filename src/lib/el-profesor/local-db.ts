@@ -32,6 +32,8 @@ const DASHBOARD_KEY = "singleton";
 const SUSPENDED_FLASHCARD_IDS_KEY = "singleton";
 
 type WithSyncedAt<T> = T & { syncedAt: string };
+/** lastModifiedAt is the *server's* timestamp for this chapter at download time (el_profesor_chapter_last_modified) — compared against a fresh server value on the next sync (piste 2026-09-24 — synchronisation delta) to decide whether this chapter needs re-downloading at all. Distinct from syncedAt, which is only ever "when did we last write this" from the client's own clock. */
+type WithChapterSyncMeta<T> = T & { syncedAt: string; lastModifiedAt: string };
 
 function isAvailable(): boolean {
   return typeof window !== "undefined" && typeof indexedDB !== "undefined";
@@ -103,15 +105,23 @@ export async function setCachedDashboard(snapshot: DashboardSnapshot): Promise<v
   await putEntries(DASHBOARD_STORE, [[DASHBOARD_KEY, { ...snapshot, syncedAt: new Date().toISOString() }]]);
 }
 
-export async function getCachedChapterContent(chapterId: string): Promise<WithSyncedAt<ChapterContentSnapshot> | null> {
-  return getValue<WithSyncedAt<ChapterContentSnapshot>>(CHAPTER_CONTENT_STORE, chapterId);
+export async function getCachedChapterContent(chapterId: string): Promise<WithChapterSyncMeta<ChapterContentSnapshot> | null> {
+  return getValue<WithChapterSyncMeta<ChapterContentSnapshot>>(CHAPTER_CONTENT_STORE, chapterId);
 }
 
-export async function setCachedChapterContentBatch(entries: Record<string, ChapterContentSnapshot>): Promise<void> {
+/** Every cached chapter's own lastModifiedAt, keyed by chapterId — what the delta sync (sync-modal.tsx) diffs a fresh getElProfesorChapterLastModified() call against to decide which chapters actually need re-downloading. */
+export async function getCachedChapterLastModifiedTimestamps(): Promise<Record<string, string>> {
+  const all = await getAllCachedChapterContent();
+  const result: Record<string, string> = {};
+  for (const [chapterId, content] of all) result[chapterId] = content.lastModifiedAt;
+  return result;
+}
+
+export async function setCachedChapterContentBatch(entries: Record<string, ChapterContentSnapshot>, lastModifiedByChapterId: Record<string, string>): Promise<void> {
   const syncedAt = new Date().toISOString();
   await putEntries(
     CHAPTER_CONTENT_STORE,
-    Object.entries(entries).map(([chapterId, snapshot]) => [chapterId, { ...snapshot, syncedAt }])
+    Object.entries(entries).map(([chapterId, snapshot]) => [chapterId, { ...snapshot, syncedAt, lastModifiedAt: lastModifiedByChapterId[chapterId] ?? syncedAt }])
   );
 }
 
@@ -229,8 +239,8 @@ export async function pruneChapterContent(validChapterIds: string[]): Promise<vo
 }
 
 /** Every cached chapter's content at once, keyed by chapterId — needed to compute due/mastery counts across the whole library (local-review-queue.ts) without one IndexedDB read per chapter. */
-export async function getAllCachedChapterContent(): Promise<Map<string, WithSyncedAt<ChapterContentSnapshot>>> {
-  const entries = await getAllEntries<WithSyncedAt<ChapterContentSnapshot>>(CHAPTER_CONTENT_STORE);
+export async function getAllCachedChapterContent(): Promise<Map<string, WithChapterSyncMeta<ChapterContentSnapshot>>> {
+  const entries = await getAllEntries<WithChapterSyncMeta<ChapterContentSnapshot>>(CHAPTER_CONTENT_STORE);
   return new Map(entries);
 }
 

@@ -300,6 +300,7 @@ export type ElProfesorSubEntityRow = {
   order_index: number;
   summary: string;
   created_at: string;
+  updated_at: string;
 };
 
 export type ElProfesorFicheRow = {
@@ -1100,6 +1101,10 @@ export type Database = {
       revoke_my_session: {
         Args: { target_session_id: string };
         Returns: undefined;
+      };
+      el_profesor_chapter_last_modified: {
+        Args: { p_chapter_ids: string[] };
+        Returns: { chapter_id: string; last_modified_at: string }[];
       };
     };
   };

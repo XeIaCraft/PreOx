@@ -9,6 +9,7 @@ import {
   getElProfesorChapterContentBatch,
   getElProfesorReviewStateBatch,
   getElProfesorSuspendedFlashcardIds,
+  getElProfesorChapterLastModified,
 } from "@/app/apps/el-profesor/actions/offline-sync";
 import {
   setCachedDashboard,
@@ -16,6 +17,8 @@ import {
   setCachedReviewStateBatch,
   setCachedSuspendedFlashcardIds,
   getCachedDashboard,
+  getCachedChapterLastModifiedTimestamps,
+  getAllCachedChapterContent,
   pruneChapterContent,
   pruneReviewState,
 } from "@/lib/el-profesor/local-db";
@@ -29,15 +32,32 @@ const CHUNK_SIZE = 25;
 
 type Phase = "idle" | "flush" | "dashboard" | "content" | "done" | "error";
 
+function pick<T>(map: Record<string, T>, ids: string[]): Record<string, T> {
+  const result: Record<string, T> = {};
+  for (const id of ids) if (id in map) result[id] = map[id];
+  return result;
+}
+
 /**
  * Manual "Synchroniser" flow (piste 2026-09-24 — "cache local +
- * synchronisation manuelle"): pulls the whole library + this user's
- * progress from Supabase into IndexedDB (local-db.ts), so the dashboard and
- * every chapter render from there afterward instead of hitting the network
- * on every navigation. Deliberately manual, not a background sync, per the
- * explicit request to keep this simple — the "dernière synchro" indicator
- * next to the button (see DashboardWithLocalCache) is what keeps staleness
- * visible instead of silent.
+ * synchronisation manuelle", puis "synchronisation delta"): pulls the whole
+ * library + this user's progress from Supabase into IndexedDB (local-db.ts),
+ * so the dashboard and every chapter render from there afterward instead of
+ * hitting the network on every navigation. Deliberately manual, not a
+ * background sync, per the explicit request to keep this simple — the
+ * "dernière synchro" indicator next to the button (see
+ * DashboardWithLocalCache) is what keeps staleness visible instead of
+ * silent.
+ *
+ * Delta: chapter CONTENT (fiches/blocks/flashcards — by far the biggest
+ * payload) is only re-downloaded for chapters whose server-side
+ * last-modified timestamp (getElProfesorChapterLastModified, a single
+ * grouped SQL query) is newer than what's already cached — an unchanged
+ * library re-syncs in the time it takes to check timestamps, not
+ * re-transfer everything. Review state (this user's own FSRS progress) is
+ * small and can change on any chapter from another device at any time
+ * regardless of content edits, so it's always fully refreshed for every
+ * flashcard in the library, not just the changed chapters'.
  */
 export function SyncModal({
   onClose,
@@ -87,42 +107,68 @@ export function SyncModal({
     const chapterIds = snapshot.books.flatMap((b) => b.chapters.filter((c) => c.status === "published").map((c) => c.id));
     // Drops cached content for chapters that no longer exist (deleted,
     // unpublished, or their book archived) before writing fresh content —
-    // otherwise old chapters' data would just pile up in IndexedDB forever,
-    // since the writes below only ever overwrite entries for chapterIds.
+    // otherwise old chapters' data would just pile up in IndexedDB forever.
     await pruneChapterContent(chapterIds);
-    setTotalChapters(chapterIds.length);
-    setPhase("content");
 
-    let failed = 0;
-    const allFlashcardIds: string[] = [];
-    for (let i = 0; i < chapterIds.length; i += CHUNK_SIZE) {
-      const chunk = chapterIds.slice(i, i + CHUNK_SIZE);
-      try {
-        const contentByChapter = await getElProfesorChapterContentBatch(chunk);
-        await setCachedChapterContentBatch(contentByChapter);
+    // Delta: only re-download chapters whose content actually changed since
+    // they were last cached. A chapter never synced before (not in
+    // cachedLastModified) or missing a fresh server timestamp (fails open —
+    // re-download rather than risk skipping something real) is treated as
+    // changed too.
+    let changedChapterIds = chapterIds;
+    try {
+      const [freshLastModified, cachedLastModified] = await Promise.all([
+        getElProfesorChapterLastModified(chapterIds),
+        getCachedChapterLastModifiedTimestamps(),
+      ]);
+      changedChapterIds = chapterIds.filter((id) => {
+        const fresh = freshLastModified[id];
+        const cached = cachedLastModified[id];
+        if (!fresh || !cached) return true;
+        return new Date(fresh).getTime() > new Date(cached).getTime();
+      });
 
-        // Review state (piste 2026-09-24 — "écriture locale automatique"):
-        // synced alongside each chapter-content chunk so scheduleReview
-        // (fsrs.ts) has a starting FSRS state to run against offline — same
-        // chunking rationale as the content sync itself.
-        const flashcardIds = Object.values(contentByChapter).flatMap((c) => c.subEntities.flatMap((s) => s.fiche?.flashcards.map((f) => f.id) ?? []));
-        allFlashcardIds.push(...flashcardIds);
-        const reviewStates = await getElProfesorReviewStateBatch(flashcardIds);
-        await setCachedReviewStateBatch(reviewStates);
-      } catch {
-        failed += chunk.length;
+      setTotalChapters(changedChapterIds.length);
+      setPhase("content");
+
+      let failed = 0;
+      for (let i = 0; i < changedChapterIds.length; i += CHUNK_SIZE) {
+        const chunk = changedChapterIds.slice(i, i + CHUNK_SIZE);
+        try {
+          const contentByChapter = await getElProfesorChapterContentBatch(chunk);
+          await setCachedChapterContentBatch(contentByChapter, pick(freshLastModified, chunk));
+        } catch {
+          failed += chunk.length;
+        }
+        setSyncedChapters((n) => n + chunk.length);
       }
-      setSyncedChapters((n) => n + chunk.length);
-    }
-    await pruneReviewState(allFlashcardIds);
 
-    const cached = await getCachedDashboard();
-    setPhase("done");
-    if (cached) onSynced(cached, cached.syncedAt);
-    if (failed > 0) {
-      setErrorMessage(
-        `${failed} chapitre${failed > 1 ? "s" : ""} n'${failed > 1 ? "ont" : "a"} pas pu être synchronisé${failed > 1 ? "s" : ""} — relancez la synchronisation plus tard pour les récupérer.`
+      // Review state (piste 2026-09-24 — "écriture locale automatique"):
+      // refreshed for every flashcard across the whole library (changed
+      // chapters just wrote fresh content above; unchanged ones already have
+      // theirs cached) rather than only the chapters re-downloaded this
+      // time — a review logged from another device can update any
+      // flashcard's state regardless of whether its chapter's content
+      // changed at all.
+      const allCachedContent = await getAllCachedChapterContent();
+      const allFlashcardIds = chapterIds.flatMap(
+        (id) => allCachedContent.get(id)?.subEntities.flatMap((s) => s.fiche?.flashcards.map((f) => f.id) ?? []) ?? []
       );
+      const reviewStates = await getElProfesorReviewStateBatch(allFlashcardIds);
+      await setCachedReviewStateBatch(reviewStates);
+      await pruneReviewState(allFlashcardIds);
+
+      const cached = await getCachedDashboard();
+      setPhase("done");
+      if (cached) onSynced(cached, cached.syncedAt);
+      if (failed > 0) {
+        setErrorMessage(
+          `${failed} chapitre${failed > 1 ? "s" : ""} n'${failed > 1 ? "ont" : "a"} pas pu être synchronisé${failed > 1 ? "s" : ""} — relancez la synchronisation plus tard pour les récupérer.`
+        );
+      }
+    } catch {
+      setErrorMessage("Impossible de synchroniser le contenu des chapitres — vérifiez votre connexion et réessayez.");
+      setPhase("error");
     }
   }
 
@@ -142,9 +188,9 @@ export function SyncModal({
       {phase === "idle" && (
         <>
           <p className="text-sm text-foreground-muted">
-            Télécharge toute la bibliothèque (livres, chapitres, fiches, flashcards) et votre progression dans le navigateur, pour un
-            accès instantané ensuite, sans attendre le réseau à chaque page. Chaque synchronisation retélécharge l&apos;intégralité —
-            relancez-la après une modification importante (nouveau chapitre publié, réorganisation...).
+            Télécharge la bibliothèque (livres, chapitres, fiches, flashcards) et votre progression dans le navigateur, pour un accès
+            instantané ensuite, sans attendre le réseau à chaque page. Seuls les chapitres modifiés depuis la dernière synchronisation
+            sont retéléchargés — les autres restent tels quels.
           </p>
           <div className="mt-5 flex justify-end">
             <Button onClick={runSync}>Synchroniser</Button>
@@ -159,7 +205,9 @@ export function SyncModal({
               ? "Envoi de votre progression en attente…"
               : phase === "dashboard"
                 ? "Tableau de bord et statistiques…"
-                : `Contenu des chapitres (${syncedChapters} / ${totalChapters})…`}
+                : totalChapters > 0
+                  ? `Contenu des chapitres modifiés (${syncedChapters} / ${totalChapters})…`
+                  : "Bibliothèque déjà à jour…"}
           </p>
           <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
             <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${progressPct}%` }} />

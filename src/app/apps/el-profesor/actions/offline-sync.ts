@@ -32,6 +32,7 @@ import {
   getUserFsrsRetention,
   getReviewStatesByFlashcardIds,
   getSuspendedFlashcardIdsForSync,
+  getChapterLastModifiedTimestamps,
 } from "@/lib/el-profesor/dal";
 import type { DashboardSnapshot, ChapterContentSnapshot } from "@/lib/el-profesor/dashboard-types";
 import type { ReviewState } from "@/lib/el-profesor/types";
@@ -193,4 +194,16 @@ export async function getElProfesorReviewStateBatch(flashcardIds: string[]): Pro
 export async function getElProfesorSuspendedFlashcardIds(): Promise<string[]> {
   const profile = await requireElProfesorAccess();
   return getSuspendedFlashcardIdsForSync(profile.id);
+}
+
+/**
+ * Per-chapter "last modified" timestamp (piste 2026-09-24 — synchronisation
+ * delta): the "Synchroniser" sync compares this against each cached
+ * chapter's own lastModifiedAt (captured the last time its content was
+ * downloaded) and only re-downloads the ones that actually changed —
+ * instead of re-fetching the whole library's content on every sync.
+ */
+export async function getElProfesorChapterLastModified(chapterIds: string[]): Promise<Record<string, string>> {
+  await requireElProfesorAccess();
+  return getChapterLastModifiedTimestamps(chapterIds);
 }
