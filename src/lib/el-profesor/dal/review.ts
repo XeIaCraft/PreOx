@@ -378,6 +378,24 @@ export async function getUserFsrsRetention(userId: string): Promise<number> {
   return data?.request_retention ?? 0.9;
 }
 
+/**
+ * Batched el_profesor_review_state fetch for this user across MANY flashcard
+ * ids at once (chunked .in(), same pattern as getActiveFlashcardsByChapterBatch)
+ * — used by the "écriture locale automatique" sync (actions/offline-sync.ts)
+ * to seed local-db.ts's reviewState store so FlashcardReviewer can compute
+ * scheduleReview() offline with the same starting state the server has.
+ */
+export async function getReviewStatesByFlashcardIds(userId: string, flashcardIds: string[]): Promise<Record<string, ReviewState>> {
+  if (flashcardIds.length === 0) return {};
+  const supabase = await createClient();
+  const rows = await selectInChunks<ElProfesorReviewStateRow>(flashcardIds, (chunk) =>
+    supabase.from("el_profesor_review_state").select("*").eq("user_id", userId).in("flashcard_id", chunk)
+  );
+  const result: Record<string, ReviewState> = {};
+  for (const row of rows) result[row.flashcard_id] = toReviewState(row);
+  return result;
+}
+
 // Requires a real sample before tuning away from the default, and only
 // re-evaluates every N new scheduled reviews so one bad day doesn't
 // whipsaw the schedule. The adjustment formula itself lives in fsrs.ts

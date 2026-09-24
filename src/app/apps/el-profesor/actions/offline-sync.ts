@@ -29,8 +29,11 @@ import {
   getFicheReadProgressBatch,
   getFicheMasteryProgressBatch,
   getChapterContentBatch,
+  getUserFsrsRetention,
+  getReviewStatesByFlashcardIds,
 } from "@/lib/el-profesor/dal";
 import type { DashboardSnapshot, ChapterContentSnapshot } from "@/lib/el-profesor/dashboard-types";
+import type { ReviewState } from "@/lib/el-profesor/types";
 
 /** Same data page.tsx computes for its initial render — see that file for why each call is shaped this way (batched, no per-chapter loop). Exported so the page and the "Synchroniser" action share one implementation. */
 export async function getElProfesorDashboardSnapshot(): Promise<DashboardSnapshot> {
@@ -42,20 +45,43 @@ export async function getElProfesorDashboardSnapshot(): Promise<DashboardSnapsho
   const books = isAdmin ? libraryBooks : libraryBooks.map((b) => ({ ...b, chapters: b.chapters.filter((c) => c.status === "published") }));
   const allChapters = books.flatMap((b) => b.chapters);
 
-  const [dueCounts, needsReviewCounts, masteryCounts, difficultCounts, globalMastery, hasGeminiKey, aiProvider, readProgressByChapter, globalProgress] =
-    await Promise.all([
-      getDueCountsByChapter(profile.id, allChapters),
-      isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
-      getMasteryCountsByChapter(profile.id, allChapters),
-      getDifficultCountsByChapter(profile.id, allChapters),
-      getGlobalChapterMasteryPercentages(allChapters),
-      isAdmin ? hasElProfesorGeminiKey() : Promise.resolve(false),
-      isAdmin ? getElProfesorAiProvider() : Promise.resolve("gemini" as const),
-      getReadProgressByChapter(profile.id, allChapters),
-      getGlobalProgressSummary(profile.id),
-    ]);
+  const [
+    dueCounts,
+    needsReviewCounts,
+    masteryCounts,
+    difficultCounts,
+    globalMastery,
+    hasGeminiKey,
+    aiProvider,
+    readProgressByChapter,
+    globalProgress,
+    fsrsRetention,
+  ] = await Promise.all([
+    getDueCountsByChapter(profile.id, allChapters),
+    isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
+    getMasteryCountsByChapter(profile.id, allChapters),
+    getDifficultCountsByChapter(profile.id, allChapters),
+    getGlobalChapterMasteryPercentages(allChapters),
+    isAdmin ? hasElProfesorGeminiKey() : Promise.resolve(false),
+    isAdmin ? getElProfesorAiProvider() : Promise.resolve("gemini" as const),
+    getReadProgressByChapter(profile.id, allChapters),
+    getGlobalProgressSummary(profile.id),
+    getUserFsrsRetention(profile.id),
+  ]);
 
-  return { books, dueCounts, needsReviewCounts, masteryCounts, difficultCounts, globalMastery, readProgressByChapter, globalProgress, hasGeminiKey, aiProvider };
+  return {
+    books,
+    dueCounts,
+    needsReviewCounts,
+    masteryCounts,
+    difficultCounts,
+    globalMastery,
+    readProgressByChapter,
+    globalProgress,
+    hasGeminiKey,
+    aiProvider,
+    fsrsRetention,
+  };
 }
 
 function pick<T>(map: Record<string, T>, ids: string[]): Record<string, T> {
@@ -136,4 +162,18 @@ export async function getElProfesorChapterContentBatch(chapterIds: string[]): Pr
   }
 
   return result;
+}
+
+/**
+ * Batched el_profesor_review_state fetch for this user's own flashcards
+ * (piste 2026-09-24 — "écriture locale automatique"). Called by sync-modal.tsx
+ * in chunks alongside getElProfesorChapterContentBatch, so local-db.ts's
+ * reviewState store has a starting FSRS state to run scheduleReview() against
+ * offline — same batching rationale as the other actions in this file (a
+ * per-flashcard loop here would just move the N+1 pattern client-side).
+ */
+export async function getElProfesorReviewStateBatch(flashcardIds: string[]): Promise<Record<string, ReviewState>> {
+  const profile = await requireElProfesorAccess();
+  if (flashcardIds.length === 0) return {};
+  return getReviewStatesByFlashcardIds(profile.id, flashcardIds);
 }

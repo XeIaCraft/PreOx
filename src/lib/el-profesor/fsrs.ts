@@ -1,5 +1,9 @@
-import "server-only";
-
+// No "server-only" guard here on purpose: this file is pure logic over
+// ts-fsrs (no Node/DB dependency), and the local-first review flow (piste
+// 2026-09-24 — "écriture locale automatique") needs to run the exact same
+// scheduling calculation in the browser as actions/review.ts runs on the
+// server, so an offline/queued review computes the same FSRS state either
+// side would have produced.
 import { fsrs, Rating, State, type Card, type Grade } from "ts-fsrs";
 import type { ReviewRating, ReviewState } from "@/lib/el-profesor/types";
 

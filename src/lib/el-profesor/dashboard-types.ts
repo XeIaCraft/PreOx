@@ -46,6 +46,8 @@ export interface DashboardSnapshot {
   globalProgress: GlobalProgressSummary;
   hasGeminiKey: boolean;
   aiProvider: ElProfesorAiProvider;
+  /** getUserFsrsRetention's current value for this user — cached so a local review (local-review.ts) can call scheduleReview with the same personalized target the server would use. */
+  fsrsRetention: number;
 }
 
 /**

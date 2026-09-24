@@ -5,12 +5,13 @@ import Link from "next/link";
 import { ArrowLeft, PartyPopper, Undo2, Info, Keyboard, Timer, Square, PenLine, Maximize2, Minimize2, BellOff, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { submitReview, undoReview, excludeFlashcardFromReviews, type ReviewConfidence } from "@/app/apps/el-profesor/actions/review";
+import type { ReviewConfidence } from "@/app/apps/el-profesor/actions/review";
+import { applyLocalReview, undoLocalReview, applyLocalExclude } from "@/lib/el-profesor/local-review";
 import { FlagButton } from "@/components/el-profesor/flag-button";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { useToast } from "@/components/ui/toast";
 import { maskClozeText, splitClozeSegments } from "@/lib/el-profesor/cloze";
-import type { Flashcard, ReviewSource, ReviewState, ReviewRating, ImageOcclusion } from "@/lib/el-profesor/types";
+import type { Flashcard, ReviewSource, ReviewRating, ImageOcclusion } from "@/lib/el-profesor/types";
 
 /** A cloze passage with its blanked spans highlighted — the revealed side of a "flashcard à trous" (piste 2026-08-24). Plain text render when there's nothing to hide. */
 function ClozeText({ text, ranges, hiddenClassName }: { text: string; ranges: { start: number; end: number }[]; hiddenClassName: string }) {
@@ -69,8 +70,7 @@ function OcclusionImage({
 interface LastAction {
   index: number;
   flashcardId: string;
-  logId: string;
-  previousState: ReviewState | null | undefined;
+  pendingWriteId: string;
   rating: ReviewRating;
   front: string;
 }
@@ -262,23 +262,21 @@ export function FlashcardReviewer({
     const durationMs = revealedAtRef.current != null ? Date.now() - revealedAtRef.current : undefined;
     revealedAtRef.current = null;
     const answeredConfidence = confidence;
+    const flashcardId = current.id;
+    const front = current.front.text;
+    const variantId = shownVariant?.variantId ?? null;
+    // Local-first (piste 2026-09-24 — "écriture locale automatique"):
+    // applyLocalReview computes the FSRS update against the cached review
+    // state and queues the real write for sync-queue.ts's next automatic
+    // flush — no network round trip stands between answering and the next
+    // card, and (per local-db.ts's own convention) a cache failure here is
+    // swallowed rather than surfaced, so there's no error branch to handle.
     startTransition(async () => {
-      const result = await submitReview(current.id, rating, source, durationMs, shownVariant?.variantId ?? null, answeredConfidence);
-      if (result.error || !result.logId) {
-        toast(result.error ?? "Impossible d'enregistrer cette révision.", { variant: "error" });
-        return;
-      }
-      setLastAction({
-        index: answeredIndex,
-        flashcardId: current.id,
-        logId: result.logId,
-        previousState: result.previousState,
-        rating,
-        front: current.front.text,
-      });
+      const result = await applyLocalReview({ flashcardId, chapterId: chapterId ?? null, rating, source, durationMs, variantId, confidence: answeredConfidence });
+      setLastAction({ index: answeredIndex, flashcardId, pendingWriteId: result.pendingWriteId, rating, front });
       setDone((d) => d + 1);
       setTally((t) => ({ ...t, [rating]: t[rating] + 1 }));
-      if (rating === "again") setStruggled((s) => [...s, current.front.text]);
+      if (rating === "again") setStruggled((s) => [...s, front]);
       if (rating === "again" && answeredConfidence === "sure") setOverconfidentMisses((n) => n + 1);
       setRevealed(false);
       setConfidence(null);
@@ -293,11 +291,7 @@ export function FlashcardReviewer({
     if (!current) return;
     const excludedId = current.id;
     startTransition(async () => {
-      const result = await excludeFlashcardFromReviews(excludedId);
-      if (result.error) {
-        toast(result.error, { variant: "error" });
-        return;
-      }
+      await applyLocalExclude(excludedId);
       toast("Carte exclue de vos révisions.", { variant: "success" });
       setRevealed(false);
       setAwaitingConfidence(false);
@@ -389,11 +383,7 @@ export function FlashcardReviewer({
   function handleUndo() {
     if (!lastAction) return;
     startTransition(async () => {
-      const result = await undoReview(lastAction.flashcardId, lastAction.logId, source, lastAction.previousState ?? null);
-      if (result.error) {
-        toast(result.error, { variant: "error" });
-        return;
-      }
+      await undoLocalReview(lastAction.pendingWriteId);
       setDone((d) => Math.max(0, d - 1));
       setTally((t) => ({ ...t, [lastAction.rating]: Math.max(0, t[lastAction.rating] - 1) }));
       if (lastAction.rating === "again") setStruggled((s) => s.filter((f) => f !== lastAction.front));

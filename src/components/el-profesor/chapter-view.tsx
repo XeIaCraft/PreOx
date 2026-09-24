@@ -21,11 +21,10 @@ import { FicheQA } from "@/components/el-profesor/fiche-qa";
 import { StudyToolsButtons } from "@/components/el-profesor/study-tools-buttons";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
-import { toggleBookmark } from "@/app/apps/el-profesor/actions/bookmarks";
-import { getMyNote, saveMyNote, toggleNoteShare } from "@/app/apps/el-profesor/actions/notes";
+import { getMyNote, toggleNoteShare } from "@/app/apps/el-profesor/actions/notes";
 import { toggleFicheShare } from "@/app/apps/el-profesor/actions/share";
-import { recordReadingPosition } from "@/app/apps/el-profesor/actions/reading-position";
 import { saveFicheReadProgress, resetFicheReadProgress, resetFicheMastery } from "@/app/apps/el-profesor/actions/progress";
+import { enqueuePendingWrite } from "@/lib/el-profesor/local-db";
 import {
   getLastSubEntity,
   setLastSubEntity,
@@ -504,7 +503,17 @@ export function ChapterView({
 
   useEffect(() => {
     if (selectedId) setLastSubEntity(chapterId, selectedId);
-    recordReadingPosition(chapterId, selectedId ?? null);
+    // Local-first (piste 2026-09-24) — queued rather than sent directly, so
+    // it reaches the server (via sync-queue.ts's automatic flush) even when
+    // this fires offline. Fixed id: the server only ever keeps one reading
+    // position row per user (upsert onConflict "user_id"), so each new
+    // position just replaces whatever's still queued.
+    enqueuePendingWrite({
+      id: "readingPosition",
+      kind: "readingPosition",
+      createdAt: new Date().toISOString(),
+      payload: { chapterId, subEntityId: selectedId ?? null },
+    });
   }, [chapterId, selectedId]);
 
   useEffect(() => {
@@ -696,26 +705,25 @@ export function ChapterView({
   function handleToggleBookmark() {
     if (!selectedId || bookmarkPending) return;
     const wasBookmarked = bookmarks.has(selectedId);
+    const nextBookmarked = !wasBookmarked;
     setBookmarks((prev) => {
       const next = new Set(prev);
-      if (wasBookmarked) next.delete(selectedId);
-      else next.add(selectedId);
+      if (nextBookmarked) next.add(selectedId);
+      else next.delete(selectedId);
       return next;
     });
     setBookmarkPending(true);
-    toggleBookmark(selectedId)
-      .then((result) => {
-        if (result.error) {
-          toast(result.error, { variant: "error" });
-          setBookmarks((prev) => {
-            const next = new Set(prev);
-            if (wasBookmarked) next.add(selectedId);
-            else next.delete(selectedId);
-            return next;
-          });
-        }
-      })
-      .finally(() => setBookmarkPending(false));
+    // Local-first (piste 2026-09-24): the click above already reflects
+    // instantly — the real write is queued for sync-queue.ts's automatic
+    // flush. "bookmarked" is the desired end state rather than a toggle, and
+    // keyed by subEntityId, so a second click before the flush just replaces
+    // the queued state instead of queueing two toggles that could double-flip.
+    enqueuePendingWrite({
+      id: `bookmark:${selectedId}`,
+      kind: "bookmark",
+      createdAt: new Date().toISOString(),
+      payload: { subEntityId: selectedId, bookmarked: nextBookmarked },
+    }).finally(() => setBookmarkPending(false));
   }
 
   function handleCopyLink() {
@@ -1355,7 +1363,13 @@ function NoteEditor({ subEntityId }: { subEntityId: string }) {
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
     setSaving(true);
     saveTimeout.current = setTimeout(() => {
-      saveMyNote(subEntityId, value).finally(() => setSaving(false));
+      // Local-first (piste 2026-09-24): queued rather than saved directly —
+      // sync-queue.ts's automatic flush upserts it, so a note taken offline
+      // isn't lost. Keyed by subEntityId so retyping before the next flush
+      // just replaces the still-queued content instead of piling up writes.
+      enqueuePendingWrite({ id: `note:${subEntityId}`, kind: "note", createdAt: new Date().toISOString(), payload: { subEntityId, content: value } }).finally(
+        () => setSaving(false)
+      );
     }, 800);
   }
 

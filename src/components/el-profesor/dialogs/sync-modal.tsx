@@ -4,8 +4,16 @@ import { useState } from "react";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { getElProfesorDashboardSnapshot, getElProfesorChapterContentBatch } from "@/app/apps/el-profesor/actions/offline-sync";
-import { setCachedDashboard, setCachedChapterContentBatch, getCachedDashboard, pruneChapterContent } from "@/lib/el-profesor/local-db";
+import { getElProfesorDashboardSnapshot, getElProfesorChapterContentBatch, getElProfesorReviewStateBatch } from "@/app/apps/el-profesor/actions/offline-sync";
+import {
+  setCachedDashboard,
+  setCachedChapterContentBatch,
+  setCachedReviewStateBatch,
+  getCachedDashboard,
+  pruneChapterContent,
+  pruneReviewState,
+} from "@/lib/el-profesor/local-db";
+import { flushPendingWrites } from "@/lib/el-profesor/sync-queue";
 import type { DashboardSnapshot } from "@/lib/el-profesor/dashboard-types";
 
 // Small enough that the progress bar advances visibly chapter-batch by
@@ -13,7 +21,7 @@ import type { DashboardSnapshot } from "@/lib/el-profesor/dashboard-types";
 // that a big library still only takes a handful of round trips.
 const CHUNK_SIZE = 25;
 
-type Phase = "idle" | "dashboard" | "content" | "done" | "error";
+type Phase = "idle" | "flush" | "dashboard" | "content" | "done" | "error";
 
 /**
  * Manual "Synchroniser" flow (piste 2026-09-24 — "cache local +
@@ -41,6 +49,15 @@ export function SyncModal({
     setErrorMessage(null);
     setSyncedChapters(0);
     setTotalChapters(0);
+    // Flush the local-first write queue (piste 2026-09-24 — "écriture locale
+    // automatique") before pulling anything fresh — otherwise a review
+    // answered offline could get overwritten by the snapshot this sync is
+    // about to download, since that snapshot was computed before the queued
+    // write ever reached the server. flushPendingWrites is a no-op if
+    // there's nothing queued or a flush is already running.
+    setPhase("flush");
+    await flushPendingWrites();
+
     setPhase("dashboard");
 
     let snapshot: DashboardSnapshot;
@@ -65,16 +82,27 @@ export function SyncModal({
     setPhase("content");
 
     let failed = 0;
+    const allFlashcardIds: string[] = [];
     for (let i = 0; i < chapterIds.length; i += CHUNK_SIZE) {
       const chunk = chapterIds.slice(i, i + CHUNK_SIZE);
       try {
         const contentByChapter = await getElProfesorChapterContentBatch(chunk);
         await setCachedChapterContentBatch(contentByChapter);
+
+        // Review state (piste 2026-09-24 — "écriture locale automatique"):
+        // synced alongside each chapter-content chunk so scheduleReview
+        // (fsrs.ts) has a starting FSRS state to run against offline — same
+        // chunking rationale as the content sync itself.
+        const flashcardIds = Object.values(contentByChapter).flatMap((c) => c.subEntities.flatMap((s) => s.fiche?.flashcards.map((f) => f.id) ?? []));
+        allFlashcardIds.push(...flashcardIds);
+        const reviewStates = await getElProfesorReviewStateBatch(flashcardIds);
+        await setCachedReviewStateBatch(reviewStates);
       } catch {
         failed += chunk.length;
       }
       setSyncedChapters((n) => n + chunk.length);
     }
+    await pruneReviewState(allFlashcardIds);
 
     const cached = await getCachedDashboard();
     setPhase("done");
@@ -87,7 +115,15 @@ export function SyncModal({
   }
 
   const progressPct =
-    phase === "dashboard" ? 5 : phase === "content" && totalChapters > 0 ? 5 + Math.round((syncedChapters / totalChapters) * 95) : phase === "done" ? 100 : 0;
+    phase === "flush"
+      ? 2
+      : phase === "dashboard"
+        ? 5
+        : phase === "content" && totalChapters > 0
+          ? 5 + Math.round((syncedChapters / totalChapters) * 95)
+          : phase === "done"
+            ? 100
+            : 0;
 
   return (
     <Modal title="Synchroniser les données locales" onClose={onClose} size="sm">
@@ -104,10 +140,14 @@ export function SyncModal({
         </>
       )}
 
-      {(phase === "dashboard" || phase === "content") && (
+      {(phase === "flush" || phase === "dashboard" || phase === "content") && (
         <div className="space-y-3">
           <p className="text-sm text-foreground-muted">
-            {phase === "dashboard" ? "Tableau de bord et statistiques…" : `Contenu des chapitres (${syncedChapters} / ${totalChapters})…`}
+            {phase === "flush"
+              ? "Envoi de votre progression en attente…"
+              : phase === "dashboard"
+                ? "Tableau de bord et statistiques…"
+                : `Contenu des chapitres (${syncedChapters} / ${totalChapters})…`}
           </p>
           <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
             <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${progressPct}%` }} />
