@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { LocalNavLink } from "@/components/el-profesor/local-nav-link";
 import Image from "next/image";
 import { ArrowLeft, ChevronDown, ChevronRight, FileText, FileX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -61,9 +61,9 @@ export function BookTocView({ toc }: { toc: BookTableOfContents }) {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <Link href="/apps/el-profesor" className="mb-4 inline-flex items-center gap-1.5 text-sm text-foreground-subtle hover:text-foreground">
+      <LocalNavLink href="/apps/el-profesor" className="mb-4 inline-flex items-center gap-1.5 text-sm text-foreground-subtle hover:text-foreground">
         <ArrowLeft className="h-4 w-4" /> Retour à la bibliothèque
-      </Link>
+      </LocalNavLink>
 
       <div className="flex items-start gap-3">
         {book.coverUrl && (
@@ -123,12 +123,12 @@ export function BookTocView({ toc }: { toc: BookTableOfContents }) {
                         {chapter.subEntities.map((sub) => (
                           <li key={sub.id}>
                             {sub.hasFiche ? (
-                              <Link
+                              <LocalNavLink
                                 href={`/apps/el-profesor/chapters/${chapter.chapterId}?entity=${sub.id}`}
                                 className="flex items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-1.5 text-sm text-foreground-muted hover:bg-surface-muted hover:text-foreground"
                               >
                                 <FileText className="h-3.5 w-3.5 shrink-0 text-foreground-subtle" /> {sub.name}
-                              </Link>
+                              </LocalNavLink>
                             ) : (
                               <span className="flex items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-1.5 text-sm text-foreground-subtle opacity-60">
                                 <FileX className="h-3.5 w-3.5 shrink-0" /> {sub.name}

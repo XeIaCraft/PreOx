@@ -48,6 +48,19 @@ export interface DashboardSnapshot {
   aiProvider: ElProfesorAiProvider;
   /** getUserFsrsRetention's current value for this user — cached so a local review (local-review.ts) can call scheduleReview with the same personalized target the server would use. */
   fsrsRetention: number;
+  /**
+   * getEffectiveIsAdmin's result at sync time (piste 2026-09-24 — "module
+   * 100% local") — lets the local nav shell (local-nav-shell.tsx) know
+   * whether to render chapter/book/dashboard screens in their admin variant
+   * without a server round trip. Can go briefly stale if the user's role or
+   * preview-mode changes mid-session without a hard reload — harmless,
+   * since it only ever affects which UI affordances show, never an actual
+   * permission check (every Server Action still re-verifies server-side
+   * regardless).
+   */
+  effectiveIsAdmin: boolean;
+  realIsAdmin: boolean;
+  previewingAsUser: boolean;
 }
 
 /**

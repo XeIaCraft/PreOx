@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { LocalNavLink } from "@/components/el-profesor/local-nav-link";
+import { useLocalNav } from "@/components/el-profesor/local-nav-shell";
+import { matchLocalRoute } from "@/lib/el-profesor/local-nav-routes";
 import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, Brain, PenSquare, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, LayoutTemplate, LayoutList, BookOpenText, ListTree, SlidersHorizontal, AlignJustify, Check, Gauge, RotateCcw } from "lucide-react";
 import { QuizMode } from "@/components/el-profesor/quiz-mode";
 import { MindMapDialog } from "@/components/el-profesor/mind-map-dialog";
@@ -213,9 +215,9 @@ function ImmersiveFicheReader({
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <Link href="/apps/el-profesor" className="flex items-center gap-1 text-xs font-semibold text-foreground-subtle" aria-label="Retour à la bibliothèque">
+            <LocalNavLink href="/apps/el-profesor" className="flex items-center gap-1 text-xs font-semibold text-foreground-subtle" aria-label="Retour à la bibliothèque">
               <ArrowLeft className="h-3.5 w-3.5" />
-            </Link>
+            </LocalNavLink>
             <button type="button" onClick={onOpenFicheList} className="flex items-center gap-1 text-xs font-semibold text-foreground-subtle">
               <ChevronLeft className="h-3.5 w-3.5" /> Chapitre
             </button>
@@ -376,6 +378,7 @@ export function ChapterView({
   ficheMasteryProgress?: Record<string, MasteryProgress>;
 }) {
   const router = useRouter();
+  const localNav = useLocalNav();
   const { toast } = useToast();
   const withFiche = useMemo(() => subEntities.filter((s) => s.fiche), [subEntities]);
   // Resumes the last sub-entity viewed in this chapter (localStorage) unless
@@ -593,7 +596,10 @@ export function ChapterView({
     // neighboring chapter instead of just stopping dead at the boundary.
     const adjacent = direction === 1 ? nextChapter : prevChapter;
     if (adjacent?.entrySubEntityId) {
-      router.push(`/apps/el-profesor/chapters/${adjacent.chapterId}?entity=${adjacent.entrySubEntityId}`);
+      const href = `/apps/el-profesor/chapters/${adjacent.chapterId}?entity=${adjacent.entrySubEntityId}`;
+      const url = new URL(href, window.location.origin);
+      if (localNav && matchLocalRoute(url.pathname, url.searchParams)) localNav.navigateLocally(href);
+      else router.push(href);
     }
   }
 
@@ -795,11 +801,11 @@ export function ChapterView({
       )}
       <div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-3 bg-background py-1 print:hidden">
         <div className="flex min-w-0 items-center gap-3">
-          <Link href="/apps/el-profesor">
+          <LocalNavLink href="/apps/el-profesor">
             <Button variant="ghost" size="icon" aria-label="Retour">
               <ArrowLeft className="h-4 w-4" />
             </Button>
-          </Link>
+          </LocalNavLink>
           <h1 className="truncate font-serif-display text-lg font-medium text-foreground">{chapterTitle}</h1>
         </div>
         <div className="flex shrink-0 items-center gap-2">

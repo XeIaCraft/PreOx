@@ -39,7 +39,8 @@ import type { ReviewState } from "@/lib/el-profesor/types";
 /** Same data page.tsx computes for its initial render — see that file for why each call is shaped this way (batched, no per-chapter loop). Exported so the page and the "Synchroniser" action share one implementation. */
 export async function getElProfesorDashboardSnapshot(): Promise<DashboardSnapshot> {
   const profile = await requireElProfesorAccess();
-  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
+  const realIsAdmin = profile.role === "admin";
+  const { effectiveIsAdmin: isAdmin, previewingAsUser } = await getEffectiveIsAdmin(realIsAdmin);
 
   const allLibraryBooks = await getLibrary();
   const libraryBooks = allLibraryBooks.filter((b) => !b.archivedAt);
@@ -82,6 +83,9 @@ export async function getElProfesorDashboardSnapshot(): Promise<DashboardSnapsho
     hasGeminiKey,
     aiProvider,
     fsrsRetention,
+    effectiveIsAdmin: isAdmin,
+    realIsAdmin,
+    previewingAsUser,
   };
 }
 

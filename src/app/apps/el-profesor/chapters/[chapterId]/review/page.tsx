@@ -1,16 +1,8 @@
 import { requireElProfesorAccess, getDueQueue, getFreeReviewQueue } from "@/lib/el-profesor/dal";
-import { FlashcardReviewer } from "@/components/el-profesor/flashcard-reviewer";
+import { ReviewQueueWithLocalCache } from "@/components/el-profesor/review-queue-with-local-cache";
+import { applyFreeSessionCap, computeExamDurationMs } from "@/lib/el-profesor/review-session-params";
 import { ToastProvider } from "@/components/ui/toast";
 import type { Flashcard, ReviewSource } from "@/lib/el-profesor/types";
-
-// Free (out-of-schedule) review loads every published flashcard for the
-// chapter at once (already shuffled by getFreeReviewQueue) — fine for most
-// chapters, but a large one can mean dozens of cards in a single sitting.
-// Cap by default; ?all=1 opts out.
-const FREE_SESSION_CAP = 30;
-
-const EXAM_DURATION_MIN_SECONDS = 60;
-const EXAM_DURATION_MAX_SECONDS = 3 * 60 * 60;
 
 export default async function ReviewPage({
   params,
@@ -24,36 +16,28 @@ export default async function ReviewPage({
   const { mode, all, limit, duration } = await searchParams;
   const source: ReviewSource = mode === "exam" ? "exam" : mode === "free" ? "free" : "scheduled";
 
-  const fullQueue: Flashcard[] =
-    source === "scheduled" ? await getDueQueue(profile.id, chapterId) : await getFreeReviewQueue(chapterId, profile.id);
+  // Not awaited — ReviewQueueWithLocalCache computes the queue straight from
+  // the local cache (local-review-queue.ts) whenever it can, and only ever
+  // falls back to waiting on this promise when this chapter hasn't been
+  // synced yet (same seam as the dashboard/book/chapter pages). Awaiting it
+  // here would block every navigation into a review session behind it
+  // regardless of the cache.
+  const fullQueuePromise: Promise<Flashcard[]> =
+    source === "scheduled" ? getDueQueue(profile.id, chapterId) : getFreeReviewQueue(chapterId, profile.id);
+  const queuePromise =
+    source === "free" ? fullQueuePromise.then((fullQueue) => applyFreeSessionCap(fullQueue, { all, limit })) : fullQueuePromise.then((queue) => ({ queue, cappedFrom: null }));
 
-  let queue = fullQueue;
-  let cappedFrom: number | null = null;
-  if (source === "free" && all !== "1") {
-    const parsedLimit = limit ? Number(limit) : FREE_SESSION_CAP;
-    const cap = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : FREE_SESSION_CAP;
-    if (fullQueue.length > cap) {
-      queue = fullQueue.slice(0, cap);
-      cappedFrom = fullQueue.length;
-    }
-  }
-
-  let examDurationMs: number | undefined;
-  if (source === "exam") {
-    const parsedSeconds = duration ? Number(duration) : NaN;
-    const clampedSeconds = Number.isFinite(parsedSeconds)
-      ? Math.min(EXAM_DURATION_MAX_SECONDS, Math.max(EXAM_DURATION_MIN_SECONDS, parsedSeconds))
-      : 20 * 60;
-    examDurationMs = clampedSeconds * 1000;
-  }
+  const examDurationMs = source === "exam" ? computeExamDurationMs(duration) : undefined;
 
   return (
     <ToastProvider>
-      <FlashcardReviewer
+      <ReviewQueueWithLocalCache
+        key={`${chapterId}:${source}:${limit ?? ""}:${all ?? ""}:${duration ?? ""}`}
         chapterId={chapterId}
         source={source}
-        cards={queue}
-        cappedFrom={cappedFrom}
+        limit={limit}
+        all={all}
+        queuePromise={queuePromise}
         examDurationMs={examDurationMs}
         badgeLabel={source === "exam" ? "Examen blanc" : undefined}
         emptyMessage={source === "exam" ? "Aucune flashcard publiée pour ce chapitre — rien à mettre dans un examen blanc." : undefined}

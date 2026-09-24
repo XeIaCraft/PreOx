@@ -28,7 +28,16 @@ function TocSkeleton() {
  * storing anything new. Only falls back to the (deferred) server promise
  * when a published chapter hasn't been synced yet.
  */
-export function BookTocWithLocalCache({ bookId, tocPromise }: { bookId: string; tocPromise: Promise<BookTableOfContents | null> }) {
+export function BookTocWithLocalCache({
+  bookId,
+  tocPromise,
+  onCacheMiss,
+}: {
+  bookId: string;
+  /** Null when rendered by the local nav shell rather than page.tsx directly — in that case onCacheMiss must be provided instead. */
+  tocPromise: Promise<BookTableOfContents | null> | null;
+  onCacheMiss?: () => void;
+}) {
   const [toc, setToc] = useState<BookTableOfContents | null>(null);
   const [missing, setMissing] = useState(false);
 
@@ -78,6 +87,10 @@ export function BookTocWithLocalCache({ bookId, tocPromise }: { bookId: string; 
         setToc(localToc);
         return;
       }
+      if (!tocPromise) {
+        onCacheMiss?.();
+        return;
+      }
       tocPromise.then((serverToc) => {
         if (cancelled) return;
         if (serverToc) setToc(serverToc);
@@ -88,7 +101,7 @@ export function BookTocWithLocalCache({ bookId, tocPromise }: { bookId: string; 
     return () => {
       cancelled = true;
     };
-  }, [bookId, tocPromise]);
+  }, [bookId, tocPromise, onCacheMiss]);
 
   if (missing) {
     return <p className="mx-auto max-w-3xl px-4 py-8 text-sm text-foreground-muted">Ce livre n&apos;est plus disponible.</p>;

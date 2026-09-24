@@ -29,11 +29,14 @@ export function ChapterViewWithLocalCache({
   initialEntityId,
   isAdmin,
   contentPromise,
+  onCacheMiss,
 }: {
   chapterId: string;
   initialEntityId?: string;
   isAdmin: boolean;
-  contentPromise: Promise<ChapterContentSnapshot | null>;
+  /** Null when rendered by the local nav shell rather than page.tsx directly — in that case onCacheMiss must be provided instead. */
+  contentPromise: Promise<ChapterContentSnapshot | null> | null;
+  onCacheMiss?: () => void;
 }) {
   const [snapshot, setSnapshot] = useState<ChapterContentSnapshot | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -46,6 +49,10 @@ export function ChapterViewWithLocalCache({
         setSnapshot(cached);
         return;
       }
+      if (!contentPromise) {
+        onCacheMiss?.();
+        return;
+      }
       contentPromise.then((serverSnapshot) => {
         if (cancelled) return;
         if (serverSnapshot) setSnapshot(serverSnapshot);
@@ -55,7 +62,7 @@ export function ChapterViewWithLocalCache({
     return () => {
       cancelled = true;
     };
-  }, [chapterId, contentPromise]);
+  }, [chapterId, contentPromise, onCacheMiss]);
 
   if (notFound) {
     return <p className="mx-auto max-w-4xl px-4 py-8 text-sm text-foreground-muted">Ce chapitre n&apos;est plus disponible.</p>;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import Link from "next/link";
+import { LocalNavLink } from "@/components/el-profesor/local-nav-link";
 import { ArrowLeft, PartyPopper, Undo2, Info, Keyboard, Timer, Square, PenLine, Maximize2, Minimize2, BellOff, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -453,9 +453,9 @@ export function FlashcardReviewer({
           {emptyMessage ??
             (source === "scheduled" ? "Rien à réviser aujourd'hui pour ce chapitre." : "Aucune flashcard publiée pour ce chapitre.")}
         </p>
-        <Link href={backHref} className="mt-4 inline-block">
+        <LocalNavLink href={backHref} className="mt-4 inline-block">
           <Button variant="secondary">{chapterId ? "Voir les fiches" : "Retour à la bibliothèque"}</Button>
-        </Link>
+        </LocalNavLink>
       </div>
     );
   }
@@ -504,9 +504,9 @@ export function FlashcardReviewer({
           </div>
         )}
         <div className="mt-5 flex items-center justify-center gap-2">
-          <Link href="/apps/el-profesor">
+          <LocalNavLink href="/apps/el-profesor">
             <Button>Retour à la bibliothèque</Button>
-          </Link>
+          </LocalNavLink>
           {(done > 0 || examDurationMs) && (
             <Button variant="secondary" onClick={handleRestart}>
               Recommencer
@@ -525,11 +525,11 @@ export function FlashcardReviewer({
     <div ref={containerRef} className={`mx-auto flex min-h-[calc(100vh-4rem)] max-w-xl flex-col bg-background px-4 py-6 ${focusMode ? "justify-center" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-y-1.5">
         {!focusMode && (
-          <Link href={backHref}>
+          <LocalNavLink href={backHref}>
             <Button variant="ghost" size="icon" aria-label="Retour">
               <ArrowLeft className="h-4 w-4" />
             </Button>
-          </Link>
+          </LocalNavLink>
         )}
         <div className={`flex flex-wrap items-center gap-2 ${focusMode ? "w-full justify-between" : "justify-end"}`}>
           {!focusMode && (
@@ -638,17 +638,17 @@ export function FlashcardReviewer({
           {[10, 20, 30]
             .filter((n) => n !== cards.length && n < cappedFrom)
             .map((n) => (
-              <Link
+              <LocalNavLink
                 key={n}
                 href={`/apps/el-profesor/chapters/${chapterId}/review?mode=free&limit=${n}`}
                 className="underline hover:text-foreground"
               >
                 {n} cartes
-              </Link>
+              </LocalNavLink>
             ))}
-          <Link href={`/apps/el-profesor/chapters/${chapterId}/review?mode=free&all=1`} className="underline hover:text-foreground">
+          <LocalNavLink href={`/apps/el-profesor/chapters/${chapterId}/review?mode=free&all=1`} className="underline hover:text-foreground">
             Tout réviser
-          </Link>
+          </LocalNavLink>
         </p>
       )}
 

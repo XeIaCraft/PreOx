@@ -2,6 +2,7 @@
 
 import { Suspense, use, useEffect, useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
+import { LocalNavLink } from "@/components/el-profesor/local-nav-link";
 import Image from "next/image";
 import {
   GraduationCap,
@@ -946,7 +947,7 @@ export function ElProfesorBoard({
       {books.length > 0 && <LibraryStats totalBooks={books.length} totalChapters={totalChapters} totalFlashcards={totalFlashcards} />}
 
       {resume && (
-        <Link
+        <LocalNavLink
           href={`/apps/el-profesor/chapters/${resume.chapter.id}`}
           className="mt-6 flex items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-primary/30 bg-primary-tint px-4 py-3 text-primary-strong hover:border-primary/50"
         >
@@ -957,7 +958,7 @@ export function ElProfesorBoard({
             </p>
           </div>
           <ArrowRight className="h-4 w-4 shrink-0" />
-        </Link>
+        </LocalNavLink>
       )}
 
       {books.length > 0 && (
@@ -1149,14 +1150,14 @@ export function ElProfesorBoard({
                 </div>
               </button>
               <div className="flex flex-wrap items-center gap-2">
-                <Link
+                <LocalNavLink
                   href={`/apps/el-profesor/books/${book.id}`}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] text-foreground-subtle hover:bg-surface-muted hover:text-foreground"
                   aria-label={`Table des matières de ${book.title}`}
                   title="Table des matières"
                 >
                   <ListTree className="h-4 w-4" />
-                </Link>
+                </LocalNavLink>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1370,16 +1371,16 @@ export function ElProfesorBoard({
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       {chapter.status === "published" && (
                         <>
-                          <Link href={`/apps/el-profesor/chapters/${chapter.id}/review?mode=due`}>
+                          <LocalNavLink href={`/apps/el-profesor/chapters/${chapter.id}/review?mode=due`}>
                             <Button size="sm" disabled={due === 0}>
                               {due > 0 ? `Réviser (${due})` : "À jour"}
                             </Button>
-                          </Link>
-                          <Link href={`/apps/el-profesor/chapters/${chapter.id}`}>
+                          </LocalNavLink>
+                          <LocalNavLink href={`/apps/el-profesor/chapters/${chapter.id}`}>
                             <Button variant="secondary" size="sm">
                               <BookOpen className="h-3.5 w-3.5" /> Fiches
                             </Button>
-                          </Link>
+                          </LocalNavLink>
                         </>
                       )}
 
@@ -1574,12 +1575,12 @@ export function ElProfesorBoard({
                         </MoreActionsMenu>
                       )}
                       {chapter.status === "published" && (
-                        <Link
+                        <LocalNavLink
                           href={`/apps/el-profesor/chapters/${chapter.id}/review?mode=free`}
                           className="text-xs text-foreground-subtle underline hover:text-foreground"
                         >
                           Révision libre
-                        </Link>
+                        </LocalNavLink>
                       )}
                     </div>
                   </div>
