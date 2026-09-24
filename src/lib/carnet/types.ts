@@ -91,6 +91,8 @@ export interface CarnetCase {
   other_labels: Partial<Record<string, string>>;
   /** Détail facultatif : produits administrés et procédures (pour soi, jamais exporté dans le carnet officiel). */
   details: CaseDetails;
+  /** Prepared the day before in Préop: not counted anywhere (relevé, report, export, signatures) until confirmed as done. */
+  planned: boolean;
   participation: 1 | 2 | 3;
   tutor_id: string | null;
   signature_id: string | null;

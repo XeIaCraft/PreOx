@@ -46,6 +46,7 @@ function sample(): CarnetData {
       technical_acts: i % 5 === 0 ? ["voie_centrale"] : [],
       other_labels: {},
       details: {},
+      planned: false,
       participation: 2,
       tutor_id: "sup1",
       signature_id: i < 10 ? "sig1" : null,

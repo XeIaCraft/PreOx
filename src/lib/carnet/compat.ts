@@ -32,6 +32,7 @@ function upgradeFields(collection: CarnetCollection, row: Row, full: boolean): R
       if (!Array.isArray(next.technical_acts)) next.technical_acts = [];
       if (!next.other_labels || typeof next.other_labels !== "object") next.other_labels = {};
       if (!next.details || typeof next.details !== "object") next.details = {};
+      if (typeof next.planned !== "boolean") next.planned = false;
     }
     return next;
   }

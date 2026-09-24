@@ -1,8 +1,8 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { CarnetStore, type CarnetState } from "@/lib/carnet/store";
-import type { CarnetMutation } from "@/lib/carnet/types";
+import type { CarnetCase, CarnetMutation } from "@/lib/carnet/types";
 
 const CarnetContext = createContext<CarnetStore | null>(null);
 
@@ -45,9 +45,18 @@ export function CarnetProvider({ userId, children }: { userId: string; children:
   return <CarnetContext.Provider value={store}>{children}</CarnetContext.Provider>;
 }
 
-export function useCarnet(): CarnetState & { commit: (mutations: CarnetMutation[]) => void; store: CarnetStore } {
+/**
+ * `data.cases` holds only real cases: cases planned in Préop (not yet
+ * confirmed as done) are set apart in `plannedCases`, so the relevé, the
+ * numbering, the report, the export and the signatures never count them.
+ */
+export function useCarnet(): CarnetState & { plannedCases: CarnetCase[]; commit: (mutations: CarnetMutation[]) => void; store: CarnetStore } {
   const store = useContext(CarnetContext);
   if (!store) throw new Error("useCarnet must be used within CarnetProvider");
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
-  return { ...state, commit: (mutations) => store.commit(mutations), store };
+  const split = useMemo(
+    () => ({ data: { ...state.data, cases: state.data.cases.filter((c) => !c.planned) }, plannedCases: state.data.cases.filter((c) => c.planned) }),
+    [state.data]
+  );
+  return { status: state.status, data: split.data, plannedCases: split.plannedCases, commit: (mutations) => store.commit(mutations), store };
 }

@@ -137,6 +137,63 @@ export function CaseEditModal({ kase, onClose }: { kase: CarnetCase; onClose: ()
 }
 
 /** Home screen: the entry form for the active stage, and the list of the day right under it to check at a glance. */
+/**
+ * Cases prepared in Préop for this day: nothing counts until confirmed.
+ * « Fait » moves the case to the relevé and opens it to complete (tutor…),
+ * « Pas fait » removes it.
+ */
+function PlannedCases({ date, onDone }: { date: string; onDone: (c: CarnetCase) => void }) {
+  const { plannedCases, commit } = useCarnet();
+  const { toast } = useToast();
+  const today = plannedCases.filter((c) => c.case_date === date).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const overdue = plannedCases.filter((c) => c.case_date < date);
+  if (today.length === 0 && overdue.length === 0) return null;
+  const rows = [...overdue, ...today];
+  return (
+    <div className="space-y-2 rounded-[var(--radius-lg)] border border-dashed border-primary/50 bg-primary-tint/40 p-3">
+      <p className="text-sm font-medium text-foreground">
+        Cas planifiés {overdue.length > 0 ? `(${overdue.length} en retard)` : ""}
+        <span className="ml-1 text-xs font-normal text-foreground-subtle">préparés dans Préop, pas encore au relevé</span>
+      </p>
+      <ul className="space-y-1.5">
+        {rows.map((c) => (
+          <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] bg-surface px-3 py-2">
+            <span className="min-w-0 flex-1 text-sm">
+              <span className="font-medium text-foreground">{c.operation}</span>
+              <span className="ml-1.5 font-mono text-xs text-foreground-subtle">{caseCode(c)}</span>
+              <span className="block text-xs text-foreground-subtle">
+                {c.patient_initials || "—"} · {formatDateFr(c.case_date)}
+              </span>
+            </span>
+            <span className="flex gap-1.5">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  if (!confirm("Ce cas n'a pas été fait : le retirer ?")) return;
+                  commit([deleteRow("cases", c.id)]);
+                }}
+              >
+                Pas fait
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  commit([patchRow("cases", c.id, { planned: false })]);
+                  toast("Ajouté au relevé — complétez le tuteur si besoin.", { variant: "success" });
+                  onDone({ ...c, planned: false });
+                }}
+              >
+                Fait
+              </Button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function EntryView({ stage }: { stage: CarnetStage }) {
   const { data, commit } = useCarnet();
   const { toast } = useToast();
@@ -174,6 +231,7 @@ export function EntryView({ stage }: { stage: CarnetStage }) {
           </h2>
           <Input type="date" value={listDate} onChange={(e) => e.target.value && setListDate(e.target.value)} className="h-9 w-auto" aria-label="Jour affiché" />
         </div>
+        <PlannedCases date={listDate} onDone={setEditing} />
         {dayCases.length === 0 ? <EmptyState title="Aucun cas ce jour-là." /> : <CaseList cases={dayCases} onOpen={setEditing} showDate={false} />}
       </section>
       {editing && <CaseEditModal kase={data.cases.find((c) => c.id === editing.id) ?? editing} onClose={() => setEditing(null)} />}

@@ -38,6 +38,7 @@ function kase(partial: Partial<CarnetCase> = {}): CarnetCase {
     technical_acts: [],
     other_labels: {},
     details: {},
+    planned: false,
     participation: 2,
     tutor_id: null,
     signature_id: null,

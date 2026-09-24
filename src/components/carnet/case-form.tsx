@@ -190,6 +190,7 @@ export function CaseForm({
       general_anesthesia: draft.general_anesthesia,
       ...savedTechniques(draft),
       details: cleanDetails(draft.details),
+      planned: initial?.planned ?? false,
       participation: draft.participation!,
       tutor_id: draft.tutor_id,
       signature_id: initial?.signature_id ?? null,
