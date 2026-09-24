@@ -10,12 +10,18 @@ import {
   getElProfesorReviewStateBatch,
   getElProfesorSuspendedFlashcardIds,
   getElProfesorChapterLastModified,
+  getElProfesorSecondaryDashboardData,
+  getElProfesorNotionViewData,
+  getElProfesorAiConfigData,
 } from "@/app/apps/el-profesor/actions/offline-sync";
 import {
   setCachedDashboard,
   setCachedChapterContentBatch,
   setCachedReviewStateBatch,
   setCachedSuspendedFlashcardIds,
+  setCachedSecondaryDashboardData,
+  setCachedNotionViewData,
+  setCachedAiConfigData,
   getCachedDashboard,
   getCachedChapterLastModifiedTimestamps,
   getAllCachedChapterContent,
@@ -101,6 +107,28 @@ export function SyncModal({
       return;
     }
     await setCachedDashboard(snapshot);
+
+    // Dashboard secondary widgets (activity, notions, AI config/batch jobs —
+    // piste 2026-09-24 — widgets hors ligne) — best-effort, cached
+    // independently of the chapter content below so one failing here never
+    // blocks the rest of the sync; a shell-driven dashboard render just
+    // falls back to its own live fetch if this didn't manage to cache
+    // anything yet.
+    try {
+      const [secondaryData, notionViewData, aiConfigData] = await Promise.all([
+        getElProfesorSecondaryDashboardData(),
+        getElProfesorNotionViewData(),
+        snapshot.effectiveIsAdmin ? getElProfesorAiConfigData() : Promise.resolve(null),
+      ]);
+      await Promise.all([
+        setCachedSecondaryDashboardData(secondaryData),
+        setCachedNotionViewData(notionViewData),
+        setCachedAiConfigData(aiConfigData),
+      ]);
+    } catch {
+      // Best-effort — the widgets simply keep showing whatever was cached
+      // before (or their loading state, on a first-ever sync).
+    }
 
     // Only published chapters are ever opened via la lecture d'un chapitre —
     // no point downloading content for one still en cours d'extraction.

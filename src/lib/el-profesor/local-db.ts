@@ -12,24 +12,32 @@
 // browser without IndexedDB) is swallowed silently and falls back to
 // whatever the server rendered — this is a performance cache, never a
 // source of truth, so a failure here must never break the page.
-import type { DashboardSnapshot, ChapterContentSnapshot } from "./dashboard-types";
+import type { DashboardSnapshot, ChapterContentSnapshot, DashboardSecondaryData, DashboardNotionViewData, DashboardAiConfigData } from "./dashboard-types";
 import type { ReviewState, ReviewRating, ReviewSource } from "./types";
 import type { ReviewConfidence } from "@/app/apps/el-profesor/actions/review";
 
 const DB_NAME = "el-profesor-cache";
-// Bumped for the "à jour" bug fix (piste 2026-09-24 — "module 100% local")
-// — a new store for suspended-flashcard ids, needed so due/free queues can
-// be computed fully locally (local-review-queue.ts). onupgradeneeded below
-// only creates whichever stores don't exist yet, so an older database gains
-// the new one without losing what's already cached.
-const DB_VERSION = 3;
+// Bumped again to cache the dashboard's secondary widgets (activity/notions/
+// AI config/batch jobs — piste 2026-09-24 — "module 100% local", widgets
+// hors ligne) so a shell-driven dashboard render offline shows real
+// last-synced data instead of hanging forever behind their Suspense
+// boundaries (see DashboardWithLocalCache). onupgradeneeded below only
+// creates whichever stores don't exist yet, so an older database gains the
+// new ones without losing what's already cached.
+const DB_VERSION = 4;
 const DASHBOARD_STORE = "dashboard";
 const CHAPTER_CONTENT_STORE = "chapterContent";
 const REVIEW_STATE_STORE = "reviewState";
 const PENDING_WRITES_STORE = "pendingWrites";
 const SUSPENDED_FLASHCARD_IDS_STORE = "suspendedFlashcardIds";
+const SECONDARY_DASHBOARD_STORE = "secondaryDashboard";
+const NOTION_VIEW_DATA_STORE = "notionViewData";
+const AI_CONFIG_DATA_STORE = "aiConfigData";
 const DASHBOARD_KEY = "singleton";
 const SUSPENDED_FLASHCARD_IDS_KEY = "singleton";
+const SECONDARY_DASHBOARD_KEY = "singleton";
+const NOTION_VIEW_DATA_KEY = "singleton";
+const AI_CONFIG_DATA_KEY = "singleton";
 
 type WithSyncedAt<T> = T & { syncedAt: string };
 /** lastModifiedAt is the *server's* timestamp for this chapter at download time (el_profesor_chapter_last_modified) — compared against a fresh server value on the next sync (piste 2026-09-24 — synchronisation delta) to decide whether this chapter needs re-downloading at all. Distinct from syncedAt, which is only ever "when did we last write this" from the client's own clock. */
@@ -51,6 +59,9 @@ function openDb(): Promise<IDBDatabase | null> {
         if (!db.objectStoreNames.contains(REVIEW_STATE_STORE)) db.createObjectStore(REVIEW_STATE_STORE);
         if (!db.objectStoreNames.contains(PENDING_WRITES_STORE)) db.createObjectStore(PENDING_WRITES_STORE);
         if (!db.objectStoreNames.contains(SUSPENDED_FLASHCARD_IDS_STORE)) db.createObjectStore(SUSPENDED_FLASHCARD_IDS_STORE);
+        if (!db.objectStoreNames.contains(SECONDARY_DASHBOARD_STORE)) db.createObjectStore(SECONDARY_DASHBOARD_STORE);
+        if (!db.objectStoreNames.contains(NOTION_VIEW_DATA_STORE)) db.createObjectStore(NOTION_VIEW_DATA_STORE);
+        if (!db.objectStoreNames.contains(AI_CONFIG_DATA_STORE)) db.createObjectStore(AI_CONFIG_DATA_STORE);
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(null);
@@ -143,6 +154,45 @@ export async function setCachedChapterContentBatch(entries: Record<string, Chapt
     CHAPTER_CONTENT_STORE,
     Object.entries(entries).map(([chapterId, snapshot]) => [chapterId, { ...snapshot, syncedAt, lastModifiedAt: lastModifiedByChapterId[chapterId] ?? syncedAt }])
   );
+}
+
+/**
+ * Dashboard secondary widgets (activity, forecast, bookmarks, stale
+ * chapters...) — cached alongside the main dashboard snapshot so a
+ * shell-driven render (local-nav-shell.tsx) shows real last-synced data
+ * instead of hanging behind Suspense forever when offline. See
+ * DashboardWithLocalCache for the cache-first substitution.
+ */
+export async function getCachedSecondaryDashboardData(): Promise<DashboardSecondaryData | null> {
+  return getValue<DashboardSecondaryData>(SECONDARY_DASHBOARD_STORE, SECONDARY_DASHBOARD_KEY);
+}
+
+export async function setCachedSecondaryDashboardData(data: DashboardSecondaryData): Promise<void> {
+  await putEntries(SECONDARY_DASHBOARD_STORE, [[SECONDARY_DASHBOARD_KEY, data]]);
+}
+
+export async function getCachedNotionViewData(): Promise<DashboardNotionViewData | null> {
+  return getValue<DashboardNotionViewData>(NOTION_VIEW_DATA_STORE, NOTION_VIEW_DATA_KEY);
+}
+
+export async function setCachedNotionViewData(data: DashboardNotionViewData): Promise<void> {
+  await putEntries(NOTION_VIEW_DATA_STORE, [[NOTION_VIEW_DATA_KEY, data]]);
+}
+
+/**
+ * Wrapped in `{ value }` (rather than storing DashboardAiConfigData | null
+ * directly) so a cached "not admin, no config" result (value: null) stays
+ * distinguishable from "never cached at all" (getValue itself returning
+ * null) — getCachedAiConfigData returning null must mean the latter, or
+ * DashboardWithLocalCache could never tell whether to trust an empty cache
+ * or fall back to the live promise.
+ */
+export async function getCachedAiConfigData(): Promise<{ value: DashboardAiConfigData | null } | null> {
+  return getValue<{ value: DashboardAiConfigData | null }>(AI_CONFIG_DATA_STORE, AI_CONFIG_DATA_KEY);
+}
+
+export async function setCachedAiConfigData(value: DashboardAiConfigData | null): Promise<void> {
+  await putEntries(AI_CONFIG_DATA_STORE, [[AI_CONFIG_DATA_KEY, { value }]]);
 }
 
 export async function getLastSyncedAt(): Promise<string | null> {
@@ -407,7 +457,16 @@ export async function clearLocalCache(): Promise<void> {
   try {
     await new Promise<void>((resolve) => {
       try {
-        const stores = [DASHBOARD_STORE, CHAPTER_CONTENT_STORE, REVIEW_STATE_STORE, PENDING_WRITES_STORE, SUSPENDED_FLASHCARD_IDS_STORE];
+        const stores = [
+          DASHBOARD_STORE,
+          CHAPTER_CONTENT_STORE,
+          REVIEW_STATE_STORE,
+          PENDING_WRITES_STORE,
+          SUSPENDED_FLASHCARD_IDS_STORE,
+          SECONDARY_DASHBOARD_STORE,
+          NOTION_VIEW_DATA_STORE,
+          AI_CONFIG_DATA_STORE,
+        ];
         const tx = db.transaction(stores, "readwrite");
         for (const store of stores) tx.objectStore(store).clear();
         tx.oncomplete = () => resolve();

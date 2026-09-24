@@ -5,7 +5,7 @@ import { CloudDownload, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { SyncModal } from "@/components/el-profesor/dialogs/sync-modal";
-import { getCachedDashboard } from "@/lib/el-profesor/local-db";
+import { getCachedDashboard, getCachedSecondaryDashboardData, getCachedNotionViewData, getCachedAiConfigData } from "@/lib/el-profesor/local-db";
 import { getLocalDueCounts, getLocalMasteryCounts } from "@/lib/el-profesor/local-review-queue";
 import type { DashboardSnapshot, DashboardSecondaryData, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
 
@@ -73,6 +73,36 @@ export function DashboardWithLocalCache({
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [checkedCache, setCheckedCache] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
+  // Cache-first substitution for the three secondary-widget promises (piste
+  // 2026-09-24 — widgets hors ligne): defaults to the promise the caller
+  // passed in (page.tsx's or the shell's live Server Action call), swapped
+  // for an already-resolved one the moment a cache hit comes back — same
+  // "cache first, live promise only as fallback" rule as the main snapshot
+  // above, so these widgets render instantly from the last sync instead of
+  // hanging behind their Suspense boundary when offline.
+  const [effectiveSecondaryDataPromise, setEffectiveSecondaryDataPromise] = useState(secondaryDataPromise);
+  const [effectiveAiConfigPromise, setEffectiveAiConfigPromise] = useState(aiConfigPromise);
+  const [effectiveNotionViewDataPromise, setEffectiveNotionViewDataPromise] = useState(notionViewDataPromise);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCachedSecondaryDashboardData().then((cached) => {
+      if (!cancelled && cached) setEffectiveSecondaryDataPromise(Promise.resolve(cached));
+    });
+    getCachedNotionViewData().then((cached) => {
+      if (!cancelled && cached) setEffectiveNotionViewDataPromise(Promise.resolve(cached));
+    });
+    getCachedAiConfigData().then((cached) => {
+      if (!cancelled && cached) setEffectiveAiConfigPromise(Promise.resolve(cached.value));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Mount-only, same rationale as the dashboard snapshot check below — a
+    // fresh sync updates these via handleSynced-equivalent props being new
+    // promises from the parent re-render (page.tsx/shell), not by reactively
+    // re-checking the cache.
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,9 +191,9 @@ export function DashboardWithLocalCache({
         realIsAdmin={realIsAdmin}
         previewingAsUser={previewingAsUser}
         serverResumeChapterId={serverResumeChapterId}
-        secondaryDataPromise={secondaryDataPromise}
-        aiConfigPromise={aiConfigPromise}
-        notionViewDataPromise={notionViewDataPromise}
+        secondaryDataPromise={effectiveSecondaryDataPromise}
+        aiConfigPromise={effectiveAiConfigPromise}
+        notionViewDataPromise={effectiveNotionViewDataPromise}
         onLocalBooksChange={handleLocalBooksChange}
       />
 
