@@ -147,7 +147,7 @@ export function EntryView({ stage }: { stage: CarnetStage }) {
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <section className="space-y-4">
         <SectionTitle>Nouveau cas</SectionTitle>
         <div className="rounded-[var(--radius-lg)] border border-border bg-surface p-4 sm:p-5">

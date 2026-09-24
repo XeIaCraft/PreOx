@@ -108,8 +108,8 @@ export function CaseDetailsEditor({
               <ul className="space-y-1.5">
                 {drugs.map((drug, i) => (
                   <li key={drug.name} className="flex flex-wrap items-center gap-1.5 rounded-[var(--radius-md)] bg-surface-muted/60 px-2 py-1.5">
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{drug.name}</span>
-                    <Select value={drug.route} onChange={(e) => updateDrug(i, { route: e.target.value })} className="h-8 w-auto px-2 text-xs" aria-label={`Mode d'administration de ${drug.name}`}>
+                    <span className="min-w-0 basis-full truncate text-sm font-medium text-foreground sm:flex-1 sm:basis-auto">{drug.name}</span>
+                    <Select value={drug.route} onChange={(e) => updateDrug(i, { route: e.target.value })} className="h-8 w-auto min-w-0 flex-1 px-2 text-xs sm:flex-none" aria-label={`Mode d'administration de ${drug.name}`}>
                       {DRUG_ROUTES.map((r) => (
                         <option key={r.code} value={r.code}>
                           {r.label}

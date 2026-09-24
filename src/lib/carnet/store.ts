@@ -84,8 +84,42 @@ export interface CarnetStatus {
   pending: number;
   /** Last delivery/refresh problem, if the latest attempt failed. */
   error: string | null;
-  /** Changes the server refused for good (shown once, then dismissed). */
-  rejected: string[];
+  /**
+   * Changes the server refused. Kept on the device (never silently lost):
+   * retried automatically at the next start — a refusal caused by a bug is
+   * fixed by an app update — or on demand, until the user discards them.
+   */
+  rejected: RejectedChange[];
+}
+
+export interface RejectedChange {
+  mutation: CarnetMutation;
+  error: string;
+  /** What it was, in words ("Cas « Césarienne » du 07/10/2026"). */
+  label: string;
+}
+
+const COLLECTION_LABELS: Record<string, string> = {
+  profile: "Identification",
+  supervisors: "Superviseur",
+  stages: "Stage",
+  stage_reviews: "Évaluation de stage",
+  signatures: "Signature",
+  cases: "Cas",
+  duties: "Garde",
+  related_activities: "Activité connexe",
+  courses: "Cours / séminaire",
+  publications: "Publication",
+  years: "Année de formation",
+};
+
+function describe(m: CarnetMutation): string {
+  const kind = COLLECTION_LABELS[m.collection] ?? m.collection;
+  if (m.op === "delete") return `${kind} (suppression)`;
+  const row = (m.op === "put" ? m.row : m.patch) as Record<string, unknown>;
+  const name = [row.operation, row.hospital, row.last_name, row.nature, row.subject, row.title].find((v) => typeof v === "string" && v);
+  const date = [row.case_date, row.duty_date, row.start_date].find((v) => typeof v === "string" && v) as string | undefined;
+  return `${kind}${name ? ` « ${name} »` : ""}${date ? ` du ${date.split("-").reverse().join("/")}` : ""}`;
 }
 
 export interface CarnetState {
@@ -118,10 +152,10 @@ export class CarnetStore {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private flushing: Promise<void> | null = null;
   private lastRefreshAt = 0;
-  private readonly keys: { base: string; queue: string; syncedAt: string };
+  private readonly keys: { base: string; queue: string; syncedAt: string; rejected: string };
 
   constructor(userId: string) {
-    this.keys = { base: `${userId}:base`, queue: `${userId}:queue`, syncedAt: `${userId}:syncedAt` };
+    this.keys = { base: `${userId}:base`, queue: `${userId}:queue`, syncedAt: `${userId}:syncedAt`, rejected: `${userId}:rejected` };
     this.state = {
       data: emptyCarnetData(),
       // online starts true on both server and client (no hydration mismatch); the provider corrects it on mount.
@@ -137,7 +171,9 @@ export class CarnetStore {
   getState = (): CarnetState => this.state;
 
   private emit(status: Partial<CarnetStatus> = {}) {
-    this.state = { data: applyMutations(this.base, this.queue), status: { ...this.state.status, ...status, pending: this.queue.length } };
+    const next = { ...this.state.status, ...status, pending: this.queue.length };
+    // Refused changes stay visible (as not yet saved) until retried or discarded.
+    this.state = { data: applyMutations(this.base, [...next.rejected.map((r) => r.mutation), ...this.queue]), status: next };
     for (const listener of this.listeners) listener();
   }
 
@@ -145,19 +181,23 @@ export class CarnetStore {
     return idbSet([
       [this.keys.base, this.base],
       [this.keys.queue, this.queue],
+      [this.keys.rejected, this.state.status.rejected],
     ]);
   }
 
   /** Reads the local copy, then syncs with the server in the background. */
   async init(): Promise<void> {
-    const [base, queue, syncedAt] = await Promise.all([
+    const [base, queue, syncedAt, rejected] = await Promise.all([
       idbGet<CarnetData>(this.keys.base),
       idbGet<CarnetMutation[]>(this.keys.queue),
       idbGet<string>(this.keys.syncedAt),
+      idbGet<RejectedChange[]>(this.keys.rejected),
     ]);
     this.base = upgradeData({ ...emptyCarnetData(), ...(base ?? {}) });
-    this.queue = queue ?? [];
-    this.emit({ ready: base !== null, lastSyncedAt: syncedAt });
+    // Changes refused last time get another chance: the app may have been updated since.
+    this.queue = [...(rejected ?? []).map((r) => r.mutation), ...(queue ?? [])];
+    this.emit({ ready: base !== null, lastSyncedAt: syncedAt, rejected: [] });
+    if (rejected?.length) await this.persist();
     await this.sync();
     if (!this.state.status.ready) this.emit({ ready: true });
   }
@@ -171,8 +211,19 @@ export class CarnetStore {
     this.scheduleFlush();
   }
 
+  /** Sends the refused changes again. */
+  retryRejected(): void {
+    // Back at the front of the queue: they came before whatever was entered since.
+    this.queue = [...this.state.status.rejected.map((r) => r.mutation), ...this.queue];
+    this.emit({ rejected: [] });
+    void this.persist();
+    this.scheduleFlush();
+  }
+
+  /** Gives up on the refused changes for good. */
   dismissRejected(): void {
     this.emit({ rejected: [] });
+    void this.persist();
   }
 
   private scheduleFlush() {
@@ -200,7 +251,7 @@ export class CarnetStore {
 
   private async runSync(): Promise<void> {
     this.emit({ syncing: true });
-    const rejected: string[] = [];
+    const rejected: RejectedChange[] = [];
     try {
       while (this.queue.length > 0) {
         const batch = this.queue.slice(0, BATCH);
@@ -218,15 +269,16 @@ export class CarnetStore {
             this.base = applyMutation(this.base, mutation);
             done.add(result.id);
           } else if (!result.retryable) {
-            rejected.push(result.error ?? "Modification refusée par le serveur.");
+            rejected.push({ mutation, error: result.error ?? "Modification refusée par le serveur.", label: describe(mutation) });
             done.add(result.id);
           } else {
             stop = true;
           }
         }
         this.queue = this.queue.filter((m) => !done.has(m.id));
+        if (rejected.length) this.emit({ rejected: [...this.state.status.rejected, ...rejected.splice(0)] });
+        else this.emit();
         await this.persist();
-        this.emit();
         if (stop) throw new Error(results.find((r) => !r.ok && r.retryable)?.error ?? "Envoi interrompu — nouvel essai automatique.");
       }
 
@@ -235,9 +287,9 @@ export class CarnetStore {
       this.lastRefreshAt = Date.now();
       const syncedAt = new Date().toISOString();
       await Promise.all([this.persist(), idbSet([[this.keys.syncedAt, syncedAt]])]);
-      this.emit({ syncing: false, error: null, lastSyncedAt: syncedAt, ready: true, rejected: [...this.state.status.rejected, ...rejected] });
+      this.emit({ syncing: false, error: null, lastSyncedAt: syncedAt, ready: true });
     } catch (err) {
-      this.emit({ syncing: false, error: err instanceof Error ? err.message : "Synchronisation impossible.", rejected: [...this.state.status.rejected, ...rejected] });
+      this.emit({ syncing: false, error: err instanceof Error ? err.message : "Synchronisation impossible." });
     }
   }
 }

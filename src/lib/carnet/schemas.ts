@@ -100,7 +100,8 @@ const caseBase = z.object({
     general_anesthesia: z.boolean(),
     regional_types: z.array(codes(REGIONAL_TYPES)).max(REGIONAL_TYPES.length).refine(unique, "Doublon"),
     technical_acts: z.array(codes(TECHNICAL_ACTS)).max(TECHNICAL_ACTS.length).refine(unique, "Doublon"),
-    other_labels: z.record(codes(OTHER_CODES.map((code) => ({ code }))), text(300)),
+    // partialRecord: z.record with enum keys requires every key (zod 4); here each precision is optional.
+    other_labels: z.partialRecord(codes(OTHER_CODES.map((code) => ({ code }))), text(300)),
     details: caseDetailsSchema,
     participation: z.union([z.literal(1), z.literal(2), z.literal(3)]),
     tutor_id: id.nullable(),

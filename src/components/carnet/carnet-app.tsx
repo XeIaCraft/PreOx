@@ -19,7 +19,6 @@ import {
   RefreshCw,
   UserRound,
   Users,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -219,7 +218,8 @@ export function CarnetApp() {
     );
 
   return (
-    <div className="pb-24 sm:pb-0">
+    // Grid items default to min-width: auto — one wide child would widen the whole page on a phone.
+    <div className="min-w-0 pb-24 sm:pb-0 [&_.grid>*]:min-w-0">
       <header className="mb-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="font-serif-display text-3xl font-medium text-foreground">Carnet de stage</h1>
@@ -257,14 +257,32 @@ export function CarnetApp() {
       </header>
 
       {status.rejected.length > 0 && (
-        <div className="mb-4 flex items-start justify-between gap-3 rounded-[var(--radius-md)] border border-danger/30 bg-danger-tint px-3 py-2 text-sm text-danger">
+        <div className="mb-4 space-y-2 rounded-[var(--radius-md)] border border-danger/30 bg-danger-tint px-3 py-2.5 text-sm text-danger">
           <p>
-            {status.rejected.length > 1 ? `${status.rejected.length} modifications ont été refusées` : "Une modification a été refusée"} par le serveur et annulée :{" "}
-            {status.rejected.slice(-3).join(" · ")}
+            {status.rejected.length > 1 ? `${status.rejected.length} saisies n'ont pas pu être enregistrées` : "Une saisie n'a pas pu être enregistrée"} sur le
+            serveur. Elles restent sur cet appareil et seront renvoyées au prochain démarrage.
           </p>
-          <button type="button" onClick={() => store.dismissRejected()} aria-label="Fermer">
-            <X className="h-4 w-4" />
-          </button>
+          <ul className="list-disc pl-5 text-xs">
+            {status.rejected.slice(0, 5).map((r) => (
+              <li key={r.mutation.id} className="break-words">
+                {r.label} — {r.error}
+              </li>
+            ))}
+            {status.rejected.length > 5 && <li>… et {status.rejected.length - 5} autre(s)</li>}
+          </ul>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={() => store.retryRejected()}>
+              Réessayer maintenant
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-danger"
+              onClick={() => confirm("Abandonner définitivement ces saisies ?") && store.dismissRejected()}
+            >
+              Abandonner
+            </Button>
+          </div>
         </div>
       )}
 
