@@ -19,11 +19,11 @@ import { FlashcardEditor } from "@/components/el-profesor/flashcard-editor";
 import { RenameFicheButton } from "@/components/el-profesor/inline-rename-fiche";
 import { MergeFichesForm } from "@/components/el-profesor/merge-fiches-form";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
-import { publishFiche, finalizeChapterPublication, moveSubEntity, uploadFlashcardImage } from "@/app/apps/el-profesor/actions/extraction";
+import { publishFiche, finalizeChapterPublication, moveSubEntity, uploadFlashcardImage, uploadFicheBlockImage } from "@/app/apps/el-profesor/actions/extraction";
 import { resolveFlags } from "@/app/apps/el-profesor/actions/flags";
 import { useToast } from "@/components/ui/toast";
 import { uploadImageDirect } from "@/lib/el-profesor/client-image-upload";
-import { EL_PROFESOR_FLASHCARD_IMAGE_BUCKET } from "@/lib/el-profesor/storage-constants";
+import { EL_PROFESOR_FLASHCARD_IMAGE_BUCKET, EL_PROFESOR_BLOCK_IMAGE_BUCKET } from "@/lib/el-profesor/storage-constants";
 import type { SubEntityWithFiche } from "@/lib/el-profesor/dal";
 import type { Citation, Flag, ChapterSourceKind } from "@/lib/el-profesor/types";
 
@@ -218,6 +218,21 @@ export function ExtractionReviewView({
     });
   }
 
+  /** Same capture flow as attachImage, targeting a fiche block instead of a flashcard (piste 2026-09-24, à la demande de l'utilisateur — l'illustration capturée doit aussi pouvoir aller sur la fiche, pas seulement une flashcard). Same upload-direct-to-Storage rationale. */
+  function attachBlockImage(blockId: string, dataUrl: string) {
+    startTransition(async () => {
+      const blob = await fetch(dataUrl).then((r) => r.blob());
+      const uploaded = await uploadImageDirect(EL_PROFESOR_BLOCK_IMAGE_BUCKET, `${blockId}-${Date.now()}.png`, blob, "image/png");
+      if ("error" in uploaded) {
+        toast(uploaded.error, { variant: "error" });
+        return;
+      }
+      const result = await uploadFicheBlockImage(blockId, uploaded.url);
+      if (result.error) toast(result.error, { variant: "error" });
+      else toast(result.success ?? "Image ajoutée.", { variant: "success" });
+    });
+  }
+
   function handlePdfCapture(dataUrl: string) {
     if (directCaptureFlashcardId) {
       attachImage(directCaptureFlashcardId, dataUrl);
@@ -230,6 +245,12 @@ export function ExtractionReviewView({
   function handleAttachCapture(flashcardId: string) {
     if (!pendingCapture) return;
     attachImage(flashcardId, pendingCapture);
+    setPendingCapture(null);
+  }
+
+  function handleAttachCaptureToBlock(blockId: string) {
+    if (!pendingCapture) return;
+    attachBlockImage(blockId, pendingCapture);
     setPendingCapture(null);
   }
 
@@ -535,10 +556,16 @@ export function ExtractionReviewView({
       )}
 
       {pendingCapture && (
-        <Modal title="Associer l'image capturée" description="À quelle flashcard de cette fiche l'attacher ?" onClose={() => setPendingCapture(null)} size="sm">
+        <Modal
+          title="Associer l'image capturée"
+          description="À quelle flashcard ou quel bloc de cette fiche l'attacher ?"
+          onClose={() => setPendingCapture(null)}
+          size="sm"
+        >
           {/* eslint-disable-next-line @next/next/no-img-element -- transient client-side crop preview, not a persisted asset */}
           <img src={pendingCapture} alt="" className="mb-3 max-h-40 w-full rounded-[var(--radius-sm)] border border-border object-contain" />
-          <div className="max-h-64 space-y-1.5 overflow-y-auto">
+          <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-foreground-subtle">Flashcards</p>
+          <div className="max-h-40 space-y-1.5 overflow-y-auto">
             {(selected?.fiche?.flashcards ?? []).map((card) => (
               <button
                 key={card.id}
@@ -551,6 +578,21 @@ export function ExtractionReviewView({
               </button>
             ))}
             {(selected?.fiche?.flashcards.length ?? 0) === 0 && <p className="text-sm text-foreground-subtle">Aucune flashcard sur cette fiche.</p>}
+          </div>
+          <p className="mb-1.5 mt-4 text-xs font-medium uppercase tracking-wide text-foreground-subtle">Blocs de la fiche</p>
+          <div className="max-h-40 space-y-1.5 overflow-y-auto">
+            {(selected?.fiche?.blocks ?? []).map((block) => (
+              <button
+                key={block.id}
+                type="button"
+                onClick={() => handleAttachCaptureToBlock(block.id)}
+                disabled={isPending}
+                className="block w-full truncate rounded-[var(--radius-sm)] border border-border p-2 text-left text-sm text-foreground hover:bg-surface-muted disabled:opacity-50"
+              >
+                {blockToPlainText(block.blockType, block.content).slice(0, 80) || "(bloc sans texte)"}
+              </button>
+            ))}
+            {(selected?.fiche?.blocks.length ?? 0) === 0 && <p className="text-sm text-foreground-subtle">Aucun bloc sur cette fiche.</p>}
           </div>
         </Modal>
       )}
