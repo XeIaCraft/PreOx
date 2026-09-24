@@ -149,6 +149,9 @@ interface Ctx {
   images: Map<string, PDFImage>;
 }
 
+/** Where the form prints its page number: centred on the page, at this top (portrait / landscape pages). */
+const FOOTER = { portrait: { top: 761.9, halfWidth: 16 }, landscape: { top: 515.3, halfWidth: 16 } };
+
 interface TextOpts {
   size?: number;
   /** Smallest size tried before cutting the text. */
@@ -345,6 +348,27 @@ async function signatureImage(ctx: Ctx, key: string, dataUrl: string | null | un
     }
   }
   return ctx.images.get(key);
+}
+
+/**
+ * The form numbers its pages for its own fixed page count (16 pages of
+ * record of cases, 4 of duties…), while the export has as many as the data
+ * needs — so every page but the cover gets its real number, in place of the
+ * form's (same font, same spot, in the form's black).
+ */
+function renumberPages(ctx: Ctx) {
+  const { lib, doc, font } = ctx;
+  doc.getPages().forEach((page, i) => {
+    if (i === 0) return;
+    const width = page.getWidth();
+    const height = page.getHeight();
+    const footer = width > height ? FOOTER.landscape : FOOTER.portrait;
+    const center = width / 2;
+    page.drawRectangle({ x: center - footer.halfWidth, y: height - footer.top - 14, width: footer.halfWidth * 2, height: 14.5, color: lib.rgb(1, 1, 1) });
+    const label = String(i + 1);
+    const size = 11;
+    page.drawText(label, { x: center - font.widthOfTextAtSize(label, size) / 2, y: height - footer.top - size * 0.952, size, font, color: lib.rgb(0, 0, 0) });
+  });
 }
 
 /** Fields cut on the form, in full — plain pages after the form. */
@@ -728,5 +752,6 @@ export async function buildCarnetPdf(data: CarnetData, trainingYear: number | "a
   }
 
   addAnnex(ctx);
+  renumberPages(ctx);
   return ctx.doc.save();
 }
