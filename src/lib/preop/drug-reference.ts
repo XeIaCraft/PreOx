@@ -47,6 +47,8 @@ export interface DrugReference {
   cautions: DrugCaution[];
   /** Local anaesthetic: maximum dose (mg/kg and total mg), without and with adrenaline (tableau 12.1). Doses add up across local anaesthetics. */
   maxDose?: { perKg: number; totalMg: number; withAdrenalinePerKg?: number; withAdrenalineTotalMg?: number };
+  /** Its cautions are raised only when it is in the plan (antibiotics: not an anaesthesia drug to avoid in general). */
+  onlyInPlan?: boolean;
 }
 
 const pk = (label: string, min: number, max: number, unit: DoseUnit = "mg", extra: Partial<ReferenceDose> = {}): ReferenceDose => ({ label, min, max, unit, mode: "per_kg", ...extra });
@@ -483,6 +485,62 @@ export const DRUG_REFERENCES: DrugReference[] = [
     doses: [pk("Dose maximale", 12, 12, "mg", { note: "Total 600 mg." }), fx("Rachianesthésie (Clorotekal, tableau 13.3)", 30, 45, "mg", { note: "Durée 40–80 min : ambulatoire." })],
     cautions: [{ conditions: ["pseudocholinesterase"], level: "relative", text: "ester métabolisé par les pseudocholinestérases : toxicité accrue" }],
     maxDose: { perKg: 12, totalMg: 600, withAdrenalineTotalMg: 650 },
+  },
+
+  // --- Chapitre 20 : antibioprophylaxie et prophylaxie de l'endocardite -------------------------------
+  {
+    name: "Céfazoline",
+    words: ["cefazoline", "cefacidal", "kefzol"],
+    chapter: "chap. 20",
+    doses: [fx("Antibioprophylaxie (IV lent, dans l'heure avant l'incision)", 2, 2, "g", { note: "3 g au-delà de 120 kg. Seconde dose si > 90 min entre l'injection et l'incision, 3–4 h après la 1re si l'intervention dure, ou si pertes sanguines > 1 500 ml." })],
+    cautions: [],
+  },
+  {
+    name: "Céfuroxime",
+    words: ["cefuroxime", "zinacef", "zinnat", "zinat"],
+    chapter: "chap. 20",
+    doses: [fx("Antibioprophylaxie (IV lent, dans l'heure avant l'incision)", 1.5, 1.5, "g", { note: "Mêmes règles de réinjection que la céfazoline." }), fx("Endocardite, allergie non immédiate à l'amoxicilline (PO 1 h avant)", 1, 1, "g")],
+    cautions: [],
+  },
+  {
+    name: "Métronidazole",
+    words: ["metronidazole", "flagyl"],
+    chapter: "chap. 20",
+    doses: [fx("Chirurgie du côlon, du rectum ou de l'appendice (en 20 min)", 500, 500, "mg", { note: "Ajouté à la céfazoline ou au céfuroxime ; 2e dose 8 h après si l'intervention dure." })],
+    cautions: [],
+  },
+  {
+    name: "Vancomycine",
+    onlyInPlan: true,
+    words: ["vancomycine", "vancocin"],
+    chapter: "chap. 20",
+    doses: [pk("Antibioprophylaxie, allergie immédiate aux bêtalactamines", 15, 30, "mg", { note: "Maximum 2 500 mg ; perfusion lente (≥ 1 000 mg en 60 min : hypotension par histaminolibération) ; 2e dose 8 h après." })],
+    cautions: [{ conditions: ["ckd", "dialysis"], level: "adapt", text: "insuffisance rénale : seconde dose à discuter (élimination rénale)" }],
+  },
+  {
+    name: "Clindamycine",
+    words: ["clindamycine", "dalacin"],
+    chapter: "chap. 20",
+    doses: [fx("Antibioprophylaxie, allergie immédiate aux bêtalactamines (en 30 min)", 600, 600, "mg", { note: "2e dose 6 h après si l'intervention dure ; côlon/rectum/appendice : + gentamicine + métronidazole." }), fx("Endocardite, allergie immédiate (PO 1 h avant)", 600, 600)],
+    cautions: [],
+  },
+  {
+    name: "Gentamicine",
+    onlyInPlan: true,
+    words: ["gentamicine", "geomycine"],
+    chapter: "chap. 20",
+    doses: [pk("Avec la clindamycine, allergie aux bêtalactamines (en 30 min)", 5, 5)],
+    cautions: [
+      { conditions: ["ckd", "dialysis"], level: "relative", text: "insuffisance rénale : néphrotoxicité" },
+      { conditions: ["myasthenia", "neuromuscular", "lambert_eaton"], level: "relative", text: "potentialise le bloc neuromusculaire" },
+    ],
+  },
+  {
+    name: "Amoxicilline",
+    words: ["amoxicilline", "clamoxyl"],
+    chapter: "chap. 20",
+    doses: [fx("Prophylaxie de l'endocardite (PO 1 h avant, dose unique)", 2, 2, "g", { note: "Enfant : 50 mg/kg, maximum 2 g." })],
+    cautions: [],
   },
 ];
 

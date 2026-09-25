@@ -836,4 +836,64 @@ const ALR_TABLE: Proposed[] = [
   }),
 ];
 
-export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE];
+// ---------------------------------------------------------------------------
+// Chapitre 20 — Prévention des infections périopératoires (Senn, Zanetti, Albrecht)
+// ---------------------------------------------------------------------------
+
+const CH20 = "Chapitre 20, Prévention des infections périopératoires, 4e édition (Elsevier Masson)";
+const Q_ABX =
+  "According to the Belgian Superior Health Council (CSS/HGR) guideline on surgical antibiotic prophylaxis and current European guidance, which agent, dose, timing and redosing should be used, including for patients with a penicillin or cephalosporin allergy?";
+
+const INFECTIONS: Proposed[] = [
+  m({
+    title: "Infection à distance du site opératoire : chirurgie programmée ajournée",
+    statement: "Une chirurgie élective devrait être ajournée chez un patient présentant une infection d'un site autre que le site chirurgical.",
+    conditions: [history("active_infection", "Infection en cours (hors site opératoire)"), { kind: "surgery", attribute: "urgency", in: ["elective"] }],
+    action: { type: "requirement", text: "Infection en cours à distance du site opératoire : reporter la chirurgie programmée jusqu'à la guérison.", blocking: true, target: "surgery" },
+    quote: "Une chirurgie élective devrait être ajournée chez un patient présentant une infection d'un site autre que le site chirurgical.",
+    question: "Should elective surgery be postponed in a patient with an active infection at a site remote from the surgical site, according to WHO 2018 surgical site infection guidelines and the Belgian CSS recommendations?",
+    chapterTitle: CH20,
+  }),
+  m({
+    title: "Allergie immédiate aux pénicillines : alternative à la céfazoline",
+    statement: "En cas d'allergie de type réaction immédiate aux pénicillines, l'antibioprophylaxie utilise la vancomycine (15–30 mg/kg, max 2 500 mg, en ≥ 60 min) ou la clindamycine (600 mg en 30 min) au lieu de la céfazoline.",
+    conditions: [{ kind: "allergy", allergen: "betalactams", present: true, label: "Pénicillines / bêtalactamines", penFast: "high" }],
+    action: { type: "info", text: "Antibioprophylaxie sans bêtalactamine : vancomycine 15–30 mg/kg (max 2 500 mg, perfusion ≥ 60 min) ou clindamycine 600 mg (en 30 min).", target: "surgery" },
+    quote:
+      "En cas d'allergie de type réaction immédiate (urticaire, angiœdème, bronchospasme, anaphylaxie) aux pénicillines ou d'allergie aux céphalosporines, administrer un des antibiotiques ci-dessous : vancomycine 15–30 mg/kg (max 2 500 mg) IV au lieu de céfazoline ou céfuroxime […] ; clindamycine 600 mg IV à perfuser en 30 min au lieu de céfazoline ou céfuroxime.",
+    question: Q_ABX,
+    chapterTitle: CH20,
+    explanations: ["Le taux de réactions croisées entre pénicillines et céphalosporines est d'environ 2 % : une allergie non immédiate aux pénicillines n'impose pas d'alternative selon le manuel."],
+  }),
+  m({
+    title: "Allergie aux céphalosporines : alternative à la céfazoline",
+    statement: "En cas d'allergie aux céphalosporines, l'antibioprophylaxie utilise la vancomycine ou la clindamycine au lieu de la céfazoline ou du céfuroxime.",
+    conditions: [{ kind: "allergy", allergen: "cephalosporins", present: true, label: "Céphalosporines" }],
+    action: { type: "info", text: "Antibioprophylaxie sans céphalosporine : vancomycine 15–30 mg/kg (max 2 500 mg, perfusion ≥ 60 min) ou clindamycine 600 mg (en 30 min).", target: "surgery" },
+    quote: "Les alternatives proposées sont réservées aux patients présentant une allergie de type réaction immédiate […] aux pénicillines ou une allergie aux céphalosporines.",
+    question: Q_ABX,
+    chapterTitle: CH20,
+  }),
+  m({
+    title: "Antécédent d'endocardite : prophylaxie pour les soins dentaires à risque",
+    statement: "Chez un patient ayant un antécédent d'endocardite, la prophylaxie de l'endocardite (amoxicilline 2 g PO 1 h avant) n'est recommandée que pour les interventions dentaires touchant la gencive ou la région périapicale ou perforant la muqueuse orale.",
+    conditions: [history("endocarditis", "Antécédent d'endocardite")],
+    action: { type: "info", text: "Prophylaxie de l'endocardite seulement pour les soins dentaires à risque (gencive, région périapicale, muqueuse orale) : amoxicilline 2 g, dose unique avant le geste. Autres interventions : antibioprophylaxie chirurgicale habituelle.", target: "surgery" },
+    quote:
+      "Actuellement, seules les interventions de la sphère dentaire impliquant la gencive ou la région dentaire périapicale, ou lors de la perforation de la muqueuse orale, sont identifiées à risque de bactériémie pouvant conduire à une endocardite chez les patients à risque […] L'amoxicilline (Clamoxyl) est l'antibiotique de premier choix : adulte : 2 g PO 1 h avant l'intervention (ou éventuellement IV).",
+    question: "According to the ESC 2023 infective endocarditis guidelines, which patients and which procedures require antibiotic prophylaxis, with which agent, dose and timing, including alternatives for penicillin allergy?",
+    chapterTitle: CH20,
+    explanations: ["L'ESC 2023 a remplacé les recommandations de 2015 citées par le manuel (liste des patients à haut risque élargie, alternatives en cas d'allergie révisées)."],
+  }),
+  m({
+    title: "Prothèse valvulaire : prophylaxie pour les soins dentaires à risque",
+    statement: "Chez un patient porteur d'une prothèse valvulaire mécanique ou biologique, la prophylaxie de l'endocardite n'est recommandée que pour les soins dentaires à risque.",
+    conditions: [history("mechanical_valve", "Prothèse valvulaire mécanique")],
+    action: { type: "info", text: "Prophylaxie de l'endocardite seulement pour les soins dentaires à risque : amoxicilline 2 g, dose unique avant le geste.", target: "surgery" },
+    quote: "La prophylaxie de l'endocardite n'est recommandée que chez les patients à risque, soit ceux qui présentent les pathologies ou antécédents suivants : prothèse valvulaire mécanique ou biologique ; antécédents d'endocardite ; cardiopathie congénitale cyanogène ; cardiopathie congénitale corrigée avec implantation de matériel étranger au cours des 6 premiers mois après l'intervention […] ou à vie en cas de shunt résiduel ou de régurgitation valvulaire.",
+    question: "According to the ESC 2023 infective endocarditis guidelines, which patients and which procedures require antibiotic prophylaxis, with which agent, dose and timing?",
+    chapterTitle: CH20,
+  }),
+];
+
+export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS];

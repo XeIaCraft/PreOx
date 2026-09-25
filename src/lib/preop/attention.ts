@@ -310,7 +310,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
     const labelOf = (id: string) => scores.catalogs.conditions.find((x) => x.id === id)?.label ?? id;
     const patient = { conditions: cond as Record<string, { present: boolean } | undefined>, treatments: c.treatments, surgeryName: c.surgery.name, conditionLabel: labelOf };
     const planned = new Set((plan?.drugs ?? []).map((d) => drugReferenceFor(d.name)?.name).filter(Boolean) as string[]);
-    const found = DRUG_REFERENCES.flatMap((ref) => cautionsFor(ref, patient));
+    const found = DRUG_REFERENCES.filter((ref) => !ref.onlyInPlan || planned.has(ref.name)).flatMap((ref) => cautionsFor(ref, patient));
     const inPlan = found.filter((f) => planned.has(f.drug.name) && f.caution.level !== "adapt");
     for (const f of inPlan)
       add({
@@ -438,6 +438,198 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         source: `${DRUG_REFERENCE_SOURCE}, chap. 14 (échographie gastrique)`,
         material: ["Échographe (sonde convexe)"],
       });
+  }
+
+  // --- Airway, ventilation, positioning, infection (manual, chapters 16–20) ------------------------
+  {
+    const techs = new Set([...(plan?.techniques ?? []), ...c.techniques]);
+    const general = techs.has("general");
+    const name = fold(c.surgery.name);
+    const position = fold(c.surgery.position ?? "");
+    const hours = c.surgery.durationHours;
+    const bmi = scores.derived.bmi;
+    const either = /\bou\b|selon/.test(position);
+    const prone = /ventral|prone|genu-pectoral/.test(position);
+    const sitting = /(?<!semi-)assis/.test(position) || /position assise/.test(name);
+    const lateral = /lateral/.test(position);
+    const lithotomy = /lithotom|gynecolog|lloyd|jambiere|perinea/.test(position);
+    const posWhy = `Position prévue : ${c.surgery.position || "position assise (intitulé de l'intervention)"}`;
+
+    // Extubation (chap. 17): controlled, progressive and reversible in these situations.
+    const extubation: string[] = [];
+    if (r.airway.level === "high" || has(cond, "difficult_airway")) extubation.push("intubation difficile prévisible ou connue");
+    if (has(cond, "difficult_mask")) extubation.push("ventilation au masque difficile connue");
+    if (prone && hours !== undefined && hours > 4) extubation.push(`décubitus ventral de ${n(hours)} h (> 4 h)`);
+    if (/laryng|trache|pharyng|glossect|pelvi-mandib|mandibul|maxill|cervicotom|curage (ganglionnaire )?cervical|evidement cervical|thyroid|parotid/.test(name)) extubation.push(`${surgeryName} (chirurgie cervicale, ORL ou maxillo-faciale)`);
+    if (general && extubation.length)
+      add({
+        id: "extubation-risk",
+        level: "medium",
+        title: "Extubation à risque : la planifier",
+        detail:
+          "Extubation contrôlée, progressive et réversible, critères habituels respectés (Vt 5–8 ml/kg, FR 10–20, SpO₂ > 95 %, réponse aux ordres, déglutition, T° > 35,5 °C, T4/T1 > 0,9) ; jamais en anesthésie profonde. Test de fuite avant : fuite < 110 ml ou < 10 % du Vt = risque d'obstruction (œdème). Guide échangeur creux à mi-trachée (≤ 25 cm), surveillance 60 min.",
+        why: extubation.join(" ; "),
+        source: `${MANUAL}, chap. 17 (extubation à risque, figure 17.8)`,
+        material: ["Guide échangeur creux (GEC)"],
+        risk: { title: "Extubation à risque", conduct: "Échec : O₂ par le GEC, réintubation sur GEC ; SpO₂ < 90 % : jet-oxygénation, oxygénation transtrachéale ou cricothyroïdotomie puis intubation." },
+      });
+
+    // Supraglottic device (chap. 17): relative contraindications.
+    const lma: string[] = [];
+    if (has(cond, "pregnancy")) lma.push("grossesse (au-delà du 1er trimestre)");
+    if (has(cond, "gerd")) lma.push("reflux ou hernie hiatale");
+    if (has(cond, "bowel_obstruction") || c.surgery.emergency) lma.push("estomac plein ou pathologie abdominale aiguë");
+    if (has(cond, "asthma")) lma.push("asthme (résistances augmentées)");
+    if (bmi !== undefined && bmi >= 35) lma.push(`obésité (IMC ${Math.round(bmi)}, compliance diminuée)`);
+    if (general && lma.length)
+      add({
+        id: "lma-caution",
+        level: "info",
+        title: "Masque laryngé : prudence",
+        detail: "Le masque laryngé ne protège pas de l'inhalation ; la ventilation contrôlée n'est possible que sous 20 cmH₂O (au-delà : insufflation gastrique et régurgitation). À éviter en cas d'estomac plein, de résistances augmentées ou de compliance basse ; contre-indiqué en cas de pathologie ou d'obstruction pharyngée.",
+        why: lma.join(" ; "),
+        source: `${MANUAL}, chap. 17 (contre-indications du masque laryngé)`,
+      });
+
+    // Nasotracheal intubation (chap. 17).
+    const nasal = /dent|mandib|maxill|le fort|cavite buccale|glossect|langue|genioplast|orthognath/.test(name) || c.surgery.category === "E";
+    const haemostasis: string[] = [];
+    if (anyOf(cond, ["bleeding_disorder", "hemophilia", "von_willebrand"]) === true) haemostasis.push("trouble de l'hémostase");
+    if (p.inr !== undefined && p.inr > 1.5) haemostasis.push(`INR ${n(p.inr)}`);
+    if (p.platelets !== undefined && p.platelets < 50) haemostasis.push(`plaquettes ${p.platelets} G/L`);
+    if (/base du crane/.test(name)) haemostasis.push("fracture de la base du crâne");
+    if (general && nasal && haemostasis.length)
+      add({ id: "nasal-intubation", level: "medium", title: "Intubation nasotrachéale contre-indiquée", detail: "Contre-indiquée en cas de trouble majeur de l'hémostase ou de fracture de la base du crâne : en discuter avec le chirurgien (voie orale, sonde préformée).", why: `${surgeryName} (intubation nasale habituelle) ; ${haemostasis.join(", ")}`, source: `${MANUAL}, chap. 17` });
+
+    // Starting settings and sizes (chap. 16–18), when the plan is being prepared.
+    if (plan && general && p.sex && p.heightCm) {
+      const ibw = scores.derived.ibw ?? 0;
+      const vt = (k: number) => Math.round((ibw * k) / 10) * 10;
+      const peepHigh = bmi !== undefined && bmi >= 35;
+      const obstructive = anyOf(cond, ["copd", "asthma"]) === true;
+      const rightHeart = anyOf(cond, ["pulmonary_hypertension"]) === true;
+      const lmaSize = p.weightKg === undefined ? "" : p.weightKg < 50 ? "3" : p.weightKg < 70 ? "4" : p.weightKg <= 100 ? "5" : "6";
+      add({
+        id: "ventilation",
+        level: "info",
+        title: `Réglages de départ : Vt ${vt(6)}–${vt(8)} ml, PEP ${peepHigh ? "8–10" : "5"}`,
+        detail: [
+          `Vt 6–8 ml/kg du poids idéal (${Math.round(ibw)} kg), FR 10–12/min, PEP ${peepHigh ? "8–10 cmH₂O (obésité)" : "5 cmH₂O"} ; pression de plateau < 30 cmH₂O, idéalement < 25. Ventilation protectrice : Vt limité, PEP et manœuvres de recrutement (20–30 cmH₂O pendant 20–30 s) si hypoxémie.`,
+          obstructive ? "Obstructif : rapport I/E abaissé (allonger l'expiration), surveiller l'auto-PEP (le débit expiratoire ne revient pas à zéro)." : "",
+          rightHeart ? "Hypertension pulmonaire / VD fragile : PEP basse (la pression positive augmente la postcharge du VD)." : "",
+          `Sonde ${p.sex === "M" ? "7,5–8 mm, repère 23 cm" : "6,5–7 mm, repère 21 cm"} à l'arcade dentaire${lmaSize ? ` ; masque laryngé taille ${lmaSize} (${p.weightKg} kg)` : ""}. Préoxygénation jusqu'à FeO₂ ≥ 90 %.`,
+        ]
+          .filter(Boolean)
+          .join(" "),
+        why: `${p.sex === "M" ? "Homme" : "Femme"}, ${p.heightCm} cm${p.weightKg ? `, ${p.weightKg} kg` : ""} ; anesthésie générale au plan`,
+        source: `${MANUAL}, chap. 16 (équipement), 17 (tableaux 17.1 et 17.2) et 18 (paramètres ventilatoires)`,
+      });
+    }
+
+    // Positioning (chap. 19).
+    if (sitting)
+      add({
+        id: "position-sitting",
+        level: either ? "info" : "medium",
+        title: either ? "Si la position assise est retenue : embolie gazeuse" : "Position assise : embolie gazeuse",
+        detail: "Échographie préopératoire à la recherche d'un foramen ovale perméable (embolie paradoxale). Doppler précordial ou ETO ; voie centrale pour aspirer l'air ; ETCO₂ qui chute = embolie jusqu'à preuve du contraire (inonder le champ, FiO₂ 100 %, Trendelenburg, compression jugulaire). Protoxyde d'azote arrêté avant la fermeture de la dure-mère (pneumencéphale).",
+        why: posWhy,
+        source: `${MANUAL}, chap. 19 (position assise)`,
+        material: ["Doppler précordial ou ETO", "Voie veineuse centrale"],
+      });
+    if (prone)
+      add({
+        id: "position-prone",
+        level: "info",
+        title: either ? "Si décubitus ventral : installation" : "Décubitus ventral : installation",
+        detail: "Appuis sous le thorax et les crêtes iliaques pour libérer l'abdomen (retour veineux, compliance) ; yeux, nez, oreilles, seins et organes génitaux sans appui ; pas de câble ni de tubulure sous le patient ; électrodes hors des appuis. Œdème des voies aériennes : test de fuite avant l'extubation.",
+        why: posWhy,
+        source: `${MANUAL}, chap. 19 (décubitus ventral)`,
+        material: ["Coussins d'appui thoracique et iliaque", "Protection oculaire"],
+      });
+    if (lateral)
+      add({ id: "position-lateral", level: "info", title: either ? "Si décubitus latéral : installation" : "Décubitus latéral : installation", detail: "Support sous le creux axillaire inférieur (plexus brachial), pouls radiaux vérifiés régulièrement, pas de traction sur l'épaule supérieure. Rapport ventilation/perfusion modifié.", why: posWhy, source: `${MANUAL}, chap. 19 (décubitus latéral)`, material: ["Billot axillaire"] });
+    if (lithotomy)
+      add({ id: "position-lithotomy", level: "info", title: either ? "Si position gynécologique : installation" : "Position gynécologique : installation", detail: "Mobiliser les deux jambes ensemble ; flexion de hanche ≤ 90° ; pas d'appui de la jambe contre les tiges (nerf fibulaire commun : pied tombant). Hypotension possible au retour à plat ; risque d'inhalation accru.", why: posWhy, source: `${MANUAL}, chap. 19 (lithotomie)` });
+
+    const nerve: string[] = [];
+    if (has(cond, "neuropathy")) nerve.push("neuropathie préexistante");
+    if (bmi !== undefined && bmi >= 35) nerve.push(`obésité (IMC ${Math.round(bmi)})`);
+    if (anyOf(cond, ["malnutrition", "eating_disorder"]) === true || (bmi !== undefined && bmi < 18.5)) nerve.push("cachexie ou dénutrition");
+    const atRiskSetting = prone || lateral || lithotomy || sitting || (plan?.tourniquetAlertMin ?? 0) > 0 || (hours !== undefined && hours > 4);
+    if (nerve.length && (has(cond, "neuropathy") || atRiskSetting))
+      add({
+        id: "nerve-injury",
+        level: "info",
+        title: "Risque de lésion nerveuse de posture",
+        detail: "Noter l'examen neurologique avant l'intervention (un EMG préopératoire peut documenter une neuropathie existante) ; contrôler les points de compression à l'installation et à chaque changement de position ; garrot : durée < 2 h, pression ≤ 100 mmHg au-dessus de la systolique ; éviter l'hypotension. Neuropathie postopératoire : avis neurologique, EMG à 2–4 semaines.",
+        why: [...nerve, atRiskSetting ? (c.surgery.position ? posWhy : "garrot ou intervention longue") : ""].filter(Boolean).join(" ; "),
+        source: `${MANUAL}, chap. 19 (facteurs de risque et prévention)`,
+      });
+
+    // Surgical antibiotic prophylaxis (chap. 20): what changes for this patient.
+    const abx: string[] = [];
+    const abxWhy: string[] = [];
+    const allergies = recognisedAllergens(c, catalogs.allergens);
+    const betalactam = allergies.find((a) => a.allergen.id === "betalactams");
+    const cephalo = allergies.find((a) => a.allergen.id === "cephalosporins");
+    const blPf = betalactam?.entry?.penFast ? penFast(betalactam.entry.penFast) : null;
+    const immediate = !!cephalo || (!!betalactam && (betalactam.entry?.timing === "immediate" || !!betalactam.entry?.ringGrade || (!!blPf?.label && blPf.value >= 3)));
+    if (immediate) {
+      const vanco = p.weightKg ? Math.min(2500, Math.round((p.weightKg * 15) / 50) * 50) : undefined;
+      abx.push(`Allergie ${cephalo ? "aux céphalosporines" : "immédiate aux pénicillines"} : vancomycine 15–30 mg/kg${vanco ? ` (≈ ${vanco} mg à 15 mg/kg)` : ""}, maximum 2 500 mg, en ≥ 60 min, ou clindamycine 600 mg en 30 min.`);
+      abxWhy.push(`allergie : ${(cephalo ?? betalactam)!.as}`);
+    } else if (betalactam && !(blPf?.label && blPf.value < 3)) {
+      abx.push(betalactam.entry?.timing === "delayed" ? "Allergie non immédiate aux pénicillines : céfazoline utilisable (réactivité croisée ≈ 2 %)." : "Allergie aux pénicillines : préciser le type de réaction — l'alternative (vancomycine, clindamycine) n'est réservée qu'aux réactions immédiates (urticaire, angiœdème, bronchospasme, anaphylaxie).");
+      abxWhy.push(`allergie : ${betalactam.as}`);
+    }
+    if (p.weightKg !== undefined && p.weightKg > 120) {
+      abx.push(`Poids ${p.weightKg} kg (> 120) : céfazoline 3 g.`);
+      abxWhy.push(`poids ${p.weightKg} kg`);
+    }
+    if (/colon|colect|sigmoid|rect|append|hartmann|colorect|caecum|stomie/.test(name)) {
+      abx.push(immediate ? "Côlon, rectum ou appendice : clindamycine + gentamicine 5 mg/kg + métronidazole 500 mg." : "Côlon, rectum ou appendice : ajouter métronidazole 500 mg (en 20 min).");
+      abxWhy.push(`${surgeryName}`);
+    }
+    if ((hours !== undefined && hours > 3) || c.surgery.bleedingRisk === "high") {
+      abx.push("Réinjection : 3–4 h après la 1re dose si l'intervention dure, ou si pertes sanguines > 1 500 ml (vancomycine, métronidazole : 8 h ; clindamycine : 6 h).");
+      abxWhy.push(hours !== undefined && hours > 3 ? `durée prévue ${n(hours)} h` : "risque hémorragique élevé");
+    }
+    if (abx.length && c.surgery.name && c.surgery.category !== "I" && c.surgery.category !== "X")
+      add({
+        id: "antibioprophylaxis",
+        level: immediate ? "medium" : "info",
+        title: "Antibioprophylaxie : adaptations pour ce patient",
+        detail: `${abx.join(" ")} Dose unique dans l'heure avant l'incision, sans adaptation rénale ; à vérifier avec le protocole du service et l'avis du Conseil Supérieur de la Santé.`,
+        why: abxWhy.join(" ; "),
+        source: `${MANUAL}, chap. 20 (schéma prophylactique) — ouvrage suisse de 2020`,
+      });
+
+    // Endocarditis prophylaxis (chap. 20; ESC 2023 is the reference in Belgium).
+    const ieRisk = (["endocarditis", "mechanical_valve", "bioprosthetic_valve", "lvad"] as const).filter((id) => has(cond, id));
+    const dental = c.surgery.category === "E" && /dent|extraction|parodont|gingiv|implant|kyste|apical|germectomie|stomato/.test(name);
+    if (ieRisk.length || (has(cond, "congenital_heart") && dental)) {
+      const labels = [...ieRisk, ...(has(cond, "congenital_heart") ? ["congenital_heart"] : [])].map((id) => catalogs.conditions.find((x) => x.id === id)?.label ?? id);
+      add(
+        dental
+          ? {
+              id: "endocarditis-prophylaxis",
+              level: "medium",
+              title: "Prophylaxie de l'endocardite indiquée",
+              detail: `Soins dentaires touchant la gencive ou la région périapicale chez un patient à haut risque${has(cond, "congenital_heart") && !ieRisk.length ? " (cardiopathie congénitale : seulement si cyanogène, ou corrigée avec du matériel depuis < 6 mois ou avec shunt résiduel)" : ""} : amoxicilline 2 g PO ou IV, dose unique 30–60 min avant ; allergie : alternative selon l'ESC 2023 et le protocole du service (le manuel propose céfuroxime 1 g si réaction non immédiate, clindamycine 600 mg si immédiate). Pas de dose postopératoire.`,
+              why: `${labels.join(", ")} ; ${surgeryName}`,
+              source: "ESC 2023, endocardite infectieuse ; Manuel pratique d'anesthésie 2020, chap. 20",
+            }
+          : {
+              id: "endocarditis-prophylaxis",
+              level: "info",
+              title: "Endocardite : pas de prophylaxie propre à ce geste",
+              detail: "Patient à haut risque d'endocardite, mais la prophylaxie spécifique vise les soins dentaires à risque ; pour les autres interventions : antibioprophylaxie chirurgicale habituelle (l'ESC 2023 permet de l'envisager pour certaines procédures invasives chez ces patients). Hygiène dentaire : premier moyen de prévention.",
+              why: labels.join(", "),
+              source: "ESC 2023, endocardite infectieuse ; Manuel pratique d'anesthésie 2020, chap. 20",
+            }
+      );
+    }
   }
 
   // --- Substance use ------------------------------------------------------------------

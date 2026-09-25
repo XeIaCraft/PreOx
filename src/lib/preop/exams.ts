@@ -12,6 +12,7 @@ import { anyOf, has, type Conditions, type Substances } from "./history";
 import type { ConsultationState } from "./dossier";
 import type { PatientTreatment } from "./rules/types";
 import { treatmentMatches } from "./medications";
+import { fold } from "./catalog";
 
 export type ExamCode =
   | "fbc"
@@ -95,6 +96,7 @@ export const SASM_2016: ExamSource = { label: "SASM 2016, dépistage et évaluat
 export const ASMBS_2019: ExamSource = { label: "AACE/TOS/ASMBS/OMA/ASA 2019, prise en charge périopératoire de la chirurgie bariatrique (Mechanick et al.)", short: "ASMBS 2019", level: "int" };
 export const AAOHNS_2013: ExamSource = { label: "AAO-HNS 2013, voix et chirurgie thyroïdienne (Chandrasekhar et al., Otolaryngol Head Neck Surg)", short: "AAO-HNS 2013", level: "int" };
 export const MANUAL_2020: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 15 (tableau 15.1) — ouvrage de référence", short: "Manuel 2020", level: "book" };
+export const MANUAL_2020_POSITION: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 19 (position assise) — ouvrage de référence", short: "Manuel 2020", level: "book" };
 
 /**
  * Work-up usual for a family of procedures, each item tied to the guideline
@@ -372,6 +374,10 @@ export function recommendExams({ consultation: c, asa, mets, surgeryProfile, sto
   if (nonCardiac && risk && risk !== "low" && (has(cond, "valve") || has(cond, "aortic_stenosis")))
     add("echo", "recommended", "valvulopathie connue ou suspectée avant chirurgie programmée à risque intermédiaire ou élevé", ESC_2022);
   if (has(cond, "heart_failure") && risk && risk !== "low") add("echo", "consider", "insuffisance cardiaque : fonction VG avant chirurgie à risque intermédiaire ou élevé, sans échographie récente", ESC_2022);
+  // Sitting position (not the semi-seated beach chair): paradoxical air embolism through a patent foramen ovale.
+  const position = fold(c.surgery.position ?? "");
+  if (/(?<!semi-)assis/.test(position) || /position assise/.test(fold(c.surgery.name)))
+    add("echo", /\bou\b|selon/.test(position) ? "consider" : "recommended", "position assise prévue : recherche d'un foramen ovale perméable (épreuve de contraste), risque d'embolie gazeuse paradoxale", MANUAL_2020_POSITION);
   if (has(cond, "pulmonary_hypertension")) add("echo", "recommended", "hypertension pulmonaire : pressions pulmonaires et fonction VD récentes ; avis du centre de référence", ESC_2022);
 
   // --- The procedure's own work-up (catalogue profile) ------------------------------
