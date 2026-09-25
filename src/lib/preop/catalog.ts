@@ -122,6 +122,8 @@ export interface SurgeryItem extends Verifiable {
   protocolId?: string;
   setting?: CareSetting;
   tourniquet?: boolean;
+  /** Closed space (intracranial, spinal canal, posterior chamber of the eye): a haematoma is serious whatever its volume. */
+  closedSpace?: boolean;
   notes?: string;
 }
 

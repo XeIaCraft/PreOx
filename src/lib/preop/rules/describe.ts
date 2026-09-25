@@ -3,6 +3,7 @@
 import { atcLabel } from "../medications";
 import { INDICATIONS, PATIENT_VALUES, SURGERY_ATTRIBUTES, TECHNIQUES } from "./types";
 import { defaultConditionLabel } from "../catalog-conditions";
+import { beforeWhat, ruleTarget } from "./target";
 import type { Comparator, Condition, RuleAction } from "./types";
 
 const OP: Record<Comparator, string> = { "<": "<", "<=": "≤", ">": ">", ">=": "≥" };
@@ -34,12 +35,13 @@ export function describeCondition(c: Condition): string {
   return parts.join(", ");
 }
 
-export function describeAction(a: RuleAction): string {
+export function describeAction(a: RuleAction, conditions: Condition[] = []): string {
+  const after = { surgery: "après la chirurgie", anaesthesia: "après le geste anesthésique (ou le retrait du cathéter)", both: "après l'intervention" }[ruleTarget({ conditions, action: a })];
   switch (a.type) {
     case "stop_before":
-      return `dernière prise au moins ${formatHours(a.hours)} avant le geste`;
+      return `dernière prise au moins ${formatHours(a.hours)} ${beforeWhat({ conditions, action: a })}`;
     case "resume_after":
-      return `reprise au plus tôt ${formatHours(a.hours)} après le geste`;
+      return `reprise au plus tôt ${formatHours(a.hours)} ${after}`;
     case "requirement":
       return `${a.blocking ? "condition obligatoire" : "à vérifier"} : ${a.text}`;
     case "exam":
@@ -52,7 +54,7 @@ export function describeAction(a: RuleAction): string {
 /** "Si traitement : Rivaroxaban, dose ≥ 20 mg/j et geste : … → dernière prise au moins 72 h (3 jours) avant le geste." */
 export function describeRule(rule: { conditions: Condition[]; action: RuleAction }): string {
   const when = rule.conditions.map(describeCondition);
-  const then = describeAction(rule.action).replace(/[.\s]+$/, "");
+  const then = describeAction(rule.action, rule.conditions).replace(/[.\s]+$/, "");
   if (when.length === 0) return `Toujours : ${then}.`;
   return `Si ${when.join(" et ")} → ${then}.`;
 }

@@ -5,6 +5,7 @@
 // commonly cited ones; guidelines differ (ESAIC/ESRA 2022, ASRA 2025…),
 // which is exactly why they must be checked against the source you follow.
 
+import { MANUAL_RULES } from "./proposed-manual";
 import type { Rule, RuleSource } from "./types";
 
 type Proposed = Omit<Rule, "created_at" | "updated_at">;
@@ -34,7 +35,7 @@ const base = (p: Pick<Proposed, "id" | "title" | "statement" | "conditions" | "a
 const neuraxialQ = (drug: string, extra = "") =>
   `According to the ESAIC/ESRA 2022 guidelines on regional anaesthesia in patients on antithrombotic drugs, what is the minimum interval between the last dose of ${drug}${extra} and a neuraxial puncture or deep block, and when can it be resumed?`;
 
-export const PROPOSED_RULES: Proposed[] = [
+const GUIDELINE_RULES: Proposed[] = [
   base({
     id: "5f1c0a10-0001-4000-8000-000000000001",
     title: "Aspirine à faible dose et ponction neuraxiale",
@@ -180,3 +181,23 @@ export const PROPOSED_RULES: Proposed[] = [
     question: "Before elective surgery in a patient with diabetes, is a recent HbA1c recommended (how recent), and above which value should surgery be deferred for optimisation?",
   }),
 ];
+
+/** Proposed rules, by origin — each group is imported on its own. */
+export const PROPOSED_GROUPS: { id: string; title: string; description: string; rules: Proposed[] }[] = [
+  {
+    id: "guidelines",
+    title: "Principales recommandations",
+    description:
+      "Antithrombotiques et ponction neuraxiale (ESAIC/ESRA 2022), SGLT2, ECG préopératoire (ESC 2022), anémie, allergie à la pénicilline, HbA1c. Citation à recopier depuis la source.",
+    rules: GUIDELINE_RULES,
+  },
+  {
+    id: "manual-2020",
+    title: "Manuel pratique d'anesthésie (2020), chapitre 15",
+    description:
+      "Anticoagulants et antiplaquettaires (chirurgie, ponction, reprise, stents), IEC/sartans, antidiabétiques, bêta-bloquants, statines, corticoïdes, examens préopératoires, sténose aortique, prémédication, jeûne. Chaque règle porte la phrase exacte du livre et ce qu'elle protège (chirurgie ou anesthésie) ; le livre date de 2020 : à confronter aux recommandations actuelles.",
+    rules: MANUAL_RULES,
+  },
+];
+
+export const PROPOSED_RULES: Proposed[] = PROPOSED_GROUPS.flatMap((g) => g.rules);

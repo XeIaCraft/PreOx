@@ -7,10 +7,10 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { ChipGroup, EmptyState } from "@/components/carnet/ui";
 import { RuleEditor, type RuleDraft } from "@/components/preop/rule-editor";
-import { SourceBadge } from "@/components/preop/ui";
+import { SourceBadge, TargetTag } from "@/components/preop/ui";
 import { describeRule } from "@/lib/preop/rules/describe";
 import type { Rule, RuleStatus } from "@/lib/preop/rules/types";
-import { PROPOSED_RULES } from "@/lib/preop/rules/proposed";
+import { PROPOSED_GROUPS } from "@/lib/preop/rules/proposed";
 
 function RuleEditModal({ rule, onSave, onClose }: { rule: Rule; onSave: (r: RuleDraft) => Promise<Rule>; onClose: () => void }) {
   const { toast } = useToast();
@@ -88,34 +88,36 @@ export function RuleLibrary({
     }
   }
 
-  const proposals = PROPOSED_RULES.filter((p) => !rules.some((r) => r.id === p.id));
-  const [importing, setImporting] = useState(false);
+  const proposalGroups = PROPOSED_GROUPS.map((g) => ({ ...g, rules: g.rules.filter((p) => !rules.some((r) => r.id === p.id)) })).filter((g) => g.rules.length > 0);
+  const [importing, setImporting] = useState<string | null>(null);
 
   return (
     <div className="space-y-4">
-      {proposals.length > 0 && (
-        <div className="space-y-2 rounded-[var(--radius-md)] border border-accent/40 bg-accent-tint/50 p-3">
-          <p className="text-sm font-medium text-foreground">{proposals.length} règle(s) proposée(s) à partir des principales recommandations</p>
+      {proposalGroups.map((group) => (
+        <div key={group.id} className="space-y-2 rounded-[var(--radius-md)] border border-accent/40 bg-accent-tint/50 p-3">
+          <p className="text-sm font-medium text-foreground">
+            {group.title} : {group.rules.length} règle(s) proposée(s)
+          </p>
           <p className="text-xs text-foreground-muted">
-            Antithrombotiques et ponction neuraxiale (ESAIC/ESRA 2022), SGLT2, ECG préopératoire (ESC 2022), anémie, allergie à la pénicilline, HbA1c. Elles arrivent en <strong>brouillon</strong> : aucune ne s&apos;applique avant que vous ayez ouvert la source,
-            recopié la phrase exacte et activé la règle. Chacune contient la question à poser à Consensus pour la vérifier.
+            {group.description} Elles arrivent en <strong>brouillon</strong> : aucune ne s&apos;applique avant que vous l&apos;ayez vérifiée et activée. Chacune contient la question à poser à Consensus pour la
+            vérifier.
           </p>
           <details className="text-xs text-foreground-muted">
             <summary className="cursor-pointer text-primary">Voir la liste</summary>
             <ul className="mt-1 list-disc space-y-0.5 pl-4">
-              {proposals.map((p) => (
+              {group.rules.map((p) => (
                 <li key={p.id}>{p.title}</li>
               ))}
             </ul>
           </details>
           <Button
             size="sm"
-            disabled={importing}
+            disabled={importing !== null}
             onClick={async () => {
-              setImporting(true);
+              setImporting(group.id);
               let done = 0;
               try {
-                for (const p of proposals) {
+                for (const p of group.rules) {
                   await onSave(p);
                   done++;
                 }
@@ -124,14 +126,14 @@ export function RuleLibrary({
               } catch (err) {
                 toast(`${done} ajoutée(s) ; ${err instanceof Error ? err.message : "échec"}`, { variant: "error" });
               } finally {
-                setImporting(false);
+                setImporting(null);
               }
             }}
           >
-            <Plus className="h-3.5 w-3.5" /> Ajouter en brouillon
+            <Plus className="h-3.5 w-3.5" /> {importing === group.id ? "Ajout…" : "Ajouter en brouillon"}
           </Button>
         </div>
-      )}
+      ))}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <ChipGroup
           size="sm"
@@ -160,6 +162,7 @@ export function RuleLibrary({
                 <SourceBadge level={rule.source.level} />
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-foreground">{rule.title || rule.statement}</p>
+                  <TargetTag rule={rule} />
                   <p className="text-xs text-foreground-subtle">
                     {[rule.source.organisation, rule.source.year, rule.source.grade && `grade ${rule.source.grade}`, `v${rule.version}`].filter(Boolean).join(" · ")}
                     {rule.review_at && rule.review_at < today && <span className="ml-1.5 rounded bg-accent-tint px-1 text-accent">à revérifier</span>}

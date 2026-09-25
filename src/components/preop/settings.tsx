@@ -436,9 +436,14 @@ function SurgeryForm({ item, onChange, protocols }: { item: SurgeryItem; onChang
           <ChipGroup size="sm" options={SETTINGS} value={item.setting ?? null} onChange={(v) => set({ setting: v ?? undefined })} allowClear />
         </div>
       </div>
-      <ToggleChip pressed={!!item.tourniquet} onChange={(tourniquet) => set({ tourniquet: tourniquet || undefined })} className="min-h-9 text-xs">
-        Garrot habituel
-      </ToggleChip>
+      <div className="flex flex-wrap gap-1.5">
+        <ToggleChip pressed={!!item.tourniquet} onChange={(tourniquet) => set({ tourniquet: tourniquet || undefined })} className="min-h-9 text-xs">
+          Garrot habituel
+        </ToggleChip>
+        <ToggleChip pressed={!!item.closedSpace} onChange={(closedSpace) => set({ closedSpace: closedSpace || undefined })} className="min-h-9 text-xs">
+          Espace clos (intracrânien, canal médullaire, chambre postérieure de l&apos;œil)
+        </ToggleChip>
+      </div>
       <TextArea label="Notes (particularités, installation, risques propres)" value={item.notes ?? ""} onChange={(notes) => set({ notes: notes || undefined })} />
     </div>
   );

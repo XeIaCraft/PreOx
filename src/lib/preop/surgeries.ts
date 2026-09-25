@@ -31,6 +31,7 @@ export interface CatalogSurgery {
   position?: string;
   durationHours?: number;
   techniques?: Technique[];
+  closedSpace?: boolean;
 }
 
 const s = (
@@ -211,6 +212,10 @@ const DURATIONS: Record<string, number> = {
   "bronchoscopie-souple-ebus": 0.5, "radiologie-interventionnelle": 1.5, "thrombectomie-cerebrale": 1.5, "imagerie-sous-anesthesie": 1,
 };
 for (const x of SURGERY_CATALOG) if (DURATIONS[x.id] !== undefined) x.durationHours = DURATIONS[x.id];
+
+/** Closed space — intracranial, spinal canal, posterior chamber of the eye — where the bleeding rules are stricter. */
+const CLOSED_SPACE = new Set(["craniotomie", "derivation-ventriculo-peritoneale", "arthrodese-rachidienne", "cure-de-hernie-discale", "decompression-lombaire", "arthrodese-cervicale-anterieure", "vitrectomie"]);
+for (const x of SURGERY_CATALOG) if (CLOSED_SPACE.has(x.id)) x.closedSpace = true;
 
 /** Usual technique(s), to pre-fill « Technique envisagée » when no protocol applies — a starting point, to adapt to the patient and the team. */
 const USUAL_TECHNIQUES: Record<string, Technique[]> = {

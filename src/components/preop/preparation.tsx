@@ -18,6 +18,7 @@ import { deleteRow, patchRow, putRow } from "@/lib/carnet/mutations";
 import { plannedCaseFromDossier, suggestedRegionalTypes } from "@/lib/preop/carnet-link";
 import { dossierDate, type Dossier } from "@/lib/preop/dossier";
 import { formatHours } from "@/lib/preop/rules/describe";
+import { beforeWhat, conflictText } from "@/lib/preop/rules/target";
 import { matchProtocol, planHasAdditions, withAdditions, type Protocol, type ProtocolContent } from "@/lib/preop/protocols";
 import { consultationScores } from "@/lib/preop/consultation-scores";
 import { attentionPoints } from "@/lib/preop/attention";
@@ -41,8 +42,9 @@ function RuleReminders({ d, rules }: { d: Dossier; rules: Rule[] }) {
           <li key={`${f.rule.id}-${i}`} className={cn(o.kind === "stop_before" && o.conflict ? "text-danger" : "text-foreground")}>
             {o.kind === "stop_before" && (
               <>
-                <strong>{o.treatment.name}</strong> : dernière prise ≥ {formatHours(o.hours)} avant{o.lastDoseBy ? ` — au plus tard le ${formatDateTime(o.lastDoseBy)}` : ""}
-                {o.conflict && <span className="block text-xs font-medium">Prise trop récente : geste possible à partir du {formatDateTime(o.conflict.earliestAt)}</span>}
+                <strong>{o.treatment.name}</strong> : dernière prise ≥ {formatHours(o.hours)} {beforeWhat(f.rule)}
+                {o.lastDoseBy ? ` — au plus tard le ${formatDateTime(o.lastDoseBy)}` : ""}
+                {o.conflict && <span className="block text-xs font-medium">{conflictText(f.rule, formatDateTime(o.conflict.earliestAt))}</span>}
               </>
             )}
             {o.kind === "resume_after" && (
@@ -56,7 +58,7 @@ function RuleReminders({ d, rules }: { d: Dossier; rules: Rule[] }) {
           </li>
         ))}
         {evaluation.gaps.map((g) => (
-          <li key={`${g.treatment.id}-${g.technique}`} className="flex items-center gap-1.5 text-accent">
+          <li key={`${g.treatment.id}-${g.technique ?? g.target}`} className="flex items-center gap-1.5 text-accent">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {g.label} — pas de règle (voir l&apos;onglet Consultation pour préparer la question)
           </li>
         ))}

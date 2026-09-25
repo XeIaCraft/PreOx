@@ -213,13 +213,31 @@ export interface Surgery {
   /** Lee index "high-risk surgery": intraperitoneal, intrathoracic or suprainguinal vascular. */
   rcriHighRisk?: boolean;
   incision?: "peripheral" | "upper_abdominal" | "intrathoracic";
+  /** Kept in step with urgency (urgent ⇔ emergency) for the scores that use it. */
   emergency?: boolean;
+  /** Programmed, semi-urgent (can't wait months: cancer, threatening aneurysm, disabling fracture), urgent (24–48 h). */
+  urgency?: Urgency;
+  /** Intracranial, spinal canal or posterior chamber of the eye. */
+  closedSpace?: boolean;
   durationHours?: number;
   position: string;
   /** Catalogue entry it was picked from (Paramètres › Interventions): its protocol and usual technique. */
   catalogId?: string;
   setting?: "ambulatory" | "inpatient" | "icu";
   tourniquet?: boolean;
+}
+
+export type Urgency = "elective" | "semi_urgent" | "urgent";
+
+export const URGENCIES: { code: Urgency; label: string; detail: string }[] = [
+  { code: "elective", label: "Programmée", detail: "Peut être reportée sans perte de chance." },
+  { code: "semi_urgent", label: "Semi-urgente", detail: "Ne peut pas attendre des mois (cancer, anévrisme menaçant, fracture invalidante…)." },
+  { code: "urgent", label: "Urgente", detail: "À réaliser dans les 24–48 h." },
+];
+
+/** The urgency of an intervention, from the old « Urgence » toggle when not set. */
+export function urgencyOf(s: Pick<Surgery, "urgency" | "emergency">): Urgency {
+  return s.urgency ?? (s.emergency ? "urgent" : "elective");
 }
 
 export const KCE_SEVERITIES = [

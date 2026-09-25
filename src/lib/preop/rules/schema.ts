@@ -16,7 +16,7 @@ const indication = z.enum([
   "peripheral_arterial_disease",
   "other",
 ]);
-const level = z.enum(["local", "be_inst", "be_soc", "eu", "int", "article"]);
+const level = z.enum(["local", "be_inst", "be_soc", "eu", "int", "book", "article"]);
 const text = (max: number) => z.string().max(max);
 
 const condition = z.discriminatedUnion("kind", [
@@ -34,7 +34,11 @@ const condition = z.discriminatedUnion("kind", [
     op: comparator,
     threshold: z.number().min(0).max(100_000),
   }),
-  z.object({ kind: z.literal("surgery"), attribute: z.enum(["bleedingRisk", "cardiacRisk", "grade"]), in: z.array(z.enum(["minimal", "low", "intermediate", "high", "minor", "major"])).min(1).max(3) }),
+  z.object({
+    kind: z.literal("surgery"),
+    attribute: z.enum(["bleedingRisk", "cardiacRisk", "grade", "urgency", "closedSpace"]),
+    in: z.array(z.enum(["minimal", "low", "intermediate", "high", "minor", "major", "elective", "semi_urgent", "urgent", "yes", "no"])).min(1).max(3),
+  }),
   z.object({ kind: z.literal("history"), condition: z.string().regex(/^[a-z0-9_-]{1,64}$/i, "Antécédent invalide"), present: z.boolean(), label: text(200).optional() }),
   z.object({
     kind: z.literal("allergy"),
@@ -46,12 +50,13 @@ const condition = z.discriminatedUnion("kind", [
 ]);
 
 const hours = z.number().min(0).max(24 * 60);
+const target = z.enum(["surgery", "anaesthesia", "both"]).optional();
 const action = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("stop_before"), hours }),
-  z.object({ type: z.literal("resume_after"), hours }),
-  z.object({ type: z.literal("requirement"), text: text(1000).min(1), blocking: z.boolean() }),
-  z.object({ type: z.literal("exam"), exam: text(300).min(1), withinDays: z.number().int().min(0).max(365).optional() }),
-  z.object({ type: z.literal("info"), text: text(2000).min(1) }),
+  z.object({ type: z.literal("stop_before"), hours, target }),
+  z.object({ type: z.literal("resume_after"), hours, target }),
+  z.object({ type: z.literal("requirement"), text: text(1000).min(1), blocking: z.boolean(), target }),
+  z.object({ type: z.literal("exam"), exam: text(300).min(1), withinDays: z.number().int().min(0).max(365).optional(), target }),
+  z.object({ type: z.literal("info"), text: text(2000).min(1), target }),
 ]);
 
 export const ruleSchema = z

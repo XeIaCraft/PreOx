@@ -46,7 +46,13 @@ export function consultationTimeline(c: ConsultationState, evaluation: Evaluatio
       const key = `${f.rule.id}:${i}`;
       if (o.kind === "stop_before") items.push({ key, kind: "stop", at: o.lastDoseBy, text: `Dernière prise de ${o.treatment.name}` });
       else if (o.kind === "resume_after") items.push({ key, kind: "resume", at: o.resumeFrom, text: `Reprise possible${o.treatment ? ` de ${o.treatment.name}` : ""}` });
-      else if (o.kind === "exam" && o.withinDays !== undefined) items.push({ key, kind: "exam", at: o.notBefore, daysBefore: o.withinDays, text: `Examen à faire : ${o.exam} (${o.withinDays === 0 ? "le jour même" : `pas plus de ${o.withinDays} j avant`})` });
+      else if (o.kind === "exam" && o.withinDays !== undefined)
+        // A validity window (ECG of less than a year) isn't a date to act on: listed without a date.
+        items.push(
+          o.withinDays > 30
+            ? { key, kind: "exam", at: null, text: `Examen : ${o.exam} (valable s'il date de moins de ${o.withinDays >= 365 ? "1 an" : `${o.withinDays} jours`})` }
+            : { key, kind: "exam", at: o.notBefore, daysBefore: o.withinDays, text: `Examen à faire : ${o.exam} (${o.withinDays === 0 ? "le jour même" : `pas plus de ${o.withinDays} j avant`})` }
+        );
     });
   }
   if (planned) {

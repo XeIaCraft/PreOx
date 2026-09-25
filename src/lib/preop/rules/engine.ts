@@ -14,7 +14,8 @@ import { cockcroftGault, bmi, ckdEpi2021, penFast } from "../scores";
 import { atcMatches, treatmentMatches } from "../medications";
 import { INDICATIONS, PATIENT_VALUES, SOURCE_LEVELS, SURGERY_ATTRIBUTES, TECHNIQUES } from "./types";
 import { defaultConditionLabel } from "../catalog-conditions";
-import type { Comparator, Condition, PatientContext, PatientTreatment, PatientValue, Rule, SourceLevel, Technique } from "./types";
+import { ruleTarget } from "./target";
+import type { Comparator, Condition, PatientContext, PatientTreatment, PatientValue, Rule, RuleTarget, SourceLevel, Technique } from "./types";
 
 export interface MissingInfo {
   /** Stable key, to de-duplicate the same question asked by several rules. */
@@ -53,6 +54,8 @@ export interface Finding {
 export interface Gap {
   treatment: PatientTreatment;
   technique: Technique | null;
+  /** What the missing rule would protect. */
+  target: RuleTarget;
   label: string;
 }
 
@@ -247,7 +250,7 @@ export function evaluateRule(rule: Rule, ctx: PatientContext, now: string = new 
   return { rule, status: "applies", missing: [], outcomes: outcomesOf(rule, ctx, matched), toRecheck };
 }
 
-const LEVEL_RANK: Record<SourceLevel, number> = { local: 0, be_inst: 1, be_soc: 2, eu: 3, int: 4, article: 5 };
+const LEVEL_RANK: Record<SourceLevel, number> = { local: 0, be_inst: 1, be_soc: 2, eu: 3, int: 4, book: 5, article: 6 };
 
 /**
  * Same point, allowing for classes: a rule on "all xabans" (B01AF) and one on
@@ -256,10 +259,16 @@ const LEVEL_RANK: Record<SourceLevel, number> = { local: 0, be_inst: 1, be_soc: 
  */
 export function samePoint(a: Rule, b: Rule): boolean {
   if (a.action.type !== b.action.type) return false;
+  // A delay before the surgery and a delay before the puncture are two different points.
+  if (ruleTarget(a) !== ruleTarget(b)) return false;
   const drugs = (r: Rule) => r.conditions.flatMap((c) => (c.kind === "drug" ? [c.atc] : []));
   const techs = (r: Rule) => r.conditions.flatMap((c) => (c.kind === "technique" ? c.in : []));
   const da = drugs(a);
   const db = drugs(b);
+  // Two exams are the same point only when they ask for the same exam; two
+  // messages (info, condition) only when they are about exactly the same drugs.
+  if (a.action.type === "exam" && b.action.type === "exam") return a.action.exam.trim().toLowerCase() === b.action.exam.trim().toLowerCase();
+  if ((a.action.type === "info" || a.action.type === "requirement") && (da.length === 0 || [...da].sort().join() !== [...db].sort().join())) return false;
   const drugsOverlap = (da.length === 0 && db.length === 0) || da.some((x) => db.some((y) => atcMatches(x, y) || atcMatches(y, x)));
   const ta = techs(a);
   const tb = techs(b);
@@ -290,21 +299,28 @@ function localAppliesHere(rule: Rule, ctx: PatientContext): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Treatments for which a rule is expected, per technique. When the patient
- * takes one of these and no active rule covers it for the planned gesture,
- * the app says so and offers to prepare the question.
+ * Treatments for which a rule is expected, per gesture. "surgery": what to
+ * do for the operation itself (bleeding) — a separate question from the
+ * anaesthetic gesture: a rule on neuraxial puncture says nothing about the
+ * surgery, and the reverse. When the patient takes one of these and no
+ * active rule covers it, the app says so and offers to prepare the question.
  */
-export const WATCHED: { atc: string; techniques: Technique[] | "any"; type: "stop_before" }[] = [
+export const WATCHED: { atc: string; techniques: Technique[] | "any" | "surgery"; type: "stop_before" }[] = [
+  { atc: "B01", techniques: "surgery", type: "stop_before" },
   { atc: "B01", techniques: ["neuraxial", "deep_block"], type: "stop_before" },
   { atc: "A10BK", techniques: "any", type: "stop_before" },
   { atc: "A10BJ", techniques: ["general", "sedation"], type: "stop_before" },
 ];
 
-function ruleCovers(rule: Rule, t: PatientTreatment, technique: Technique | null): boolean {
-  if (rule.status !== "active" || rule.action.type !== "stop_before") return false;
+/** A rule that says what to do with this treatment (stop, keep, condition) for this gesture — or for the surgery when technique is "surgery". */
+function ruleCovers(rule: Rule, t: PatientTreatment, technique: Technique | "surgery" | null): boolean {
+  if (rule.status !== "active" || rule.action.type === "exam" || rule.action.type === "resume_after") return false;
   const drugConds = rule.conditions.filter((c): c is Extract<Condition, { kind: "drug" }> => c.kind === "drug");
   if (!drugConds.some((c) => treatmentMatches(t, c.atc))) return false;
-  if (!technique) return true;
+  const target = ruleTarget(rule);
+  if (technique === "surgery") return target !== "anaesthesia";
+  if (!technique) return rule.action.type === "stop_before";
+  if (target === "surgery") return false;
   const techConds = rule.conditions.filter((c): c is Extract<Condition, { kind: "technique" }> => c.kind === "technique");
   return techConds.length === 0 || techConds.some((c) => c.in.includes(technique));
 }
@@ -313,11 +329,16 @@ export function findGaps(rules: Rule[], ctx: PatientContext): Gap[] {
   const gaps: Gap[] = [];
   for (const t of ctx.treatments) {
     for (const watch of WATCHED.filter((w) => treatmentMatches(t, w.atc))) {
+      if (watch.techniques === "surgery") {
+        if (rules.some((r) => ruleCovers(r, t, "surgery"))) continue;
+        gaps.push({ treatment: t, technique: null, target: "surgery", label: `Aucune règle pour ${t.name} vis-à-vis de la chirurgie (risque hémorragique) — la règle d'anesthésie ne suffit pas` });
+        continue;
+      }
       const techniques: (Technique | null)[] = watch.techniques === "any" ? [null] : ctx.techniques.filter((x) => (watch.techniques as Technique[]).includes(x));
       for (const technique of techniques) {
         if (rules.some((r) => ruleCovers(r, t, technique))) continue;
         const techniqueLabel = technique ? TECHNIQUES.find((x) => x.code === technique)?.label.toLowerCase() : "l'intervention";
-        gaps.push({ treatment: t, technique, label: `Aucune règle d'arrêt de ${t.name} avant ${techniqueLabel}` });
+        gaps.push({ treatment: t, technique, target: technique ? "anaesthesia" : "both", label: `Aucune règle d'arrêt de ${t.name} avant ${techniqueLabel}` });
       }
     }
   }
@@ -337,20 +358,27 @@ export function evaluate(rules: Rule[], ctx: PatientContext, now: string = new D
   const applying = evaluated.filter((f) => f.status === "applies");
   const pointOf = (f: Omit<Finding, "overridden">) => {
     const treatments = f.outcomes.flatMap((o) => ("treatment" in o && o.treatment ? [o.treatment.id] : [])).sort();
-    return `${f.rule.action.type}|${treatments.join(",")}`;
+    return `${f.rule.action.type}|${ruleTarget(f.rule)}|${treatments.join(",")}`;
   };
   const groups: Omit<Finding, "overridden">[][] = [];
   for (const f of applying) {
-    const group = groups.find((g) => g.some((o) => (pointOf(o) === pointOf(f) && pointOf(f).split("|")[1] !== "") || samePoint(o.rule, f.rule)));
+    const group = groups.find((g) => g.some((o) => (pointOf(o) === pointOf(f) && pointOf(f).split("|")[2] !== "") || samePoint(o.rule, f.rule)));
     if (group) group.push(f);
     else groups.push([f]);
   }
   const findings: Finding[] = [];
   for (const group of groups) {
     const [winner, ...others] = [...group].sort((a, b) => (outranks(a.rule, b.rule) ? -1 : outranks(b.rule, a.rule) ? 1 : 0));
-    findings.push({ ...winner, overridden: others.map((o) => o.rule) });
+    // Same source saying the same thing (the ECG asked for age and for HTA) isn't another opinion.
+    const sameSay = (o: Rule) => o.source.organisation === winner.rule.source.organisation && o.source.year === winner.rule.source.year && JSON.stringify(o.action) === JSON.stringify(winner.rule.action);
+    findings.push({ ...winner, overridden: others.map((o) => o.rule).filter((o) => !sameSay(o)) });
   }
-  for (const f of evaluated.filter((f) => f.status === "needs_info")) findings.push({ ...f, overridden: [] });
+  // An exam already asked for by an applying rule doesn't need the other rules' questions (ECG after 65 → no need to ask about HTA for the ECG).
+  const examsAsked = new Set(findings.flatMap((f) => f.outcomes.flatMap((o) => (o.kind === "exam" ? [o.exam] : []))));
+  for (const f of evaluated.filter((f) => f.status === "needs_info")) {
+    if (f.rule.action.type === "exam" && examsAsked.has(f.rule.action.exam)) continue;
+    findings.push({ ...f, overridden: [] });
+  }
 
   const seen = new Set<string>();
   const missing = findings

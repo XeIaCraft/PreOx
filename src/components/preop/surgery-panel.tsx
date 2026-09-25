@@ -7,7 +7,7 @@ import { ChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { Combobox, FieldLabel, MiniNumber, Panel } from "@/components/preop/ui";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { OPERATION_CATEGORIES } from "@/lib/carnet/referentiel";
-import { RISK_GRADES, type RiskGrade, type Surgery } from "@/lib/preop/dossier";
+import { RISK_GRADES, URGENCIES, urgencyOf, type RiskGrade, type Surgery } from "@/lib/preop/dossier";
 import { searchItems, type BleedingRisk, type SurgeryItem } from "@/lib/preop/catalog";
 import { BLEEDING_RISKS, SURGERY_CATALOG_SOURCE, SURGERY_GRADES } from "@/lib/preop/surgeries";
 
@@ -33,6 +33,7 @@ export function surgeryFromItem(s: Surgery, c: SurgeryItem): Surgery {
     catalogId: c.id,
     setting: c.setting ?? s.setting,
     tourniquet: c.tourniquet ?? s.tourniquet,
+    closedSpace: c.closedSpace ?? false,
   };
 }
 
@@ -148,9 +149,19 @@ export function SurgeryPanel({ s, onChange, extra, title = "Intervention" }: { s
         <ToggleChip pressed={!!s.rcriHighRisk} onChange={(v) => set({ rcriHighRisk: v })} className="min-h-9 text-xs">
           Intrapéritonéale, intrathoracique ou vasculaire sus-inguinale
         </ToggleChip>
-        <ToggleChip pressed={!!s.emergency} onChange={(v) => set({ emergency: v })} className="min-h-9 text-xs">
-          Urgence
+        <ToggleChip pressed={!!s.closedSpace} onChange={(v) => set({ closedSpace: v })} className="min-h-9 text-xs">
+          Espace clos (intracrânien, canal médullaire, chambre postérieure de l&apos;œil)
         </ToggleChip>
+      </div>
+      <div className="space-y-1">
+        <FieldLabel>Délai</FieldLabel>
+        <ChipGroup
+          size="sm"
+          options={URGENCIES.map((u) => ({ code: u.code, label: u.label, title: u.detail }))}
+          value={urgencyOf(s)}
+          onChange={(v) => v && set({ urgency: v, emergency: v === "urgent" })}
+        />
+        <p className="text-[11px] text-foreground-subtle">{URGENCIES.find((u) => u.code === urgencyOf(s))!.detail} Change la conduite pour les antiplaquettaires après un stent.</p>
       </div>
       {extra}
       <p className="text-[11px] text-foreground-subtle">{SURGERY_CATALOG_SOURCE} Catalogue modifiable dans Paramètres.</p>

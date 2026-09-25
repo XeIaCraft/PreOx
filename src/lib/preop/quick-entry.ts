@@ -204,7 +204,7 @@ function readValues(text: string): { values: QuickValue[]; asa?: number; mallamp
   const roman = (s: string) => ({ i: 1, ii: 2, iii: 3, iv: 4, v: 5 })[s] ?? Number(s);
   const asa = f.match(/\basa\s*:?\s*(iv|v|i{1,3}|[1-5])\b/);
   const mp = f.match(/\b(?:mallampati|mp)\s*:?\s*(iv|i{1,3}|[1-4])\b/);
-  const sex = /\b(madame|mme|patiente|nee le)\b/.test(f) ? "F" : /\b(monsieur|mr|m\. [a-z]|ne le)\b/.test(f) ? "M" : undefined;
+  const sex = /\b(madame|mme|patiente|nee le|femme|sexe\s*:?\s*f)\b/.test(f) ? "F" : /\b(monsieur|mr|m\. [a-z]|ne le|homme|sexe\s*:?\s*m)\b/.test(f) ? "M" : undefined;
   return { values, asa: asa ? roman(asa[1]) : undefined, mallampati: mp ? (roman(mp[1]) as 1 | 2 | 3 | 4) : undefined, sex };
 }
 

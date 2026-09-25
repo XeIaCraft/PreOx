@@ -56,6 +56,7 @@ const surgery = z.object({
   protocolId: z.uuid().optional(),
   setting: z.enum(["ambulatory", "inpatient", "icu"]).optional(),
   tourniquet: z.boolean().optional(),
+  closedSpace: z.boolean().optional(),
   notes: text(2000).optional(),
   ...verifiable,
 });

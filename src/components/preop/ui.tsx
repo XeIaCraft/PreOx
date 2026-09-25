@@ -4,7 +4,8 @@ import { useState } from "react";
 import { ChevronDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RiskLevel } from "@/lib/preop/scores";
-import type { SourceLevel } from "@/lib/preop/rules/types";
+import { RULE_TARGETS, type Condition, type RuleAction, type RuleTarget, type SourceLevel } from "@/lib/preop/rules/types";
+import { ruleTarget } from "@/lib/preop/rules/target";
 import { sourceLevelShort } from "@/lib/preop/rules/engine";
 
 /**
@@ -87,8 +88,26 @@ const SOURCE_STYLES: Record<SourceLevel, string> = {
   be_soc: "bg-primary-tint text-primary-strong",
   eu: "bg-accent-tint text-accent",
   int: "bg-surface-muted text-foreground-muted",
+  book: "border border-border text-foreground-muted",
   article: "bg-surface-muted text-foreground-subtle",
 };
+
+const TARGET_TAGS: Record<RuleTarget, { text: string; className: string }> = {
+  surgery: { text: "Concerne la chirurgie", className: "bg-accent-tint text-accent" },
+  anaesthesia: { text: "Concerne l'anesthésie", className: "bg-primary-tint text-primary-strong" },
+  both: { text: "Chirurgie et anesthésie", className: "bg-surface-muted text-foreground-muted" },
+};
+
+/** What the rule protects — the surgery, the anaesthesia or both — with the meaning on hover. */
+export function TargetTag({ rule }: { rule: { conditions: Condition[]; action: RuleAction } }) {
+  const target = ruleTarget(rule);
+  const tag = TARGET_TAGS[target];
+  return (
+    <span title={RULE_TARGETS.find((t) => t.code === target)?.detail} className={cn("inline-flex w-fit items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide", tag.className)}>
+      {tag.text}
+    </span>
+  );
+}
 
 export function SourceBadge({ level }: { level: SourceLevel }) {
   return <span className={cn("inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wide", SOURCE_STYLES[level])}>{sourceLevelShort(level)}</span>;

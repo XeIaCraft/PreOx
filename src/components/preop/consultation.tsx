@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, MultiChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { useToast } from "@/components/ui/toast";
-import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, ScoreCard, SourceBadge, YesNoChip, formatDateTime, localToIso, toLocalInput, Disclosure } from "@/components/preop/ui";
+import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, ScoreCard, SourceBadge, TargetTag, YesNoChip, formatDateTime, localToIso, toLocalInput, Disclosure } from "@/components/preop/ui";
 import { SurgeryPanel } from "@/components/preop/surgery-panel";
 import { AllergiesEditor, ConditionsEditor, SubstancesEditor } from "@/components/preop/history-editor";
 import { ExamsPanel } from "@/components/preop/exams-panel";
@@ -46,7 +46,7 @@ import {
 } from "@/lib/preop/scores";
 import { ASA_REFERENCE } from "@/lib/preop/asa";
 import { consultationScores, type ConsultationScores } from "@/lib/preop/consultation-scores";
-import { effectiveConditions } from "@/lib/preop/derive";
+import { effectiveConditions, lowerFirst } from "@/lib/preop/derive";
 import { attentionPoints } from "@/lib/preop/attention";
 import { patientInstructions, patientSheet } from "@/lib/preop/instructions";
 import { stepMissing } from "@/lib/preop/completeness";
@@ -54,12 +54,13 @@ import { remainingCount, remainingQuestions } from "@/lib/preop/remaining-questi
 import { missingRules, type RuleGap } from "@/lib/preop/rule-gaps";
 import { consultationRecap, recapText } from "@/lib/preop/recap";
 import { pendingExams } from "@/lib/preop/exams";
-import { emptyConsultation, upgradeConsultation, type ConsultationState } from "@/lib/preop/dossier";
+import { emptyConsultation, upgradeConsultation, urgencyOf, type ConsultationState } from "@/lib/preop/dossier";
 import { DEFAULT_CATALOGS } from "@/lib/preop/catalog-defaults";
 import { cbipSearchUrl, searchMedications } from "@/lib/preop/medications";
 import { matchProtocol, type Protocol, type ProtocolContent } from "@/lib/preop/protocols";
 import { evaluate, indicationLabel, type EvaluationResult } from "@/lib/preop/rules/engine";
 import { describeRule, formatHours } from "@/lib/preop/rules/describe";
+import { beforeWhat, conflictText } from "@/lib/preop/rules/target";
 import { combineQuestions, questionForMissingStop, type QuestionInput } from "@/lib/preop/rules/question";
 import { INDICATIONS, TECHNIQUES, type Indication, type PatientTreatment, type Rule, type Technique } from "@/lib/preop/rules/types";
 import { classesOf, fold, medicationOf, type Catalogs, type MedicationItem } from "@/lib/preop/catalog";
@@ -78,7 +79,13 @@ export function evaluateConsultation(rules: Rule[], c: ConsultationState, catalo
     techniques: c.techniques,
     plannedAt: localToIso(c.plannedAt),
     hospital: c.hospital || undefined,
-    surgery: { bleedingRisk: c.surgery.bleedingRisk, cardiacRisk: c.surgery.cardiacRisk, grade: c.surgery.kce },
+    surgery: {
+      bleedingRisk: c.surgery.bleedingRisk,
+      cardiacRisk: c.surgery.cardiacRisk,
+      grade: c.surgery.kce,
+      urgency: urgencyOf(c.surgery),
+      closedSpace: c.surgery.closedSpace === undefined ? undefined : c.surgery.closedSpace ? "yes" : "no",
+    },
     // Deduced antecedents count too (insulin → insulin-treated diabetes…).
     conditions: effectiveConditions(c, catalogs).conditions,
   });
@@ -361,12 +368,14 @@ function TreatmentsEditor({ treatments, onChange }: { treatments: PatientTreatme
 /** What the rules say, what they need to decide, and — above all — what has no rule yet. */
 function RulesPanel({ evaluation, gaps, onAskQuestion, crcl, rulesCount }: { evaluation: EvaluationResult; gaps: RuleGap[]; onAskQuestion: (q: QuestionInput) => void; crcl?: number; rulesCount: number }) {
   const applying = evaluation.findings.filter((f) => f.status === "applies");
+  const historyMissing = evaluation.missing.filter((m) => m.key.startsWith("history:"));
+  const otherMissing = evaluation.missing.filter((m) => !m.key.startsWith("history:"));
   // A treatment with no rule at all is asked about once (the general question covers the technique).
   const techniqueGaps = evaluation.gaps.filter((g) => !gaps.some((x) => x.key === `t:${g.treatment.id}`));
   const all: { key: string; label: string; question: QuestionInput }[] = [
     ...gaps,
     ...techniqueGaps.map((g) => ({
-      key: `g:${g.treatment.id}-${g.technique}`,
+      key: `g:${g.treatment.id}-${g.technique ?? g.target}`,
       label: g.label,
       question: {
         ...questionForMissingStop({ drug: g.treatment.name.toLowerCase(), dailyDoseMg: g.treatment.dailyDoseMg, technique: g.technique, crcl, indication: g.treatment.indication ? indicationLabel(g.treatment.indication) : undefined }),
@@ -407,9 +416,15 @@ function RulesPanel({ evaluation, gaps, onAskQuestion, crcl, rulesCount }: { eva
             <CircleHelp className="h-4 w-4 text-accent" /> À compléter pour décider
           </p>
           <ul className="mt-1 list-disc pl-5 text-xs text-foreground-muted">
-            {evaluation.missing.map((m) => (
+            {otherMissing.map((m) => (
               <li key={m.key}>{m.label}</li>
             ))}
+            {historyMissing.length > 0 && (
+              <li>
+                Antécédents à préciser (oui / non, ou « RAS » pour tout un système) :{" "}
+                {historyMissing.map((m) => lowerFirst(m.label.replace(/^Antécédent : /, ""))).join(", ")}
+              </li>
+            )}
           </ul>
         </div>
       )}
@@ -420,15 +435,16 @@ function RulesPanel({ evaluation, gaps, onAskQuestion, crcl, rulesCount }: { eva
             <div className="flex items-start gap-2">
               <SourceBadge level={f.rule.source.level} />
               <div className="min-w-0 flex-1 space-y-1">
+                <TargetTag rule={f.rule} />
                 {f.outcomes.map((o, i) => (
                   <p key={i} className={cn("text-sm", o.kind === "stop_before" && o.conflict ? "text-danger" : "text-foreground")}>
                     {o.kind === "stop_before" && (
                       <>
-                        <strong>{o.treatment.name}</strong> : dernière prise au moins {formatHours(o.hours)} avant
+                        <strong>{o.treatment.name}</strong> : dernière prise au moins {formatHours(o.hours)} {beforeWhat(f.rule)}
                         {o.lastDoseBy && <> — au plus tard le {formatDateTime(o.lastDoseBy)}</>}
                         {o.conflict && (
-                          <span className="mt-0.5 flex items-center gap-1 font-medium">
-                            <AlertTriangle className="h-3.5 w-3.5" /> Prise trop récente : geste possible à partir du {formatDateTime(o.conflict.earliestAt)}
+                          <span className="mt-0.5 flex items-start gap-1 font-medium">
+                            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {conflictText(f.rule, formatDateTime(o.conflict.earliestAt))}
                           </span>
                         )}
                       </>
@@ -443,7 +459,7 @@ function RulesPanel({ evaluation, gaps, onAskQuestion, crcl, rulesCount }: { eva
                     {o.kind === "exam" && (
                       <>
                         Examen : {o.exam}
-                        {o.notBefore && <> — pas avant le {formatDateTime(o.notBefore)}</>}
+                        {o.notBefore && (o.withinDays ?? 0) <= 30 && <> — pas avant le {formatDateTime(o.notBefore)}</>}
                       </>
                     )}
                     {o.kind === "info" && <>{o.text}</>}

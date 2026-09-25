@@ -90,6 +90,7 @@ const LEVEL_PATTERNS: { level: SourceLevel; pattern: RegExp }[] = [
   { level: "be_soc", pattern: /\bSARB\b|\bBARA\b|Belgian (Society|Association)|Soci[ée]t[ée] belge/i },
   { level: "eu", pattern: /\bESAIC\b|\bESA\b|\bESRA\b|\bESC\b|\bEHRA\b|\bERC\b|\bESPEN\b|\bESICM\b|\bPROSPECT\b|\bESH\b|European Society/i },
   { level: "int", pattern: /\bSFAR\b|\bGIHP\b|\bASRA\b|\bASA\b|\bDAS\b|\bAAGBI\b|Association of Anaesthetists|\bNICE\b|\bACC\b|\bAHA\b|\bCHEST\b|\bACCP\b|\bSIAARTI\b|\bDGAI\b|Society|Soci[ée]t[ée]|Guidelines?|Recommandations?/i },
+  { level: "book", pattern: /\bManuel\b|\bPr[ée]cis\b|\bTrait[ée]\b|Textbook|Handbook|\bMiller'?s?\b|Elsevier Masson|[ÉE]dition\b|\bed\.\s*\d/i },
 ];
 
 export function detectLevel(source: string): SourceLevel {

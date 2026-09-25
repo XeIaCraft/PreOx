@@ -6,7 +6,7 @@ import type { ConditionCode } from "../history";
 import type { PenFastItem, Sex } from "../scores";
 
 /** Where a source sits in the hierarchy (highest first) — see SOURCE_LEVELS. */
-export type SourceLevel = "local" | "be_inst" | "be_soc" | "eu" | "int" | "article";
+export type SourceLevel = "local" | "be_inst" | "be_soc" | "eu" | "int" | "book" | "article";
 
 export const SOURCE_LEVELS: { code: SourceLevel; short: string; label: string }[] = [
   { code: "local", short: "LOCAL", label: "Protocole de service (s'applique dans cet hôpital)" },
@@ -14,6 +14,7 @@ export const SOURCE_LEVELS: { code: SourceLevel; short: string; label: string }[
   { code: "be_soc", short: "BE", label: "Société scientifique belge (SARB, BARA…)" },
   { code: "eu", short: "EU", label: "Recommandation européenne (ESAIC, ESRA, ESC, EHRA, ERC…)" },
   { code: "int", short: "INT", label: "Autre recommandation (SFAR, GIHP, ASRA, ASA…)" },
+  { code: "book", short: "LIVRE", label: "Ouvrage de référence (manuel, traité) — à confronter aux recommandations récentes" },
   { code: "article", short: "ART", label: "Article ou revue, pas une recommandation" },
 ];
 
@@ -109,12 +110,44 @@ export type Condition =
    */
   | { kind: "allergy"; allergen: string; present: boolean; label?: string; penFast?: "low" | "high" };
 
-export type SurgeryAttribute = "bleedingRisk" | "cardiacRisk" | "grade";
+export type SurgeryAttribute = "bleedingRisk" | "cardiacRisk" | "grade" | "urgency" | "closedSpace";
 
 export const SURGERY_ATTRIBUTES: { code: SurgeryAttribute; label: string; values: { code: string; label: string }[] }[] = [
   { code: "bleedingRisk", label: "Risque hémorragique de la chirurgie", values: [{ code: "minimal", label: "minime" }, { code: "low", label: "faible" }, { code: "high", label: "élevé" }] },
   { code: "cardiacRisk", label: "Risque cardiaque de la chirurgie (ESC)", values: [{ code: "low", label: "faible" }, { code: "intermediate", label: "intermédiaire" }, { code: "high", label: "élevé" }] },
   { code: "grade", label: "Grade de la chirurgie", values: [{ code: "minor", label: "mineure" }, { code: "intermediate", label: "intermédiaire" }, { code: "major", label: "majeure" }] },
+  {
+    code: "urgency",
+    label: "Délai de la chirurgie",
+    values: [
+      { code: "elective", label: "programmée" },
+      { code: "semi_urgent", label: "semi-urgente (ne peut pas attendre des mois)" },
+      { code: "urgent", label: "urgente (24–48 h)" },
+    ],
+  },
+  { code: "closedSpace", label: "Chirurgie en espace clos", values: [{ code: "yes", label: "oui" }, { code: "no", label: "non" }] },
+];
+
+/**
+ * What a rule protects. A treatment not stopped in time can contraindicate
+ * the surgery (bleeding, a haematoma in a closed space) without
+ * contraindicating the anaesthesia — or the reverse (a neuraxial puncture
+ * under an anticoagulant, while a general anaesthesia stays possible).
+ */
+export type RuleTarget = "surgery" | "anaesthesia" | "both";
+
+export const RULE_TARGETS: { code: RuleTarget; label: string; detail: string }[] = [
+  {
+    code: "surgery",
+    label: "La chirurgie",
+    detail: "Le risque vient du geste chirurgical (saignement, hématome en espace clos). Non respectée, c'est la chirurgie qui est à reporter ; l'anesthésie elle-même n'est pas contre-indiquée.",
+  },
+  {
+    code: "anaesthesia",
+    label: "L'anesthésie",
+    detail: "Le risque vient du geste anesthésique (ponction neuraxiale, bloc profond, induction). Non respectée, c'est cette technique qui est contre-indiquée ; une autre (souvent l'anesthésie générale) reste possible.",
+  },
+  { code: "both", label: "Les deux", detail: "Concerne toute la période opératoire, chirurgie et anesthésie." },
 ];
 
 export type RuleType = "stop_before" | "resume_after" | "requirement" | "exam" | "info";
@@ -127,13 +160,17 @@ export const RULE_TYPES: { code: RuleType; label: string }[] = [
   { code: "info", label: "Information (jamais appliquée automatiquement)" },
 ];
 
-export type RuleAction =
+export type RuleAction = (
   | { type: "stop_before"; hours: number }
   | { type: "resume_after"; hours: number }
   | { type: "requirement"; text: string; blocking: boolean }
   /** withinDays: to be done at most this many days before the gesture (INR the day before…). */
   | { type: "exam"; exam: string; withinDays?: number }
-  | { type: "info"; text: string };
+  | { type: "info"; text: string }
+) & {
+  /** What the rule protects — inferred from the conditions when absent (ruleTarget). */
+  target?: RuleTarget;
+};
 
 export type RuleStatus = "draft" | "active" | "archived";
 

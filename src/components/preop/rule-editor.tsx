@@ -4,11 +4,12 @@ import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
-import { MultiChipGroup, Textarea } from "@/components/carnet/ui";
+import { ChipGroup, MultiChipGroup, Textarea } from "@/components/carnet/ui";
 import { NumberField } from "@/components/preop/ui";
 import { ATC_GROUPS, MEDICATIONS, atcLabel } from "@/lib/preop/medications";
 import { describeRule } from "@/lib/preop/rules/describe";
-import { INDICATIONS, PATIENT_VALUES, RULE_TYPES, SOURCE_LEVELS, SURGERY_ATTRIBUTES, TECHNIQUES, type SurgeryAttribute } from "@/lib/preop/rules/types";
+import { INDICATIONS, PATIENT_VALUES, RULE_TARGETS, RULE_TYPES, SOURCE_LEVELS, SURGERY_ATTRIBUTES, TECHNIQUES, type RuleTarget, type SurgeryAttribute } from "@/lib/preop/rules/types";
+import { ruleTarget } from "@/lib/preop/rules/target";
 import { SYSTEM_LABELS, SYSTEM_ORDER } from "@/lib/preop/catalog";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import type { Comparator, Condition, Indication, PatientValue, Rule, RuleAction, RuleType, SourceLevel, Technique } from "@/lib/preop/rules/types";
@@ -45,17 +46,18 @@ function OpSelect({ value, onChange }: { value: Comparator; onChange: (v: Compar
 
 function defaultAction(type: RuleType, current: RuleAction): RuleAction {
   const text = "text" in current ? current.text : "";
+  const keep = current.target ? { target: current.target } : {};
   switch (type) {
     case "stop_before":
-      return { type, hours: "hours" in current ? current.hours : 24 };
+      return { type, hours: "hours" in current ? current.hours : 24, ...keep };
     case "resume_after":
-      return { type, hours: "hours" in current ? current.hours : 24 };
+      return { type, hours: "hours" in current ? current.hours : 24, ...keep };
     case "requirement":
-      return { type, text, blocking: true };
+      return { type, text, blocking: true, ...keep };
     case "exam":
-      return { type, exam: "" };
+      return { type, exam: "", ...keep };
     case "info":
-      return { type, text };
+      return { type, text, ...keep };
   }
 }
 
@@ -332,6 +334,20 @@ export function RuleEditor({ value, onChange }: { value: RuleDraft; onChange: (r
           </div>
         )}
         {a.type === "info" && <Textarea rows={2} value={a.text} onChange={(e) => set({ action: { ...a, text: e.target.value } })} />}
+      </div>
+
+      <div className="space-y-1.5">
+        <p className="text-xs font-medium uppercase tracking-wide text-foreground-subtle">Ce que la règle protège</p>
+        <ChipGroup
+          size="sm"
+          options={RULE_TARGETS.map((t) => ({ code: t.code, label: t.label, title: t.detail }))}
+          value={ruleTarget(value)}
+          onChange={(v) => v && set({ action: { ...a, target: v as RuleTarget } })}
+        />
+        <p className="text-xs text-foreground-muted">
+          {RULE_TARGETS.find((t) => t.code === ruleTarget(value))!.detail}
+          {!a.target && " (Déduit des conditions ; cliquez pour le fixer.)"}
+        </p>
       </div>
 
       <div className="rounded-[var(--radius-md)] border border-primary/30 bg-primary-tint px-3 py-2 text-sm text-primary-strong">

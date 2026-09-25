@@ -131,12 +131,34 @@ describe("engine", () => {
   it("finds the situations that have no rule", () => {
     const ctx = patient({ treatments: [{ id: "e", atc: "B01AF03", name: "Edoxaban" }, { id: "s", atc: "A10BK03", name: "Empagliflozine" }, { id: "b", atc: "C07AB07", name: "Bisoprolol" }] });
     expect(findGaps([rivaroxaban72h], ctx).map((g) => g.label)).toEqual([
+      "Aucune règle pour Edoxaban vis-à-vis de la chirurgie (risque hémorragique) — la règle d'anesthésie ne suffit pas",
       "Aucune règle d'arrêt de Edoxaban avant ponction neuraxiale (rachi, péridurale, cathéter)",
       "Aucune règle d'arrêt de Empagliflozine avant l'intervention",
     ]);
-    // A class-wide rule (all xabans) covers edoxaban.
+    // A class-wide rule (all xabans) covers edoxaban for the puncture — not for the surgery.
     const xabans = rule({ id: "x", conditions: [{ kind: "drug", atc: "B01AF" }, { kind: "technique", in: ["neuraxial"] }], action: { type: "stop_before", hours: 72 } });
-    expect(findGaps([xabans], ctx).map((g) => g.treatment.name)).toEqual(["Empagliflozine"]);
+    expect(findGaps([xabans], ctx).map((g) => `${g.treatment.name}:${g.target}`)).toEqual(["Edoxaban:surgery", "Empagliflozine:both"]);
+    const surgical = rule({ id: "xs", conditions: [{ kind: "drug", atc: "B01AF" }, { kind: "surgery", attribute: "bleedingRisk", in: ["low", "high"] }], action: { type: "stop_before", hours: 48 } });
+    expect(findGaps([xabans, surgical], ctx).map((g) => g.treatment.name)).toEqual(["Empagliflozine"]);
+  });
+
+  it("says what a dose taken too late forbids: the surgery, or only the anaesthetic gesture", async () => {
+    const { conflictText, ruleTarget } = await import("./target");
+    const surgical = rule({ id: "xs", conditions: [{ kind: "drug", atc: "B01AF" }, { kind: "surgery", attribute: "bleedingRisk", in: ["high"] }], action: { type: "stop_before", hours: 48 } });
+    expect(ruleTarget(surgical)).toBe("surgery");
+    expect(conflictText(surgical, "1 oct.")).toMatch(/chirurgie à reporter.*L'anesthésie elle-même n'est pas contre-indiquée/);
+    expect(ruleTarget(rivaroxaban72h)).toBe("anaesthesia");
+    expect(conflictText(rivaroxaban72h, "1 oct.")).toMatch(/^Prise trop récente : ponction neuraxiale contre-indiqué.*anesthésie générale/);
+    // An explicit target wins over the conditions.
+    expect(ruleTarget({ ...surgical, action: { type: "stop_before", hours: 48, target: "both" } })).toBe("both");
+  });
+
+  it("reads the urgency and the closed space of the surgery", () => {
+    const closed = rule({ id: "cs", conditions: [{ kind: "drug", atc: "B01AC06" }, { kind: "surgery", attribute: "closedSpace", in: ["yes"] }], action: { type: "stop_before", hours: 120 } });
+    const ctx = patient({ treatments: [{ id: "a", atc: "B01AC06", name: "Aspirine" }] });
+    expect(evaluateRule(closed, { ...ctx, surgery: { closedSpace: "yes" } })?.status).toBe("applies");
+    expect(evaluateRule(closed, { ...ctx, surgery: { closedSpace: "no" } })).toBeNull();
+    expect(evaluateRule(closed, ctx)?.missing.map((m) => m.label)).toEqual(["Chirurgie en espace clos"]);
   });
 
   it("flags rules past their review date", () => {
@@ -252,7 +274,7 @@ describe("reading a rule back", () => {
   it("describes conditions and action in plain French", async () => {
     const { describeRule } = await import("./describe");
     expect(describeRule(rivaroxaban72h)).toBe(
-      "Si traitement : Rivaroxaban, dose ≥ 20 mg/j et geste : ponction neuraxiale (rachi, péridurale, cathéter) et Clairance (Cockcroft-Gault) ≥ 30 mL/min → dernière prise au moins 72 h (3 jours) avant le geste."
+      "Si traitement : Rivaroxaban, dose ≥ 20 mg/j et geste : ponction neuraxiale (rachi, péridurale, cathéter) et Clairance (Cockcroft-Gault) ≥ 30 mL/min → dernière prise au moins 72 h (3 jours) avant : ponction neuraxiale."
     );
   });
 });
@@ -391,7 +413,7 @@ describe("proposed rules", () => {
 
   it("the dabigatran drafts pick one delay per clearance band", async () => {
     const { PROPOSED_RULES } = await import("./proposed");
-    const dabi = PROPOSED_RULES.filter((r) => r.title.startsWith("Dabigatran")).map((r) => ({ ...r, status: "active" as const, verified_at: "2026-01-01", created_at: "", updated_at: "" }));
+    const dabi = PROPOSED_RULES.filter((r) => r.title.startsWith("Dabigatran") && r.source.level === "eu").map((r) => ({ ...r, status: "active" as const, verified_at: "2026-01-01", created_at: "", updated_at: "" }));
     const at = (crcl: number) => {
       // Cockcroft-Gault ≈ crcl for these values: build a patient whose clearance is known.
       const ctx = patient({ treatments: [{ id: "d", atc: "B01AE07", name: "Dabigatran" }], age: 50, weightKg: 70, sex: "M", creatinineMgDl: (140 - 50) * 70 / (72 * crcl) });
@@ -401,5 +423,69 @@ describe("proposed rules", () => {
     expect(at(60)).toEqual([96]);
     expect(at(40)).toEqual([120]);
     expect(at(20)).toEqual([]);
+  });
+});
+
+describe("rules from the reference manual", () => {
+  it("are valid drafts, each with its exact quote and a stable, unique id", async () => {
+    const { ruleSchema } = await import("./schema");
+    const { MANUAL_RULES } = await import("./proposed-manual");
+    const { PROPOSED_RULES } = await import("./proposed");
+    expect(MANUAL_RULES.length).toBeGreaterThan(60);
+    for (const r of MANUAL_RULES) {
+      const parsed = ruleSchema.safeParse(r);
+      expect(parsed.success, `${r.title}: ${parsed.success ? "" : parsed.error.issues.map((i) => i.message).join(", ")}`).toBe(true);
+      expect(r.status).toBe("draft");
+      expect(r.source.quote.length).toBeGreaterThan(20);
+      expect(r.source.level).toBe("book");
+    }
+    expect(new Set(PROPOSED_RULES.map((r) => r.id)).size).toBe(PROPOSED_RULES.length);
+    expect(MANUAL_RULES[0].id).toBe("5f1c0a10-0002-4000-8000-000000000001");
+  });
+
+  it("keep the surgery and the puncture apart: rivaroxaban 20 mg, hip replacement under spinal", async () => {
+    const { MANUAL_RULES } = await import("./proposed-manual");
+    const active = MANUAL_RULES.map((r) => ({ ...r, status: "active" as const, verified_at: "2026-09-25", created_at: "", updated_at: "" }));
+    const res = evaluate(active, {
+      age: 72,
+      sex: "M",
+      weightKg: 80,
+      creatinineMgDl: 0.9,
+      treatments: [{ id: "r", atc: "B01AF01", name: "Rivaroxaban", dailyDoseMg: 20, lastDoseAt: "2026-10-06T08:00:00.000Z" }],
+      techniques: ["neuraxial"],
+      plannedAt: "2026-10-08T08:00:00.000Z",
+      surgery: { bleedingRisk: "high", grade: "major", cardiacRisk: "intermediate", urgency: "elective", closedSpace: "no" },
+      conditions: {},
+    });
+    const stops = res.findings.filter((f) => f.status === "applies" && f.rule.action.type === "stop_before");
+    const byTarget = Object.fromEntries(stops.map((f) => [f.rule.action.target, f.outcomes[0]]));
+    // Surgery at high bleeding risk: 72 h; spinal: 5 half-lives, 72 h — two separate findings.
+    expect(byTarget.surgery).toMatchObject({ kind: "stop_before", hours: 72 });
+    expect(byTarget.anaesthesia).toMatchObject({ kind: "stop_before", hours: 72 });
+    // Last dose 48 h before: both conflict.
+    expect(stops.every((f) => f.outcomes[0].kind === "stop_before" && f.outcomes[0].conflict)).toBe(true);
+    // The ECG after 65 is asked once; no question about HTA just for the ECG.
+    expect(res.missing.some((m) => m.key === "history:hypertension")).toBe(false);
+  });
+
+  it("forbids elective surgery, not anaesthesia, 2 months after a stent", async () => {
+    const { MANUAL_RULES } = await import("./proposed-manual");
+    const active = MANUAL_RULES.map((r) => ({ ...r, status: "active" as const, verified_at: "2026-09-25", created_at: "", updated_at: "" }));
+    const res = evaluate(active, {
+      age: 60,
+      treatments: [
+        { id: "a", atc: "B01AC06", name: "Aspirine", indication: "coronary_stent", eventDate: "2026-08-01" },
+        { id: "c", atc: "B01AC04", name: "Clopidogrel", indication: "coronary_stent", eventDate: "2026-08-01" },
+      ],
+      techniques: ["general"],
+      plannedAt: "2026-10-08T08:00:00.000Z",
+      surgery: { bleedingRisk: "low", grade: "intermediate", cardiacRisk: "low", urgency: "elective", closedSpace: "no" },
+      conditions: {},
+    });
+    const blocking = res.findings.filter((f) => f.status === "applies" && f.outcomes.some((o) => o.kind === "requirement" && o.blocking));
+    expect(blocking.map((f) => f.rule.title)).toContain("Stent actif < 6 mois : reporter la chirurgie programmée");
+    expect(blocking.every((f) => f.rule.action.target === "surgery")).toBe(true);
+    // No stop date for clopidogrel: the stent is less than 6 months old.
+    expect(res.findings.some((f) => f.status === "applies" && f.outcomes.some((o) => o.kind === "stop_before" && o.treatment.name === "Clopidogrel"))).toBe(false);
   });
 });
