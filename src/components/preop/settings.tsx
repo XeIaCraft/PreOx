@@ -220,6 +220,9 @@ function AllergenForm({ item, onChange }: { item: AllergenItem; onChange: (i: Al
         <Input className="h-9" defaultValue={item.drugWords.join(", ")} onChange={(e) => set({ drugWords: list(e.target.value) })} />
       </Line>
       <AttentionEditor value={item.attention} onChange={(v) => set({ attention: v ?? { level: "high", text: "" } })} />
+      <ToggleChip pressed={item.assessment === "pen-fast"} onChange={(on) => set({ assessment: on ? "pen-fast" : undefined })} className="min-h-9 text-xs">
+        Évaluer avec PEN-FAST (allergie à la pénicilline déclarée)
+      </ToggleChip>
     </div>
   );
 }

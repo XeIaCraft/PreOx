@@ -60,6 +60,8 @@ export interface AllergenItem {
   /** A plan drug whose name contains one of these words raises an alert. */
   drugWords: string[];
   attention: AttentionSpec;
+  /** Score used to judge whether the reported allergy is likely true. */
+  assessment?: "pen-fast";
 }
 
 export type BleedingRisk = "minimal" | "low" | "high";

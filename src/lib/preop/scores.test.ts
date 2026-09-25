@@ -111,3 +111,14 @@ describe("difficult mask ventilation (Langeron)", () => {
     expect(maskVentilation({ beard: true, bmiOver26: false, edentulous: false, ageOver55: false, snoring: false }).label).toBe("Pas de prédiction de difficulté");
   });
 });
+
+describe("PEN-FAST", () => {
+  it("scores the reported penicillin allergy and decides as soon as it can", async () => {
+    const { penFast } = await import("./scores");
+    expect(penFast({ withinFiveYears: false, anaphylaxisOrSevere: false, treatmentRequired: true })).toMatchObject({ value: 1, level: "low" });
+    expect(penFast({ withinFiveYears: true, anaphylaxisOrSevere: true })).toMatchObject({ value: 4, level: "high" });
+    expect(penFast({ withinFiveYears: true, treatmentRequired: true })).toMatchObject({ value: 3, level: "intermediate" });
+    expect(penFast({ withinFiveYears: false, anaphylaxisOrSevere: false }).label).toMatch(/peu probable/);
+    expect(penFast({ withinFiveYears: true }).label).toBe("");
+  });
+});

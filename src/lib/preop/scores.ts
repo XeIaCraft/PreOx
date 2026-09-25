@@ -424,3 +424,29 @@ export function maskVentilation(answers: Answers<MaskVentilationItem>): ScoreRes
   if (value + missing >= 2) return { value, missing, label: "", level: "low" };
   return { value, missing, label: "Pas de prédiction de difficulté", level: "low" };
 }
+
+// ---------------------------------------------------------------------------
+// PEN-FAST (reported penicillin allergy: how likely is it to be true?)
+// ---------------------------------------------------------------------------
+
+export const PEN_FAST_ITEMS = {
+  withinFiveYears: "Réaction il y a 5 ans ou moins",
+  anaphylaxisOrSevere: "Anaphylaxie / angio-œdème, ou réaction cutanée sévère (SJS/NET, DRESS, PEAG)",
+  treatmentRequired: "Traitement nécessaire pour la réaction",
+} as const;
+export type PenFastItem = keyof typeof PEN_FAST_ITEMS;
+
+export const PEN_FAST_REFERENCE: ScoreReference = { label: "Trubiano et al., JAMA Intern Med 2020 (PEN-FAST)" };
+
+/** 0–5 points; < 3: true allergy unlikely (low risk). */
+export function penFast(answers: Answers<PenFastItem>): ScoreResult {
+  const { value, missing } = tally(answers, { withinFiveYears: 2, anaphylaxisOrSevere: 2, treatmentRequired: 1 });
+  // Decided as soon as the unanswered items can't change the side of the threshold.
+  const maxLeft = (answers.withinFiveYears === undefined ? 2 : 0) + (answers.anaphylaxisOrSevere === undefined ? 2 : 0) + (answers.treatmentRequired === undefined ? 1 : 0);
+  const low = value + maxLeft < 3;
+  const high = value >= 3;
+  const detail = value === 0 ? "très faible" : value <= 2 ? "faible" : value === 3 ? "modéré" : "élevé";
+  if (high) return { value, missing, label: `Allergie vraie possible (risque ${detail})`, level: value >= 4 ? "high" : "intermediate" };
+  if (low || missing === 0) return { value, missing, label: `Allergie vraie peu probable (risque ${detail})`, level: "low" };
+  return { value, missing, label: "", level: "info" };
+}

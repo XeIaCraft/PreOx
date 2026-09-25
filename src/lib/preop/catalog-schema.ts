@@ -25,7 +25,7 @@ const condition = z.object({
   female: z.boolean().optional(),
 });
 
-const allergen = z.object({ id, label: text(120).min(1), keywords: words, drugWords: words, attention });
+const allergen = z.object({ id, label: text(120).min(1), keywords: words, drugWords: words, attention, assessment: z.enum(["pen-fast"]).optional() });
 
 const surgery = z.object({
   id,

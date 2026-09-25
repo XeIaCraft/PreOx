@@ -2,7 +2,7 @@
 // from the consultation to the handover. Identified by initials only, kept
 // encrypted on the device (secure-store.ts) — never sent to the server.
 
-import type { AriscatInput, ElGanzouriInput, Sex } from "./scores";
+import { penFast, type AriscatInput, type ElGanzouriInput, type PenFastItem, type Sex } from "./scores";
 import type { APFEL_ITEMS, DASI_ITEMS, HAS_BLED_ITEMS, HEMSTOP_ITEMS, RCRI_ITEMS, STOP_BANG_ITEMS } from "./scores";
 import type { PatientTreatment, Technique } from "./rules/types";
 import { emptyProtocolContent, type ProtocolContent } from "./protocols";
@@ -47,6 +47,8 @@ export interface AllergyEntry {
   allergenId?: string;
   label: string;
   reaction?: string;
+  /** PEN-FAST answers, for a reported penicillin allergy. */
+  penFast?: Partial<Record<PenFastItem, boolean>>;
 }
 
 export type ExamStatus = "todo" | "requested" | "available" | "not_needed";
@@ -371,7 +373,11 @@ export function withAutoStatus(d: Dossier, previous?: Dossier): Dossier {
 
 /** "Latex, pénicilline (urticaire)", "aucune connue", or "" when not asked. */
 export function allergySummary(p: ConsultationPatient): string {
-  const list = (p.allergyList ?? []).map((a) => `${a.label}${a.reaction ? ` (${a.reaction})` : ""}`);
+  const list = (p.allergyList ?? []).map((a) => {
+    const pf = a.penFast ? penFast(a.penFast) : null;
+    const score = pf && pf.label ? ` — PEN-FAST ${pf.value}/5 : ${pf.label.charAt(0).toLowerCase()}${pf.label.slice(1)}` : "";
+    return `${a.label}${a.reaction ? ` (${a.reaction})` : ""}${score}`;
+  });
   const text = p.allergies?.trim();
   const all = [...list, ...(text ? [text] : [])];
   if (all.length) return all.join(", ");

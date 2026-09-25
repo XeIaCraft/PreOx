@@ -30,6 +30,7 @@ export const DEFAULT_ALLERGENS: AllergenItem[] = [
     keywords: ["pénicilline", "penicilline", "amoxicilline", "augmentin", "clamoxyl", "bêtalactamine", "betalactamine", "flucloxacilline", "pipéracilline", "tazocin"],
     drugWords: ["amoxicilline", "pénicilline", "pipéracilline", "flucloxacilline", "céfazoline", "cefazoline", "céfuroxime", "cefuroxime", "ceftriaxone"],
     attention: { level: "high", text: "Préciser la réaction (immédiate, grave, retardée) ; antibioprophylaxie à adapter." },
+    assessment: "pen-fast",
   }),
   a({
     id: "cephalosporins",

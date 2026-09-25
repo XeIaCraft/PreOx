@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { ChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { Input } from "@/components/ui/input";
-import { Combobox, FieldLabel, MiniNumber, Panel, Tag, TextArea } from "@/components/preop/ui";
+import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, Tag, TextArea, YesNoChip } from "@/components/preop/ui";
+import { PEN_FAST_ITEMS, PEN_FAST_REFERENCE, penFast, type PenFastItem } from "@/lib/preop/scores";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { DRUGS, QUALIFIER_LABELS, type Conditions, type DrugCode, type Qualifier, type Substances, type TobaccoStatus } from "@/lib/preop/history";
 import { SYSTEM_LABELS, SYSTEM_ORDER, searchItems, type ConditionItem, type SystemCode } from "@/lib/preop/catalog";
@@ -214,6 +215,35 @@ export function AllergiesEditor({ patient: p, onChange }: { patient: Consultatio
           ))}
         </div>
       )}
+      {list.map((a, i) => {
+        const allergen = a.allergenId ? catalogs.allergens.find((x) => x.id === a.allergenId) : undefined;
+        if (allergen?.assessment !== "pen-fast") return null;
+        const answers = a.penFast ?? {};
+        const r = penFast(answers);
+        const setAnswer = (k: PenFastItem, v: boolean) => onChange({ ...p, allergyList: list.map((x, j) => (j === i ? { ...x, penFast: { ...answers, [k]: v } } : x)) });
+        return (
+          <div key={`pf-${i}`} className="space-y-1.5 rounded-[var(--radius-md)] border border-border p-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium text-foreground">PEN-FAST — {a.label}</span>
+              {r.label ? (
+                <RiskPill level={r.level}>
+                  {r.value}/5 · {r.label}
+                </RiskPill>
+              ) : (
+                <span className="text-[11px] text-foreground-subtle">l&apos;allergie déclarée est-elle probable ?</span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(PEN_FAST_ITEMS) as PenFastItem[]).map((k) => (
+                <YesNoChip key={k} label={PEN_FAST_ITEMS[k]} value={answers[k]} onChange={(v) => setAnswer(k, v)} />
+              ))}
+            </div>
+            <p className="text-[11px] text-foreground-subtle">
+              Moins de 3 points : allergie vraie peu probable. {PEN_FAST_REFERENCE.label}.
+            </p>
+          </div>
+        );
+      })}
       {list.length > 0 && <Input className="h-9" defaultValue={p.allergies} onChange={(e) => onChange({ ...p, allergies: e.target.value })} placeholder="Réactions, précisions (ex. urticaire en 2019)" />}
     </div>
   );

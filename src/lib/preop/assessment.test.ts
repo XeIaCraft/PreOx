@@ -158,3 +158,24 @@ describe("consultation redesign", () => {
     expect(recap.find((s) => s.title === "Allergies")!.lines).toEqual(["Latex"]);
   });
 });
+
+describe("reported penicillin allergy (PEN-FAST)", () => {
+  it("a low score softens the alert, a high one keeps it, and the recap says so", async () => {
+    const { attentionPoints } = await import("./attention");
+    const { allergySummary } = await import("./dossier");
+    const { emptyProtocolContent } = await import("./protocols");
+    const plan = { ...emptyProtocolContent(), drugs: [{ id: "c", name: "Céfazoline", route: "bolus_iv", phase: "antibio" as const, doseMode: "fixed" as const, amount: 2, unit: "g" as const, weightBasis: "total" as const, maxAmount: null, redoseEveryMin: null, note: "" }] };
+    const withPenFast = (penFast: Record<string, boolean>) => consult({ patient: { allergyList: [{ allergenId: "betalactams", label: "Pénicilline", reaction: "éruption", penFast }] } });
+    const low = withPenFast({ withinFiveYears: false, anaphylaxisOrSevere: false, treatmentRequired: false });
+    const pLow = attentionPoints(low, consultationScores(low, { plan }), plan);
+    expect(pLow.find((x) => x.id === "allergy-betalactams")).toMatchObject({ level: "medium" });
+    expect(pLow.find((x) => x.id === "allergy-plan-betalactams-c")).toMatchObject({ level: "medium" });
+    expect(allergySummary(low.patient)).toBe("Pénicilline (éruption) — PEN-FAST 0/5 : allergie vraie peu probable (risque très faible)");
+    const high = withPenFast({ withinFiveYears: true, anaphylaxisOrSevere: true });
+    const pHigh = attentionPoints(high, consultationScores(high, { plan }), plan);
+    expect(pHigh.find((x) => x.id === "allergy-betalactams")).toMatchObject({ level: "high" });
+    expect(pHigh.find((x) => x.id === "allergy-plan-betalactams-c")).toMatchObject({ level: "high" });
+    const unscored = consult({ patient: { allergyList: [{ allergenId: "betalactams", label: "Pénicilline" }] } });
+    expect(attentionPoints(unscored, consultationScores(unscored)).some((x) => x.id === "penfast-betalactams")).toBe(true);
+  });
+});

@@ -12,7 +12,8 @@ import { bpLabel } from "./derive";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 import { fold, type AllergenItem, type AttentionSpec } from "./catalog";
 import type { ConsultationScores } from "./consultation-scores";
-import type { ConsultationState } from "./dossier";
+import type { AllergyEntry, ConsultationState } from "./dossier";
+import { penFast } from "./scores";
 import type { ProtocolContent, ProtocolRisk } from "./protocols";
 import type { Qualifier } from "./history";
 
@@ -31,12 +32,12 @@ export interface AttentionPoint {
 const fromSpec = (id: string, title: string, spec: AttentionSpec, risk?: ProtocolRisk): AttentionPoint => ({ id, level: spec.level, title, detail: spec.text, material: spec.material, risk });
 
 /** Allergens recognised in the patient's allergies (structured entries and free text). */
-export function recognisedAllergens(c: ConsultationState, allergens: AllergenItem[] = DEFAULT_CATALOGS.allergens): { allergen: AllergenItem; as: string }[] {
-  const out: { allergen: AllergenItem; as: string }[] = [];
+export function recognisedAllergens(c: ConsultationState, allergens: AllergenItem[] = DEFAULT_CATALOGS.allergens): { allergen: AllergenItem; as: string; entry?: AllergyEntry }[] {
+  const out: { allergen: AllergenItem; as: string; entry?: AllergyEntry }[] = [];
   const entries = c.patient.allergyList ?? [];
   for (const e of entries) {
     const a = e.allergenId ? allergens.find((x) => x.id === e.allergenId) : undefined;
-    if (a && !out.some((o) => o.allergen.id === a.id)) out.push({ allergen: a, as: e.label });
+    if (a && !out.some((o) => o.allergen.id === a.id)) out.push({ allergen: a, as: e.label, entry: e });
   }
   const text = fold([c.patient.allergies ?? "", ...entries.filter((e) => !e.allergenId).map((e) => e.label)].join(" "));
   if (text) {
@@ -60,11 +61,33 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
   const p = c.patient;
 
   // --- Allergies ---------------------------------------------------------------------
-  for (const { allergen, as } of recognisedAllergens(c, catalogs.allergens)) {
-    add(fromSpec(`allergy-${allergen.id}`, `Allergie : ${allergen.label}${fold(as) !== fold(allergen.label) ? ` (${as})` : ""}`, allergen.attention));
+  for (const { allergen, as, entry } of recognisedAllergens(c, catalogs.allergens)) {
+    const title = `Allergie : ${allergen.label}${fold(as) !== fold(allergen.label) ? ` (${as})` : ""}`;
+    // A reported penicillin allergy judged by PEN-FAST: unlikely to be true when < 3.
+    const pf = allergen.assessment === "pen-fast" && entry?.penFast ? penFast(entry.penFast) : null;
+    const unlikely = !!pf && pf.label !== "" && pf.value < 3;
+    if (pf && pf.label) {
+      add(
+        unlikely
+          ? {
+              id: `allergy-${allergen.id}`,
+              level: "medium",
+              title: `${title} — PEN-FAST ${pf.value}/5 : allergie vraie peu probable`,
+              detail: "Risque faible d'allergie vraie : l'étiquette pourrait être levée (test de provocation orale, avis allergologique). Antibioprophylaxie selon vos règles.",
+            }
+          : { id: `allergy-${allergen.id}`, level: "high", title: `${title} — PEN-FAST ${pf.value}/5`, detail: `${allergen.attention.text} Avis allergologique.`, material: allergen.attention.material }
+      );
+    } else {
+      add(fromSpec(`allergy-${allergen.id}`, title, allergen.attention));
+      if (allergen.assessment === "pen-fast") add({ id: `penfast-${allergen.id}`, level: "info", title: "Évaluer l'allergie avec PEN-FAST", detail: "Délai depuis la réaction, gravité, traitement nécessaire : une allergie déclarée est souvent fausse." });
+    }
     for (const d of plan?.drugs ?? []) {
       if (allergen.drugWords.some((w) => fold(d.name).includes(fold(w))))
-        add({ id: `allergy-plan-${allergen.id}-${d.id}`, level: "high", title: `${d.name} au plan malgré l'allergie : ${allergen.label}`, detail: "Revoir ce produit (réactivité croisée possible) ou confirmer qu'il est toléré." });
+        add(
+          unlikely
+            ? { id: `allergy-plan-${allergen.id}-${d.id}`, level: "medium", title: `${d.name} au plan, allergie déclarée : ${allergen.label}`, detail: `PEN-FAST ${pf!.value}/5 : allergie vraie peu probable ; vérifier la conduite dans vos règles.` }
+            : { id: `allergy-plan-${allergen.id}-${d.id}`, level: "high", title: `${d.name} au plan malgré l'allergie : ${allergen.label}`, detail: "Revoir ce produit (réactivité croisée possible) ou confirmer qu'il est toléré." }
+        );
     }
   }
 
