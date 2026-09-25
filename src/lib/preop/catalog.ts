@@ -10,6 +10,7 @@ import type { Qualifier } from "./history";
 import type { SurgeryGrade } from "./surgeries";
 import { treatmentMatches, type Medication } from "./medications";
 import type { Technique } from "./rules/types";
+import type { SurgeryExamProfile } from "./exams";
 
 export interface AttentionSpec {
   level: AttentionLevel;
@@ -124,6 +125,8 @@ export interface SurgeryItem extends Verifiable {
   tourniquet?: boolean;
   /** Closed space (intracranial, spinal canal, posterior chamber of the eye): a haematoma is serious whatever its volume. */
   closedSpace?: boolean;
+  /** Usual work-up of the procedure (exams.ts), each exam tied to its guideline. */
+  examProfile?: SurgeryExamProfile;
   notes?: string;
 }
 
@@ -161,7 +164,26 @@ export interface DrugClassItem extends Verifiable {
 }
 
 /** Patient values (vitals, biology, body measures) a threshold can watch. */
-export type WatchedValue = "sbp" | "dbp" | "hr" | "spo2" | "hb" | "platelets" | "inr" | "hba1c" | "egfr" | "crcl" | "bmi" | "age";
+export type WatchedValue =
+  | "sbp"
+  | "dbp"
+  | "hr"
+  | "spo2"
+  | "hb"
+  | "platelets"
+  | "inr"
+  | "hba1c"
+  | "potassium"
+  | "sodium"
+  | "glucose"
+  | "albumin"
+  | "ntprobnp"
+  | "troponin"
+  | "ferritin"
+  | "egfr"
+  | "crcl"
+  | "bmi"
+  | "age";
 
 /** A value to flag: « FC > 100 /min », with what it means and what it implies. */
 export interface ValueCheckItem extends Verifiable {

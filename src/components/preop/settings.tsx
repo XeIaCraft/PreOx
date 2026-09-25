@@ -42,6 +42,7 @@ import { QUALIFIER_LABELS, type Qualifier } from "@/lib/preop/history";
 import { OPERATION_CATEGORIES } from "@/lib/carnet/referentiel";
 import { BLEEDING_RISKS, SURGERY_GRADES } from "@/lib/preop/surgeries";
 import { RISK_GRADES } from "@/lib/preop/dossier";
+import { EXAM_LABELS, SURGERY_EXAM_PROFILES } from "@/lib/preop/exams";
 import { cn } from "@/lib/utils";
 
 type AnyItem = Catalogs[CatalogKind][number];
@@ -443,6 +444,29 @@ function SurgeryForm({ item, onChange, protocols }: { item: SurgeryItem; onChang
         <ToggleChip pressed={!!item.closedSpace} onChange={(closedSpace) => set({ closedSpace: closedSpace || undefined })} className="min-h-9 text-xs">
           Espace clos (intracrânien, canal médullaire, chambre postérieure de l&apos;œil)
         </ToggleChip>
+      </div>
+      <div className="space-y-1">
+        <FieldLabel>Bilan propre à l&apos;intervention</FieldLabel>
+        <Select value={item.examProfile ?? ""} onChange={(e) => set({ examProfile: (e.target.value || undefined) as SurgeryItem["examProfile"] })}>
+          <option value="">Aucun (seulement le bilan selon le patient)</option>
+          {(Object.entries(SURGERY_EXAM_PROFILES) as [NonNullable<SurgeryItem["examProfile"]>, (typeof SURGERY_EXAM_PROFILES)[keyof typeof SURGERY_EXAM_PROFILES]][]).map(([code, p]) => (
+            <option key={code} value={code}>
+              {p.label}
+            </option>
+          ))}
+        </Select>
+        {item.examProfile && (
+          <ul className="space-y-0.5 text-xs text-foreground-muted">
+            {SURGERY_EXAM_PROFILES[item.examProfile].items.map((x, i) => (
+              <li key={i}>
+                <span className="mr-1 rounded bg-surface-muted px-1 font-mono text-[10px] text-foreground-subtle" title={x.source.label}>
+                  {x.source.short}
+                </span>
+                {EXAM_LABELS[x.code]} {x.strength === "consider" ? "(à envisager)" : ""} — {x.text}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       <TextArea label="Notes (particularités, installation, risques propres)" value={item.notes ?? ""} onChange={(notes) => set({ notes: notes || undefined })} />
     </div>

@@ -109,6 +109,15 @@ export function TargetTag({ rule }: { rule: { conditions: Condition[]; action: R
   );
 }
 
+/** A draft rule: shown for information, applied only once checked and activated. */
+export function DraftPill() {
+  return (
+    <span title="Règle en brouillon : à vérifier dans la source puis activer (Réglages › Règles). Jamais appliquée automatiquement." className="inline-flex w-fit items-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-foreground">
+      À valider
+    </span>
+  );
+}
+
 export function SourceBadge({ level }: { level: SourceLevel }) {
   return <span className={cn("inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wide", SOURCE_STYLES[level])}>{sourceLevelShort(level)}</span>;
 }

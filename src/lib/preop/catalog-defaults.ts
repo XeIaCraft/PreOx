@@ -3,6 +3,7 @@
 
 import type { AllergenItem, Catalogs, DrugClassItem, Interaction, MedicationItem, SurgeryItem } from "./catalog";
 import { DEFAULT_CONDITIONS } from "./catalog-conditions";
+import { EXTRA_DRUG_CLASSES } from "./catalog-classes-extra";
 import { MEDICATIONS } from "./medications";
 import { SURGERY_CATALOG } from "./surgeries";
 import { DEFAULT_VALUE_CHECKS } from "./value-checks";
@@ -224,6 +225,9 @@ export const DEFAULT_DRUG_CLASSES: DrugClassItem[] = [
   d({ id: "eye_betablockers_glaucoma", atc: "S01E", label: "Antiglaucomateux", implies: "glaucoma" }),
   d({ id: "antiemetics_d2", atc: "A03FA", label: "Prokinétiques antidopaminergiques", attention: { level: "info", text: "Métoclopramide / dompéridone : allongement du QT, contre-indiqués dans la maladie de Parkinson (métoclopramide)." } }),
 ];
+
+// More classes (catalog-classes-extra.ts).
+DEFAULT_DRUG_CLASSES.push(...EXTRA_DRUG_CLASSES.filter((x) => !DEFAULT_DRUG_CLASSES.some((k) => k.id === x.id || k.atc === x.atc)));
 
 // ---------------------------------------------------------------------------
 // Interactions with what anaesthesia may use — well-established ones only

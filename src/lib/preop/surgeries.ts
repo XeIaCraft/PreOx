@@ -14,6 +14,8 @@ import type { AriscatInput } from "./scores";
 import type { RiskGrade } from "./dossier";
 import type { BleedingRisk } from "./catalog";
 import type { Technique } from "./rules/types";
+import type { SurgeryExamProfile } from "./exams";
+import { EXTRA_SURGERIES } from "./surgeries-extra";
 
 export type SurgeryGrade = "minor" | "intermediate" | "major";
 
@@ -32,6 +34,7 @@ export interface CatalogSurgery {
   durationHours?: number;
   techniques?: Technique[];
   closedSpace?: boolean;
+  examProfile?: SurgeryExamProfile;
 }
 
 const s = (
@@ -186,6 +189,9 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Imagerie sous anesthésie", "X", "minor", "low", "minimal", false, "peripheral", "Décubitus dorsal", ["IRM", "scanner"]),
 ];
 
+// More procedures, by specialty (surgeries-extra.ts) — the first entries keep their place (and ids).
+for (const e of EXTRA_SURGERIES) if (!SURGERY_CATALOG.some((x) => x.id === e.id)) SURGERY_CATALOG.push(e);
+
 /** Indicative durations (skin to skin, hours) — feed ARISCAT; always editable. */
 const DURATIONS: Record<string, number> = {
   "prothese-totale-de-hanche": 1.5, "prothese-totale-de-genou": 1.5, "fracture-du-col-du-femur": 1.25, "arthrodese-rachidienne": 3,
@@ -332,6 +338,39 @@ const USUAL_TECHNIQUES: Record<string, Technique[]> = {
   "imagerie-sous-anesthesie": ["sedation"],
 };
 for (const x of SURGERY_CATALOG) if (USUAL_TECHNIQUES[x.id]) x.techniques = USUAL_TECHNIQUES[x.id];
+
+/** Usual work-up of the first procedures (the added ones carry theirs) — exams.ts, SURGERY_EXAM_PROFILES. */
+const EXAM_PROFILE: Record<string, SurgeryExamProfile> = {
+  "chirurgie-cardiaque-sous-cec": "cardiac_cpb",
+  tavi: "tavi",
+  "lobectomie-pulmonaire": "lung_resection",
+  pneumonectomie: "pneumonectomy",
+  "chirurgie-aortique-ouverte": "major_vascular",
+  "endoprothese-aortique": "major_vascular",
+  "revascularisation-ouverte-du-membre-inferieur": "major_vascular",
+  "chirurgie-bariatrique": "bariatric",
+  gastrectomie: "major_digestive",
+  sophagectomie: "major_digestive",
+  colectomie: "major_digestive",
+  "resection-du-rectum": "major_digestive",
+  "cystectomie-totale": "major_digestive",
+  "chirurgie-carcinologique-tete-et-cou": "major_digestive",
+  "duodenopancreatectomie-cephalique": "hepatobiliary",
+  hepatectomie: "hepatobiliary",
+  "chirurgie-des-voies-biliaires": "hepatobiliary",
+  craniotomie: "neurosurgery",
+  "derivation-ventriculo-peritoneale": "neurosurgery",
+  "prothese-totale-de-hanche": "arthroplasty",
+  "prothese-totale-de-genou": "arthroplasty",
+  "fracture-du-col-du-femur": "arthroplasty",
+  "reprise-de-prothese-de-hanche-ou-de-genou": "arthroplasty",
+  "prothese-d-epaule": "arthroplasty",
+  "arthrodese-rachidienne": "arthroplasty",
+  thyroidectomie: "thyroid",
+  cesarienne: "obstetric",
+  "revision-uterine-delivrance-artificielle": "obstetric",
+};
+for (const x of SURGERY_CATALOG) if (EXAM_PROFILE[x.id] && !x.examProfile) x.examProfile = EXAM_PROFILE[x.id];
 
 export const SURGERY_CATALOG_SOURCE =
   "Classes proposées : grade selon les exemples de NICE NG45 (2016), risque cardiaque selon ESC 2022 (chirurgie non cardiaque), risque hémorragique d'après le guide EHRA 2021 — à confirmer pour chaque patient.";

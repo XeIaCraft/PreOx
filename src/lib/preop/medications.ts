@@ -97,7 +97,7 @@ export const MEDICATIONS: Medication[] = [
   { atc: "B01AB10", name: "Tinzaparine", brands: ["Innohep"] },
   { atc: "B01AB04", name: "Daltéparine", brands: ["Fragmin"] },
   { atc: "B01AX05", name: "Fondaparinux", brands: ["Arixtra"] },
-  { atc: "B01AC06", name: "Acide acétylsalicylique", brands: ["Asaflow", "Cardioaspirine", "Aspirine"] },
+  { atc: "B01AC06", name: "Acide acétylsalicylique", brands: ["Asaflow", "Cardioaspirine", "Aspirine", "Kardegic", "Aspégic", "Acétylsalicylate de lysine"] },
   { atc: "B01AC04", name: "Clopidogrel", brands: ["Plavix"] },
   { atc: "B01AC22", name: "Prasugrel", brands: ["Efient"] },
   { atc: "B01AC24", name: "Ticagrélor", brands: ["Brilique"] },

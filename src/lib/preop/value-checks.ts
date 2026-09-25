@@ -19,6 +19,13 @@ export const WATCHED_VALUES: { code: WatchedValue; label: string; unit: string; 
   { code: "platelets", label: "Plaquettes", unit: "G/L" },
   { code: "inr", label: "INR", unit: "", decimals: 1 },
   { code: "hba1c", label: "HbA1c", unit: "%", decimals: 1 },
+  { code: "potassium", label: "Kaliémie", unit: "mmol/L", decimals: 1 },
+  { code: "sodium", label: "Natrémie", unit: "mmol/L" },
+  { code: "glucose", label: "Glycémie", unit: "mg/dL" },
+  { code: "albumin", label: "Albumine", unit: "g/L" },
+  { code: "ntprobnp", label: "NT-proBNP", unit: "ng/L" },
+  { code: "troponin", label: "Troponine hs", unit: "ng/L" },
+  { code: "ferritin", label: "Ferritine", unit: "µg/L" },
   { code: "egfr", label: "DFGe (CKD-EPI)", unit: "mL/min/1,73 m²" },
   { code: "crcl", label: "Clairance (Cockcroft)", unit: "mL/min" },
   { code: "bmi", label: "IMC", unit: "kg/m²", decimals: 1 },
@@ -100,6 +107,19 @@ export const DEFAULT_VALUE_CHECKS: ValueCheckItem[] = [
     source: "OMS (classes d'obésité)",
   }),
   v({ id: "bmi_30", label: "IMC ≥ 30", value: "bmi", op: ">=", threshold: 30, group: "bmi", attention: { level: "info", text: "Obésité : doses selon le poids adapté à chaque produit, SAOS à rechercher (STOP-BANG), thromboprophylaxie adaptée." }, source: "OMS (classes d'obésité)" }),
+  // --- Biologie complémentaire ------------------------------------------------------------
+  v({ id: "k_30", label: "K⁺ < 3,0 mmol/L", value: "potassium", op: "<", threshold: 3, group: "k_low", attention: { level: "high", text: "Hypokaliémie marquée : troubles du rythme, potentialisation des curares ; corriger avant une chirurgie programmée (diurétique ?)." }, source: "Valeurs de référence du laboratoire ; seuil à adapter" }),
+  v({ id: "k_35", label: "K⁺ < 3,5 mmol/L", value: "potassium", op: "<", threshold: 3.5, group: "k_low", attention: { level: "info", text: "Hypokaliémie : cause (diurétique, digestif) et correction ; ECG si digoxine." }, source: "Valeurs de référence du laboratoire" }),
+  v({ id: "k_55", label: "K⁺ > 5,5 mmol/L", value: "potassium", op: ">", threshold: 5.5, group: "k_high", attention: { level: "high", text: "Hyperkaliémie : ECG, cause (IEC, antialdostérone, insuffisance rénale, dialyse) ; succinylcholine à éviter ; contrôle avant l'intervention." }, source: "Valeurs de référence du laboratoire ; seuil à adapter" }),
+  v({ id: "na_130", label: "Na⁺ < 130 mmol/L", value: "sodium", op: "<", threshold: 130, group: "na_low", implies: "hyponatremia", attention: { level: "medium", text: "Hyponatrémie : cause (diurétique, SIADH, desmopressine) ; diminue la CAM des halogénés (manuel, tableau 4.2) ; correction lente." }, source: "Valeurs de référence du laboratoire ; manuel 2020 (chap. 4)" }),
+  v({ id: "na_150", label: "Na⁺ > 150 mmol/L", value: "sodium", op: ">", threshold: 150, group: "na_high", attention: { level: "medium", text: "Hypernatrémie : déshydratation ; augmente la CAM des halogénés (manuel, tableau 4.2)." }, source: "Valeurs de référence du laboratoire ; manuel 2020 (chap. 4)" }),
+  v({ id: "glu_180", label: "Glycémie > 180 mg/dL", value: "glucose", op: ">", threshold: 180, group: "glu_high", attention: { level: "medium", text: "Hyperglycémie au-delà de la cible périopératoire (108–180 mg/dL, 6–10 mmol/L) : protocole insuline." }, source: "CPOC/JBDS 2021, diabète en périopératoire" }),
+  v({ id: "glu_70", label: "Glycémie < 70 mg/dL", value: "glucose", op: "<", threshold: 70, group: "glu_low", attention: { level: "high", text: "Hypoglycémie : resucrer, revoir les antidiabétiques (sulfamides, insuline) avant le jeûne." }, source: "ADA ; CPOC/JBDS 2021" }),
+  v({ id: "alb_30", label: "Albumine < 30 g/L", value: "albumin", op: "<", threshold: 30, implies: "malnutrition", attention: { level: "medium", text: "Hypoalbuminémie : dénutrition sévère probable (critère ESPEN) — prise en charge nutritionnelle avant une chirurgie majeure ; fraction libre des médicaments acides augmentée (manuel, chap. 5)." }, source: "ESPEN 2017 (chirurgie) ; manuel 2020 (chap. 5)" }),
+  v({ id: "ntprobnp_300", label: "NT-proBNP > 300 ng/L", value: "ntprobnp", op: ">", threshold: 300, attention: { level: "medium", text: "NT-proBNP élevé : risque de complications cardiaques postopératoires augmenté (× 4 selon le manuel) — échocardiographie si non faite, suivi de la troponine." }, source: "ESC 2022 ; manuel 2020 (chap. 15)" }),
+  v({ id: "trop_14", label: "Troponine hs > 14 ng/L", value: "troponin", op: ">", threshold: 14, attention: { level: "medium", text: "Troponine T hs > 14 ng/L : risque d'infarctus postopératoire plus de 3 fois supérieur ; valeur de référence pour le suivi à J1–J2 ; avis cardiologique si élévation aiguë." }, source: "ESC 2022 ; manuel 2020 (chap. 15)" }),
+  v({ id: "ferritin_30", label: "Ferritine < 30 µg/L", value: "ferritin", op: "<", threshold: 30, group: "ferritin", attention: { level: "medium", text: "Carence martiale absolue : fer (IV si délai court) avant une chirurgie hémorragique programmée." }, source: "Consensus international 2017 (Muñoz et al.)" }),
+  v({ id: "ferritin_100", label: "Ferritine < 100 µg/L", value: "ferritin", op: "<", threshold: 100, group: "ferritin", attention: { level: "info", text: "Réserves en fer insuffisantes pour une chirurgie avec perte sanguine attendue > 500 mL : envisager une supplémentation." }, source: "Consensus international 2017 (Muñoz et al.)" }),
   v({ id: "bmi_185", label: "IMC < 18,5", value: "bmi", op: "<", threshold: 18.5, group: "bmi_low", attention: { level: "medium", text: "Maigreur : dénutrition à rechercher (perte de poids, albumine) ; prise en charge nutritionnelle avant une chirurgie majeure." }, source: "OMS ; ESPEN" }),
 ];
 
@@ -113,6 +133,13 @@ const PLAUSIBLE: Partial<Record<WatchedValue | "weight" | "height" | "creatinine
   platelets: [1, 2000],
   inr: [0.7, 15],
   hba1c: [3, 20],
+  potassium: [1.5, 9],
+  sodium: [100, 180],
+  glucose: [15, 1500],
+  albumin: [5, 60],
+  ntprobnp: [1, 100000],
+  troponin: [0, 100000],
+  ferritin: [1, 20000],
   age: [0, 120],
   weight: [1, 350],
   height: [40, 250],
@@ -143,6 +170,14 @@ export function watchedValue(p: ConsultationPatient, derived: PatientValues, val
       return p.inr;
     case "hba1c":
       return p.hba1c;
+    case "potassium":
+    case "sodium":
+    case "glucose":
+    case "albumin":
+    case "ntprobnp":
+    case "troponin":
+    case "ferritin":
+      return p[value];
     case "age":
       return p.age;
     default:
@@ -207,6 +242,13 @@ export function implausibleValues(p: ConsultationPatient): { value: WatchedValue
     ["platelets", p.platelets, `plaquettes ${p.platelets} G/L`],
     ["inr", p.inr, `INR ${p.inr}`],
     ["hba1c", p.hba1c, `HbA1c ${p.hba1c} %`],
+    ["potassium", p.potassium, `K⁺ ${p.potassium} mmol/L`],
+    ["sodium", p.sodium, `Na⁺ ${p.sodium} mmol/L`],
+    ["glucose", p.glucose, `glycémie ${p.glucose} mg/dL`],
+    ["albumin", p.albumin, `albumine ${p.albumin} g/L`],
+    ["ntprobnp", p.ntprobnp, `NT-proBNP ${p.ntprobnp} ng/L`],
+    ["troponin", p.troponin, `troponine ${p.troponin} ng/L`],
+    ["ferritin", p.ferritin, `ferritine ${p.ferritin} µg/L`],
     ["age", p.age, `âge ${p.age}`],
     ["weight", p.weightKg, `poids ${p.weightKg} kg`],
     ["height", p.heightCm, `taille ${p.heightCm} cm`],

@@ -6,7 +6,7 @@
 // of well-established precautions, not prescriptions — no dose, no timing
 // that belongs to a guideline (those come from your rules).
 
-import { QUALIFIER_LABELS, has } from "./history";
+import { QUALIFIER_LABELS, anyOf, has } from "./history";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 import { classesOf, fold, medicationOf, type AllergenItem, type AttentionSpec } from "./catalog";
 import type { ConsultationScores } from "./consultation-scores";
@@ -208,6 +208,100 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
       source: "ESAIC 2023, delirium postopératoire",
     });
   if (r.apfel.level === "high") add({ id: "ponv", level: "medium", title: "Risque élevé de NVPO (Apfel)", detail: "Prophylaxie multimodale, épargne morphinique.", why: `Score d'Apfel ${r.apfel.value}/4`, source: "Apfel 1999 ; consensus NVPO 2020 (Gan)" });
+
+  // --- Agents, doses and monitoring (Manuel pratique d'anesthésie 2020, chapitres 2, 4, 5) ------
+  const MANUAL = "Manuel pratique d'anesthésie, 4e éd. 2020";
+  const surgeryId = c.surgery.catalogId ?? "";
+  const surgeryName = c.surgery.name ? `« ${c.surgery.name} »` : "l'intervention";
+  const n2o: string[] = [];
+  if (has(cond, "raised_icp") || has(cond, "intracranial_lesion")) n2o.push("hypertension intracrânienne ou lésion cérébrale");
+  if (has(cond, "pulmonary_hypertension")) n2o.push("hypertension pulmonaire");
+  if (has(cond, "pneumothorax")) n2o.push("antécédent de pneumothorax");
+  if (has(cond, "bowel_obstruction")) n2o.push("occlusion ou iléus");
+  if (has(cond, "middle_ear") || /tympan|stapéd|oreille|cochléaire/i.test(c.surgery.name)) n2o.push("chirurgie ou pathologie de l'oreille moyenne");
+  if (has(cond, "intraocular_gas") || /décollement de rétine|vitrectomie/i.test(c.surgery.name)) n2o.push("gaz intraoculaire (présent ou prévu)");
+  if (has(cond, "vitamin_b12")) n2o.push("carence en vitamine B12");
+  if (/occlusion|fosse postérieure|laparotomie pour occlusion/i.test(c.surgery.name)) n2o.push(`${surgeryName} (distension ou risque d'embolie gazeuse)`);
+  if (n2o.length)
+    add({
+      id: "n2o",
+      level: "medium",
+      title: "Protoxyde d'azote contre-indiqué",
+      detail: "Le N₂O diffuse dans les cavités closes plus vite que l'azote n'en sort (expansion), augmente le débit sanguin cérébral et les résistances pulmonaires, inactive la vitamine B12.",
+      why: n2o.join(" ; "),
+      source: `${MANUAL}, chap. 4 (contre-indications du protoxyde d'azote)`,
+    });
+  const halo: string[] = [];
+  if (anyOf(cond, ["malignant_hyperthermia", "duchenne"]) === true) halo.push("hyperthermie maligne ou myopathie de Duchenne/Becker : anesthésie sans halogéné ni succinylcholine");
+  if (has(cond, "raised_icp")) halo.push("hypertension intracrânienne : halogénés à fortes concentrations contre-indiqués (vasodilatation cérébrale)");
+  if (has(cond, "pulmonary_hypertension")) halo.push("hypertension pulmonaire : éviter le desflurane (augmente les résistances vasculaires pulmonaires)");
+  if (halo.length)
+    add({
+      id: "volatiles",
+      level: anyOf(cond, ["malignant_hyperthermia", "duchenne"]) === true ? "high" : "medium",
+      title: "Halogénés : précautions",
+      detail: halo.join(" ; ") + ".",
+      why: halo.map((h) => h.split(" : ")[0]).join(" ; "),
+      source: `${MANUAL}, chap. 4`,
+      material: anyOf(cond, ["malignant_hyperthermia", "duchenne"]) === true ? ["Machine purgée des halogénés (ou filtres à charbon)", "Dantrolène disponible"] : undefined,
+    });
+
+  const doses: string[] = [];
+  if (anyOf(cond, ["heart_failure", "dilated_cardiomyopathy"]) === true)
+    doses.push("débit cardiaque bas : la fraction libre des hypnotiques augmente mais arrive plus lentement au cerveau — réduire les doses d'induction et titrer patiemment");
+  if (has(cond, "cirrhosis") === true)
+    doses.push("cirrhose : clairance des médicaments à fort coefficient d'extraction hépatique (propofol, morphine, fentanyl, sufentanil, midazolam, lidocaïne) diminuée — réduire les doses d'entretien");
+  if (anyOf(cond, ["ckd", "dialysis"]) === true)
+    doses.push("insuffisance rénale : médicaments éliminés inchangés par le rein (rocuronium, néostigmine, céphalosporines, aminosides, digoxine, lithium) — adapter ; métabolites de la morphine");
+  if (anyOf(cond, ["malnutrition", "nephrotic"]) === true || (p.albumin !== undefined && p.albumin < 30))
+    doses.push("albumine basse : fraction libre des médicaments acides fortement liés (thiopental, warfarine…) augmentée — réduire et titrer");
+  if (p.age !== undefined && p.age >= 70) doses.push(`âge ${p.age} ans : CAM diminuée d'environ 6 % par décennie, sensibilité accrue aux hypnotiques et opioïdes`);
+  if (doses.length)
+    add({
+      id: "doses",
+      level: "info",
+      title: "Doses à adapter",
+      detail: doses.map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(". ") + ".",
+      why: doses.map((d) => d.split(" : ")[0]).join(" ; "),
+      source: `${MANUAL}, chap. 4 (CAM) et 5 (pharmacocinétique)`,
+    });
+
+  const asaClass = scores.asa ?? 0;
+  const invasive =
+    (c.surgery.bleedingRisk === "high" && c.surgery.kce === "major") ||
+    asaClass >= 4 ||
+    has(cond, "pulmonary_hypertension") === true ||
+    cond.aortic_stenosis?.severe === true ||
+    cond.heart_failure?.severe === true ||
+    /cardiaque|CEC|aorte|aortique|hépatectomie|pancréat|transplant|craniotomie|œsophagectomie/i.test(c.surgery.name);
+  if (invasive)
+    add({
+      id: "invasive-monitoring",
+      level: "info",
+      title: "Pression artérielle invasive à prévoir",
+      detail: "Indications : chirurgie majeure ou hémorragique, maladie organique sévère demandant un contrôle précis de la pression, gazométries et ionogrammes répétés. Tester l'arcade palmaire (Allen ou oxymètre) avant un cathéter radial.",
+      why: [
+        c.surgery.bleedingRisk === "high" && c.surgery.kce === "major" ? `${surgeryName} : majeure et hémorragique` : "",
+        asaClass >= 4 ? `ASA ${asaClass}` : "",
+        has(cond, "pulmonary_hypertension") ? "hypertension pulmonaire" : "",
+        cond.aortic_stenosis?.severe ? "rétrécissement aortique serré" : "",
+        cond.heart_failure?.severe ? "insuffisance cardiaque sévère" : "",
+      ]
+        .filter(Boolean)
+        .join(" ; ") || `${surgeryName}`,
+      source: `${MANUAL}, chap. 2 (indications de la pression artérielle invasive)`,
+      material: ["Cathéter artériel et tête de pression"],
+    });
+  if (/cardiaque|CEC|transplant|hépatectomie majeure|fosse postérieure|œsophagectomie|aortique ouverte|anévrisme aortique rompu/i.test(c.surgery.name) || surgeryId === "chirurgie-cardiaque-sous-cec")
+    add({
+      id: "central-line",
+      level: "info",
+      title: "Voie veineuse centrale à discuter",
+      detail: "Indications : médicaments vasoactifs ou irritants, pression veineuse centrale, aspiration d'une embolie gazeuse (position assise). Jugulaire interne droite échoguidée de préférence ; radiographie de contrôle.",
+      why: `${surgeryName}`,
+      source: `${MANUAL}, chap. 2 (cathéter veineux central)`,
+      material: ["Kit de voie veineuse centrale", "Échographe"],
+    });
 
   // --- Substance use ------------------------------------------------------------------
   const sub = c.substances;

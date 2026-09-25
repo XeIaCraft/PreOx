@@ -5,6 +5,7 @@
 
 import type { ConditionItem } from "./catalog";
 import { DEFAULT_CONDITION_DETAILS } from "./catalog-condition-details";
+import { EXTRA_CONDITIONS } from "./catalog-conditions-extra";
 
 const c = (item: ConditionItem): ConditionItem => item;
 
@@ -139,7 +140,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
     needsRule: true,
     attention: { level: "medium", text: "Protocole de gestion de l'insuline et glycémies capillaires périopératoires ; en début de programme si possible.", material: ["Glycémies capillaires"] },
   }),
-  c({ id: "thyroid", label: "Dysthyroïdie", system: "endo", keywords: ["hypothyroïdie", "hyperthyroïdie", "Basedow", "goitre"], qualifiers: { poorlyControlled: "non équilibrée" }, asa: 2, asaIf: { poorlyControlled: 3 }, attentionIf: { poorlyControlled: { level: "high", text: "Dysthyroïdie non équilibrée : reporter une chirurgie programmée ; goitre : voies aériennes." } } }),
+  c({ id: "thyroid", label: "Dysthyroïdie", system: "endo", keywords: ["goitre"], qualifiers: { poorlyControlled: "non équilibrée" }, asa: 2, asaIf: { poorlyControlled: 3 }, attentionIf: { poorlyControlled: { level: "high", text: "Dysthyroïdie non équilibrée : reporter une chirurgie programmée ; goitre : voies aériennes." } } }),
   c({ id: "adrenal_insufficiency", label: "Insuffisance surrénale", system: "endo", keywords: ["Addison"], asa: 3, needsRule: true, attention: { level: "high", text: "Supplémentation en hydrocortisone périopératoire (selon vos règles)." } }),
   c({ id: "pheochromocytoma", label: "Phéochromocytome", system: "endo", asa: 3, attention: { level: "high", text: "Préparation préopératoire spécialisée (alpha-bloquant) ; avis endocrinologique." } }),
   c({ id: "porphyria", label: "Porphyrie", system: "endo", asa: 2, attention: { level: "high", text: "Médicaments porphyrinogènes à éviter : vérifier chaque produit sur une liste de sécurité." } }),
@@ -186,13 +187,13 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
   c({ id: "epilepsy", label: "Épilepsie", system: "neuro", keywords: ["convulsions", "crises"], asa: 2, attention: { level: "info", text: "Antiépileptiques poursuivis, y compris le matin de l'intervention." } }),
   c({ id: "parkinson", label: "Maladie de Parkinson", system: "neuro", asa: 2, attention: { level: "medium", text: "Antiparkinsoniens sans interruption (prise le matin, reprise précoce) ; éviter dropéridol et métoclopramide." } }),
   c({ id: "myasthenia", label: "Myasthénie", system: "neuro", asa: 3, attention: { level: "high", text: "Sensibilité aux curares non dépolarisants, résistance à la succinylcholine ; monitorage de la curarisation ; anticholinestérasiques poursuivis.", material: ["Curarimètre"] } }),
-  c({ id: "neuromuscular", label: "Myopathie / maladie neuromusculaire", system: "neuro", keywords: ["myopathie", "dystrophie musculaire", "SLA", "Steinert", "Duchenne", "Charcot-Marie-Tooth"], asa: 3, attention: { level: "high", text: "Succinylcholine contre-indiquée dans les myopathies ; curares avec monitorage ; risque respiratoire postopératoire.", material: ["Curarimètre"] } }),
+  c({ id: "neuromuscular", label: "Myopathie / maladie neuromusculaire", system: "neuro", keywords: ["myopathie", "Charcot-Marie-Tooth"], asa: 3, attention: { level: "high", text: "Succinylcholine contre-indiquée dans les myopathies ; curares avec monitorage ; risque respiratoire postopératoire.", material: ["Curarimètre"] } }),
   c({ id: "multiple_sclerosis", label: "Sclérose en plaques", system: "neuro", keywords: ["SEP"], asa: 2, attention: { level: "medium", text: "Poussée possible en postopératoire (hyperthermie, stress) ; documenter le déficit avant une ALR." } }),
   c({ id: "spinal_cord_injury", label: "Lésion médullaire", system: "neuro", keywords: ["paraplégie", "tétraplégie", "blessé médullaire"], asa: 3, attention: { level: "high", text: "Succinylcholine contre-indiquée (hyperkaliémie) ; hyperréflexie autonome si lésion au-dessus de T6." } }),
   c({ id: "neuropathy", label: "Neuropathie périphérique", system: "neuro", keywords: ["polyneuropathie"], attention: { level: "info", text: "Documenter le déficit avant une ALR." } }),
   c({ id: "cognitive", label: "Troubles cognitifs / démence", system: "neuro", keywords: ["démence", "Alzheimer", "troubles de la mémoire"], asa: 2 }),
 
-  c({ id: "intracranial_lesion", label: "Tumeur cérébrale / HTIC", system: "neuro", keywords: ["hypertension intracrânienne", "tumeur cérébrale", "méningiome", "glioblastome"], asa: 3, attention: { level: "high", text: "Éviter hypercapnie, hypoxie et hypotension ; ponction neuraxiale contre-indiquée si HTIC." } }),
+  c({ id: "intracranial_lesion", label: "Tumeur ou lésion cérébrale", system: "neuro", keywords: ["tumeur cérébrale", "méningiome", "glioblastome"], asa: 3, attention: { level: "high", text: "Éviter hypercapnie, hypoxie et hypotension ; ponction neuraxiale contre-indiquée si HTIC." } }),
   c({ id: "cerebral_aneurysm", label: "Anévrisme intracrânien / MAV", system: "neuro", keywords: ["anévrisme cérébral", "malformation artério-veineuse", "MAV", "hémorragie méningée"], asa: 3, attention: { level: "high", text: "Éviter les poussées hypertensives (laryngoscopie, réveil)." } }),
   c({ id: "vp_shunt", label: "Dérivation ventriculaire", system: "neuro", keywords: ["DVP", "valve de dérivation", "hydrocéphalie"], attention: { level: "info", text: "Signes d'hypertension intracrânienne à rechercher ; valve programmable à revérifier après une IRM." } }),
   c({ id: "guillain_barre", label: "Syndrome de Guillain-Barré", system: "neuro", keywords: ["Guillain-Barré", "polyradiculonévrite"], asa: 3, attention: { level: "high", text: "Succinylcholine contre-indiquée (hyperkaliémie) ; dysautonomie ; fonction respiratoire." } }),
@@ -212,9 +213,9 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
 
   // --- Hématologie ------------------------------------------------------------------
   c({ id: "anemia", label: "Anémie connue", system: "hemato", asa: 2, attention: { level: "medium", text: "À rechercher et traiter avant une chirurgie programmée (bilan martial, fer si carence)." } }),
-  c({ id: "bleeding_disorder", label: "Trouble de l'hémostase", system: "hemato", keywords: ["Willebrand", "hémophilie", "saignements"], asa: 2, needsRule: true, attention: { level: "high", text: "Avis hématologique ; substitution et bilan selon le trouble." } }),
+  c({ id: "bleeding_disorder", label: "Trouble de l'hémostase", system: "hemato", keywords: ["saignements"], asa: 2, needsRule: true, attention: { level: "high", text: "Avis hématologique ; substitution et bilan selon le trouble." } }),
   c({ id: "thrombocytopenia", label: "Thrombopénie", system: "hemato", keywords: ["plaquettes basses"], asa: 2, needsRule: true, attention: { level: "medium", text: "Seuils plaquettaires selon le geste (neuraxial, chirurgie) : voir vos règles." } }),
-  c({ id: "thrombophilia", label: "Thrombophilie", system: "hemato", keywords: ["facteur V Leiden", "SAPL"], asa: 2, attention: { level: "medium", text: "Thromboprophylaxie renforcée à discuter." } }),
+  c({ id: "thrombophilia", label: "Thrombophilie", system: "hemato", keywords: ["facteur V Leiden"], asa: 2, attention: { level: "medium", text: "Thromboprophylaxie renforcée à discuter." } }),
   c({ id: "sickle_cell", label: "Drépanocytose", system: "hemato", keywords: ["drépanocytaire"], asa: 3, attention: { level: "high", text: "Éviter hypoxie, hypothermie, déshydratation et acidose ; avis hématologique (transfusion à discuter)." } }),
 
   c({ id: "hit_history", label: "Antécédent de TIH", system: "hemato", keywords: ["TIH", "thrombopénie induite par l'héparine", "HIT"], needsRule: true, attention: { level: "high", text: "Pas d'héparine (y compris rinçages et cathéters héparinés) ; anticoagulation alternative selon vos règles." } }),
@@ -226,7 +227,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
   // --- Autres -------------------------------------------------------------------------
   c({ id: "cancer", label: "Cancer évolutif", system: "other", keywords: ["néoplasie", "tumeur"], asa: 2 }),
   c({ id: "chemotherapy", label: "Chimiothérapie récente", system: "other", keywords: ["anthracycline", "bléomycine"], asa: 3, attention: { level: "medium", text: "Toxicités : anthracyclines (cardiaque), bléomycine (pulmonaire, FiO₂ basse) ; neutropénie, thrombopénie." } }),
-  c({ id: "transplant", label: "Greffe d'organe", system: "other", keywords: ["transplantation", "greffe hépatique", "greffe cardiaque"], asa: 3, attention: { level: "medium", text: "Immunosuppresseurs poursuivis ; asepsie renforcée." } }),
+  c({ id: "transplant", label: "Greffe d'organe", system: "other", keywords: ["transplantation"], asa: 3, attention: { level: "medium", text: "Immunosuppresseurs poursuivis ; asepsie renforcée." } }),
   c({ id: "rheumatoid", label: "Polyarthrite rhumatoïde", system: "other", keywords: ["PR"], asa: 2, attention: { level: "medium", text: "Instabilité cervicale C1-C2 possible (imagerie si symptômes) ; ouverture de bouche." } }),
   c({ id: "ankylosing", label: "Spondylarthrite ankylosante", system: "other", keywords: ["Bechterew", "SPA"], asa: 2, attention: { level: "high", text: "Intubation et ALR neuraxiale potentiellement difficiles (rachis cervical et lombaire rigides)." } }),
   c({ id: "down_syndrome", label: "Trisomie 21", system: "other", asa: 2, attention: { level: "medium", text: "Instabilité atlanto-axiale, voies aériennes, cardiopathie associée." } }),
@@ -273,6 +274,9 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
   c({ id: "las_toxicity", label: "Toxicité des anesthésiques locaux", system: "anaes", keywords: ["toxicité des anesthésiques locaux", "LAST"], attention: { level: "high", text: "Doses réduites, échoguidage ; intralipide disponible.", material: ["Intralipide 20 %"] } }),
   c({ id: "dental_fragile", label: "Dents fragiles / appareil dentaire", system: "anaes", keywords: ["dentier", "bridge", "implants dentaires", "dents mobiles", "couronne"], attention: { level: "info", text: "Signaler au patient le risque dentaire ; protège-dents et laryngoscopie douce." } }),
 ];
+
+// More antecedents (catalog-conditions-extra.ts), after the first ones.
+DEFAULT_CONDITIONS.push(...EXTRA_CONDITIONS.filter((x) => !DEFAULT_CONDITIONS.some((d) => d.id === x.id)));
 
 for (const item of DEFAULT_CONDITIONS) if (DEFAULT_CONDITION_DETAILS[item.id]) item.details = DEFAULT_CONDITION_DETAILS[item.id];
 

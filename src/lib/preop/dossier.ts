@@ -23,6 +23,20 @@ export interface ConsultationPatient {
   inr?: number;
   /** %. */
   hba1c?: number;
+  /** mmol/L. */
+  potassium?: number;
+  /** mmol/L. */
+  sodium?: number;
+  /** mg/dL. */
+  glucose?: number;
+  /** g/L. */
+  albumin?: number;
+  /** ng/L (pg/mL). */
+  ntprobnp?: number;
+  /** High-sensitivity troponin, ng/L. */
+  troponin?: number;
+  /** µg/L. */
+  ferritin?: number;
   spo2?: number;
   /** Blood pressure and heart rate at the consultation. */
   sbp?: number;

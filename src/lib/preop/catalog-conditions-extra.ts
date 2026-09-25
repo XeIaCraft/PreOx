@@ -1,0 +1,113 @@
+// More antecedents with an anaesthetic implication, by system — same
+// conventions as catalog-conditions.ts (ASA examples of the 2020 update;
+// general precautions only, delays and doses belong to rules). Where the
+// Manuel pratique d'anesthésie (2020) gives the reason (chapters 4, 5, 15),
+// it is said in the text. Editable in Paramètres.
+
+import type { ConditionItem } from "./catalog";
+
+const c = (item: ConditionItem): ConditionItem => item;
+
+export const EXTRA_CONDITIONS: ConditionItem[] = [
+  // --- Cardiovasculaire -----------------------------------------------------------------
+  c({ id: "stable_angina", label: "Angor stable", system: "cardio", keywords: ["angor stable", "angor d'effort"], qualifiers: { poorlyControlled: "symptomatique malgré traitement" }, asa: 3, attentionIf: { poorlyControlled: { level: "high", text: "Angor non contrôlé : avis cardiologique avant toute chirurgie non urgente (facteur de risque majeur)." } }, attention: { level: "medium", text: "Maintenir bêtabloquant, antiagrégant et statine ; éviter tachycardie et hypotension." } }),
+  c({ id: "recent_mi", label: "Infarctus < 3 mois", system: "cardio", keywords: ["IDM récent", "SCA récent", "syndrome coronarien aigu"], asa: 4, needsRule: true, attention: { level: "high", text: "Moins de 3 mois après un infarctus : seules les chirurgies vitales (délai de sécurité 3 mois ; 6 semaines–3 mois : risque intermédiaire). Avis cardiologique." } }),
+  c({
+    id: "coronary_stent",
+    label: "Stent coronaire",
+    system: "cardio",
+    keywords: ["stent actif", "stent nu", "angioplastie coronaire", "PCI", "DES", "BMS"],
+    asa: 3,
+    needsRule: true,
+    attention: { level: "high", text: "Type et date du stent, bithérapie en cours : ne pas interrompre les antiagrégants sans avis ; chirurgie programmée reportée pendant la bithérapie." },
+    details: [
+      { id: "type", label: "Type de stent", kind: "choice", options: [{ code: "des", label: "Actif (DES)" }, { code: "bms", label: "Nu (BMS)" }, { code: "unknown", label: "Inconnu" }] },
+      { id: "date", label: "Date de pose", kind: "date" },
+    ],
+  }),
+  c({ id: "dilated_cardiomyopathy", label: "Cardiomyopathie dilatée", system: "cardio", keywords: ["CMD", "cardiomyopathie dilatée", "FEVG basse"], asa: 3, attention: { level: "high", text: "Titrer l'induction (débit bas : la fraction libre augmente et arrive plus lentement au cerveau, risque de surdosage) ; échocardiographie récente." } }),
+  c({ id: "amyloidosis", label: "Amylose cardiaque", system: "cardio", keywords: ["amylose", "ATTR", "amyloïdose"], asa: 3, attention: { level: "high", text: "Cœur restrictif, précharge-dépendant : éviter hypovolémie et vasodilatation ; troubles conductifs possibles." } }),
+  c({ id: "pericarditis", label: "Péricardite constrictive ou épanchement", system: "cardio", keywords: ["péricardite", "épanchement péricardique", "tamponnade"], asa: 3, attention: { level: "high", text: "Tamponnade ou constriction : induction en ventilation spontanée si possible, éviter bradycardie et vasodilatation." } }),
+  c({ id: "fontan", label: "Circulation de Fontan / cœur univentriculaire", system: "cardio", keywords: ["Fontan", "ventricule unique", "dérivation cavo-pulmonaire"], asa: 4, attention: { level: "high", text: "Retour pulmonaire passif : éviter pression positive élevée, hypovolémie et hypercapnie ; centre spécialisé." } }),
+  c({ id: "raynaud", label: "Syndrome de Raynaud", system: "cardio", keywords: ["Raynaud"], attention: { level: "info", text: "Éviter le cathéter radial si possible ; réchauffement." } }),
+  c({ id: "takotsubo", label: "Antécédent de Takotsubo", system: "cardio", keywords: ["cardiomyopathie de stress", "tako-tsubo"], asa: 3, attention: { level: "medium", text: "Limiter la stimulation adrénergique (catécholamines exogènes à éviter si possible)." } }),
+  c({ id: "heart_transplant", label: "Greffe cardiaque", system: "cardio", keywords: ["transplantation cardiaque", "cœur greffé"], asa: 3, attention: { level: "high", text: "Cœur dénervé : pas de réponse à l'atropine (effet direct : isoprénaline, adrénaline) ; immunosuppresseurs poursuivis, asepsie." } }),
+
+  // --- Respiratoire -------------------------------------------------------------------------
+  c({ id: "sarcoidosis", label: "Sarcoïdose", system: "resp", keywords: ["sarcoïdose", "BBS"], asa: 2, attention: { level: "info", text: "Atteinte pulmonaire, cardiaque (troubles conductifs) ou laryngée à rechercher." } }),
+  c({ id: "lung_cancer", label: "Cancer pulmonaire", system: "resp", keywords: ["cancer du poumon", "néoplasie pulmonaire"], asa: 3, attention: { level: "medium", text: "Syndrome paranéoplasique (Lambert-Eaton : sensibilité aux curares), chimiothérapie récente." } }),
+  c({ id: "chronic_cough", label: "Tabagisme actif avec bronchite chronique", system: "resp", keywords: ["toux chronique", "expectorations"], attention: { level: "info", text: "Sevrage tabagique proposé (bénéfice dès 4 semaines, plus net à 8) ; hyperréactivité bronchique." } }),
+  c({ id: "tuberculosis", label: "Tuberculose active", system: "resp", keywords: ["tuberculose", "BK"], asa: 3, attention: { level: "high", text: "Tuberculose contagieuse : filtre sur le circuit, précautions aériennes, report si possible." } }),
+  c({ id: "vocal_cord_palsy", label: "Paralysie récurrentielle", system: "resp", keywords: ["paralysie des cordes vocales", "dysphonie", "récurrent"], attention: { level: "medium", text: "Laryngoscopie de référence ; risque de dyspnée si atteinte bilatérale (chirurgie cervicale controlatérale)." } }),
+  c({ id: "subglottic_stenosis", label: "Sténose laryngée ou trachéale", system: "resp", keywords: ["sténose trachéale", "sténose sous-glottique"], asa: 3, attention: { level: "high", text: "Voies aériennes : sondes de petit calibre, stratégie avec l'ORL (jet, trachéotomie de secours).", material: ["Sondes de petit calibre", "Matériel d'oxygénation transtrachéale"] } }),
+  c({ id: "mediastinal_mass", label: "Masse médiastinale", system: "resp", keywords: ["masse du médiastin", "lymphome médiastinal"], asa: 4, attention: { level: "high", text: "Risque de collapsus cardiorespiratoire à l'induction : scanner, ventilation spontanée préservée, position de sauvetage, CEC ou ECMO de repli selon le cas." } }),
+
+  // --- Endocrinien et métabolique ----------------------------------------------------------------
+  c({ id: "hyperthyroidism", label: "Hyperthyroïdie", system: "endo", keywords: ["Basedow", "thyréotoxicose", "goitre toxique"], qualifiers: { poorlyControlled: "non équilibrée" }, asa: 2, asaIf: { poorlyControlled: 3 }, attentionIf: { poorlyControlled: { level: "high", text: "Hyperthyroïdie non équilibrée : reporter une chirurgie programmée (risque de crise aiguë thyréotoxique)." } } }),
+  c({ id: "hypothyroidism", label: "Hypothyroïdie", system: "endo", keywords: ["Hashimoto", "myxœdème"], qualifiers: { poorlyControlled: "non substituée" }, asa: 2, attentionIf: { poorlyControlled: { level: "high", text: "Hypothyroïdie non substituée : sensibilité accrue aux anesthésiques, hypothermie, hypotension ; reporter une chirurgie programmée." } } }),
+  c({ id: "goitre", label: "Goitre compressif", system: "endo", keywords: ["goitre plongeant", "compression trachéale"], asa: 2, attention: { level: "high", text: "Voies aériennes : déviation ou compression trachéale (imagerie) ; intubation difficile possible.", material: ["Vidéolaryngoscope", "Sondes de petit calibre"] } }),
+  c({ id: "hyperaldosteronism", label: "Hyperaldostéronisme", system: "endo", keywords: ["Conn", "aldostérone"], asa: 2, attention: { level: "medium", text: "Hypokaliémie et HTA à corriger avant." } }),
+  c({ id: "metabolic_syndrome", label: "Syndrome métabolique", system: "endo", keywords: ["obésité abdominale", "insulinorésistance"], attention: { level: "info", text: "Facteur de risque cardiovasculaire mineur (tableau du manuel) ; SAOS à rechercher." } }),
+  c({ id: "gout", label: "Goutte", system: "endo", keywords: ["hyperuricémie"], attention: { level: "info", text: "Crise possible en postopératoire ; fonction rénale." } }),
+  c({ id: "hyponatremia", label: "Hyponatrémie chronique", system: "endo", keywords: ["SIADH"], attention: { level: "medium", text: "Diminue la CAM des halogénés (tableau 4.2 du manuel) ; correction lente, pas pendant l'intervention." } }),
+
+  // --- Rénal --------------------------------------------------------------------------------------
+  c({ id: "nephrotic", label: "Syndrome néphrotique", system: "renal", keywords: ["protéinurie", "hypoalbuminémie"], asa: 3, attention: { level: "medium", text: "Albumine basse : la fraction libre des médicaments acides fortement liés augmente (manuel, chap. 5) — réduire et titrer ; risque thrombotique." } }),
+  c({ id: "polycystic_kidney", label: "Polykystose rénale", system: "renal", keywords: ["PKD", "polykystose"], asa: 2, attention: { level: "info", text: "Fonction rénale ; anévrismes intracrâniens associés possibles." } }),
+  c({ id: "urinary_retention", label: "Rétention urinaire / adénome prostatique", system: "renal", keywords: ["HBP", "prostate", "globe vésical"], attention: { level: "info", text: "Risque de rétention après rachianesthésie ou morphiniques : surveillance du globe." } }),
+
+  // --- Digestif et foie ------------------------------------------------------------------------------
+  c({ id: "chronic_liver", label: "Hépatopathie chronique (non cirrhotique)", system: "digest", keywords: ["stéatose", "NASH", "hépatite B chronique", "hépatite C chronique"], asa: 2, attention: { level: "info", text: "Bilan hépatique, hémostase ; titrer les médicaments à métabolisme hépatique." } }),
+  c({ id: "liver_transplant", label: "Greffe hépatique", system: "digest", keywords: ["transplantation hépatique"], asa: 3, attention: { level: "medium", text: "Immunosuppresseurs poursuivis ; fonction du greffon ; asepsie." } }),
+  c({ id: "short_bowel", label: "Grêle court / malabsorption", system: "digest", keywords: ["malabsorption", "nutrition parentérale", "grêle court"], asa: 3, attention: { level: "medium", text: "Absorption orale incertaine (préférer la voie IV) ; hémostase (vitamine K) et électrolytes." } }),
+  c({ id: "celiac", label: "Maladie cœliaque", system: "digest", keywords: ["cœliaque", "gluten"], attention: { level: "info", text: "Carences (fer, vitamine K) à rechercher." } }),
+  c({ id: "alcohol_dependence", label: "Dépendance à l'alcool", system: "digest", keywords: ["éthylisme", "alcoolisme", "OH chronique"], asa: 3, attention: { level: "high", text: "Sevrage (thiamine, prévention du delirium tremens), éthylisme chronique : CAM augmentée et induction enzymatique ; hémostase, hépatopathie." } }),
+
+  // --- Neurologique ------------------------------------------------------------------------------------
+  c({ id: "raised_icp", label: "Hypertension intracrânienne", system: "neuro", keywords: ["HTIC", "œdème cérébral"], asa: 4, attention: { level: "high", text: "Halogénés à fortes concentrations et protoxyde d'azote contre-indiqués (augmentent le débit sanguin cérébral et la PIC — manuel, chap. 4) ; pas de prémédication sédative ; éviter hypercapnie." } }),
+  c({ id: "migraine", label: "Migraine", system: "neuro", keywords: ["céphalées"], attention: { level: "info", text: "Triptans et antimigraineux ; céphalée postopératoire possible." } }),
+  c({ id: "myotonic_dystrophy", label: "Dystrophie myotonique (Steinert)", system: "neuro", keywords: ["Steinert", "myotonie"], asa: 3, attention: { level: "high", text: "Pas de succinylcholine (myotonie), sensibilité aux opioïdes et hypnotiques, troubles conductifs, inhalation ; surveillance prolongée." } }),
+  c({ id: "duchenne", label: "Myopathie de Duchenne / Becker", system: "neuro", keywords: ["Duchenne", "Becker", "dystrophie musculaire"], asa: 3, attention: { level: "high", text: "Succinylcholine contre-indiquée (hyperkaliémie, rhabdomyolyse) ; anesthésie sans halogéné recommandée ; cardiomyopathie." } }),
+  c({ id: "als", label: "Sclérose latérale amyotrophique", system: "neuro", keywords: ["SLA", "Charcot", "maladie du motoneurone"], asa: 3, attention: { level: "high", text: "Pas de succinylcholine ; fonction respiratoire et déglutition ; risque de ventilation prolongée." } }),
+  c({ id: "sma", label: "Amyotrophie spinale", system: "neuro", keywords: ["SMA", "amyotrophie spinale"], asa: 3, attention: { level: "high", text: "Pas de succinylcholine ; fonction respiratoire ; nusinersen intrathécal (rachis instrumenté)." } }),
+  c({ id: "hemiplegia", label: "Hémiplégie / déficit moteur central", system: "neuro", keywords: ["hémiplégie", "déficit moteur"], asa: 3, attention: { level: "high", text: "Succinylcholine contre-indiquée après 24–48 h et pendant des mois (hyperkaliémie) ; dysréflexie autonome si lésion haute ; escarres." } }),
+  c({ id: "chiari", label: "Malformation de Chiari / syringomyélie", system: "neuro", keywords: ["Chiari", "syringomyélie"], asa: 2, attention: { level: "medium", text: "Flexion cervicale prudente ; ponction neuraxiale à discuter avec le neurochirurgien." } }),
+  c({ id: "neurofibromatosis", label: "Neurofibromatose", system: "neuro", keywords: ["Recklinghausen", "NF1"], asa: 2, attention: { level: "medium", text: "Neurofibromes des voies aériennes ou rachidiens (ponction), phéochromocytome associé possible." } }),
+  c({ id: "restless_legs", label: "Syndrome des jambes sans repos", system: "neuro", keywords: ["impatiences"], attention: { level: "info", text: "Éviter les antidopaminergiques (métoclopramide, dropéridol) ; poursuivre le traitement." } }),
+  c({ id: "narcolepsy", label: "Narcolepsie", system: "neuro", keywords: ["narcolepsie", "cataplexie"], attention: { level: "info", text: "Réveil retardé possible ; poursuivre le traitement (stimulants, oxybate à discuter)." } }),
+
+  // --- Psychiatrique -----------------------------------------------------------------------------------
+  c({ id: "opioid_use_disorder", label: "Trouble de l'usage des opioïdes", system: "psy", keywords: ["héroïne", "méthadone", "buprénorphine", "toxicomanie"], asa: 3, attention: { level: "high", text: "Poursuivre le traitement de substitution ; analgésie multimodale, doses d'opioïdes supérieures ; ALR." } }),
+  c({ id: "cannabis", label: "Consommation de cannabis", system: "psy", keywords: ["cannabis", "THC"], attention: { level: "info", text: "Besoins en hypnotiques augmentés ; hyperréactivité bronchique si fumé ; syndrome d'hyperémèse." } }),
+  c({ id: "cocaine", label: "Consommation de cocaïne ou d'amphétamines", system: "psy", keywords: ["cocaïne", "amphétamine", "MDMA", "ecstasy"], asa: 3, attention: { level: "high", text: "Usage récent : risque d'ischémie myocardique, d'HTA et d'arythmies ; reporter une chirurgie programmée ; éviter les bêtabloquants seuls." } }),
+  c({ id: "ptsd", label: "Stress post-traumatique", system: "psy", keywords: ["ESPT", "PTSD"], attention: { level: "info", text: "Agitation au réveil possible ; préparation et environnement calme." } }),
+
+  // --- Hématologie --------------------------------------------------------------------------------------
+  c({ id: "von_willebrand", label: "Maladie de Willebrand", system: "hemato", keywords: ["Willebrand", "VWD"], asa: 2, needsRule: true, attention: { level: "high", text: "Protocole avec l'hématologue (desmopressine, facteur) ; ALR neuraxiale selon le bilan." } }),
+  c({ id: "hemophilia", label: "Hémophilie", system: "hemato", keywords: ["hémophilie A", "hémophilie B"], asa: 3, needsRule: true, attention: { level: "high", text: "Protocole de substitution avec le centre de l'hémophilie ; pas d'injection IM." } }),
+  c({ id: "g6pd", label: "Déficit en G6PD", system: "hemato", keywords: ["favisme", "G6PD"], attention: { level: "medium", text: "Éviter les médicaments oxydants (bleu de méthylène, prilocaïne, sulfamides, rasburicase) : hémolyse." } }),
+  c({ id: "thalassemia", label: "Thalassémie", system: "hemato", keywords: ["thalassémie"], asa: 2, attention: { level: "medium", text: "Anémie chronique, surcharge martiale (cœur, foie) ; transfusions." } }),
+  c({ id: "antiphospholipid", label: "Syndrome des antiphospholipides", system: "hemato", keywords: ["SAPL", "anticoagulant circulant", "lupus anticoagulant"], asa: 3, needsRule: true, attention: { level: "high", text: "Haut risque thrombotique : relais anticoagulant ; TCA allongé non interprétable." } }),
+  c({ id: "itp", label: "Thrombopénie immunologique", system: "hemato", keywords: ["PTI", "purpura thrombopénique"], asa: 2, attention: { level: "medium", text: "Seuil plaquettaire selon le geste ; préparation (corticoïdes, immunoglobulines) avec l'hématologue." } }),
+  c({ id: "hemochromatosis", label: "Hémochromatose", system: "hemato", keywords: ["surcharge en fer"], attention: { level: "info", text: "Atteintes hépatique, cardiaque et endocrinienne possibles." } }),
+  c({ id: "leukemia_lymphoma", label: "Hémopathie maligne", system: "hemato", keywords: ["leucémie", "lymphome", "myélome"], asa: 3, attention: { level: "medium", text: "Cytopénies, chimiothérapie récente (cardiotoxicité), masse médiastinale à rechercher." } }),
+  c({ id: "central_line", label: "Porteur de voie veineuse centrale / chambre implantable", system: "hemato", keywords: ["chambre implantable", "PICC", "port-a-cath"], attention: { level: "info", text: "Voie utilisable : asepsie stricte, pas de purge d'air." } }),
+
+  // --- Autres --------------------------------------------------------------------------------------------
+  c({ id: "mastocytosis", label: "Mastocytose", system: "other", keywords: ["mastocytose", "mastocytes"], asa: 2, attention: { level: "high", text: "Dégranulation (hypotension, bronchospasme) : prémédication antihistaminique, éviter les histaminolibérateurs (atracurium, morphine, vancomycine rapide)." } }),
+  c({ id: "hereditary_angioedema", label: "Angio-œdème héréditaire", system: "other", keywords: ["AOH", "œdème de Quincke héréditaire", "déficit en C1 inhibiteur"], asa: 3, needsRule: true, attention: { level: "high", text: "Prophylaxie avant intubation ou chirurgie (concentré de C1-inhibiteur) ; traitement de la crise disponible.", material: ["C1-inhibiteur disponible", "Icatibant"] } }),
+  c({ id: "immunodeficiency", label: "Déficit immunitaire", system: "other", keywords: ["immunodéprimé", "aplasie", "neutropénie"], asa: 3, attention: { level: "medium", text: "Asepsie stricte, antibioprophylaxie adaptée ; produits sanguins irradiés si indiqué." } }),
+  c({ id: "osteogenesis_imperfecta", label: "Ostéogenèse imparfaite", system: "other", keywords: ["maladie des os de verre"], asa: 3, attention: { level: "high", text: "Fractures à l'installation et à la laryngoscopie ; brassard de PA prudent ; hyperthermie non maligne." } }),
+  c({ id: "achondroplasia", label: "Achondroplasie / nanisme", system: "other", keywords: ["nanisme"], asa: 2, attention: { level: "medium", text: "Voies aériennes, instabilité cervicale, canal rachidien étroit (neuraxial délicat) ; doses selon la taille." } }),
+  c({ id: "psoriasis_skin", label: "Dermatose étendue", system: "other", keywords: ["psoriasis", "eczéma", "épidermolyse bulleuse"], attention: { level: "info", text: "Points de ponction et de fixation (électrodes, adhésifs) à adapter." } }),
+  c({ id: "chronic_opioids", label: "Traitement opioïde au long cours", system: "other", keywords: ["opioïdes au long cours", "morphine au long cours", "fentanyl patch"], asa: 2, attention: { level: "high", text: "Poursuivre la dose de base, analgésie multimodale, kétamine ; ne pas sevrer en périopératoire." } }),
+  c({ id: "vitamin_b12", label: "Carence en vitamine B12", system: "other", keywords: ["Biermer", "anémie pernicieuse", "carence B12"], attention: { level: "medium", text: "Éviter le protoxyde d'azote (inactive la vitamine B12 — manuel, chap. 4) ; neuropathie à documenter avant une ALR." } }),
+  c({ id: "middle_ear", label: "Chirurgie ou pathologie de l'oreille moyenne", system: "other", keywords: ["tympanoplastie", "otite"], attention: { level: "info", text: "Protoxyde d'azote contre-indiqué en chirurgie tympanique (expansion des cavités closes — manuel, chap. 4)." } }),
+  c({ id: "intraocular_gas", label: "Gaz intraoculaire récent", system: "other", keywords: ["tamponnement gazeux", "SF6", "C3F8", "bulle de gaz"], attention: { level: "high", text: "Protoxyde d'azote contre-indiqué tant que la bulle persiste (jusqu'à plusieurs semaines) : expansion et cécité." } }),
+  c({ id: "bowel_obstruction", label: "Occlusion ou iléus", system: "digest", keywords: ["occlusion", "iléus", "syndrome occlusif"], attention: { level: "high", text: "Estomac plein : induction en séquence rapide ; protoxyde d'azote contre-indiqué (distension — manuel, chap. 4)." } }),
+
+  // --- Antécédents anesthésiques -----------------------------------------------------------------------------
+  c({ id: "failed_neuraxial", label: "Échec ou difficulté de rachianesthésie", system: "anaes", keywords: ["rachi difficile", "échec de rachi", "péridurale difficile"], attention: { level: "info", text: "Repérage échographique ; plan B prévu." } }),
+  c({ id: "emergence_delirium", label: "Agitation ou délire au réveil", system: "anaes", keywords: ["réveil agité", "délire postopératoire"], attention: { level: "info", text: "Prévention : analgésie, dexmédétomidine ou propofol en fin d'intervention, présence d'un proche." } }),
+  c({ id: "prolonged_block", label: "Bloc neuromusculaire prolongé", system: "anaes", keywords: ["réveil paralysé", "curares prolongés"], attention: { level: "medium", text: "Monitorage de la curarisation (TOF) et antagonisation adaptée ; rechercher un déficit en pseudocholinestérase.", material: ["Moniteur de curarisation"] } }),
+];

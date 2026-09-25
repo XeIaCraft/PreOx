@@ -57,6 +57,9 @@ const surgery = z.object({
   setting: z.enum(["ambulatory", "inpatient", "icu"]).optional(),
   tourniquet: z.boolean().optional(),
   closedSpace: z.boolean().optional(),
+  examProfile: z
+    .enum(["cardiac_cpb", "cardiac_valve", "tavi", "lung_resection", "pneumonectomy", "major_vascular", "bariatric", "major_digestive", "hepatobiliary", "neurosurgery", "arthroplasty", "thyroid", "obstetric"])
+    .optional(),
   notes: text(2000).optional(),
   ...verifiable,
 });
@@ -83,7 +86,7 @@ const drugClass = z.object({ id, atc, label: text(160).min(1), cbip: z.array(tex
 const valueCheck = z.object({
   id,
   label: text(120).min(1),
-  value: z.enum(["sbp", "dbp", "hr", "spo2", "hb", "platelets", "inr", "hba1c", "egfr", "crcl", "bmi", "age"]),
+  value: z.enum(["sbp", "dbp", "hr", "spo2", "hb", "platelets", "inr", "hba1c", "potassium", "sodium", "glucose", "albumin", "ntprobnp", "troponin", "ferritin", "egfr", "crcl", "bmi", "age"]),
   op: z.enum(["<", "<=", ">", ">="]),
   threshold: z.number().min(0).max(100_000),
   sex: z.enum(["M", "F"]).optional(),

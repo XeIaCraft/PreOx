@@ -34,7 +34,7 @@ import { treatmentMatches } from "./medications";
 import { effectiveConditions } from "./derive";
 import { drugClassOf } from "@/lib/carnet/pharmaco";
 import type { ProtocolContent } from "./protocols";
-import type { Catalogs } from "./catalog";
+import { fold, type Catalogs } from "./catalog";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 
 type YesNo<K extends string> = Partial<Record<K, boolean>>;
@@ -155,7 +155,14 @@ export function consultationScores(c: ConsultationState, opts: { plan?: Protocol
 
   const asaSuggestion = suggestAsa(p, cond, sub, catalogs.conditions);
   const asa = c.asa ?? asaSuggestion.asa;
-  const exams = recommendExams({ consultation: { ...c, conditions: cond }, asa, mets: results.dasi.missing === 0 && results.dasi.value > 0 ? results.dasi.mets : undefined });
+  const surgeryItem = c.surgery.catalogId ? catalogs.surgeries.find((x) => x.id === c.surgery.catalogId) : c.surgery.name ? catalogs.surgeries.find((x) => fold(x.name) === fold(c.surgery.name)) : undefined;
+  const exams = recommendExams({
+    consultation: { ...c, conditions: cond },
+    asa,
+    mets: results.dasi.missing === 0 && results.dasi.value > 0 ? results.dasi.mets : undefined,
+    surgeryProfile: surgeryItem?.examProfile,
+    stopBang: results.stopBang.missing === 0 || results.stopBang.value >= 5 ? results.stopBang.value : undefined,
+  });
 
   return { derived, merged, results, asaSuggestion, asa, exams, conditions: cond, deduced, catalogs };
 }

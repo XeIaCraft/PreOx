@@ -9,6 +9,19 @@ import type { ConsultationConclusion, ConsultationDecision, ConsultationPatient,
 import { autoExamState, type ExamResult } from "@/lib/preop/exams";
 import { cn } from "@/lib/utils";
 
+/** The guideline's short name; tap (or hover) for the full reference — phones have no hover. */
+function SourceChip({ short, label }: { short: string; label: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen((v) => !v)} title={label} aria-expanded={open} className="mr-1 rounded bg-surface-muted px-1 font-mono text-[10px] text-foreground-subtle hover:text-primary">
+        {short}
+      </button>
+      {open && <span className="mb-0.5 block text-[11px] italic text-foreground-subtle">{label}</span>}
+    </>
+  );
+}
+
 const STATUSES: { code: ExamStatus; label: string }[] = [
   { code: "todo", label: "À demander" },
   { code: "requested", label: "Demandé" },
@@ -58,9 +71,7 @@ export function ExamsPanel({
                 <ul className="space-y-0.5 text-xs text-foreground-muted">
                   {r.reasons.map((x, i) => (
                     <li key={i}>
-                      <span className="mr-1 rounded bg-surface-muted px-1 font-mono text-[10px] text-foreground-subtle" title={x.source.label}>
-                        {x.source.short}
-                      </span>
+                      <SourceChip label={x.source.label} short={x.source.short} />
                       {x.text}
                     </li>
                   ))}
@@ -76,7 +87,7 @@ export function ExamsPanel({
         </ul>
       )}
       <p className="text-[11px] text-foreground-subtle">
-        Référentiel intégré (NICE NG45 2016, ESC 2022) à relire dans la source ; une règle de votre bibliothèque de niveau belge prévaut. Vos règles « examen » s&apos;affichent dans la synthèse.
+        Référentiel intégré : NICE NG45 2016, ESAIC 2018, ESC 2022 et, selon l&apos;intervention, les recommandations propres (ESC/EACTS, ERS/ESTS, ESPEN…) — touchez le badge pour la référence complète. Une règle de votre bibliothèque de niveau belge prévaut ; vos règles « examen » s&apos;affichent dans Traitements › Vos règles.
       </p>
     </Panel>
   );

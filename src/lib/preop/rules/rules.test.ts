@@ -489,3 +489,15 @@ describe("rules from the reference manual", () => {
     expect(res.findings.some((f) => f.status === "applies" && f.outcomes.some((o) => o.kind === "stop_before" && o.treatment.name === "Clopidogrel"))).toBe(false);
   });
 });
+
+describe("draft rules", () => {
+  it("are shown apart, never applied, and hidden when an active rule settles the same point", () => {
+    const draft = { ...rivaroxaban72h, id: "draft", status: "draft" as const, verified_at: null };
+    const ctx = patient();
+    const onlyDraft = evaluate([draft], ctx);
+    expect(onlyDraft.findings).toEqual([]);
+    expect(onlyDraft.drafts.map((f) => f.rule.id)).toEqual(["draft"]);
+    expect(onlyDraft.drafts[0].rule.status).toBe("draft");
+    expect(evaluate([draft, rivaroxaban72h], ctx).drafts).toEqual([]);
+  });
+});

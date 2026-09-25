@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, MultiChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { useToast } from "@/components/ui/toast";
-import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, ScoreCard, SourceBadge, TargetTag, YesNoChip, formatDateTime, localToIso, toLocalInput, Disclosure } from "@/components/preop/ui";
+import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, ScoreCard, SourceBadge, TargetTag, DraftPill, YesNoChip, formatDateTime, localToIso, toLocalInput, Disclosure } from "@/components/preop/ui";
 import { SurgeryPanel } from "@/components/preop/surgery-panel";
 import { AllergiesEditor, ConditionsEditor, SubstancesEditor } from "@/components/preop/history-editor";
 import { ExamsPanel } from "@/components/preop/exams-panel";
@@ -428,14 +428,23 @@ function RulesPanel({ evaluation, gaps, onAskQuestion, crcl, rulesCount }: { eva
           </ul>
         </div>
       )}
-      {applying.length === 0 && all.length === 0 && evaluation.missing.length === 0 && <p className="text-sm text-foreground-subtle">Aucun traitement ni antécédent qui demande une règle.</p>}
+      {evaluation.drafts.length > 0 && (
+        <p className="text-xs text-foreground-muted">
+          <DraftPill /> {evaluation.drafts.length} règle(s) en brouillon s&apos;appliqueraient : affichées pour information, elles ne comptent ni dans l&apos;échéancier ni dans les consignes au patient tant que vous ne les avez pas
+          vérifiées et activées (Réglages › Règles).
+        </p>
+      )}
+      {applying.length === 0 && evaluation.drafts.length === 0 && all.length === 0 && evaluation.missing.length === 0 && <p className="text-sm text-foreground-subtle">Aucun traitement ni antécédent qui demande une règle.</p>}
       <ul className="space-y-2">
-        {applying.map((f) => (
-          <li key={f.rule.id} className="rounded-[var(--radius-md)] border border-border px-3 py-2">
+        {[...applying.map((f) => ({ f, draft: false })), ...evaluation.drafts.map((f) => ({ f, draft: true }))].map(({ f, draft }) => (
+          <li key={f.rule.id} className={cn("rounded-[var(--radius-md)] border px-3 py-2", draft ? "border-dashed border-accent/60 bg-accent-tint/20" : "border-border")}>
             <div className="flex items-start gap-2">
               <SourceBadge level={f.rule.source.level} />
               <div className="min-w-0 flex-1 space-y-1">
-                <TargetTag rule={f.rule} />
+                <span className="flex flex-wrap gap-1">
+                  {draft && <DraftPill />}
+                  <TargetTag rule={f.rule} />
+                </span>
                 {f.outcomes.map((o, i) => (
                   <p key={i} className={cn("text-sm", o.kind === "stop_before" && o.conflict ? "text-danger" : "text-foreground")}>
                     {o.kind === "stop_before" && (
@@ -936,11 +945,18 @@ export function ConsultationForm({
                 <MiniNumber label="INR" value={p.inr} onChange={(v) => set({ patient: { ...p, inr: v } })} />
                 <MiniNumber label="Créatinine" unit="mg/dL" value={p.creatinineMgDl} onChange={(v) => set({ patient: { ...p, creatinineMgDl: v !== undefined && v > 20 ? Math.round((v / 88.4) * 100) / 100 : v } })} />
                 <MiniNumber label="HbA1c" unit="%" value={p.hba1c} onChange={(v) => set({ patient: { ...p, hba1c: v } })} />
+                <MiniNumber label="K⁺" unit="mmol/L" value={p.potassium} onChange={(v) => set({ patient: { ...p, potassium: v } })} />
+                <MiniNumber label="Na⁺" unit="mmol/L" value={p.sodium} onChange={(v) => set({ patient: { ...p, sodium: v } })} />
+                <MiniNumber label="Glycémie" unit="mg/dL" value={p.glucose} onChange={(v) => set({ patient: { ...p, glucose: v !== undefined && v < 35 ? Math.round(v * 18) : v } })} />
+                <MiniNumber label="Albumine" unit="g/L" value={p.albumin} onChange={(v) => set({ patient: { ...p, albumin: v !== undefined && v < 7 ? v * 10 : v } })} />
+                <MiniNumber label="Ferritine" unit="µg/L" value={p.ferritin} onChange={(v) => set({ patient: { ...p, ferritin: v } })} />
+                <MiniNumber label="NT-proBNP" unit="ng/L" value={p.ntprobnp} onChange={(v) => set({ patient: { ...p, ntprobnp: v } })} />
+                <MiniNumber label="Troponine hs" unit="ng/L" value={p.troponin} onChange={(v) => set({ patient: { ...p, troponin: v } })} />
                 <div className="col-span-3 sm:col-span-5">
-                  <ValueFlags patient={p} derived={scores.derived} kinds={["hb", "platelets", "inr", "hba1c", "egfr", "crcl"]} />
+                  <ValueFlags patient={p} derived={scores.derived} kinds={["hb", "platelets", "inr", "hba1c", "potassium", "sodium", "glucose", "albumin", "ferritin", "ntprobnp", "troponin", "egfr", "crcl"]} />
                 </div>
                 <p className="col-span-3 text-[11px] text-foreground-subtle sm:col-span-5">
-                  Unités converties d&apos;office : créatinine en µmol/L, Hb en g/L, plaquettes en /µL, taille en m.
+                  Unités converties d&apos;office : créatinine en µmol/L, Hb en g/L, plaquettes en /µL, glycémie en mmol/L, albumine en g/dL, taille en m.
                   {p.creatinineMgDl !== undefined ? ` Créatinine retenue : ${String(p.creatinineMgDl).replace(".", ",")} mg/dL.` : ""}
                   {p.hb !== undefined ? ` Hb retenue : ${String(p.hb).replace(".", ",")} g/dL.` : ""}
                 </p>

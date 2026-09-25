@@ -42,7 +42,26 @@ export interface QuickAllergy {
 
 /** A value picked from the text: « PA 145/85 » gives two. */
 export interface QuickValue {
-  key: "age" | "weightKg" | "heightCm" | "sbp" | "dbp" | "hr" | "spo2" | "hb" | "platelets" | "inr" | "creatinineMgDl" | "hba1c";
+  key:
+    | "age"
+    | "weightKg"
+    | "heightCm"
+    | "sbp"
+    | "dbp"
+    | "hr"
+    | "spo2"
+    | "hb"
+    | "platelets"
+    | "inr"
+    | "creatinineMgDl"
+    | "hba1c"
+    | "potassium"
+    | "sodium"
+    | "glucose"
+    | "albumin"
+    | "ntprobnp"
+    | "troponin"
+    | "ferritin";
   value: number;
   label: string;
 }
@@ -201,6 +220,27 @@ function readValues(text: string): { values: QuickValue[]; asa?: number; mallamp
     const v = num(a1c[1]);
     push("hba1c", a1c[2] === "mmol/mol" || v > 20 ? Math.round((v / 10.929 + 2.15) * 10) / 10 : v, `HbA1c ${a1c[1]}${a1c[2] ? ` ${a1c[2]}` : " %"}`);
   }
+  const k = f.match(/\b(?:k\+?|kaliemie|potassium)\s*:?\s*(\d(?:[.,]\d{1,2})?)\s*(?:mmol|meq)?/);
+  if (k) push("potassium", num(k[1]), `K⁺ ${k[1]}`);
+  const na = f.match(/\b(?:na\+?|natremie|sodium)\s*:?\s*(1\d{2})\b/);
+  if (na) push("sodium", num(na[1]), `Na⁺ ${na[1]}`);
+  const glu = f.match(/\b(?:glycemie|glucose|gly)\s*:?\s*(\d{1,4}(?:[.,]\d{1,2})?)\s*(mg\/dl|g\/l|mmol\/l)?/);
+  if (glu) {
+    const v = num(glu[1]);
+    const mgdl = glu[2] === "g/l" || (!glu[2] && v < 5) ? v * 100 : glu[2] === "mmol/l" || (!glu[2] && v < 35) ? Math.round(v * 18) : v;
+    push("glucose", mgdl, `glycémie ${glu[1]}${glu[2] ? ` ${glu[2]}` : ""}`);
+  }
+  const alb = f.match(/\b(?:albumine|albuminemie)\s*:?\s*(\d{1,2}(?:[.,]\d)?)\s*(g\/l|g\/dl)?/);
+  if (alb) {
+    const v = num(alb[1]);
+    push("albumin", alb[2] === "g/dl" || v < 7 ? v * 10 : v, `albumine ${alb[1]}${alb[2] ? ` ${alb[2]}` : ""}`);
+  }
+  const bnp = f.match(/\bnt-?probnp\s*:?\s*(\d{1,6})/);
+  if (bnp) push("ntprobnp", num(bnp[1]), `NT-proBNP ${bnp[1]}`);
+  const trop = f.match(/\b(?:troponine|tnt|tni|trop)(?:\s*(?:t|i))?(?:\s*hs)?\s*:?\s*(\d{1,5}(?:[.,]\d{1,3})?)/);
+  if (trop) push("troponin", num(trop[1]), `troponine ${trop[1]}`);
+  const fer = f.match(/\bferritine\s*:?\s*(\d{1,5})/);
+  if (fer) push("ferritin", num(fer[1]), `ferritine ${fer[1]}`);
   const roman = (s: string) => ({ i: 1, ii: 2, iii: 3, iv: 4, v: 5 })[s] ?? Number(s);
   const asa = f.match(/\basa\s*:?\s*(iv|v|i{1,3}|[1-5])\b/);
   const mp = f.match(/\b(?:mallampati|mp)\s*:?\s*(iv|i{1,3}|[1-4])\b/);
@@ -291,7 +331,8 @@ export function parseQuickEntry(text: string, catalogs: Cats): QuickEntryResult 
   if (/amphetamine|mdma|ecstasy|speed\b/.test(all)) drugs.push("amphetamines");
   if (drugs.length) result.substances.drugs = drugs;
   const aboutSubstances = (seg: string) => /fum|tabac|cigarette|paquet|alcool|biere|verre|vin\b|cannabis|joint|cocaine|heroine|drogue|ethyl/.test(fold(seg));
-  const aboutValues = (seg: string) => /\b(pa|ta|fc|spo2|sat|poids|taille|hb|inr|creat|plaquettes|hba1c|asa|mallampati|imc|bmi|kg|cm|mmhg|\/min)\b|\d+\s*ans\b/.test(fold(seg));
+  const aboutValues = (seg: string) =>
+    /\b(pa|ta|fc|spo2|sat|poids|taille|hb|inr|creat|plaquettes|hba1c|asa|mallampati|imc|bmi|kg|cm|mmhg|\/min|k\+?|na\+?|kaliemie|natremie|glycemie|albumine|nt-?probnp|troponine|ferritine)\b|\d+\s*ans\b/.test(fold(seg));
 
   // --- Planned intervention ---------------------------------------------------------------
   const surgeries = catalogs.surgeries ?? [];

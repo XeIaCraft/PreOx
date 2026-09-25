@@ -61,6 +61,8 @@ export interface Gap {
 
 export interface EvaluationResult {
   findings: Finding[];
+  /** Draft rules that would apply — to show « à valider », never applied. */
+  drafts: Finding[];
   /** Questions to answer, de-duplicated across rules. */
   missing: MissingInfo[];
   gaps: Gap[];
@@ -349,30 +351,40 @@ export function findGaps(rules: Rule[], ctx: PatientContext): Gap[] {
 // Everything at once
 // ---------------------------------------------------------------------------
 
-export function evaluate(rules: Rule[], ctx: PatientContext, now: string = new Date().toISOString()): EvaluationResult {
-  const active = rules.filter((r) => r.status === "active" && localAppliesHere(r, ctx));
-  const evaluated = active.map((r) => evaluateRule(r, ctx, now)).filter((f): f is Omit<Finding, "overridden"> => f !== null);
+type Evaluated = Omit<Finding, "overridden">;
 
-  // Same point for the same treatment (a class-wide rule and a drug-specific one both matching
-  // rivaroxaban, say): the highest source wins, the others are shown under it as divergences.
-  const applying = evaluated.filter((f) => f.status === "applies");
-  const pointOf = (f: Omit<Finding, "overridden">) => {
-    const treatments = f.outcomes.flatMap((o) => ("treatment" in o && o.treatment ? [o.treatment.id] : [])).sort();
-    return `${f.rule.action.type}|${ruleTarget(f.rule)}|${treatments.join(",")}`;
-  };
-  const groups: Omit<Finding, "overridden">[][] = [];
+const pointOf = (f: Evaluated) => {
+  const treatments = f.outcomes.flatMap((o) => ("treatment" in o && o.treatment ? [o.treatment.id] : [])).sort();
+  return `${f.rule.action.type}|${ruleTarget(f.rule)}|${treatments.join(",")}`;
+};
+const sameFindingPoint = (a: Evaluated, b: Evaluated) => (pointOf(a) === pointOf(b) && pointOf(b).split("|")[2] !== "") || samePoint(a.rule, b.rule);
+
+/**
+ * Same point for the same treatment (a class-wide rule and a drug-specific one both matching
+ * rivaroxaban, say): the highest source wins, the others are shown under it as divergences.
+ */
+function groupApplying(applying: Evaluated[]): Finding[] {
+  const groups: Evaluated[][] = [];
   for (const f of applying) {
-    const group = groups.find((g) => g.some((o) => (pointOf(o) === pointOf(f) && pointOf(f).split("|")[2] !== "") || samePoint(o.rule, f.rule)));
+    const group = groups.find((g) => g.some((o) => sameFindingPoint(o, f)));
     if (group) group.push(f);
     else groups.push([f]);
   }
-  const findings: Finding[] = [];
-  for (const group of groups) {
+  return groups.map((group) => {
     const [winner, ...others] = [...group].sort((a, b) => (outranks(a.rule, b.rule) ? -1 : outranks(b.rule, a.rule) ? 1 : 0));
     // Same source saying the same thing (the ECG asked for age and for HTA) isn't another opinion.
     const sameSay = (o: Rule) => o.source.organisation === winner.rule.source.organisation && o.source.year === winner.rule.source.year && JSON.stringify(o.action) === JSON.stringify(winner.rule.action);
-    findings.push({ ...winner, overridden: others.map((o) => o.rule).filter((o) => !sameSay(o)) });
-  }
+    return { ...winner, overridden: others.map((o) => o.rule).filter((o) => !sameSay(o)) };
+  });
+}
+
+export function evaluate(rules: Rule[], ctx: PatientContext, now: string = new Date().toISOString()): EvaluationResult {
+  const here = rules.filter((r) => localAppliesHere(r, ctx));
+  const active = here.filter((r) => r.status === "active");
+  const evaluated = active.map((r) => evaluateRule(r, ctx, now)).filter((f): f is Evaluated => f !== null);
+  const applying = evaluated.filter((f) => f.status === "applies");
+  const findings = groupApplying(applying);
+
   // An exam already asked for by an applying rule doesn't need the other rules' questions (ECG after 65 → no need to ask about HTA for the ECG).
   const examsAsked = new Set(findings.flatMap((f) => f.outcomes.flatMap((o) => (o.kind === "exam" ? [o.exam] : []))));
   for (const f of evaluated.filter((f) => f.status === "needs_info")) {
@@ -385,7 +397,16 @@ export function evaluate(rules: Rule[], ctx: PatientContext, now: string = new D
     .flatMap((f) => f.missing)
     .filter((m) => (seen.has(m.key) ? false : (seen.add(m.key), true)));
 
-  return { findings, missing, gaps: findGaps(active, ctx) };
+  // Drafts: shown « à valider », never applied — nor used for the timeline or the patient's instructions.
+  // A draft on a point an active rule already settles adds nothing.
+  const draftApplying = here
+    .filter((r) => r.status === "draft")
+    .map((r) => evaluateRule({ ...r, status: "active" }, ctx, now))
+    .filter((f): f is Evaluated => f !== null && f.status === "applies")
+    .map((f) => ({ ...f, rule: rules.find((r) => r.id === f.rule.id)! }))
+    .filter((d) => !applying.some((a) => sameFindingPoint(a, d)));
+
+  return { findings, missing, gaps: findGaps(active, ctx), drafts: groupApplying(draftApplying) };
 }
 
 export function sourceLevelShort(level: SourceLevel): string {

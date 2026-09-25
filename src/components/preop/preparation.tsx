@@ -7,7 +7,7 @@ import { Select } from "@/components/ui/input";
 import { MultiChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { useToast } from "@/components/ui/toast";
 import { useCarnet } from "@/components/carnet/carnet-provider";
-import { FieldLabel, Panel, formatDateTime } from "@/components/preop/ui";
+import { DraftPill, FieldLabel, Panel, formatDateTime } from "@/components/preop/ui";
 import { PlanEditor } from "@/components/preop/plan-editor";
 import { SurgeryPanel } from "@/components/preop/surgery-panel";
 import { evaluateConsultation } from "@/components/preop/consultation";
@@ -33,13 +33,21 @@ import { cn } from "@/lib/utils";
 function RuleReminders({ d, rules }: { d: Dossier; rules: Rule[] }) {
   const { catalogs } = useCatalogs();
   const evaluation = useMemo(() => evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }, catalogs), [rules, d.consultation, d.plan.techniques, catalogs]);
-  const outcomes = evaluation.findings.filter((f) => f.status === "applies").flatMap((f) => f.outcomes.map((o) => ({ o, f })));
+  const outcomes = [
+    ...evaluation.findings.filter((f) => f.status === "applies").flatMap((f) => f.outcomes.map((o) => ({ o, f, draft: false }))),
+    ...evaluation.drafts.flatMap((f) => f.outcomes.map((o) => ({ o, f, draft: true }))),
+  ];
   if (outcomes.length === 0 && evaluation.gaps.length === 0 && evaluation.missing.length === 0) return null;
   return (
     <Panel title="Rappels de vos règles">
       <ul className="space-y-1.5 text-sm">
-        {outcomes.map(({ o, f }, i) => (
-          <li key={`${f.rule.id}-${i}`} className={cn(o.kind === "stop_before" && o.conflict ? "text-danger" : "text-foreground")}>
+        {outcomes.map(({ o, f, draft }, i) => (
+          <li key={`${f.rule.id}-${i}`} className={cn(o.kind === "stop_before" && o.conflict ? "text-danger" : "text-foreground", draft && "opacity-90")}>
+            {draft && (
+              <span className="mr-1.5 align-middle">
+                <DraftPill />
+              </span>
+            )}
             {o.kind === "stop_before" && (
               <>
                 <strong>{o.treatment.name}</strong> : dernière prise ≥ {formatHours(o.hours)} {beforeWhat(f.rule)}
