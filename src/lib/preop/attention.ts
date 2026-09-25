@@ -7,6 +7,7 @@
 // that belongs to a guideline (those come from your rules).
 
 import { QUALIFIER_LABELS, anyOf, has } from "./history";
+import { DRUG_REFERENCES, DRUG_REFERENCE_SOURCE, cautionsFor, drugReferenceFor, morphineEquivalents } from "./drug-reference";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 import { classesOf, fold, medicationOf, type AllergenItem, type AttentionSpec } from "./catalog";
 import type { ConsultationScores } from "./consultation-scores";
@@ -302,6 +303,47 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
       source: `${MANUAL}, chap. 2 (cathéter veineux central)`,
       material: ["Kit de voie veineuse centrale", "Échographe"],
     });
+
+  // --- Anaesthesia drugs to avoid or to adapt (manual, chapters 6–10) ------------------------
+  {
+    const labelOf = (id: string) => scores.catalogs.conditions.find((x) => x.id === id)?.label ?? id;
+    const patient = { conditions: cond as Record<string, { present: boolean } | undefined>, treatments: c.treatments, surgeryName: c.surgery.name, conditionLabel: labelOf };
+    const planned = new Set((plan?.drugs ?? []).map((d) => drugReferenceFor(d.name)?.name).filter(Boolean) as string[]);
+    const found = DRUG_REFERENCES.flatMap((ref) => cautionsFor(ref, patient));
+    const inPlan = found.filter((f) => planned.has(f.drug.name) && f.caution.level !== "adapt");
+    for (const f of inPlan)
+      add({
+        id: `plan-ci-${fold(f.drug.name)}-${fold(f.caution.text).slice(0, 20)}`,
+        level: f.caution.level === "contraindicated" ? "high" : "medium",
+        title: `${f.drug.name} au plan : ${f.caution.level === "contraindicated" ? "contre-indication" : "à éviter"}`,
+        detail: `${f.caution.text.charAt(0).toUpperCase()}${f.caution.text.slice(1)}.`,
+        why: `${f.because.join(", ")} ; ${f.drug.name} dans le plan d'anesthésie`,
+        source: `${DRUG_REFERENCE_SOURCE}, ${f.drug.chapter}`,
+      });
+    const rest = found.filter((f) => !inPlan.includes(f));
+    const line = (f: (typeof found)[number]) => `${f.drug.name} — ${f.caution.text} (${f.because.join(", ")})`;
+    const avoid = rest.filter((f) => f.caution.level !== "adapt");
+    const adapt = rest.filter((f) => f.caution.level === "adapt");
+    if (avoid.length || adapt.length)
+      add({
+        id: "drugs-avoid",
+        level: avoid.some((f) => f.caution.level === "contraindicated") ? "medium" : "info",
+        title: `Médicaments d'anesthésie ${avoid.length ? "à éviter" : ""}${avoid.length && adapt.length ? " ou " : ""}${adapt.length ? "à adapter" : ""}`,
+        detail: [avoid.length ? `À éviter : ${avoid.map(line).join(" ; ")}.` : "", adapt.length ? `À adapter : ${adapt.map(line).join(" ; ")}.` : ""].filter(Boolean).join(" "),
+        why: [...new Set(rest.flatMap((f) => f.because))].join(", "),
+        source: `${DRUG_REFERENCE_SOURCE}, chap. 6 à 10`,
+      });
+    const meq = morphineEquivalents(c.treatments);
+    if (meq.total >= 60 || (meq.unknown.length && (has(cond, "chronic_opioids") || has(cond, "opioid_use_disorder"))))
+      add({
+        id: "opioid-tolerance",
+        level: meq.total >= 60 ? "medium" : "info",
+        title: meq.total >= 60 ? `Tolérance aux opioïdes probable (≈ ${meq.total} mg de morphine orale / jour)` : "Traitement opioïde au long cours",
+        detail: "Au-delà de 60 mg d'équivalent morphine par jour, une tolérance est probable : poursuivre la dose de base, analgésie multimodale (kétamine, ALR), besoins en opioïdes majorés. Changement d'opioïde : réduire de 10–20 % (tolérance croisée incomplète).",
+        why: [...meq.parts, ...(meq.unknown.length ? [`sans conversion : ${meq.unknown.join(", ")} (dose ou produit à préciser)`] : [])].join(" ; "),
+        source: `${DRUG_REFERENCE_SOURCE}, chap. 7 (tableau 7.4)`,
+      });
+  }
 
   // --- Substance use ------------------------------------------------------------------
   const sub = c.substances;

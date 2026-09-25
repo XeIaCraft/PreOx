@@ -21,6 +21,7 @@ import {
   type WeightBasis,
 } from "@/lib/preop/protocols";
 import { TECHNIQUES, type Technique } from "@/lib/preop/rules/types";
+import { DRUG_REFERENCE_SOURCE, drugReferenceFor, formatReferenceDose } from "@/lib/preop/drug-reference";
 import { cn } from "@/lib/utils";
 
 const UNITS: DoseUnit[] = ["mg", "µg", "g", "mL", "UI"];
@@ -76,6 +77,9 @@ const lines = (text: string) =>
 
 function DrugRow({ drug, body, onChange, onRemove, startOpen }: { drug: ProtocolDrug; body?: BodyData; onChange: (d: ProtocolDrug) => void; onRemove: () => void; startOpen: boolean }) {
   const [open, setOpen] = useState(startOpen);
+  // The dose fields are uncontrolled: « Utiliser » remounts them with the reference value.
+  const [formKey, setFormKey] = useState(0);
+  const reference = drugReferenceFor(drug.name);
   const dose = computeDose(drug, body ?? {});
   const set = (patch: Partial<ProtocolDrug>) => onChange({ ...drug, ...patch });
   return (
@@ -126,7 +130,39 @@ function DrugRow({ drug, body, onChange, onRemove, startOpen }: { drug: Protocol
             value={drug.doseMode}
             onChange={(v) => v && set({ doseMode: v })}
           />
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {reference && (
+            <div className="rounded-[var(--radius-md)] bg-surface-muted/60 px-2.5 py-2 text-xs text-foreground-muted">
+              <p className="font-medium text-foreground">
+                Posologies de référence <span className="font-normal text-foreground-subtle">— {DRUG_REFERENCE_SOURCE}, {reference.chapter}</span>
+              </p>
+              <ul className="mt-1 space-y-1">
+                {reference.doses.map((d, i) => (
+                  <li key={i} className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                    <span className="min-w-0 flex-1">
+                      {d.label} : <span className="font-mono tabular-nums text-foreground">{formatReferenceDose(d)}</span>
+                      {d.basis ? ` (poids ${WEIGHT_BASES.find((w) => w.code === d.basis)?.short})` : ""}
+                      {d.note ? <span className="block text-[11px] text-foreground-subtle">{d.note}</span> : null}
+                    </span>
+                    {d.mode !== "rate" && (
+                      <button
+                        type="button"
+                        className="rounded border border-border px-1.5 py-0.5 text-[11px] font-medium text-primary hover:bg-surface"
+                        title="Reprendre la borne basse comme dose du plan (modifiable)"
+                        onClick={() => {
+                          set({ doseMode: d.mode === "per_kg" ? "per_kg" : "fixed", amount: d.min, unit: d.unit, weightBasis: d.basis ?? drug.weightBasis, note: drug.note || `${d.label} (${formatReferenceDose(d)}, ${DRUG_REFERENCE_SOURCE})` });
+                          setFormKey((k) => k + 1);
+                        }}
+                      >
+                        Utiliser {String(d.min).replace(".", ",")}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[11px] text-foreground-subtle">Valeurs d&apos;un ouvrage de 2020 : votre protocole de service prévaut ; adaptez à l&apos;âge, à l&apos;état hémodynamique et au poids pertinent.</p>
+            </div>
+          )}
+          <div key={formKey} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <NumberField label={drug.doseMode === "per_kg" ? `Dose / kg` : "Dose"} value={drug.amount ?? undefined} onChange={(v) => set({ amount: v ?? null })} />
             <label className="block space-y-1">
               <FieldLabel>Unité</FieldLabel>
@@ -155,7 +191,7 @@ function DrugRow({ drug, body, onChange, onRemove, startOpen }: { drug: Protocol
             )}
             <NumberField label="Réinjection toutes les" unit="min" value={drug.redoseEveryMin ?? undefined} onChange={(v) => set({ redoseEveryMin: v === undefined ? null : Math.round(v) })} />
           </div>
-          <label className="block space-y-1">
+          <label key={`note-${formKey}`} className="block space-y-1">
             <FieldLabel>Remarque</FieldLabel>
             <Input defaultValue={drug.note} onChange={(e) => set({ note: e.target.value })} placeholder="ex. titrer, diluer à 10 mg/mL, selon la PAM" />
           </label>
