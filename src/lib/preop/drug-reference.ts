@@ -336,7 +336,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Noradrénaline",
     words: ["noradrenaline", "norepinephrine", "levophed"],
     chapter: "chap. 10",
-    doses: [rt("État de choc", 0.05, 1, "µg", "/kg/min", { note: "Voie veineuse centrale de préférence (nécrose en cas d'extravasation)." })],
+    doses: [rt("État de choc", 0.05, 1, "µg", "/kg/min", { note: "Voie veineuse centrale de préférence (nécrose en cas d'extravasation). Choc septique : débuter à 0,1–0,5 µg/kg/min, PAM ≥ 65 mmHg (chap. 49)." })],
     cautions: [],
   },
   {
@@ -576,6 +576,12 @@ export const DRUG_REFERENCES: DrugReference[] = [
   { name: "Amiodarone", onlyInPlan: true, words: ["amiodarone", "cordarone"], chapter: "chap. 41", doses: [fx("FV ou TV sans pouls, après le 3e choc", 300, 300, "mg", { note: "Puis 150 mg après le 5e choc." }), pk("Enfant (IV ou IO, jusqu'à 2 fois)", 5, 5)], cautions: [{ conditions: ["long_qt"], level: "relative", text: "allongement du QT (hors arrêt cardiaque)" }] },
   { name: "Hydroxocobalamine", onlyInPlan: true, words: ["hydroxocobalamine", "cyanokit"], chapter: "chap. 41", doses: [pk("Intoxication aux cyanures (fumées d'incendie), en 15 min", 70, 70, "mg", { note: "Adulte : 5 g, à répéter une fois. Le manuel indique 100 mg : dose insuffisante (RCP : 5 g)." })], cautions: [] },
   { name: "Thiamine", onlyInPlan: true, words: ["thiamine", "vitamine b1", "benerva"], chapter: "chap. 41", doses: [fx("Coma, alcoolisme, dénutrition (avant le glucose)", 100, 100)], cautions: [] },
+  // --- Chapitres 46 à 49 : prélèvement d'organes, réanimation, antidotes ---------------------------
+  { name: "Vasopressine", onlyInPlan: true, words: ["vasopressine", "argipressine", "empressin", "reverpleg"], chapter: "chap. 46 et 49", doses: [rt("Choc septique (épargne de noradrénaline)", 0.03, 0.04, "UI", "/min"), rt("Diabète insipide du donneur d'organes", 0.5, 2, "UI", "/h")], cautions: [{ conditions: ["coronary", "recent_mi", "pad"], level: "relative", text: "vasoconstriction coronaire et périphérique" }] },
+  { name: "Dobutamine", onlyInPlan: true, words: ["dobutamine", "dobutrex"], chapter: "chap. 49", doses: [rt("Bas débit après correction de la précharge", 1, 10, "µg", "/kg/min")], cautions: [{ conditions: ["hcm"], level: "contraindicated", text: "cardiomyopathie obstructive" }, { conditions: ["aortic_stenosis"], level: "relative", text: "sténose aortique serrée" }] },
+  { name: "Glucagon", onlyInPlan: true, words: ["glucagon", "glucagen"], chapter: "chap. 49", doses: [fx("Intoxication aux bêtabloquants ou anticalciques (en 15 min)", 5, 10, "mg", { note: "Puis 2–5 mg/h ; associer l'insuline à haute dose (1 UI/kg puis 1 UI/kg/h) avec glucose." })], cautions: [{ conditions: ["pheochromocytoma"], level: "contraindicated", text: "phéochromocytome : crise hypertensive" }] },
+  { name: "Physostigmine", onlyInPlan: true, words: ["physostigmine", "anticholium"], chapter: "chap. 49 et 43", doses: [fx("Syndrome anticholinergique central (toutes les 15 min)", 0.5, 1, "mg")], cautions: [{ conditions: ["asthma", "av_block"], level: "relative", text: "bronchospasme, bradycardie" }] },
+  { name: "Acétylcystéine", onlyInPlan: true, words: ["acetylcysteine", "fluimucil", "lysomucil"], chapter: "chap. 49", doses: [pk("Intoxication au paracétamol : charge en 1 h", 150, 150, "mg", { note: "Puis 12,5 mg/kg/h pendant 4 h, puis 6,25 mg/kg/h (schémas plus courts récents)." })], cautions: [] },
   // --- Chapitres 36 à 40 : obstétrique, pédiatrie, ophtalmologie, ORL, orthopédie ---------------------
   {
     name: "Ocytocine",

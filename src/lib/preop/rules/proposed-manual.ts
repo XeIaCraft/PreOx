@@ -1209,4 +1209,41 @@ const EMERGENCY_ONCOLOGY: Proposed[] = [
   }),
 ];
 
-export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS, ...SPECIALITIES, ...LABS, ...OBSTETRICS_PAEDIATRICS, ...EMERGENCY_ONCOLOGY];
+// ---------------------------------------------------------------------------
+// Chapitres 46 à 49 — prélèvement d'organes, hyperbarie, réanimation
+// ---------------------------------------------------------------------------
+
+const CH47 = "Chapitre 47, Anesthésie et médecine hyperbare, 4e édition (Elsevier Masson)";
+const CH49 = "Chapitre 49, Réanimation, 4e édition (Elsevier Masson)";
+
+const CRITICAL_CARE: Proposed[] = [
+  m({
+    title: "Choc septique : remplissage et noradrénaline avant l'intervention",
+    statement: "Réanimation liquidienne de 30 ml/kg de cristalloïdes pendant les 3 premières heures, puis selon l'évaluation hémodynamique ; noradrénaline pour une PAM ≥ 65 mmHg ; lactates répétés.",
+    conditions: [history("septic_shock", "Sepsis ou choc septique")],
+    action: { type: "requirement", text: "Cristalloïdes 30 ml/kg en 3 h, noradrénaline pour une PAM ≥ 65 mmHg, lactates, prélèvements puis antibiotiques ; contrôle de la source sans délai.", blocking: false, target: "both" },
+    quote: "Réanimation liquidienne : 30 ml/kg de cristalloïdes IV pendant les 3 premières heures, puis selon évaluation hémodynamique. Administration de vasopresseurs pour un objectif de PAM > 65 mmHg : noradrénaline : commencer avec 0,1–0,5 μg/kg/min.",
+    question: "What do the Surviving Sepsis Campaign 2021 guidelines recommend for initial fluid resuscitation, vasopressor choice and MAP target, corticosteroids, and timing of source control in septic shock?",
+    chapterTitle: CH49,
+  }),
+  m({
+    title: "Choc septique : hydrocortisone seulement si réfractaire",
+    statement: "L'hydrocortisone 200 mg/j n'est administrée qu'en cas de résistance au traitement vasopresseur.",
+    conditions: [history("septic_shock", "Sepsis ou choc septique")],
+    action: { type: "info", text: "Hydrocortisone 200 mg/j si le choc reste réfractaire aux vasopresseurs (bénéfice sur la mortalité non démontré).", target: "anaesthesia" },
+    quote: "Administration d'hydrocortisone 200 mg/j uniquement en cas de résistance au traitement ; à noter que le bénéfice sur la mortalité n'a pas été démontré.",
+    question: "When should hydrocortisone be started in septic shock, at which dose and threshold of vasopressor requirement, according to the Surviving Sepsis Campaign 2021 and ESICM/SCCM corticosteroid guidance?",
+    chapterTitle: CH49,
+  }),
+  m({
+    title: "Oxygénothérapie hyperbare : BPCO sous oxygène",
+    statement: "La bronchopneumopathie chronique obstructive sous traitement d'oxygène au long cours est une contre-indication absolue à l'oxygénothérapie hyperbare.",
+    conditions: [history("home_o2", "Oxygénothérapie à domicile")],
+    action: { type: "info", text: "Contre-indication absolue à une oxygénothérapie hyperbare (avec pneumothorax non drainé, instabilité, grossesse sauf intoxication au CO).", target: "anaesthesia" },
+    quote: "Les conte-indications absolues sont : pneumothorax non drainé ; broncho-pneumopathie chronique obstructive sous traitement d'oxygène au long-cours ; détresse ou insuffisance respiratoire non compensée […] grossesse (excepté en cas d'intoxication au CO).",
+    question: "What are the absolute and relative contraindications to hyperbaric oxygen therapy according to the European Committee for Hyperbaric Medicine (ECHM) consensus?",
+    chapterTitle: CH47,
+  }),
+];
+
+export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS, ...SPECIALITIES, ...LABS, ...OBSTETRICS_PAEDIATRICS, ...EMERGENCY_ONCOLOGY, ...CRITICAL_CARE];

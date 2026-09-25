@@ -1079,7 +1079,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
       }
     }
     if (has(cond, "diabetes_insulin"))
-      add({ id: "diabetes-plan", level: "info", title: "Diabète insulinotraité : le jour de l'intervention", detail: "Premier du programme ; moitié de la dose d'insuline basale, glycémie capillaire le matin puis au bloc ; objectif < 10 mmol/l (180 mg/dl) sans hypoglycémie ; insuline IV (ex. glucose 10 % 500 ml + KCl 10 mmol + 15 UI d'insuline rapide en 6 h) si chirurgie modérée ou majeure. Gastroparésie : métoclopramide ou érythromycine 200 mg IV, séquence rapide ; rechercher une dysautonomie (hypotension à l'induction).", why: "Diabète insulinotraité", source: CH(34, "diabète, implications anesthésiques") });
+      add({ id: "diabetes-plan", level: "info", title: "Diabète insulinotraité : le jour de l'intervention", detail: `Premier du programme ; moitié de la dose d'insuline basale, glycémie capillaire le matin puis au bloc ; objectif < 10 mmol/l (180 mg/dl) sans hypoglycémie ; insuline IV (ex. glucose 10 % 500 ml + KCl 10 mmol + 15 UI d'insuline rapide en 6 h) si chirurgie modérée ou majeure. Gastroparésie : métoclopramide ou érythromycine 200 mg IV, séquence rapide ; rechercher une dysautonomie (hypotension à l'induction).${p.hba1c !== undefined ? ` Cible glycémique selon l'HbA1c (chap. 49) : ${p.hba1c < 7 ? "4,4–7,8 mmol/l (80–140 mg/dl)" : "6,1–8,9 mmol/l (110–160 mg/dl)"} ; éviter > 10 mmol/l et l'hypoglycémie.` : ""}`, why: `Diabète insulinotraité${p.hba1c !== undefined ? ` ; HbA1c ${n(p.hba1c)} %` : ""}`, source: `${CH(34, "diabète, implications anesthésiques")} ; chap. 49 (contrôle glycémique)` });
 
     // Blood (chap. 35).
     if (plan && c.surgery.bleedingRisk === "high" && p.weightKg)
@@ -1595,6 +1595,67 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         detail: lines.join(" "),
         why: [has(cond, "cancer") ? "cancer évolutif" : "", has(cond, "chemotherapy") ? "chimiothérapie récente" : "", ...oncoDrugs].filter(Boolean).join(", "),
         source: CH(45, "patient oncologique, tableau 45.1"),
+      });
+    }
+  }
+
+  // --- Organ donation, hyperbaric medicine, critical care (manual, chapters 46–49) ------------------
+  {
+    const name = fold(c.surgery.name);
+    const CH = (k: number, what: string) => `${MANUAL}, chap. ${k} (${what})`;
+    const w = p.weightKg;
+
+    // Organ retrieval in a brain-dead donor (chap. 46).
+    if (/prelevement.*organes|donneur.*organes|mort encephalique/.test(name))
+      add({
+        id: "organ-donor",
+        level: "medium",
+        title: "Prélèvement d'organes : cibles de réanimation",
+        detail: [
+          "Cibles (tableau 46.1) : PAM 60–90 mmHg, PVC 6–8, diurèse > 1 ml/kg/h, SpO₂ > 95 % avec FiO₂ < 0,4, PaCO₂ 35–40, Vt 6–8 ml/kg, PEP 5, plateau < 30 ; Hb > 70 g/l, plaquettes > 50 G/l, fibrinogène > 1 g/l, INR < 2, Na⁺ 130–150 mmol/l, glycémie 4,4–8,3 mmol/l.",
+          "Vasoactifs à la plus faible dose, remplissage d'abord. Diabète insipide : desmopressine 0,25–2 µg toutes les 6 h ou vasopressine 0,5–2 UI/h. Instabilité : hormones thyroïdiennes, méthylprednisolone 15 mg/kg/24 h.",
+          `Hypnotique, analgésique et curare justifiés (réflexes médullaires). Héparine 300–600 UI/kg 10 min avant la canulation${w !== undefined ? ` (≈ ${Math.round(w * 300)}–${Math.round(w * 600)} UI)` : ""} ; ventilation maintenue si prélèvement pulmonaire. Ischémie froide tolérée : cœur et poumons 4–6 h, foie 6–12 h, reins 12–48 h.`,
+        ].join(" "),
+        why: surgeryName,
+        source: CH(46, "mort encéphalique et prélèvement d'organes, tableau 46.1"),
+        material: ["Cathéter artériel", "Deux voies de gros calibre dont une centrale", "Sonde gastrique, urinaire et thermique"],
+      });
+
+    // Hyperbaric oxygen therapy (chap. 47).
+    if (/hyperbar|caisson|\bohb\b/.test(name)) {
+      const absolute = [has(cond, "home_o2") ? "BPCO sous oxygène au long cours" : "", has(cond, "pregnancy") ? "grossesse (sauf intoxication au CO)" : "", has(cond, "pneumothorax") ? "pneumothorax (à exclure ou drainer)" : ""].filter(Boolean);
+      const relative = [has(cond, "asthma") ? "asthme" : "", has(cond, "recent_uri") ? "infection des voies aériennes supérieures" : "", has(cond, "epilepsy") ? "épilepsie" : "", has(cond, "middle_ear") ? "oreille moyenne" : ""].filter(Boolean);
+      add({
+        id: "hyperbaric",
+        level: absolute.length ? "high" : "info",
+        title: absolute.length ? "Oxygénothérapie hyperbare : contre-indication" : "Oxygénothérapie hyperbare",
+        detail: [
+          absolute.length ? `Contre-indication absolue : ${absolute.join(", ")}.` : "",
+          relative.length ? `Contre-indication relative : ${relative.join(", ")}.` : "",
+          "Ballonnet rempli d'eau, perfusions purgées de toute bulle, drains en aspiration, poches de stomie vidées ; patient inconscient : myringotomie. Ventilation en pression contrôlée (les analyseurs surestiment les débits et les fractions) ; ballon de Swan-Ganz dégonflé. Vasoconstricteurs : doses plus faibles à la compression, hypotension à la décompression ; diabétique : hypoglycémie ; corticoïdes, catécholamines et acétazolamide abaissent le seuil de toxicité cérébrale de l'O₂. Pas de défibrillation dans le caisson.",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        why: [surgeryName, ...absolute, ...relative].join(" ; "),
+        source: CH(47, "anesthésie et médecine hyperbare"),
+      });
+    }
+
+    // Sepsis and septic shock (chap. 49).
+    if (has(cond, "septic_shock")) {
+      const fluids = w !== undefined ? Math.round(w * 30) : undefined;
+      add({
+        id: "septic-shock",
+        level: "high",
+        title: "Sepsis ou choc septique : avant et pendant l'intervention",
+        detail: [
+          `Cristalloïdes 30 ml/kg dans les 3 premières heures${fluids !== undefined ? ` (≈ ${fluids} ml)` : ""}, puis selon la réponse au remplissage (VPP > 11 % si Vt ≥ 7 ml/kg, > 8 % si Vt ≤ 7 ; lever de jambes : débit +10 %).`,
+          "Noradrénaline 0,1–0,5 µg/kg/min pour une PAM ≥ 65 mmHg (vasopressine 0,03 UI/min en épargne) ; dobutamine si bas débit persistant ; hydrocortisone 200 mg/j seulement si choc réfractaire.",
+          "Lactates toutes les 1–2 h ; prélèvements microbiologiques avant les antibiotiques ; contrôle de la source sans délai. Induction à l'étomidate ou à la kétamine, doses réduites ; cathéter artériel et voie centrale.",
+        ].join(" "),
+        why: `Antécédent : sepsis ou choc septique${w !== undefined ? ` ; ${w} kg` : ""}`,
+        source: CH(49, "chocs, sepsis et choc septique"),
+        material: ["Cathéter artériel", "Noradrénaline prête", "Voie veineuse centrale"],
       });
     }
   }

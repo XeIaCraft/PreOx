@@ -98,7 +98,7 @@ export const AAOHNS_2013: ExamSource = { label: "AAO-HNS 2013, voix et chirurgie
 export const MANUAL_2020: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 15 (tableau 15.1) — ouvrage de référence", short: "Manuel 2020", level: "book" };
 export const MANUAL_2020_POSITION: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 19 (position assise) — ouvrage de référence", short: "Manuel 2020", level: "book" };
 export const MANUAL_2020_NEURO: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 29 (maladies neuromusculaires) — ouvrage de référence", short: "Manuel 2020", level: "book" };
-export const MANUAL_2020_SPECIALTIES: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitres 36 à 45 (obstétrique, pédiatrie, orthopédie, urgences, oncologie) — ouvrage de référence", short: "Manuel 2020", level: "book" };
+export const MANUAL_2020_SPECIALTIES: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitres 36 à 49 (obstétrique, pédiatrie, orthopédie, urgences, oncologie, réanimation) — ouvrage de référence", short: "Manuel 2020", level: "book" };
 
 /**
  * Work-up usual for a family of procedures, each item tied to the guideline
@@ -440,6 +440,12 @@ export function recommendExams({ consultation: c, asa, mets, surgeryProfile, sto
   }
   if (onAtc("L01DC01") || cond.chemotherapy?.details?.bleomycin === "yes") add("pft", "consider", "bléomycine : fibrose pulmonaire (DLCO)", MANUAL_2020_SPECIALTIES);
   if (has(cond, "chemotherapy")) add("fbc", "recommended", "chimiothérapie récente : aplasie (neutropénie, thrombopénie) vers J7 d'une cure", MANUAL_2020_SPECIALTIES);
+  if (has(cond, "septic_shock")) {
+    add("abg", "recommended", "sepsis : lactates (toutes les 1–2 h si choc), pH", MANUAL_2020_SPECIALTIES);
+    add("fbc", "recommended", "sepsis : hémogramme (score SOFA : plaquettes)", MANUAL_2020_SPECIALTIES);
+    add("haemostasis", "recommended", "sepsis : coagulopathie, CIVD", MANUAL_2020_SPECIALTIES);
+    add("renal", "recommended", "sepsis : créatinine, ionogramme (score SOFA)", MANUAL_2020_SPECIALTIES);
+  }
   if (has(cond, "major_trauma") || has(cond, "burns")) {
     add("group", "recommended", has(cond, "burns") ? "brûlé : excisions hémorragiques" : "polytraumatisé : transfusion probable", MANUAL_2020_SPECIALTIES);
     add("haemostasis", "recommended", has(cond, "burns") ? "brûlé : coagulopathie de consommation" : "polytraumatisé : coagulopathie (fibrinogène, TP ; ROTEM si disponible)", MANUAL_2020_SPECIALTIES);
