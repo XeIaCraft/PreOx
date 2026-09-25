@@ -56,7 +56,7 @@ describe("Manuel pratique d'anesthésie 2020, chapitres 31–35", () => {
     expect(evaluateRule(rule, ctx(6.1, "elective"))).not.toBeNull();
     expect(evaluateRule(rule, ctx(4.2, "elective"))).toBeNull();
     expect(evaluateRule(rule, ctx(6.1, "emergency"))).toBeNull();
-    expect(MANUAL_RULES.at(-1)!.source.title).toMatch(/Chapitre 40/);
+    expect(MANUAL_RULES.at(-1)!.source.title).toMatch(/Chapitre 45/);
   });
 
   it("adds the prostate resection advice", () => {

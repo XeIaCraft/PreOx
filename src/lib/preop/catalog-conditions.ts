@@ -161,7 +161,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
 
   // --- Hépatique et digestif -----------------------------------------------------------
   c({ id: "cirrhosis", label: "Cirrhose / hépatopathie", system: "digest", keywords: ["cirrhose", "hépatopathie", "hépatite chronique", "insuffisance hépatique"], qualifiers: { severe: "décompensée" }, asa: 3, asaIf: { severe: 4 }, attention: { level: "medium", text: "Hémostase, albumine, encéphalopathie ; adapter les posologies." } }),
-  c({ id: "gerd", label: "RGO / hernie hiatale", system: "digest", keywords: ["reflux", "hernie hiatale", "pyrosis"], attention: { level: "medium", text: "Risque d'inhalation : discuter une induction en séquence rapide." } }),
+  c({ id: "gerd", label: "RGO / hernie hiatale", system: "digest", keywords: ["RGO", "reflux", "reflux gastro-œsophagien", "hernie hiatale", "pyrosis"], attention: { level: "medium", text: "Risque d'inhalation : discuter une induction en séquence rapide." } }),
   c({ id: "gastroparesis", label: "Gastroparésie", system: "digest", keywords: ["vidange gastrique"], asa: 2, attention: { level: "medium", text: "Estomac plein malgré le jeûne : discuter une séquence rapide, échographie gastrique si disponible." } }),
   c({ id: "ibd", label: "Maladie inflammatoire de l'intestin", system: "digest", keywords: ["Crohn", "RCH", "rectocolite"], asa: 2 }),
   c({ id: "viral_hepatitis", label: "Hépatite virale B ou C", system: "digest", keywords: ["VHB", "VHC"], asa: 2 }),

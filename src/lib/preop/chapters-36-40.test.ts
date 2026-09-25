@@ -92,6 +92,6 @@ describe("Manuel pratique d'anesthésie 2020, chapitres 36–40", () => {
     expect(evaluateRule(uri, ctx(5))).not.toBeNull();
     expect(evaluateRule(uri, ctx(40))).toBeNull();
     expect(recommendExams({ consultation: base({ conditions: { preeclampsia: { present: true } } }), asa: 2 }).recommendations.find((r) => r.code === "haemostasis")?.strength).toBe("recommended");
-    expect(MANUAL_RULES.at(-1)!.source.title).toMatch(/Chapitre 40/);
+    expect(MANUAL_RULES.at(-1)!.source.title).toMatch(/Chapitre 45/);
   });
 });

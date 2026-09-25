@@ -1424,6 +1424,181 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
     }
   }
 
+  // --- Emergencies, remote locations, elderly, obesity, cancer (manual, chapters 41–45) ------------
+  {
+    const name = fold(c.surgery.name);
+    const CH = (k: number, what: string) => `${MANUAL}, chap. ${k} (${what})`;
+    const urgency = urgencyOf(c.surgery);
+    const techs = new Set([...(plan?.techniques ?? []), ...c.techniques]);
+    const general = techs.size === 0 || techs.has("general");
+    const w = p.weightKg;
+    const ibw = scores.derived.ibw;
+    const abw = scores.derived.abw;
+    const bmi = scores.derived.bmi;
+    const adult = p.age === undefined || p.age >= 16;
+    const detailOf = (id: string, key: string) => cond[id]?.details?.[key];
+    const mg = (perKg: number, kg: number | undefined, max?: number) => (kg === undefined ? "" : ` (≈ ${Math.round(Math.min(perKg * kg, max ?? Infinity))} mg)`);
+
+    // Rapid sequence induction (chap. 41).
+    const weeks = Number(detailOf("pregnancy", "weeks"));
+    const rsi = [
+      urgency !== "elective" ? "intervention urgente" : "",
+      has(cond, "bowel_obstruction") ? "occlusion ou iléus" : "",
+      has(cond, "gerd") ? "reflux gastro-œsophagien ou hernie hiatale" : "",
+      has(cond, "pregnancy") && (!Number.isFinite(weeks) || weeks >= 15) ? "grossesse ≥ 15 SA" : "",
+      has(cond, "major_trauma") ? "polytraumatisme" : "",
+    ].filter(Boolean);
+    if (rsi.length && general && adult) {
+      const noSux = anyOf(cond, ["malignant_hyperthermia", "pseudocholinesterase", "hemiplegia", "spinal_cord_injury", "neuromuscular", "myotonic_dystrophy", "duchenne", "als", "sma", "burns", "bedridden"]) === true;
+      add({
+        id: "rsi",
+        level: "medium",
+        title: "Induction en séquence rapide",
+        detail: [
+          "Préoxygénation 3–5 min (sinon 4 à 8 inspirations maximales) ; hypnotique : propofol 2 mg/kg, étomidate 0,3 mg/kg ou thiopental 5 mg/kg" + (w ? ` (propofol${mg(2, w)})` : "") + ".",
+          noSux
+            ? `Succinylcholine contre-indiquée : rocuronium 1,2 mg/kg du poids idéal${mg(1.2, ibw ?? w)} (intubation après 90 s), sugammadex 16 mg/kg prêt${mg(16, ibw ?? w)}.`
+            : `Succinylcholine 1–1,5 mg/kg${mg(1, w, 150)} ; si contre-indiquée : rocuronium 1,2 mg/kg (intubation après 90 s).`,
+          "Manœuvre de Sellick facultative (efficacité non démontrée, gêne la laryngoscopie). Opioïde après l'intubation (fentanyl 2–3 µg/kg), sonde gastrique pour vider l'estomac.",
+          "Prévention : oméprazole 20–40 mg 30–60 min avant, citrate de sodium 0,3 M 30 ml 15–30 min avant. Inhalation : aspirer la trachée avant d'intuber, FiO₂ 1, surveillance (ni antibiotique ni corticoïde d'emblée).",
+        ].join(" "),
+        why: rsi.join(", "),
+        source: CH(41, "induction à séquence rapide, inhalation bronchique"),
+        material: ["Aspiration prête (sonde rigide)", noSux ? "Sugammadex 16 mg/kg" : "", "Sonde gastrique"].filter(Boolean),
+      });
+    }
+
+    // Major trauma (chap. 41).
+    if (has(cond, "major_trauma") || /polytrauma|damage control|plaie par (arme|balle)|traumatisme penetrant|hemorragie (massive|traumatique)/.test(name)) {
+      const abc = [p.sbp !== undefined && p.sbp < 90 ? `PAS ${p.sbp} < 90` : "", p.hr !== undefined && p.hr > 120 ? `FC ${p.hr} > 120` : ""].filter(Boolean);
+      const headInjury = anyOf(cond, ["raised_icp", "intracranial_lesion"]) === true;
+      add({
+        id: "trauma",
+        level: "high",
+        title: "Polytraumatisé : damage control",
+        detail: [
+          `Score ABC (1 point chacun : plaie pénétrante, PAS < 90, FC > 120, FAST positif) ≥ 2 : transfusion massive probable${abc.length ? ` — déjà ${abc.join(", ")}` : ""}.`,
+          "Séquence rapide avec stabilisation cervicale dans l'axe, étomidate ou kétamine ; deux voies de gros calibre (14 G : 270 ml/min, 16 G : 180, 18 G : 104 ; voie centrale 16 G : 75).",
+          `Acide tranexamique 1 g en 10 min puis 1 g en 8 h ; CGR:PFC:plaquettes 1:1:1, fibrinogène 2 g ; cristalloïdes limités, pas d'HEA ni de dextran ; hypotension permissive (PAS 80 mmHg)${headInjury ? " — sauf traumatisme crânien, présent ici" : " sauf traumatisme crânien"}.`,
+          "Objectifs : Ht > 30 %, plaquettes > 50 G/l, TP > 50 % (CCP 1 800–2 400 U), fibrinogène > 1,5 g/l, Ca²⁺, lactates < 4, pH > 7,2, normothermie (1 l à 20 °C = −0,3 °C). Hypoxémie : pneumothorax, contusion ; PVC haute et bas débit : pneumothorax compressif, tamponnade, contusion myocardique.",
+        ].join(" "),
+        why: [has(cond, "major_trauma") ? "polytraumatisme" : surgeryName, ...abc, headInjury ? "traumatisme crânien" : ""].filter(Boolean).join(" ; "),
+        source: CH(41, "polytraumatisé, damage control resuscitation"),
+        material: ["Deux voies de gros calibre (14–16 G)", "Réchauffeur et accélérateur de perfusion", "Acide tranexamique", "Protocole de transfusion massive"],
+      });
+    }
+
+    // Burns (chap. 41).
+    if (has(cond, "burns")) {
+      const tbsa = Number(detailOf("burns", "tbsa"));
+      const pct = Number.isFinite(tbsa) && tbsa > 0 ? tbsa : undefined;
+      const inhalation = detailOf("burns", "inhalation") === "yes";
+      const ryan = [p.age !== undefined && p.age > 60, pct !== undefined && pct > 40, inhalation].filter(Boolean).length;
+      const known = p.age !== undefined && pct !== undefined && detailOf("burns", "inhalation") !== undefined;
+      const parkland = w !== undefined && pct !== undefined && pct >= 20 ? Math.round(2 * w * pct) : undefined;
+      add({
+        id: "burns-plan",
+        level: "high",
+        title: `Brûlé${pct !== undefined ? ` (${pct} %)` : ""} : conduite`,
+        detail: [
+          parkland !== undefined ? `Remplissage (Parkland modifiée, 2 ml/kg/% sur 24 h) : ≈ ${parkland} ml de cristalloïde, la moitié (${Math.round(parkland / 2)} ml) dans les 8 premières heures depuis la brûlure ; guidé surtout par la diurèse (0,5–1 ml/kg/h, enfant 1–2) pour éviter la sur-réanimation.` : "Surface brûlée à préciser : au-delà de 20 %, remplissage selon Parkland modifiée (2 ml/kg/% sur 24 h), guidé par la diurèse.",
+          inhalation ? "Inhalation : intubation précoce en séquence rapide avant l'œdème (sonde plus petite), bronchoscopie ; CO : O₂ 100 % 6–12 h ; cyanures : hydroxocobalamine 5 g." : "Rechercher une inhalation (vibrisses brûlées, suie, voix modifiée) : intubation précoce.",
+          "Succinylcholine contre-indiquée après 48 h selon le manuel (dès 24 h selon d'autres références) : hyperkaliémie ; résistance aux curares non dépolarisants ; albumine basse (fraction libre) ; excisions très hémorragiques ; hypothermie. Plus de 20 % : centre spécialisé.",
+          known ? `Score de Ryan ${ryan}/3 (âge > 60, > 40 %, inhalation) : mortalité ≈ ${["0,3", "3", "33", "90"][ryan]} %.` : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        why: [pct !== undefined ? `brûlures ${pct} %` : "brûlures étendues", inhalation ? "inhalation de fumées" : "", w !== undefined ? `${w} kg` : ""].filter(Boolean).join(", "),
+        source: CH(41, "le patient brûlé, tableau 41.1"),
+        material: ["Réchauffement actif", "Produits sanguins pour l'excision"],
+      });
+    }
+
+    // Anaesthesia outside the theatre (chap. 42).
+    if (/endoscop|coloscop|gastroscop|\bcpre\b|\bercp\b|\birm\b|scanner|radiolog|emboli|angiograph|coronarograph|electrophysiolog|ablation de (fa|flutter)|cardioversion|\btips\b|biopsie hepatique/.test(name))
+      add({
+        id: "remote-location",
+        level: "info",
+        title: "Anesthésie hors bloc",
+        detail: "Même niveau de sécurité qu'au bloc : ECG, PNI, SpO₂, capnographie, température (salles froides) ; BIS si AG légère et longue. Anticiper médicaments, O₂ et monitorage de transport, câbles et tubulures longs (accès à la tête limité), points d'appui ; tablier de plomb et dosimètre ; IRM : matériel compatible. Sédation : profondeur évaluée régulièrement (score de Ramsay) ; AG si geste long, douloureux ou exigeant l'immobilité.",
+        why: surgeryName,
+        source: CH(42, "anesthésie hors bloc"),
+      });
+
+    // Elderly patient (chap. 43).
+    if (p.age !== undefined && p.age >= 75)
+      add({
+        id: "elderly-plan",
+        level: "info",
+        title: `Patient âgé (${p.age} ans) : adapter l'anesthésie`,
+        detail: "Diminuer les doses d'induction et d'entretien (hypnotiques, opioïdes, halogénés : CAM plus basse ; effets prolongés), benzodiazépines à dose réduite (effet très prolongé) ; AL neuraxiaux : moins par métamère, rétention urinaire ; agonistes adrénergiques et atropine : doses plus fortes (syndrome anticholinergique central) ; succinylcholine inchangée ; anticholinestérasiques prolongés. Hypotension à l'induction, réflexes atténués ; surcharge hydrique, hyponatrémie ; hypothermie ; hypoxémie postopératoire ; protéger les membres (peau fragile, neuropathies) ; antibiotiques adaptés à la fonction rénale ; interactions (polymédication).",
+        why: `Âge ${p.age} ans`,
+        source: CH(43, "tableau 43.1"),
+      });
+
+    // Obesity (chap. 44).
+    if (adult && bmi !== undefined && bmi >= 35) {
+      const neck = p.neckCm;
+      add({
+        id: "obesity-plan",
+        level: bmi >= 40 ? "medium" : "info",
+        title: `Obésité (IMC ${Math.round(bmi)}) : conduite`,
+        detail: [
+          `Poids : idéal ${ibw !== undefined ? `${Math.round(ibw)} kg` : "(taille et sexe requis)"}, corrigé ${abw !== undefined ? `${Math.round(abw)} kg` : "= idéal + 0,4 × excès"}, réel ${w} kg. Propofol : induction au poids corrigé${mg(2, abw)}, entretien au poids réel ; succinylcholine 1 mg/kg au poids réel, ≤ 150 mg${mg(1, w, 150)} ; rocuronium et vécuronium au poids idéal${ibw !== undefined ? ` (rocuronium 0,6 mg/kg ≈ ${Math.round(0.6 * ibw)} mg)` : ""} ; atracurium et cisatracurium au poids réel. Éviter thiopental et benzodiazépines ; desflurane ou sévoflurane ; sufentanil, alfentanil, rémifentanil.`,
+          `Ventilation et intubation difficiles${neck ? ` (cou ${neck} cm : ${neck > 60 ? "≈ 35 %" : neck >= 40 ? "risque accru" : "≈ 5 %"} d'intubation difficile)` : " (SAOS, tour de cou > 40 cm)"} : tête et épaules surélevées (rampe), matériel d'intubation difficile ; préoxygénation proclive avec PEP 5 min. Séquence rapide seulement si reflux symptomatique ou anneau gastrique mal positionné (l'obèse sans reflux n'a pas un estomac plein).`,
+          "PEP 8–10 cmH₂O, recrutements après l'intubation et le pneumopéritoine (le manuel propose Vt 8–10 ml/kg de poids idéal ; la ventilation protectrice actuelle retient 6–8). Décurarisation, extubation semi-assise ; analgésie multimodale et ALR ; thromboprophylaxie.",
+        ].join(" "),
+        why: `IMC ${n(bmi)} kg/m²${neck ? `, cou ${neck} cm` : ""}`,
+        source: CH(44, "obésité, stratégie anesthésique"),
+        material: ["Coussin de rampe", "Brassard adapté", "Matériel d'intubation difficile", "Vidéolaryngoscope"],
+      });
+    }
+
+    // Obstructive sleep apnoea (chap. 44).
+    if (has(cond, "osa")) {
+      const ahi = detailOf("osa", "ahi");
+      const cpap = detailOf("osa", "cpap");
+      add({
+        id: "osa-plan",
+        level: ahi === "severe" || cpap === "no" ? "medium" : "info",
+        title: "SAOS : conduite périopératoire",
+        detail: `Pas de benzodiazépine en prémédication ; ALR chaque fois que possible ; AG avec agents de courte durée (rémifentanil), ventilation et intubation difficiles (15–40 %) ; analgésie multimodale, épargne morphinique. Obstruction maximale vers la 3e nuit postopératoire : PPC du patient dès le réveil${cpap === "no" ? " (non appareillé : surveillance prolongée de la SpO₂)" : ""}. Soins continus non systématiques : selon comorbidités, besoins en opioïdes et PPC.`,
+        why: ["SAOS", ahi === "severe" ? "sévère" : ahi === "moderate" ? "modéré" : ahi === "mild" ? "léger" : "", cpap === "no" ? "non appareillé" : cpap === "yes" ? "appareillé" : ""].filter(Boolean).join(", "),
+        source: CH(44, "syndrome d'apnées du sommeil"),
+      });
+    }
+
+    // Cancer (chap. 45).
+    const onAtc = (...prefixes: string[]) => c.treatments.filter((t) => prefixes.some((x) => t.atc.startsWith(x))).map((t) => t.name);
+    const anthra = onAtc("L01DB");
+    const bleo = onAtc("L01DC01");
+    const platinum = onAtc("L01XA");
+    const neuro = onAtc("L01CA", "L01CD");
+    const her2 = onAtc("L01XC03", "L01FD01");
+    const checkpoint = onAtc("L01XC17", "L01XC18", "L01XC31", "L01FF");
+    const oncoDrugs = [...anthra, ...bleo, ...platinum, ...neuro, ...her2, ...checkpoint];
+    if (has(cond, "cancer") || has(cond, "chemotherapy") || oncoDrugs.length) {
+      const lines = [
+        anthra.length || detailOf("chemotherapy", "anthracycline") === "yes" ? "Anthracyclines : cardiotoxicité (QT, troubles conductifs, insuffisance cardiaque parfois retardée) — ECG, échocardiographie." : "",
+        her2.length ? "Trastuzumab : dysfonction ventriculaire gauche — échocardiographie." : "",
+        bleo.length || detailOf("chemotherapy", "bleomycin") === "yes" ? "Bléomycine : fibrose aggravée par l'oxygène — FiO₂ minimale." : "",
+        platinum.length ? "Sels de platine : néphrotoxicité, hypomagnésémie, neuropathie." : "",
+        neuro.length || detailOf("chemotherapy", "neurotoxic") === "yes" ? "Vinca-alcaloïdes, taxanes : neuropathie périphérique à documenter avant une ALR." : "",
+        checkpoint.length ? "Immunothérapie (anti-PD-1…) : pneumopathie interstitielle, atteintes endocriniennes." : "",
+        "Aplasie vers J7 d'une cure (hémogramme), syndrome de lyse (K⁺, créatinine), hypercalcémie (métastases osseuses, myélome), syndrome paranéoplasique (SIADH, Lambert-Eaton : curares potentialisés).",
+        "Thrombose : prophylaxie dès l'alitement. Aucune technique n'a prouvé qu'elle réduisait la récidive ; épargne morphinique et anesthésie IV raisonnables pour une chirurgie carcinologique majeure.",
+      ].filter(Boolean);
+      add({
+        id: "oncology",
+        level: anthra.length || bleo.length || detailOf("chemotherapy", "bleomycin") === "yes" ? "medium" : "info",
+        title: "Patient oncologique : toxicités et précautions",
+        detail: lines.join(" "),
+        why: [has(cond, "cancer") ? "cancer évolutif" : "", has(cond, "chemotherapy") ? "chimiothérapie récente" : "", ...oncoDrugs].filter(Boolean).join(", "),
+        source: CH(45, "patient oncologique, tableau 45.1"),
+      });
+    }
+  }
+
   // --- Substance use ------------------------------------------------------------------
   const sub = c.substances;
   if (sub.alcoholDependence) add({ id: "alcohol", level: "high", title: "Dépendance à l'alcool", detail: "Prévenir et surveiller le sevrage (échelle adaptée), vitamine B1.", why: "Assuétudes : dépendance à l'alcool" });

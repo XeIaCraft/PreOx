@@ -124,5 +124,17 @@ export const DEFAULT_CONDITION_DETAILS: Record<string, ConditionDetail[]> = {
   anaesthetic_allergy: [text("drug", "Produit en cause"), choice("workup", "Bilan allergologique", [o("done", "Fait"), o("none", "Non fait", { attention: high("Réaction per-anesthésique sans bilan : bilan allergologique avant une chirurgie programmée ; éviter tous les produits alors administrés.") })])],
   kidney_transplant: [date("when", "Date de la greffe")],
   transplant: [text("organ", "Organe et date")],
-  cancer: [text("treatment", "Traitement en cours", "Chimiothérapie, radiothérapie, immunothérapie, hormonothérapie…")],
+  cancer: [
+    text("treatment", "Traitement en cours", "Chimiothérapie, radiothérapie, immunothérapie, hormonothérapie…"),
+    choice("radiotherapy", "Radiothérapie", [o("none", "Aucune"), o("neck", "Cervicale ou ORL", { attention: high("Cou irradié : sclérose cervicale, trismus, ostéoradionécrose — intubation difficile possible (manuel, chap. 45).") }), o("chest", "Médiastinale ou thoracique", { attention: medium("Médiastin irradié : péricardite, poumon radique, toxicité cardiaque des anthracyclines majorée (manuel, chap. 45).") }), o("other", "Autre site")]),
+  ],
+  chemotherapy: [
+    choice("anthracycline", "Anthracyclines (doxorubicine…)", [o("no", "Non"), o("yes", "Oui", { attention: medium("Cardiotoxicité (aiguë à retardée) : ECG et échocardiographie, surtout si doses élevées, médiastin irradié, âge < 15 ou > 65 ans (manuel, chap. 45).") })]),
+    choice("bleomycin", "Bléomycine", [o("no", "Non"), o("yes", "Oui", { attention: high("Fibrose pulmonaire aggravée par l'oxygène : FiO₂ la plus basse possible pour SpO₂ 88–92 %, apports liquidiens prudents (manuel, chap. 45).") })]),
+    choice("neurotoxic", "Neurotoxique (platine, vincristine, taxane)", [o("no", "Non"), o("yes", "Oui", { attention: medium("Neuropathie périphérique à documenter avant une ALR ; cisplatine : fonction rénale, hypomagnésémie (manuel, chap. 45).") })]),
+  ],
+  burns: [
+    num("tbsa", "Surface brûlée (2e et 3e degrés)", "%", "Règle des 9 ; la paume de la main du patient ≈ 1 %."),
+    choice("inhalation", "Inhalation de fumées", [o("no", "Non"), o("yes", "Oui", { qualifier: "severe", attention: high("Inhalation de fumées : intubation précoce avant l'œdème (sonde plus petite), bronchoscopie ; CO (O₂ 100 %) et cyanures (hydroxocobalamine) (manuel, chap. 41).") })]),
+  ],
 };

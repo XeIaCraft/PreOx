@@ -1124,4 +1124,89 @@ const OBSTETRICS_PAEDIATRICS: Proposed[] = [
   }),
 ];
 
-export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS, ...SPECIALITIES, ...LABS, ...OBSTETRICS_PAEDIATRICS];
+// ---------------------------------------------------------------------------
+// Chapitres 41 à 45 — urgences, patient âgé, obésité, SAOS, oncologie
+// ---------------------------------------------------------------------------
+
+const CH41 = "Chapitre 41, Urgences et anesthésie, 4e édition (Elsevier Masson)";
+const CH44 = "Chapitre 44, Obésité et syndrome d'apnées du sommeil (SAOS), 4e édition (Elsevier Masson)";
+const CH45 = "Chapitre 45, Patient oncologique, 4e édition (Elsevier Masson)";
+
+const EMERGENCY_ONCOLOGY: Proposed[] = [
+  m({
+    title: "Chirurgie urgente : induction en séquence rapide",
+    statement: "L'induction à séquence rapide est indiquée en cas d'anesthésie en urgence, d'occlusion, de reflux important ou de grossesse au-delà de 15 SA : le jeûne n'exclut pas le risque d'inhalation (vidange ralentie par le traumatisme ou la douleur).",
+    conditions: [{ kind: "surgery", attribute: "urgency", in: ["urgent"] }],
+    action: { type: "requirement", text: "Induction en séquence rapide : préoxygénation 3–5 min, succinylcholine 1–1,5 mg/kg (ou rocuronium 1,2 mg/kg), sonde gastrique après l'intubation.", blocking: false, target: "anaesthesia" },
+    quote: "Indication : Anesthésie en urgence. Occlusion intestinale, douleurs abdominales. Reflux gastro-œsophagien important, hernie hiatale symptomatique. Grossesse au-delà de 15 SA.",
+    question: "When is rapid sequence induction indicated, and is cricoid pressure still recommended, according to current European guidance (ESAIC, DAS, IRIS trial)?",
+    chapterTitle: CH41,
+    explanations: ["La manœuvre de Sellick est facultative : l'essai IRIS n'a pas montré de bénéfice."],
+  }),
+  m({
+    title: "Polytraumatisé qui saigne : acide tranexamique précoce",
+    statement: "La réanimation hémostatique comprend l'administration précoce d'acide tranexamique (1 g en 10 min, puis 1 g en 8 h), de produits sanguins en ratio 1:1:1 et éventuellement de 2 g de fibrinogène.",
+    conditions: [history("major_trauma", "Polytraumatisme")],
+    action: { type: "requirement", text: "Acide tranexamique 1 g en 10 min puis 1 g en 8 h (dans les 3 h du traumatisme) ; CGR:PFC:plaquettes 1:1:1 ; hypotension permissive (PAS 80) sauf traumatisme crânien.", blocking: false, target: "anaesthesia" },
+    quote: "Réanimation hémostatique : administration précoce d'acide tranexamique (1 g en 10 min, puis 1 g en 8 h), de produits sanguins (1 concentré de globules rouges pour 1 plasma frais congelé pour 1 concentré standard de plaquettes), éventuellement 2 g de fibrinogène.",
+    question: "What do the European guideline on management of major bleeding and coagulopathy following trauma (6th edition, 2023) recommend for tranexamic acid timing, transfusion ratios, fibrinogen and permissive hypotension?",
+    chapterTitle: CH41,
+  }),
+  m({
+    title: "Grand brûlé : succinylcholine contre-indiquée",
+    statement: "L'administration de succinylcholine 48 h après des brûlures majeures est contre-indiquée en raison du risque d'hyperkaliémie létale.",
+    conditions: [history("burns", "Brûlures étendues")],
+    action: { type: "info", text: "Pas de succinylcholine après 48 h (hyperkaliémie létale) : rocuronium 1,2 mg/kg pour une séquence rapide ; besoins en curares non dépolarisants augmentés.", target: "anaesthesia" },
+    quote: "L'administration de succinylcholine 48 h après des brûlures majeures est contre-indiquée en raison du risque d'hyperkaliémie létale.",
+    question: "From how many hours after a major burn injury and for how long is succinylcholine contraindicated, according to current references?",
+    chapterTitle: CH41,
+    explanations: ["Délai discuté : de nombreuses références retiennent 24 h."],
+  }),
+  m({
+    title: "Obésité : préoxygénation proclive et poids de calcul",
+    statement: "Chez l'obèse, préoxygénation en position proclive avec PEP pendant 5 min ; doses selon le poids corrigé (propofol), réel (succinylcholine, atracurium) ou idéal (rocuronium, vécuronium).",
+    conditions: [{ kind: "value", value: "bmi", op: ">=", threshold: 40 }],
+    action: { type: "requirement", text: "Position en rampe, préoxygénation proclive avec PEP 5 min, matériel d'intubation difficile ; doses au poids corrigé, réel ou idéal selon le médicament.", blocking: false, target: "anaesthesia" },
+    quote: "Préoxygénation : en position proclive ou semi-assise avec application d'une PEP pendant 5 min (éventuellement aide inspiratoire). […] utiliser de préférence le propofol avec une dose d'induction selon le poids corrigé. Curarisation : succinylcholine : dose de 1 mg/kg en fonction du poids réel, sans dépasser une dose de 150 mg ; vécuronium, rocuronium : la dose administrée est calculée en fonction du poids idéal théorique.",
+    question: "What do current guidelines (SOBA, Association of Anaesthetists 2015 peri-operative management of the obese surgical patient) recommend for preoxygenation, positioning and weight scalars of anaesthetic drugs in morbid obesity?",
+    chapterTitle: CH44,
+  }),
+  m({
+    title: "SAOS : pas de benzodiazépine en prémédication",
+    statement: "Chez le patient atteint de SAOS, éviter les benzodiazépines (l'effet sédatif augmente le risque d'apnée) et privilégier l'ALR.",
+    conditions: [history("osa", "SAOS")],
+    action: { type: "info", text: "Pas de benzodiazépine en prémédication ; ALR si possible ; agents de courte durée ; PPC du patient au réveil.", target: "anaesthesia" },
+    quote: "Éviter les benzodiazépines ; l'effet sédatif augmente le risque d'apnée. L'anesthésie locorégionale doit être privilégiée chaque fois qu'elle est possible.",
+    question: "What do the SASM (2016, 2018) and ESAIC guidelines recommend about sedative premedication, anaesthetic technique and postoperative monitoring in obstructive sleep apnoea?",
+    chapterTitle: CH44,
+  }),
+  m({
+    title: "Anthracyclines : fonction cardiaque avant l'intervention",
+    statement: "La toxicité cardiaque des anthracyclines peut être aiguë, subaiguë, chronique ou retardée ; elle est favorisée par les fortes doses, l'irradiation du médiastin, une cardiopathie préexistante, l'âge et la dénutrition.",
+    conditions: [drug("L01DB")],
+    action: { type: "exam", exam: "ECG et échocardiographie (FEVG)", target: "anaesthesia" },
+    quote: "La toxicité cardiaque, caractéristique des anthracyclines, peut être aiguë (quelques heures : trouble de la repolarisation, microvoltage, allongement du QT, spasme coronarien), subaiguë (quelques jours : péricardite), chronique (quelques semaines : insuffisance cardiaque congestive) ou retardée (quelques mois : arythmies, trouble de la conduction, insuffisance cardiaque congestive).",
+    question: "Which patients previously treated with anthracyclines need preoperative echocardiography, according to the ESC 2022 cardio-oncology and non-cardiac surgery guidelines?",
+    chapterTitle: CH45,
+  }),
+  m({
+    title: "Bléomycine : FiO₂ minimale",
+    statement: "Les complications pulmonaires de la bléomycine (alvéolite fibrosante) évoluent plus rapidement lors d'exposition à l'oxygène.",
+    conditions: [drug("L01DC01")],
+    action: { type: "info", text: "FiO₂ la plus basse possible (SpO₂ 88–92 %) pendant et après l'anesthésie ; apports liquidiens prudents.", target: "anaesthesia" },
+    quote: "Les complications pulmonaires induites par la bléomycine sont provoquées par la production de radicaux libres et se manifestent par une alvéolite fibrosante aiguë, qui évolue vers une forme chronique. Cette dernière est plus rapide lors d'exposition à l'oxygène.",
+    question: "What perioperative oxygen strategy is recommended for patients previously exposed to bleomycin, and for how long after treatment does the risk persist?",
+    chapterTitle: CH45,
+  }),
+  m({
+    title: "Masse médiastinale : bilan avant l'anesthésie",
+    statement: "Le bilan préopératoire d'une masse médiastinale inclut un examen cardiorespiratoire complet avec scanner thoracique, des explorations fonctionnelles respiratoires et une échocardiographie.",
+    conditions: [history("mediastinal_mass", "Masse médiastinale")],
+    action: { type: "exam", exam: "Scanner thoracique, EFR et échocardiographie", target: "anaesthesia" },
+    quote: "Le bilan préopératoire d'une masse médiastinale inclut un examen cardiorespiratoire complet avec scanner thoracique, des explorations fonctionnelles respiratoires et une échocardiographie. La stratégie anesthésique comprend une intubation vigile au fibroscope ou en anesthésie générale avec maintien de la ventilation spontanée.",
+    question: "What preoperative assessment and airway strategy are recommended for patients with an anterior mediastinal mass (current reviews and guidance)?",
+    chapterTitle: CH45,
+  }),
+];
+
+export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS, ...SPECIALITIES, ...LABS, ...OBSTETRICS_PAEDIATRICS, ...EMERGENCY_ONCOLOGY];

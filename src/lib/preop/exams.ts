@@ -98,7 +98,7 @@ export const AAOHNS_2013: ExamSource = { label: "AAO-HNS 2013, voix et chirurgie
 export const MANUAL_2020: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 15 (tableau 15.1) — ouvrage de référence", short: "Manuel 2020", level: "book" };
 export const MANUAL_2020_POSITION: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 19 (position assise) — ouvrage de référence", short: "Manuel 2020", level: "book" };
 export const MANUAL_2020_NEURO: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 29 (maladies neuromusculaires) — ouvrage de référence", short: "Manuel 2020", level: "book" };
-export const MANUAL_2020_SPECIALTIES: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitres 36 à 40 (obstétrique, pédiatrie, orthopédie) — ouvrage de référence", short: "Manuel 2020", level: "book" };
+export const MANUAL_2020_SPECIALTIES: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitres 36 à 45 (obstétrique, pédiatrie, orthopédie, urgences, oncologie) — ouvrage de référence", short: "Manuel 2020", level: "book" };
 
 /**
  * Work-up usual for a family of procedures, each item tied to the guideline
@@ -429,6 +429,22 @@ export function recommendExams({ consultation: c, asa, mets, surgeryProfile, sto
     add("group", "recommended", "correction de scoliose : pertes sanguines importantes", MANUAL_2020_SPECIALTIES);
   }
   if (has(cond, "osteogenesis_imperfecta")) add("haemostasis", "consider", "ostéogenèse imparfaite : fonction plaquettaire souvent diminuée", MANUAL_2020_SPECIALTIES);
+  if (has(cond, "mediastinal_mass")) {
+    add("echo", "recommended", "masse médiastinale : compression du cœur ou des gros vaisseaux (avec scanner thoracique)", MANUAL_2020_SPECIALTIES);
+    add("pft", "consider", "masse médiastinale : EFR (compression trachéobronchique), avec scanner thoracique", MANUAL_2020_SPECIALTIES);
+  }
+  const onAtc = (prefix: string) => c.treatments.some((t) => t.atc.startsWith(prefix));
+  if (onAtc("L01DB") || onAtc("L01XC03") || onAtc("L01FD01") || cond.chemotherapy?.details?.anthracycline === "yes") {
+    add("echo", "recommended", "anthracycline ou trastuzumab : fonction ventriculaire gauche", MANUAL_2020_SPECIALTIES);
+    add("ecg", "recommended", "anthracycline : QT, troubles de conduction", MANUAL_2020_SPECIALTIES);
+  }
+  if (onAtc("L01DC01") || cond.chemotherapy?.details?.bleomycin === "yes") add("pft", "consider", "bléomycine : fibrose pulmonaire (DLCO)", MANUAL_2020_SPECIALTIES);
+  if (has(cond, "chemotherapy")) add("fbc", "recommended", "chimiothérapie récente : aplasie (neutropénie, thrombopénie) vers J7 d'une cure", MANUAL_2020_SPECIALTIES);
+  if (has(cond, "major_trauma") || has(cond, "burns")) {
+    add("group", "recommended", has(cond, "burns") ? "brûlé : excisions hémorragiques" : "polytraumatisé : transfusion probable", MANUAL_2020_SPECIALTIES);
+    add("haemostasis", "recommended", has(cond, "burns") ? "brûlé : coagulopathie de consommation" : "polytraumatisé : coagulopathie (fibrinogène, TP ; ROTEM si disponible)", MANUAL_2020_SPECIALTIES);
+    add("abg", "recommended", "gazométrie : lactates, pH" + (has(cond, "burns") ? ", HbCO si inhalation" : ""), MANUAL_2020_SPECIALTIES);
+  }
   if (has(cond, "osa") !== true && stopBang !== undefined && stopBang >= 5)
     add("sleep", "consider", `STOP-BANG ${stopBang} : SAOS probable non diagnostiqué — examen du sommeil si la chirurgie peut attendre, sinon précautions comme pour un SAOS`, SASM_2016);
 

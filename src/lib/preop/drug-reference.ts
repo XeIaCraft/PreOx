@@ -67,6 +67,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     chapter: "chap. 6",
     doses: [
       pk("Induction (adulte)", 2, 3),
+      pk("Induction de l'obèse, poids corrigé (chap. 44)", 2, 2.5, "mg", { basis: "adjusted", note: "Entretien au poids réel." }),
       pk("Induction (personne âgée)", 1, 2),
       pk("Induction (enfant)", 2.5, 5),
       rt("Entretien", 3, 12, "mg", "/kg/h"),
@@ -233,7 +234,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Suxaméthonium (succinylcholine)",
     words: ["suxamethonium", "succinylcholine", "celocurine", "lysthenon"],
     chapter: "chap. 8",
-    doses: [pk("Intubation", 1, 1.5), pk("Intubation de l'enfant (chap. 37)", 1.5, 2), pk("Laryngospasme de l'enfant qui désature (chap. 37)", 0.3, 0.3)],
+    doses: [pk("Intubation", 1, 1.5, "mg", { note: "Poids réel, sans dépasser 150 mg chez l'obèse (chap. 44)." }), pk("Intubation de l'enfant (chap. 37)", 1.5, 2), pk("Laryngospasme de l'enfant qui désature (chap. 37)", 0.3, 0.3)],
     cautions: [
       { conditions: ["malignant_hyperthermia"], level: "contraindicated", text: "hyperthermie maligne" },
       { conditions: ["osteogenesis_imperfecta"], level: "relative", text: "ostéogenèse imparfaite : les fasciculations peuvent provoquer des fractures (chap. 40)" },
@@ -252,7 +253,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Rocuronium",
     words: ["rocuronium", "esmeron"],
     chapter: "chap. 8",
-    doses: [pk("Intubation", 0.6, 1.2), pk("Séquence rapide (contre-indication à la succinylcholine)", 0.9, 1.2)],
+    doses: [pk("Intubation", 0.6, 1.2, "mg", { basis: "ideal", note: "Poids idéal chez l'obèse (chap. 44)." }), pk("Séquence rapide (contre-indication à la succinylcholine)", 0.9, 1.2, "mg", { basis: "ideal", note: "1,2 mg/kg : intubation après 90 s ; sugammadex 16 mg/kg prêt (chap. 41)." })],
     cautions: [
       { conditions: ["myasthenia", "hyperthyroidism", "hypothyroidism", "hyperparathyroidism", "hyperaldosteronism", "adrenal_insufficiency", "lambert_eaton"], level: "adapt", text: "réduire les doses (myasthénie, dysthyroïdie, dysparathyroïdie, hyperaldostéronisme, insuffisance surrénalienne) ; monitorage" },
       { atc: ["N03AB", "N03AF", "R03DA"], level: "adapt", text: "phénytoïne, carbamazépine ou théophylline au long cours : bloc moins intense" },
@@ -263,7 +264,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Vécuronium",
     words: ["vecuronium", "norcuron"],
     chapter: "chap. 8",
-    doses: [pk("Intubation", 0.1, 0.2)],
+    doses: [pk("Intubation", 0.1, 0.2, "mg", { basis: "ideal", note: "Poids idéal chez l'obèse (chap. 44)." })],
     cautions: [{ conditions: ["myasthenia", "hyperthyroidism", "hypothyroidism", "hyperparathyroidism"], level: "adapt", text: "réduire les doses ; monitorage" }],
   },
   {
@@ -342,7 +343,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Adrénaline",
     words: ["adrenaline", "epinephrine"],
     chapter: "chap. 10",
-    doses: [rt("État de choc", 0.01, 0.1, "µg", "/kg/min"), fx("Réanimation cardiopulmonaire", 1, 1)],
+    doses: [rt("État de choc", 0.01, 0.1, "µg", "/kg/min"), fx("Réanimation cardiopulmonaire (toutes les 3–5 min)", 1, 1, "mg", { note: "Voie intratrachéale : 3 mg puis 10 ml de NaCl (chap. 41)." }), pk("Arrêt cardiaque de l'enfant (IV ou IO)", 0.01, 0.01, "mg", { note: "Toutes les 3–5 min." })],
     cautions: [],
   },
   {
@@ -571,6 +572,10 @@ export const DRUG_REFERENCES: DrugReference[] = [
     maxDose: { perKg: 12, totalMg: 600, withAdrenalineTotalMg: 650 },
   },
 
+  // --- Chapitre 41 : urgences et réanimation ------------------------------------------------------
+  { name: "Amiodarone", onlyInPlan: true, words: ["amiodarone", "cordarone"], chapter: "chap. 41", doses: [fx("FV ou TV sans pouls, après le 3e choc", 300, 300, "mg", { note: "Puis 150 mg après le 5e choc." }), pk("Enfant (IV ou IO, jusqu'à 2 fois)", 5, 5)], cautions: [{ conditions: ["long_qt"], level: "relative", text: "allongement du QT (hors arrêt cardiaque)" }] },
+  { name: "Hydroxocobalamine", onlyInPlan: true, words: ["hydroxocobalamine", "cyanokit"], chapter: "chap. 41", doses: [pk("Intoxication aux cyanures (fumées d'incendie), en 15 min", 70, 70, "mg", { note: "Adulte : 5 g, à répéter une fois. Le manuel indique 100 mg : dose insuffisante (RCP : 5 g)." })], cautions: [] },
+  { name: "Thiamine", onlyInPlan: true, words: ["thiamine", "vitamine b1", "benerva"], chapter: "chap. 41", doses: [fx("Coma, alcoolisme, dénutrition (avant le glucose)", 100, 100)], cautions: [] },
   // --- Chapitres 36 à 40 : obstétrique, pédiatrie, ophtalmologie, ORL, orthopédie ---------------------
   {
     name: "Ocytocine",
