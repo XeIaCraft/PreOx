@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/toast";
 import { FieldLabel, Panel, TextArea } from "@/components/preop/ui";
 import { evaluateConsultation } from "@/components/preop/consultation";
 import { useCatalogs } from "@/components/preop/use-catalogs";
-import { buildIsbar, isbarText } from "@/lib/preop/isbar";
+import { buildIsbar, isbarText, suggestedCallCriteria } from "@/lib/preop/isbar";
 import type { Dossier, Transmission } from "@/lib/preop/dossier";
 import type { Rule } from "@/lib/preop/rules/types";
 
@@ -64,7 +64,20 @@ export function HandoverView({ d, onChange, rules }: { d: Dossier; onChange: (d:
           <ChipGroup size="sm" options={DESTINATIONS} value={t.destination || null} onChange={(v) => set({ destination: v ?? "" })} allowClear />
         </div>
         <TextArea label="Prescriptions post-opératoires" rows={4} value={t.prescriptions} onChange={(prescriptions) => set({ prescriptions })} placeholder={"Analgésie : …\nNVPO : …\nThromboprophylaxie : …\nSurveillance : …"} />
-        <TextArea label="Critères d'appel" value={t.callCriteria} onChange={(callCriteria) => set({ callCriteria })} placeholder="ex. PAS < 90, SpO₂ < 92 %, saignement du redon > 200 mL/h" />
+        <div className="space-y-1">
+          <TextArea label="Critères d'appel" value={t.callCriteria} onChange={(callCriteria) => set({ callCriteria })} placeholder="ex. PAS < 90, SpO₂ < 92 %, saignement du redon > 200 mL/h" />
+          <button
+            type="button"
+            className="text-xs font-medium text-primary hover:underline"
+            title="Critères de la salle de réveil et du service (Manuel pratique d'anesthésie 2020, chap. 24), à adapter"
+            onClick={() => {
+              const lines = suggestedCallCriteria(d).filter((l) => !t.callCriteria.includes(l));
+              if (lines.length) set({ callCriteria: [t.callCriteria.trim(), ...lines].filter(Boolean).join("\n") });
+            }}
+          >
+            Proposer des critères (manuel, chap. 24)
+          </button>
+        </div>
         <label className="block space-y-1">
           <FieldLabel>Contact</FieldLabel>
           <Input defaultValue={t.contact} onChange={(e) => set({ contact: e.target.value })} placeholder="ex. anesthésiste de garde, bip 1234" />

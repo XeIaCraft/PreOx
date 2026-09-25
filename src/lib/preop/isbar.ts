@@ -134,6 +134,21 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
   return [I, S, B, A, R];
 }
 
+/** Call criteria proposed for the ward or the recovery room (Manuel pratique d'anesthésie 2020, chap. 24). */
+export function suggestedCallCriteria(d: Dossier): string[] {
+  const w = d.consultation.patient.weightKg;
+  const techs = new Set([...d.plan.techniques, ...d.consultation.techniques]);
+  return [
+    "saignement des drains ou du pansement > 200 ml/h",
+    `diurèse < 0,5 ml/kg/h${w ? ` (< ${Math.round(w * 0.5)} ml/h)` : ""} ou globe vésical (agitation)`,
+    "SpO₂ < 90 %, fréquence respiratoire < 10/min ou somnolence",
+    "PA systolique < 90 mmHg ou variation > 20 % par rapport à la valeur préopératoire",
+    techs.has("neuraxial") ? "bloc moteur non levé 6 h après la rachianesthésie" : "",
+    techs.has("deep_block") ? "bloc moteur non levé 24 h après le bloc plexique ou tronculaire" : "",
+    "EVA > 3 malgré le traitement, nausées ou vomissements persistants",
+  ].filter(Boolean);
+}
+
 export function isbarText(d: Dossier, sections: IsbarSection[]): string {
   const head = `Transmission — ${d.initials}${d.consultation.surgery.name ? ` — ${d.consultation.surgery.name}` : ""}`;
   return [head, ...sections.map((s) => `${s.key} — ${s.title}\n${s.lines.map((l) => `• ${l}`).join("\n")}`)].join("\n\n");

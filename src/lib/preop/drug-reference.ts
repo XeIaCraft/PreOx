@@ -17,7 +17,8 @@ export interface ReferenceDose {
   label: string;
   min: number;
   max: number;
-  unit: DoseUnit;
+  /** « ng » only for a rate (AIVOC target), never taken into the plan. */
+  unit: DoseUnit | "ng";
   /** per_kg: per kilo (of `basis`), fixed: total dose; rate: shown as it is (perfusion). */
   mode: "per_kg" | "fixed" | "rate";
   /** For a rate: « /kg/h », « /kg/min », « /h »… */
@@ -53,7 +54,7 @@ export interface DrugReference {
 
 const pk = (label: string, min: number, max: number, unit: DoseUnit = "mg", extra: Partial<ReferenceDose> = {}): ReferenceDose => ({ label, min, max, unit, mode: "per_kg", ...extra });
 const fx = (label: string, min: number, max: number, unit: DoseUnit = "mg", extra: Partial<ReferenceDose> = {}): ReferenceDose => ({ label, min, max, unit, mode: "fixed", ...extra });
-const rt = (label: string, min: number, max: number, unit: DoseUnit, per: string, extra: Partial<ReferenceDose> = {}): ReferenceDose => ({ label, min, max, unit, mode: "rate", per, ...extra });
+const rt = (label: string, min: number, max: number, unit: DoseUnit | "ng", per: string, extra: Partial<ReferenceDose> = {}): ReferenceDose => ({ label, min, max, unit, mode: "rate", per, ...extra });
 
 const HYPERKALAEMIA_RISK = ["hemiplegia", "spinal_cord_injury", "neuromuscular", "myotonic_dystrophy", "duchenne", "als", "sma", "burns", "bedridden", "dialysis"];
 const MAOI = ["N06AF", "N06AG", "N04BD"];
@@ -70,6 +71,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
       pk("Induction (enfant)", 2.5, 5),
       rt("Entretien", 3, 12, "mg", "/kg/h"),
       rt("Sédation", 2, 6, "mg", "/kg/h", { note: "Ne pas dépasser 4 mg/kg/h plus de 48 h (syndrome de perfusion du propofol)." }),
+      rt("AIVOC : cible d'induction (chap. 22)", 3, 6, "µg", "/ml", { note: "Intubation sans curare 4–8 µg/ml ; entretien 2–8 µg/ml ; réveil vers 1,2–1,5 µg/ml (0,8–1 chez la personne âgée). Tableau 22.1." }),
     ],
     cautions: [
       { conditions: ["heart_failure", "dilated_cardiomyopathy", "aortic_stenosis"], level: "adapt", text: "cardiopathie : hypotension de 20–30 % à l'induction — bolus de 30–40 mg toutes les 10 s jusqu'à la perte de conscience" },
@@ -140,14 +142,14 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Fentanyl",
     words: ["fentanyl", "sintenyl", "durogesic"],
     chapter: "chap. 7",
-    doses: [pk("Induction", 2, 5, "µg"), rt("Entretien", 0.5, 5, "µg", "/kg/h"), pk("Bolus", 0.5, 1.5, "µg"), fx("PCA : bolus toutes les 5–10 min", 10, 20, "µg", { note: "Maximum 400 µg / 4 h." }), fx("Intrathécal (tableau 13.5)", 10, 25, "µg")],
+    doses: [pk("Induction", 2, 5, "µg"), rt("Entretien", 0.5, 5, "µg", "/kg/h"), pk("Bolus", 0.5, 1.5, "µg"), fx("PCA : bolus toutes les 5–10 min", 10, 20, "µg", { note: "Maximum 400 µg / 4 h." }), fx("Intrathécal (tableau 13.5)", 10, 25, "µg"), rt("AIVOC : cible (chap. 22)", 1, 5, "ng", "/ml", { note: "Induction 1–2 ng/ml ; intubation et entretien 2–5 ng/ml." })],
     cautions: [{ atc: ["J01FA", "J02AC", "J05A"], level: "adapt", text: "inhibiteur du CYP3A4 : effet prolongé" }],
   },
   {
     name: "Sufentanil",
     words: ["sufentanil", "sufenta"],
     chapter: "chap. 7",
-    doses: [pk("Induction", 0.2, 0.6, "µg"), rt("Entretien", 0.5, 1.5, "µg", "/kg/h"), pk("Bolus", 0.1, 0.25, "µg"), fx("Intrathécal (tableau 13.5)", 5, 10, "µg")],
+    doses: [pk("Induction", 0.2, 0.6, "µg"), rt("Entretien", 0.5, 1.5, "µg", "/kg/h"), pk("Bolus", 0.1, 0.25, "µg"), fx("Intrathécal (tableau 13.5)", 5, 10, "µg"), rt("AIVOC : cible (chap. 22)", 0.1, 0.6, "ng", "/ml", { note: "Induction 0,1–0,2 ng/ml ; intubation sans curare 0,4–0,6 ; entretien 0,2–0,6." })],
     cautions: [{ atc: ["J01FA", "J02AC", "J05A"], level: "adapt", text: "inhibiteur du CYP3A4 : effet prolongé" }],
   },
   {
@@ -161,7 +163,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Rémifentanil",
     words: ["remifentanil", "ultiva"],
     chapter: "chap. 7",
-    doses: [pk("Induction", 0.2, 1, "µg"), rt("Entretien", 0.1, 0.5, "µg", "/kg/min"), rt("Ventilation spontanée", 0.03, 0.05, "µg", "/kg/min")],
+    doses: [pk("Induction", 0.2, 1, "µg"), rt("Entretien", 0.1, 0.5, "µg", "/kg/min"), rt("Ventilation spontanée", 0.03, 0.05, "µg", "/kg/min"), rt("AIVOC : cible (chap. 22)", 0.5, 8, "ng", "/ml", { note: "Induction 0,5–1,5 ng/ml ; intubation sans curare 3–6 ; entretien 4–8, voire 15 en chirurgie cardiaque. Voie dédiée avec valve antireflux." })],
     cautions: [],
   },
   {
@@ -371,11 +373,41 @@ export const DRUG_REFERENCES: DrugReference[] = [
   },
 
   // --- Adjuvants d'épargne morphinique (tableau 7.5) ------------------------------------------------
-  { name: "Dexaméthasone", words: ["dexamethasone"], chapter: "chap. 7 et 12", doses: [pk("Début d'intervention (IV lent)", 0.1, 0.2, "mg", { note: "Prolonge aussi un bloc périphérique d'environ 8 h (chap. 12)." }), fx("Périnerveuse (dose plafond)", 4, 4)], cautions: [{ conditions: ["diabetes_insulin", "diabetes_oral"], level: "adapt", text: "diabète : élévation de la glycémie" }] },
+  { name: "Dexaméthasone", words: ["dexamethasone"], chapter: "chap. 7, 12 et 23", doses: [pk("Début d'intervention (IV lent)", 0.1, 0.2, "mg", { note: "Prolonge aussi un bloc périphérique d'environ 8 h (chap. 12)." }), fx("Prévention des NVPO, à l'induction", 4, 8), fx("Périnerveuse (dose plafond)", 4, 4)], cautions: [{ conditions: ["diabetes_insulin", "diabetes_oral"], level: "adapt", text: "diabète : élévation de la glycémie" }] },
   { name: "Kétorolac", words: ["ketorolac", "taradyl"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention", 30, 60)], cautions: [{ conditions: ["ckd", "dialysis", "peptic_ulcer", "gi_bleeding"], level: "contraindicated", text: "insuffisance rénale, ulcère ou hémorragie digestive" }] },
   { name: "Magnésium", words: ["magnesium"], chapter: "chap. 7, tableau 7.5", doses: [pk("Sur 15 min en fin d'intervention", 40, 50)], cautions: [{ conditions: ["myasthenia", "neuromuscular"], level: "relative", text: "potentialise les curares" }] },
   { name: "Lidocaïne IV", words: ["lidocaine iv", "xylocaine iv", "lidocaine intraveineuse"], chapter: "chap. 7, tableau 7.5", doses: [pk("Bolus", 1.5, 1.5), rt("Perfusion", 2, 2, "mg", "/kg/h")], cautions: [{ conditions: ["av_block"], level: "relative", text: "troubles conductifs" }] },
-  { name: "Paracétamol", words: ["paracetamol", "perfusalgan", "dafalgan"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention, sur 15 min", 1, 1, "g")], cautions: [{ conditions: ["cirrhosis"], level: "adapt", text: "insuffisance hépatique : réduire" }] },
+  { name: "Paracétamol", words: ["paracetamol", "perfusalgan", "dafalgan"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention, sur 15 min", 1, 1, "g")], cautions: [{ conditions: ["cirrhosis"], level: "adapt", text: "insuffisance hépatique : réduire (contre-indiqué si sévère, chap. 25)" }] },
+
+  // --- Chapitres 23 et 25 : NVPO, analgésie, hyperthermie maligne -------------------------------
+  { name: "Ondansétron", words: ["ondansetron", "zofran", "zophren"], chapter: "chap. 23", doses: [fx("Prévention des NVPO, 30 min avant la fin", 4, 4, "mg", { note: "50–150 µg/kg, maximum 8 mg ; traitement : 4 mg 3×/j." })], cautions: [{ conditions: ["long_qt"], level: "relative", text: "allongement du QT" }] },
+  {
+    name: "Dropéridol",
+    words: ["droperidol", "droleptan", "dehydrobenzperidol"],
+    chapter: "chap. 23",
+    doses: [fx("Prévention des NVPO, 30 min avant la fin (si PAS > 100 mmHg)", 0.5, 1.25, "mg", { note: "10–15 µg/kg ; effets extrapyramidaux à partir de 50–75 µg/kg." })],
+    cautions: [
+      { conditions: ["long_qt"], level: "relative", text: "allongement du QT" },
+      { conditions: ["parkinson"], level: "contraindicated", text: "maladie de Parkinson : antidopaminergique" },
+    ],
+  },
+  {
+    name: "Métamizole",
+    words: ["metamizole", "novalgine", "minalgine", "dipyrone"],
+    chapter: "chap. 25",
+    doses: [fx("Analgésie, jusqu'à 4×/j", 0.5, 1, "g", { note: "Pas plus de 2 semaines (agranulocytose)." })],
+    cautions: [
+      { conditions: ["porphyria", "g6pd"], level: "contraindicated", text: "porphyrie, déficit en G6PD" },
+      { conditions: ["chemotherapy", "leukemia_lymphoma"], level: "relative", text: "leucopénie possible (agranulocytose)" },
+    ],
+  },
+  {
+    name: "Dantrolène",
+    words: ["dantrolene", "dantrium", "ryanodex"],
+    chapter: "chap. 23",
+    doses: [pk("Crise d'hyperthermie maligne, bolus répétés", 2.5, 2.5, "mg", { note: "Jusqu'à 10 mg/kg, puis 1 mg/kg toutes les 6 h pendant 24–48 h. Flacon de 20 mg à diluer dans 60 ml d'eau stérile (compter 10 min)." })],
+    cautions: [{ atc: ["C08DA", "C08DB"], level: "contraindicated", text: "inhibiteur calcique (vérapamil, diltiazem) : hyperkaliémie aggravée avec le dantrolène" }],
+  },
 
   // --- Chapitre 11 : hypotenseurs ---------------------------------------------------------------
   {

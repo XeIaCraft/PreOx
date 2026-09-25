@@ -261,7 +261,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
     id: "malignant_hyperthermia",
     label: "Hyperthermie maligne (patient ou famille)",
     system: "anaes",
-    keywords: ["HM"],
+    keywords: ["HM", "hyperthermie maligne"],
     attention: { level: "high", text: "Anesthésie sans halogénés ni succinylcholine ; machine préparée (purge ou filtres à charbon actif) ; dantrolène disponible.", material: ["Dantrolène disponible en salle", "Machine purgée / filtres à charbon actif"] },
   }),
   c({ id: "anaesthetic_allergy", label: "Réaction allergique per-anesthésique", system: "anaes", keywords: ["anaphylaxie", "choc anaphylactique"], attention: { level: "high", text: "Récupérer le bilan allergologique ; éviter les produits en cause ; sans bilan, le demander avant une chirurgie programmée." } }),

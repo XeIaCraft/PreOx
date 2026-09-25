@@ -209,7 +209,19 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
       why: [(p.age ?? 0) >= 75 ? `âge ${p.age} ans (≥ 75)` : "", (c.frailty ?? 0) >= 5 ? `fragilité CFS ${c.frailty} (≥ 5)` : ""].filter(Boolean).join(" ; "),
       source: "ESAIC 2023, delirium postopératoire",
     });
-  if (r.apfel.level === "high") add({ id: "ponv", level: "medium", title: "Risque élevé de NVPO (Apfel)", detail: "Prophylaxie multimodale, épargne morphinique.", why: `Score d'Apfel ${r.apfel.value}/4`, source: "Apfel 1999 ; consensus NVPO 2020 (Gan)" });
+  {
+    // Apfel: 0–4 factors ≈ 10, 20, 40, 60, 80 % (manual, chap. 23); some surgeries add their own risk.
+    const ponvSurgery = /strabism|amygdal|oreille|tympan|cochle|stapedo/.test(fold(c.surgery.name));
+    if (r.apfel.level === "high" || ponvSurgery)
+      add({
+        id: "ponv",
+        level: "medium",
+        title: r.apfel.level === "high" ? `Risque élevé de NVPO (Apfel ${r.apfel.value}/4 ≈ ${[10, 20, 40, 60, 80][r.apfel.value] ?? 80} %)` : "Chirurgie émétisante : NVPO",
+        detail: "Prophylaxie multimodale : dexaméthasone 4–8 mg à l'induction, ondansétron 4 mg ou dropéridol 0,625–1,25 mg 30 min avant la fin ; propofol plutôt qu'halogénés, pas de protoxyde d'azote, épargne morphinique. Chaque mesure réduit le risque d'environ 20 %, et leurs effets s'additionnent.",
+        why: [r.apfel.level === "high" ? `Score d'Apfel ${r.apfel.value}/4` : "", ponvSurgery ? `${c.surgery.name} (strabisme, oreille ou amygdale)` : ""].filter(Boolean).join(" ; "),
+        source: "Consensus NVPO 2020 (Gan) ; Manuel pratique d'anesthésie 2020, chap. 23",
+      });
+  }
 
   // --- Agents, doses and monitoring (Manuel pratique d'anesthésie 2020, chapitres 2, 4, 5) ------
   const MANUAL = "Manuel pratique d'anesthésie, 4e éd. 2020";
@@ -630,6 +642,156 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
             }
       );
     }
+  }
+
+  // --- Fluids, complications, recovery, analgesia (manual, chapters 21–25) ------------------------
+  {
+    const techs = new Set([...(plan?.techniques ?? []), ...c.techniques]);
+    const general = techs.has("general");
+    const name = fold(c.surgery.name);
+    const age = p.age;
+    const crcl = scores.derived.crcl;
+
+    // Tolerated blood loss before transfusion (chap. 21, tableau 21.3).
+    if (p.hb !== undefined && p.weightKg && (plan || c.surgery.bleedingRisk === "high" || c.surgery.kce === "major")) {
+      const threshold = has(cond, "recent_mi")
+        ? { hb: 10, why: "maladie coronarienne instable" }
+        : anyOf(cond, ["coronary", "stable_angina", "coronary_stent", "cabg", "heart_failure"]) === true || c.surgery.category === "F"
+          ? { hb: 9, why: c.surgery.category === "F" ? "chirurgie cardiaque (après CEC)" : "comorbidité cardiaque" }
+          : age !== undefined && age >= 65
+            ? { hb: 8, why: `âge ${age} ans` }
+            : { hb: 7, why: "patient sans comorbidité" };
+      const perKg = age !== undefined && age < 18 ? 80 : age !== undefined && age >= 65 ? 60 : 70;
+      const volume = p.weightKg * perKg;
+      const loss = p.hb > threshold.hb ? Math.round((((p.hb - threshold.hb) / ((p.hb + threshold.hb) / 2)) * volume) / 50) * 50 : 0;
+      add({
+        id: "blood-loss",
+        level: loss === 0 ? "medium" : c.surgery.bleedingRisk === "high" && loss < 1000 ? "medium" : "info",
+        title: loss === 0 ? `Hb ${n(p.hb)} g/dL : déjà au seuil transfusionnel (${threshold.hb})` : `Pertes sanguines tolérables ≈ ${loss} ml avant transfusion`,
+        detail: `Pertes tolérées = (Hb − seuil) / Hb moyenne × volume sanguin = (${n(p.hb)} − ${threshold.hb}) / ${n((p.hb + threshold.hb) / 2)} × ${volume} ml (${perKg} ml/kg), si les pertes sont compensées par cristalloïdes ou colloïdes. Seuil : 7 g/dL sans comorbidité, 8 chez la personne âgée, 9 si cardiopathie stable ou après CEC, 10 si coronaropathie instable — à confronter à la stratégie restrictive du service (patient blood management).${loss === 0 ? " Corriger l'anémie avant une chirurgie programmée si possible." : ""}`,
+        why: `Hb ${n(p.hb)} g/dL, ${p.weightKg} kg ; seuil ${threshold.hb} g/dL (${threshold.why})`,
+        source: `${MANUAL}, chap. 21 (tableau 21.3)`,
+      });
+    }
+
+    // Choice of fluid (chap. 21).
+    const saline: string[] = [];
+    if ((anyOf(cond, ["ckd", "dialysis"]) === true && p.potassium !== undefined && p.potassium > 5) || has(cond, "dialysis")) saline.push("insuffisance rénale avec hyperkaliémie");
+    if (has(cond, "hyponatremia") || (p.sodium !== undefined && p.sodium < 135)) saline.push("hyponatrémie");
+    if (anyOf(cond, ["intracranial_lesion", "raised_icp"]) === true || c.surgery.category === "D") saline.push("lésion cérébrale ou neurochirurgie (pas de glucose 5 % : œdème cérébral)");
+    if (has(cond, "cirrhosis")) saline.push("insuffisance hépatique (lactate mal métabolisé)");
+    const colloidCi: string[] = [];
+    if (has(cond, "heart_failure")) colloidCi.push("insuffisance cardiaque");
+    if (anyOf(cond, ["ckd", "dialysis"]) === true || (crcl !== undefined && crcl < 30)) colloidCi.push("insuffisance rénale");
+    if (anyOf(cond, ["bleeding_disorder", "hemophilia", "von_willebrand"]) === true) colloidCi.push("coagulopathie");
+    if (recognisedAllergens(c, catalogs.allergens).some((a) => a.allergen.id === "gelatin")) colloidCi.push("allergie aux gélatines");
+    const pneumonectomy = /pneumonectom|bilobectom/.test(name);
+    if (saline.length || colloidCi.length || pneumonectomy)
+      add({
+        id: "fluids",
+        level: "info",
+        title: "Remplissage : soluté à choisir",
+        detail: [
+          saline.length ? "NaCl 0,9 % plutôt que Ringer-lactate (attention à l'acidose hyperchlorémique en grande quantité)." : "",
+          colloidCi.length ? `Colloïdes contre-indiqués (${colloidCi.join(", ")}) ; hydroxyéthylamidons : autorisation suspendue dans l'Union européenne.` : "",
+          pneumonectomy ? "Pneumonectomie ou bilobectomie : restriction liquidienne — moins de 3 l de cristalloïdes sur les 24 premières heures, bilan < 20 ml/kg (œdème du poumon restant)." : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        why: [...saline, ...colloidCi.map((x) => `colloïdes : ${x}`), pneumonectomy ? surgeryName : ""].filter(Boolean).join(" ; "),
+        source: `${MANUAL}, chap. 21 (choix du soluté)`,
+      });
+
+    // Malignant hyperthermia susceptibility (chap. 23): the plan for the day.
+    if (anyOf(cond, ["malignant_hyperthermia", "duchenne"]) === true) {
+      const dose = p.weightKg ? Math.round(p.weightKg * 2.5) : undefined;
+      add({
+        id: "mh-plan",
+        level: "high",
+        title: "Susceptibilité à l'hyperthermie maligne : organisation",
+        detail: `Premier du programme ; vaporisateurs retirés, circuit neuf rincé à l'O₂ 10 l/min pendant 20 min, filtre et chaux sodée changés ; ni halogéné ni succinylcholine. Éviter ce qui fait monter la fréquence cardiaque (kétamine, anticholinergiques, β-mimétiques, théophylline) pour ne pas mimer une crise. Crise : arrêt des halogénés, FiO₂ 100 % à 10 l/min, dantrolène 2,5 mg/kg${dose ? ` (≈ ${dose} mg, ${Math.ceil(dose / 20)} flacons de 20 mg)` : ""} à répéter jusqu'à 10 mg/kg, pas d'inhibiteur calcique.`,
+        why: has(cond, "malignant_hyperthermia") ? "Antécédent : hyperthermie maligne" : "Myopathie de Duchenne / Becker",
+        source: `${MANUAL}, chap. 23 (stratégie anesthésique)`,
+        material: [`Dantrolène disponible${dose ? ` (${Math.ceil((p.weightKg! * 10) / 20)} flacons pour 10 mg/kg)` : ""}`],
+      });
+    }
+
+    // Previous perioperative anaphylaxis (chap. 23).
+    if (has(cond, "anaesthetic_allergy"))
+      add({
+        id: "anaphylaxis-plan",
+        level: "high",
+        title: "Antécédent d'anaphylaxie peranesthésique : conduite",
+        detail: c.surgery.emergency
+          ? "Urgence sans bilan : environnement sans latex, ALR à privilégier ; en AG, éviter les curares et les histaminolibérateurs. Une prémédication (corticoïdes, anti-H1/H2) n'empêche pas la réaction."
+          : "Programmé : retrouver le protocole de l'anesthésie en cause et adresser en allergologie (produits utilisés, latex et tous les curares) avant l'intervention. Une prémédication (corticoïdes, anti-H1/H2) n'empêche pas la réaction.",
+        why: "Antécédent : réaction allergique per-anesthésique",
+        source: `${MANUAL}, chap. 23 (allergie et anaphylaxie)`,
+        material: ["Adrénaline prête (100–200 µg IV)"],
+        risk: { title: "Anaphylaxie", conduct: "Arrêt du produit suspect, O₂ 100 %, adrénaline 100–200 µg IV (300–500 µg IM), remplissage ; tryptase immédiate ; bilan allergologique à 4–6 semaines." },
+      });
+
+    // Laryngospasm (chap. 23).
+    const endo = /amygdal|adenoid|vegetation|rhinoplast|septoplast|sinus|turbin|endonasal|endobuccal|ethmoid/.test(name);
+    const lsRisk = [age !== undefined && age < 18 ? "enfant" : "", has(cond, "recent_uri") ? "infection des voies aériennes" : "", has(cond, "asthma") ? "asthme" : ""].filter(Boolean);
+    if (general && endo && lsRisk.length)
+      add({ id: "laryngospasm", level: "medium", title: "Risque de laryngospasme", detail: "Profondeur d'anesthésie suffisante à chaque stimulation ; aspiration avant l'extubation, extubation profondément endormi ou bien réveillé. Traitement : FiO₂ 100 %, arrêt des stimulations, subluxation, ventilation douce en pression positive, propofol 0,25–0,5 mg/kg ; si persistance, succinylcholine 0,1–0,3 mg/kg.", why: `${lsRisk.join(", ")} ; ${surgeryName} (chirurgie endobuccale ou endonasale)`, source: `${MANUAL}, chap. 23 (laryngospasme)` });
+
+    // Awareness (chap. 23).
+    if (general && !has(cond, "awareness") && (c.surgery.category === "F" || /cesarienne|polytrauma/.test(name)))
+      add({ id: "awareness-risk", level: "info", title: "Risque de mémorisation peropératoire", detail: "Incidence 1–1,5 % en chirurgie cardiaque, 0,4 % en césarienne, bien plus chez le polytraumatisé (0,1–0,4 % ailleurs). Fraction expirée d'halogéné surveillée, éviter la curarisation totale, profondeur d'anesthésie monitorée si possible.", why: surgeryName, source: `${MANUAL}, chap. 23 (mémorisation peropératoire)`, material: ["BIS / profondeur d'anesthésie"] });
+
+    // Hypothermia prevention (chap. 23; NICE CG65).
+    if (plan && (general || techs.has("neuraxial")) && ((c.surgery.durationHours ?? 0) >= 1 || c.surgery.kce === "major" || (age !== undefined && age >= 70)))
+      add({
+        id: "hypothermia",
+        level: "info",
+        title: "Prévenir l'hypothermie",
+        detail: "Réchauffer avant l'induction et couvrir en continu ; couverture à air pulsé, solutés réchauffés, bas débit de gaz frais ; température centrale monitorée (objectif ≥ 36 °C). La redistribution fait perdre 1–2 °C dès la première heure d'AG ; frissons : consommation d'O₂ jusqu'à × 4.",
+        why: [(c.surgery.durationHours ?? 0) >= 1 ? `durée prévue ${n(c.surgery.durationHours!)} h` : "", c.surgery.kce === "major" ? "chirurgie majeure" : "", age !== undefined && age >= 70 ? `âge ${age} ans` : ""].filter(Boolean).join(" ; "),
+        source: `NICE CG65 (hypothermie périopératoire) ; ${MANUAL}, chap. 23`,
+        material: ["Couverture à air pulsé", "Réchauffeur de solutés"],
+      });
+
+    // Prolonged motor block after regional anaesthesia (chap. 24).
+    if (plan && (techs.has("neuraxial") || techs.has("deep_block")))
+      add({
+        id: "motor-block",
+        level: "info",
+        title: "Récupération du bloc moteur à surveiller",
+        detail: "Bloc moteur non récupéré 6 h après une anesthésie médullaire, ou 24 h après un bloc plexique ou tronculaire : imagerie en urgence (hématome épidural, syndrome des loges).",
+        why: `Technique prévue : ${[techs.has("neuraxial") ? "neuraxiale" : "", techs.has("deep_block") ? "bloc profond" : ""].filter(Boolean).join(", ")}`,
+        source: `${MANUAL}, chap. 24 (SSPI)`,
+        risk: { title: "Bloc moteur prolongé", conduct: "> 6 h après rachianesthésie ou > 24 h après bloc plexique : IRM ou scanner en urgence (hématome épidural, syndrome des loges)." },
+      });
+
+    // Analgesia strategy by terrain (chap. 25).
+    const analgesia: string[] = [];
+    if (anyOf(cond, ["ckd", "dialysis"]) === true || (crcl !== undefined && crcl < 30))
+      analgesia.push("insuffisance rénale : AINS proscrits ; ALR, paracétamol et métamizole ; morphine et tramadol avec prudence (métabolites actifs) — buprénorphine ou PCA de fentanyl");
+    if (has(cond, "osa") || (r.stopBang.level === "high" && !has(cond, "osa")))
+      analgesia.push("SAOS : ALR, paracétamol, métamizole et AINS ; opioïdes seulement en unité de surveillance continue ou sous CPAP");
+    if (has(cond, "cirrhosis"))
+      analgesia.push("insuffisance hépatique : AINS et paracétamol contre-indiqués ; ALR, opioïdes à doses réduites en unité de surveillance");
+    if (analgesia.length)
+      add({
+        id: "analgesia-strategy",
+        level: "medium",
+        title: "Analgésie postopératoire adaptée au terrain",
+        detail: analgesia.map((x) => x.charAt(0).toUpperCase() + x.slice(1)).join(". ") + ".",
+        why: analgesia.map((x) => x.split(" : ")[0]).join(" ; "),
+        source: `${MANUAL}, chap. 25 (cas particuliers)`,
+      });
+    const chronic = [has(cond, "chronic_pain") ? "douleur chronique préopératoire" : "", /thoracotom|mastectom|amputation/.test(name) ? surgeryName : ""].filter(Boolean);
+    if (chronic.length)
+      add({
+        id: "chronic-postop-pain",
+        level: "info",
+        title: "Risque de douleur chronique postopératoire",
+        detail: `Douleur persistante à 3 mois dans 5 à 50 % des cas selon l'intervention (sévère dans 2 à 10 %). Analgésie multimodale et ALR pour limiter la douleur aiguë, suivie de l'EVA au repos et à la mobilisation (objectif ≤ 3).${/amputation/.test(name) ? " Amputation : douleurs fantômes jusqu'à 70 % en postopératoire immédiat." : ""}`,
+        why: chronic.join(" ; "),
+        source: `${MANUAL}, chap. 25 (douleur chronique postopératoire)`,
+      });
   }
 
   // --- Substance use ------------------------------------------------------------------

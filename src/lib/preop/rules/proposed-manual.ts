@@ -896,4 +896,32 @@ const INFECTIONS: Proposed[] = [
   }),
 ];
 
-export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS];
+// ---------------------------------------------------------------------------
+// Chapitre 23 — Complications anesthésiques (Blanc, Albrecht)
+// ---------------------------------------------------------------------------
+
+const CH23 = "Chapitre 23, Complications anesthésiques, 4e édition (Elsevier Masson)";
+
+const COMPLICATIONS: Proposed[] = [
+  m({
+    title: "Anaphylaxie lors d'une anesthésie antérieure : bilan allergologique avant la chirurgie programmée",
+    statement: "Avant une chirurgie programmée chez un patient qui a présenté une réaction anaphylactique lors d'une anesthésie précédente, retrouver le protocole d'anesthésie et organiser une consultation d'allergologie (produits utilisés, latex et tous les curares).",
+    conditions: [history("anaesthetic_allergy", "Réaction allergique per-anesthésique"), { kind: "surgery", attribute: "urgency", in: ["elective"] }],
+    action: { type: "requirement", text: "Bilan allergologique (produits de l'anesthésie en cause, latex, curares) avant la chirurgie programmée ; protocole de l'anesthésie à retrouver.", blocking: false, target: "anaesthesia" },
+    quote: "En cas de chirurgie programmée chez un patient qui a présenté une réaction anaphylactique lors d'une anesthésie précédente, il faut : retrouver le protocole d'anesthésie ; organiser une consultation d'allergologie et tester les produits utilisés, le latex et tous les curares (prick-tests, intradermoréactions) ; en l'absence du protocole d'anesthésie, seuls les curares et le latex seront testés.",
+    question: "According to current European guidance (EAACI/ESAIC position papers on perioperative hypersensitivity), what allergy work-up is required before elective surgery in a patient with previous perioperative anaphylaxis, and what should be done if surgery cannot wait?",
+    chapterTitle: CH23,
+  }),
+  m({
+    title: "Susceptibilité à l'hyperthermie maligne : anesthésie sans agent déclenchant",
+    statement: "Chez un patient susceptible de présenter une hyperthermie maligne : premier du programme, vaporisateurs retirés, circuit neuf rincé (O₂ 10 l/min pendant 20 min), chaux sodée changée, ni halogéné ni suxaméthonium, dantrolène disponible.",
+    conditions: [history("malignant_hyperthermia", "Hyperthermie maligne")],
+    action: { type: "requirement", text: "Anesthésie sans halogéné ni suxaméthonium, machine préparée (vaporisateurs retirés, rinçage, chaux changée), dantrolène disponible, premier du programme.", blocking: false, target: "anaesthesia" },
+    quote: "Programmer l'intervention en première position. […] Rincer un nouveau circuit ventilatoire avec de l'O2 pur (20 min à 10 l/min) ; changer le filtre et la chaux sodée. Ne pas utiliser d'halogénés, ni de suxaméthonium. Retirer les vaporisateurs.",
+    question: "According to the European Malignant Hyperthermia Group guidelines, how should the anaesthesia workstation be prepared and which agents avoided for a malignant hyperthermia susceptible patient (including activated charcoal filters and flushing times)?",
+    chapterTitle: CH23,
+    explanations: ["Les filtres à charbon activé, plus récents, raccourcissent la préparation de la machine : à vérifier dans les recommandations de l'EMHG."],
+  }),
+];
+
+export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS];

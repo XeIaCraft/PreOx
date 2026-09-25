@@ -149,7 +149,7 @@ function DrugRow({ drug, body, onChange, onRemove, startOpen }: { drug: Protocol
                         className="rounded border border-border px-1.5 py-0.5 text-[11px] font-medium text-primary hover:bg-surface"
                         title="Reprendre la borne basse comme dose du plan (modifiable)"
                         onClick={() => {
-                          set({ doseMode: d.mode === "per_kg" ? "per_kg" : "fixed", amount: d.min, unit: d.unit, weightBasis: d.basis ?? drug.weightBasis, note: drug.note || `${d.label} (${formatReferenceDose(d)}, ${DRUG_REFERENCE_SOURCE})` });
+                          set({ doseMode: d.mode === "per_kg" ? "per_kg" : "fixed", amount: d.min, unit: d.unit as DoseUnit, weightBasis: d.basis ?? drug.weightBasis, note: drug.note || `${d.label} (${formatReferenceDose(d)}, ${DRUG_REFERENCE_SOURCE})` });
                           setFormKey((k) => k + 1);
                         }}
                       >
