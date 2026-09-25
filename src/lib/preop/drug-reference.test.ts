@@ -42,3 +42,34 @@ describe("reference doses and cautions (Manuel pratique d'anesthésie 2020, chap
     expect(noPlan.find((p) => p.id === "drugs-avoid")?.detail).toMatch(/Kétamine — hypertension intracrânienne/);
   });
 });
+
+describe("regional anaesthesia (chap. 12–14)", () => {
+  it("adds up the local anaesthetics of a plan against their toxic dose", async () => {
+    const { localAnaestheticLoad } = await import("./drug-reference");
+    const { computeDose } = await import("./protocols");
+    const drugs = [
+      { ...drug("Ropivacaïne 0,5 %"), doseMode: "fixed" as const, amount: 150, unit: "mg" as const },
+      { ...drug("Lidocaïne adrénalinée"), doseMode: "fixed" as const, amount: 200, unit: "mg" as const },
+    ];
+    const load = localAnaestheticLoad(drugs, 60, (d) => computeDose(d as ProtocolDrug, { weightKg: 60 }));
+    // Ropivacaine 3 mg/kg × 60 = 180 mg, capped at 175 mg total → 86 % ; lidocaine with adrenaline 7 mg/kg × 60 = 420 mg → 48 %.
+    expect(load.parts.map((x) => [x.name, x.maxMg])).toEqual([
+      ["Ropivacaïne 0,5 %", 175],
+      ["Lidocaïne adrénalinée", 420],
+    ]);
+    expect(Math.round(load.total * 100)).toBe(133);
+    expect(drugReferenceFor("Lidocaïne adrénalinée")?.name).toBe("Lidocaïne");
+  });
+
+  it("warns against regional anaesthesia with a low platelet count, and a spinal with severe aortic stenosis", () => {
+    const c: ConsultationState = { ...emptyConsultation(), techniques: ["neuraxial"], patient: { platelets: 40 }, conditions: { aortic_stenosis: { present: true, severe: true } } };
+    const alr = attentionPoints(c, consultationScores(c)).find((p) => p.id === "alr-ci");
+    expect(alr?.level).toBe("high");
+    expect(alr?.detail).toMatch(/plaquettes 40 G\/L.*rétrécissement aortique serré/);
+  });
+
+  it("suggests a gastric ultrasound when the stomach may not be empty", () => {
+    const c: ConsultationState = { ...emptyConsultation(), conditions: { diabetes_insulin: { present: true } } };
+    expect(attentionPoints(c, consultationScores(c)).find((p) => p.id === "gastric-us")?.why).toBe("diabète");
+  });
+});

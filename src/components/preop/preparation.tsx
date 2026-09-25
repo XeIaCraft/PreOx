@@ -299,6 +299,7 @@ export function PreparationView({
             <Button
               size="sm"
               variant="secondary"
+              className="h-auto min-h-9 whitespace-normal text-left"
               onClick={() => {
                 onChange({ ...d, plan: withAdditions({ ...d.plan, techniques: [...d.consultation.techniques] }, additions) });
                 setPlanKey((k) => k + 1);

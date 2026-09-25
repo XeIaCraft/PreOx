@@ -21,7 +21,7 @@ import {
   type WeightBasis,
 } from "@/lib/preop/protocols";
 import { TECHNIQUES, type Technique } from "@/lib/preop/rules/types";
-import { DRUG_REFERENCE_SOURCE, drugReferenceFor, formatReferenceDose } from "@/lib/preop/drug-reference";
+import { DRUG_REFERENCE_SOURCE, drugReferenceFor, formatReferenceDose, localAnaestheticLoad } from "@/lib/preop/drug-reference";
 import { cn } from "@/lib/utils";
 
 const UNITS: DoseUnit[] = ["mg", "µg", "g", "mL", "UI"];
@@ -256,11 +256,23 @@ export function PlanEditor({ value: c, onChange, body, formKey = 0 }: { value: P
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const set = (patch: Partial<ProtocolContent>) => onChange({ ...c, ...patch });
   const byPhase = DRUG_PHASES.map((p) => ({ ...p, drugs: c.drugs.filter((d) => d.phase === p.code) })).filter((p) => p.drugs.length > 0);
+  const laLoad = localAnaestheticLoad(c.drugs, body?.weightKg, (d) => computeDose(d as ProtocolDrug, body ?? {}));
+  const hasLa = laLoad.parts.length + laLoad.unknown.length > 0;
 
   return (
     <div key={formKey} className="space-y-4">
       <Panel title="Technique et produits">
         <MultiChipGroup options={TECHNIQUES.map((t) => ({ code: t.code, label: t.label }))} value={c.techniques} onChange={(v) => set({ techniques: v as Technique[] })} />
+        {hasLa && (
+          <div className={cn("rounded-[var(--radius-md)] border px-2.5 py-2 text-xs", laLoad.total > 1 ? "border-danger/50 bg-danger-tint/40 text-danger" : laLoad.total > 0.75 ? "border-accent/50 bg-accent-tint/40 text-foreground" : "border-border text-foreground-muted")}>
+            <p className="font-medium">
+              Anesthésiques locaux : {laLoad.parts.length ? `${Math.round(laLoad.total * 100)} % de la dose toxique cumulée` : "dose toxique non calculable"}
+            </p>
+            {laLoad.parts.length > 0 && <p>{laLoad.parts.map((x) => `${x.name} ${String(x.mg).replace(".", ",")} mg / ${x.maxMg} mg max (${Math.round(x.share * 100)} %)`).join(" + ")}</p>}
+            {laLoad.unknown.length > 0 && <p>À compléter (dose ou poids) : {laLoad.unknown.join(", ")}.</p>}
+            <p className="text-[11px] text-foreground-subtle">Doses toxiques additives, calculées sans adrénaline sauf si le nom l&apos;indique — {DRUG_REFERENCE_SOURCE}, tableau 12.1.</p>
+          </div>
+        )}
         {byPhase.map((p) => (
           <div key={p.code} className="space-y-1.5">
             <FieldLabel>{p.label}</FieldLabel>

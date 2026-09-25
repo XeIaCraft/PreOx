@@ -31,14 +31,14 @@ let n = 0;
 /** Stable ids: the n-th rule of this file (never reorder existing entries — append). */
 const nextId = () => `5f1c0a10-0002-4000-8000-${String(++n).padStart(12, "0")}`;
 
-function m(p: { title: string; statement: string; conditions: Condition[]; action: RuleAction; quote: string; question: string; explanations?: string[] }): Proposed {
+function m(p: { title: string; statement: string; conditions: Condition[]; action: RuleAction; quote: string; question: string; explanations?: string[]; chapterTitle?: string }): Proposed {
   return {
     id: nextId(),
     title: p.title,
     statement: p.statement,
     conditions: p.conditions,
     action: p.action,
-    source: { ...MANUAL, quote: p.quote },
+    source: { ...MANUAL, ...(p.chapterTitle ? { title: p.chapterTitle } : {}), quote: p.quote },
     divergences: [],
     explanations: [...(p.explanations ?? []), RECHECK],
     status: "draft",
@@ -745,4 +745,95 @@ const ANTECEDENTS: Proposed[] = [
   }),
 ];
 
-export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS];
+// ---------------------------------------------------------------------------
+// Chapitre 13 (ALR), tableau 13.2 — délais avant une ALR et reprise.
+// Appended after the chapter 15 rules so that their ids don't move.
+// ---------------------------------------------------------------------------
+
+const CH13 = "Chapitre 13, Anesthésie locorégionale (ALR), 4e édition (Elsevier Masson)";
+const T132 =
+  "Tableau 13.2 « Recommandations des délais de procédures d'anesthésie locorégionale en fonction des prescriptions des médicaments altérant l'hémostase. Ces recommandations concernent principalement les blocs périmédullaires ou profonds, et les patients avec une fonction rénale normale. »";
+const Q_ALR = (drugName: string) =>
+  `According to the ESAIC/ESRA 2022 guidelines, what is the minimum interval between the last dose of ${drugName} and a neuraxial puncture, deep block or catheter removal, and how long after the procedure or catheter removal can it be resumed?`;
+
+function alrPair(p: { name: string; atc: string; dose?: Extract<Condition, { kind: "drug" }>["dailyDose"]; doseLabel?: string; before: number; after: number | null; row: string }): Proposed[] {
+  const d = drug(p.atc, p.dose ? { dailyDose: p.dose } : {});
+  const who = `${p.name}${p.doseLabel ? ` ${p.doseLabel}` : ""}`;
+  const h = (x: number) => (x >= 48 && x % 24 === 0 ? `${x / 24} jours` : `${x} h`);
+  const out = [
+    m({
+      title: `${who} : délai avant ALR (tableau 13.2)`,
+      statement: `${who} : dernière prise au moins ${h(p.before)} avant une ponction neuraxiale, un bloc profond ou le retrait d'un cathéter.`,
+      conditions: [d, neuraxial],
+      action: { type: "stop_before", hours: p.before, target: "anaesthesia" },
+      quote: `${p.row} (${T132})`,
+      question: Q_ALR(p.name.toLowerCase()),
+      chapterTitle: CH13,
+    }),
+  ];
+  if (p.after !== null)
+    out.push(
+      m({
+        title: `${who} : reprise après ALR (tableau 13.2)`,
+        statement: `${who} : reprise au plus tôt ${h(p.after)} après la ponction ou le retrait du cathéter.`,
+        conditions: [d, neuraxial],
+        action: { type: "resume_after", hours: p.after, target: "anaesthesia" },
+        quote: `${p.row} (${T132})`,
+        question: Q_ALR(p.name.toLowerCase()),
+        chapterTitle: CH13,
+      })
+    );
+  return out;
+}
+
+const ALR_TABLE: Proposed[] = [
+  ...alrPair({ name: "Héparine non fractionnée", atc: "B01AB01", before: 4, after: 1, row: "Héparine non fractionnée (prophylaxie sc, traitement IV) : 4 h avant ; reprise 1 h après" }),
+  ...alrPair({ name: "Énoxaparine prophylactique", atc: "B01AB05", dose: { op: "<=", mg: 40 }, doseLabel: "(≤ 40 mg/j)", before: 12, after: 4, row: "HBPM : 12 h si dose prophylactique, 24 h si dose thérapeutique ; reprise 4 h après" }),
+  ...alrPair({ name: "Énoxaparine thérapeutique", atc: "B01AB05", dose: { op: ">", mg: 40 }, doseLabel: "(> 40 mg/j)", before: 24, after: 4, row: "HBPM : 12 h si dose prophylactique, 24 h si dose thérapeutique ; reprise 4 h après" }),
+  ...alrPair({ name: "Fondaparinux prophylactique", atc: "B01AX05", dose: { op: "<=", mg: 2.5 }, doseLabel: "(≤ 2,5 mg/j)", before: 48, after: 6, row: "Fondaparinux : 48 h si prophylaxie, mesurer l'anti-Xa si thérapeutique ; reprise 6–12 h après (prophylaxie)" }),
+  ...alrPair({ name: "Clopidogrel", atc: "B01AC04", before: 168, after: null, row: "Clopidogrel (Plavix) : 7 j ; reprise après retrait du cathéter" }),
+  ...alrPair({ name: "Prasugrel", atc: "B01AC22", before: 168, after: 6, row: "Prasugrel (Efient) : 7 j ; reprise 6 h après" }),
+  ...alrPair({ name: "Ticagrélor", atc: "B01AC24", before: 120, after: 6, row: "Ticagrélor (Brilique) : 5 j ; reprise 6 h après" }),
+  ...alrPair({ name: "Rivaroxaban prophylactique", atc: "B01AF01", dose: { op: "<=", mg: 10 }, doseLabel: "(≤ 10 mg/j)", before: 18, after: 4, row: "Rivaroxaban : 18 h si dose prophylactique, 48 h si dose thérapeutique ; reprise 4–6 h après" }),
+  ...alrPair({ name: "Rivaroxaban thérapeutique", atc: "B01AF01", dose: { op: ">", mg: 10 }, doseLabel: "(> 10 mg/j)", before: 48, after: 6, row: "Rivaroxaban : 18 h si dose prophylactique, 48 h si dose thérapeutique ; reprise 4–6 h après" }),
+  ...alrPair({ name: "Apixaban", atc: "B01AF02", before: 48, after: 6, row: "Apixaban (prophylaxie) : 24–48 h ; reprise 4–6 h après" }),
+  m({
+    title: "Dabigatran : délai avant ALR selon la clairance (tableau 13.2)",
+    statement: "Dabigatran : 72 h avant une ponction neuraxiale si clairance ≥ 80 mL/min, 3 jours entre 50 et 80, 4 jours en dessous de 50 ; reprise 6 h après.",
+    conditions: [drug("B01AE07"), neuraxial, { kind: "value", value: "crcl", op: "<", threshold: 50 }],
+    action: { type: "stop_before", hours: 96, target: "anaesthesia" },
+    quote: `Dabigatran (Pradaxa) : 72 h si Cl créat ≥ 80 ml/min, 3 j si Cl créat 50–80 ml/min, 4 j si Cl créat ≤ 50 ml/min ; reprise 6 h après (${T132})`,
+    question: Q_ALR("dabigatran"),
+    chapterTitle: CH13,
+    explanations: ["Règle écrite pour la clairance < 50 mL/min (4 jours) ; au-dessus, les délais de 72 h du chapitre 15 et d'ESAIC/ESRA s'appliquent."],
+  }),
+  m({
+    title: "Aspirine et AINS : pas de précaution pour l'ALR (tableau 13.2)",
+    statement: "Aspirine et AINS : aucune précaution particulière avant une ALR, quelle que soit la dose d'aspirine.",
+    conditions: [drug("M01A"), neuraxial],
+    action: { type: "info", text: "AINS seul : pas de délai avant la ponction (vérifier l'absence d'autre antithrombotique).", target: "anaesthesia" },
+    quote: `AINS (Brufen, Ponstan) : aucune précaution nécessaire ; acide acétylsalicylique : aucune précaution nécessaire. « Concernant l'acide acétylsalicylique, la tendance actuelle est d'accepter les ALR, quelles que soient les doses. » (${T132})`,
+    question: "Do NSAIDs require any interval before a neuraxial puncture according to ESAIC/ESRA 2022?",
+    chapterTitle: CH13,
+  }),
+  m({
+    title: "Contre-indications biologiques absolues de l'ALR",
+    statement: "ALR contre-indiquée si TP < 50 % ou INR > 1,5, TCA > 40 s ou plaquettes < 50 G/L ; relative entre INR 1,3–1,5, TCA 35–40 s, plaquettes 50–100 G/L.",
+    conditions: [{ kind: "value", value: "inr", op: ">", threshold: 1.5 }, { kind: "technique", in: ["neuraxial", "deep_block", "superficial_block"] }],
+    action: { type: "requirement", text: "INR > 1,5 : ALR contre-indiquée (absolue).", blocking: true, target: "anaesthesia" },
+    quote: "Contre-indications absolues à une anesthésie locorégionale : coagulopathie ou administration récente d'un anticoagulant : TP < 50 % ou INR > 1,5 ; TCA > 40 s ; plaquettes < 50 000/mm³. Infection au point de ponction. Sepsis.",
+    question: "What coagulation thresholds (INR, aPTT, platelets) contraindicate neuraxial and peripheral regional anaesthesia according to current European guidelines?",
+    chapterTitle: CH13,
+  }),
+  m({
+    title: "Plaquettes < 50 G/L : ALR contre-indiquée",
+    statement: "Plaquettes < 50 G/L : ALR contre-indiquée (absolue).",
+    conditions: [{ kind: "value", value: "platelets", op: "<", threshold: 50 }, { kind: "technique", in: ["neuraxial", "deep_block", "superficial_block"] }],
+    action: { type: "requirement", text: "Plaquettes < 50 G/L : ALR contre-indiquée (absolue).", blocking: true, target: "anaesthesia" },
+    quote: "Contre-indications absolues à une anesthésie locorégionale : […] plaquettes < 50 000/mm³.",
+    question: "What platelet count is required for neuraxial anaesthesia according to current European guidelines?",
+    chapterTitle: CH13,
+  }),
+];
+
+export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE];

@@ -7,7 +7,8 @@
 // that belongs to a guideline (those come from your rules).
 
 import { QUALIFIER_LABELS, anyOf, has } from "./history";
-import { DRUG_REFERENCES, DRUG_REFERENCE_SOURCE, cautionsFor, drugReferenceFor, morphineEquivalents } from "./drug-reference";
+import { DRUG_REFERENCES, DRUG_REFERENCE_SOURCE, cautionsFor, drugReferenceFor, localAnaestheticLoad, morphineEquivalents } from "./drug-reference";
+import { computeDose, type ProtocolDrug } from "./protocols";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 import { classesOf, fold, medicationOf, type AllergenItem, type AttentionSpec } from "./catalog";
 import type { ConsultationScores } from "./consultation-scores";
@@ -342,6 +343,100 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         detail: "Au-delà de 60 mg d'équivalent morphine par jour, une tolérance est probable : poursuivre la dose de base, analgésie multimodale (kétamine, ALR), besoins en opioïdes majorés. Changement d'opioïde : réduire de 10–20 % (tolérance croisée incomplète).",
         why: [...meq.parts, ...(meq.unknown.length ? [`sans conversion : ${meq.unknown.join(", ")} (dose ou produit à préciser)`] : [])].join(" ; "),
         source: `${DRUG_REFERENCE_SOURCE}, chap. 7 (tableau 7.4)`,
+      });
+  }
+
+  // --- Regional anaesthesia (manual, chapters 12–14) --------------------------------------------
+  {
+    const techs = new Set([...(plan?.techniques ?? []), ...c.techniques]);
+    const regional = techs.has("neuraxial") || techs.has("deep_block") || techs.has("superficial_block");
+    if (regional) {
+      const absolute: string[] = [];
+      const relative: string[] = [];
+      if (p.inr !== undefined && p.inr > 1.5) absolute.push(`INR ${n(p.inr)} (> 1,5)`);
+      else if (p.inr !== undefined && p.inr >= 1.3) relative.push(`INR ${n(p.inr)} (1,3–1,5)`);
+      if (p.platelets !== undefined && p.platelets < 50) absolute.push(`plaquettes ${p.platelets} G/L (< 50)`);
+      else if (p.platelets !== undefined && p.platelets < 100) relative.push(`plaquettes ${p.platelets} G/L (50–100)`);
+      if (p.exam?.punctureSite) absolute.push("infection au point de ponction");
+      if (has(cond, "bleeding_disorder") || has(cond, "hemophilia") || has(cond, "von_willebrand")) relative.push("trouble de l'hémostase connu");
+      const spinal: string[] = [];
+      if (techs.has("neuraxial")) {
+        if (has(cond, "raised_icp")) spinal.push("hypertension intracrânienne");
+        if (cond.aortic_stenosis?.present && (cond.aortic_stenosis.severe || has(cond, "aortic_stenosis"))) spinal.push(`rétrécissement aortique${cond.aortic_stenosis.severe ? " serré" : " (sévérité à préciser)"}`);
+        if (has(cond, "hcm")) spinal.push("cardiomyopathie hypertrophique obstructive");
+      }
+      if (absolute.length || relative.length || spinal.length)
+        add({
+          id: "alr-ci",
+          level: absolute.length ? "high" : "medium",
+          title: absolute.length ? "ALR contre-indiquée" : spinal.length && !relative.length ? "Rachianesthésie en injection unique déconseillée" : "ALR : contre-indication relative",
+          detail: [
+            absolute.length ? `Contre-indication absolue : ${absolute.join(", ")}.` : "",
+            relative.length ? `Contre-indication relative (à nuancer selon le bénéfice, la chirurgie et le terrain) : ${relative.join(", ")}.` : "",
+            spinal.length ? `Rachianesthésie en injection unique contre-indiquée : ${spinal.join(", ")} — une rachianesthésie continue (installation lente) peut être une alternative à l'AG.` : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+          why: [...absolute, ...relative, ...spinal].join(" ; "),
+          source: `${DRUG_REFERENCE_SOURCE}, chap. 13 (contre-indications de l'ALR)`,
+        });
+      if (techs.has("neuraxial")) {
+        const level =
+          c.surgery.incision === "intrathoracic"
+            ? { at: "T5–T6", block: "T2", why: "thoracotomie" }
+            : c.surgery.incision === "upper_abdominal"
+              ? { at: "T7–T8", block: "T4", why: "laparotomie sus-ombilicale" }
+              : /hernie|hystér|prostat|césarienne|colectomie gauche|sigmo|rectum|vessie|cystect/i.test(c.surgery.name)
+                ? { at: "T10–T11", block: "T8", why: "laparotomie sous-ombilicale" }
+                : c.surgery.category === "K" && /hanche|genou|jambe|pied|cheville|fémur|tibia/i.test(c.surgery.name)
+                  ? { at: "L2–L3", block: "T12", why: "chirurgie des membres inférieurs" }
+                  : null;
+        if (level)
+          add({
+            id: "epidural-level",
+            level: "info",
+            title: `Péridurale : ponction ${level.at}`,
+            detail: `Pour une ${level.why}, ponction ${level.at} ; bloc sensitif postopératoire souhaité jusqu'à ${level.block} au minimum.`,
+            why: `Technique neuraxiale prévue ; ${surgeryName}`,
+            source: `${DRUG_REFERENCE_SOURCE}, chap. 13 (tableau 13.4)`,
+          });
+      }
+    }
+
+    if (plan?.drugs.length) {
+      const load = localAnaestheticLoad(plan.drugs, p.weightKg, (d) => computeDose(d as ProtocolDrug, { sex: p.sex, weightKg: p.weightKg, heightCm: p.heightCm }));
+      if (load.total > 1)
+        add({
+          id: "la-overdose",
+          level: "high",
+          title: `Anesthésiques locaux au-delà de la dose toxique (${Math.round(load.total * 100)} %)`,
+          detail: "Les doses toxiques s'additionnent entre anesthésiques locaux : réduire les doses ou la concentration ; injection lente et fractionnée, aspirations répétées ; intralipide 20 % disponible.",
+          why: load.parts.map((x) => `${x.name} ${x.mg} mg (max ${x.maxMg} mg)`).join(" + "),
+          source: `${DRUG_REFERENCE_SOURCE}, chap. 12 (tableau 12.1)`,
+          material: ["Intralipide 20 %"],
+        });
+    }
+
+    const gastric: string[] = [];
+    const bmi = scores.derived.bmi;
+    if (bmi !== undefined && bmi >= 35) gastric.push(`obésité (IMC ${Math.round(bmi)})`);
+    if (has(cond, "pregnancy")) gastric.push("grossesse");
+    if (anyOf(cond, ["diabetes_oral", "diabetes_insulin"]) === true) gastric.push("diabète");
+    if (has(cond, "bowel_obstruction") || has(cond, "gastroparesis")) gastric.push("obstruction ou gastroparésie");
+    if (has(cond, "cirrhosis") || has(cond, "dialysis")) gastric.push("dysfonction hépatique ou rénale sévère");
+    if (anyOf(cond, ["neuromuscular", "myotonic_dystrophy", "duchenne", "als"]) === true) gastric.push("maladie neuromusculaire");
+    if (anyOf(cond, ["cognitive", "postop_delirium"]) === true) gastric.push("troubles cognitifs");
+    if (c.surgery.emergency) gastric.push("urgence");
+    if (c.treatments.some((t) => t.atc.startsWith("A10BJ"))) gastric.push("agoniste du GLP-1 (vidange gastrique ralentie)");
+    if (gastric.length)
+      add({
+        id: "gastric-us",
+        level: "info",
+        title: "Échographie gastrique à envisager avant l'induction",
+        detail: "Le jeûne standard vaut pour le patient sain. Antre en décubitus dorsal puis latéral droit : grade 0 (vide dans les deux positions) = estomac vide ; grade 2 (liquide dans les deux) = estomac plein ; grade 1 au cas par cas. Aliments solides : aspect en « verre dépoli ».",
+        why: gastric.join(", "),
+        source: `${DRUG_REFERENCE_SOURCE}, chap. 14 (échographie gastrique)`,
+        material: ["Échographe (sonde convexe)"],
       });
   }
 

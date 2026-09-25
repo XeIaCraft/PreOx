@@ -45,6 +45,8 @@ export interface DrugReference {
   chapter: string;
   doses: ReferenceDose[];
   cautions: DrugCaution[];
+  /** Local anaesthetic: maximum dose (mg/kg and total mg), without and with adrenaline (tableau 12.1). Doses add up across local anaesthetics. */
+  maxDose?: { perKg: number; totalMg: number; withAdrenalinePerKg?: number; withAdrenalineTotalMg?: number };
 }
 
 const pk = (label: string, min: number, max: number, unit: DoseUnit = "mg", extra: Partial<ReferenceDose> = {}): ReferenceDose => ({ label, min, max, unit, mode: "per_kg", ...extra });
@@ -136,14 +138,14 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Fentanyl",
     words: ["fentanyl", "sintenyl", "durogesic"],
     chapter: "chap. 7",
-    doses: [pk("Induction", 2, 5, "µg"), rt("Entretien", 0.5, 5, "µg", "/kg/h"), pk("Bolus", 0.5, 1.5, "µg"), fx("PCA : bolus toutes les 5–10 min", 10, 20, "µg", { note: "Maximum 400 µg / 4 h." })],
+    doses: [pk("Induction", 2, 5, "µg"), rt("Entretien", 0.5, 5, "µg", "/kg/h"), pk("Bolus", 0.5, 1.5, "µg"), fx("PCA : bolus toutes les 5–10 min", 10, 20, "µg", { note: "Maximum 400 µg / 4 h." }), fx("Intrathécal (tableau 13.5)", 10, 25, "µg")],
     cautions: [{ atc: ["J01FA", "J02AC", "J05A"], level: "adapt", text: "inhibiteur du CYP3A4 : effet prolongé" }],
   },
   {
     name: "Sufentanil",
     words: ["sufentanil", "sufenta"],
     chapter: "chap. 7",
-    doses: [pk("Induction", 0.2, 0.6, "µg"), rt("Entretien", 0.5, 1.5, "µg", "/kg/h"), pk("Bolus", 0.1, 0.25, "µg")],
+    doses: [pk("Induction", 0.2, 0.6, "µg"), rt("Entretien", 0.5, 1.5, "µg", "/kg/h"), pk("Bolus", 0.1, 0.25, "µg"), fx("Intrathécal (tableau 13.5)", 5, 10, "µg")],
     cautions: [{ atc: ["J01FA", "J02AC", "J05A"], level: "adapt", text: "inhibiteur du CYP3A4 : effet prolongé" }],
   },
   {
@@ -164,7 +166,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Morphine",
     words: ["morphine"],
     chapter: "chap. 7",
-    doses: [fx("PCA : bolus toutes les 5–10 min", 1, 2, "mg", { note: "Maximum 30 mg / 4 h." })],
+    doses: [fx("PCA : bolus toutes les 5–10 min", 1, 2, "mg", { note: "Maximum 30 mg / 4 h." }), fx("Intrathécale (tableau 13.5)", 0.1, 0.3, "mg", { note: "Analgésie jusqu'à 24 h ; dépression respiratoire retardée possible : surveillance." })],
     cautions: [{ conditions: ["ckd", "dialysis"], level: "adapt", text: "insuffisance rénale : la morphine-6-glucuronide (active) s'accumule — dépression respiratoire retardée ; préférer un autre opioïde ou réduire" }],
   },
   {
@@ -333,15 +335,15 @@ export const DRUG_REFERENCES: DrugReference[] = [
   {
     name: "Clonidine",
     words: ["clonidine", "catapressan"],
-    chapter: "chap. 10",
-    doses: [pk("Épargne anesthésique ou frissons (IV lent)", 2, 3, "µg"), pk("Adjuvant d'ALR (même voie que l'AL)", 1, 2, "µg"), rt("Agitation", 0.5, 2, "µg", "/kg/h")],
+    chapter: "chap. 10 et 12",
+    doses: [pk("Épargne anesthésique ou frissons (IV lent)", 2, 3, "µg"), fx("Bloc périphérique (chap. 12)", 150, 150, "µg", { note: "Prolonge le bloc d'environ 2 h." }), pk("Bloc central (chap. 12)", 0.5, 1, "µg"), rt("Agitation", 0.5, 2, "µg", "/kg/h")],
     cautions: [{ conditions: ["av_block"], level: "relative", text: "bradycardie, bloc auriculo-ventriculaire" }],
   },
   {
     name: "Dexmédétomidine",
     words: ["dexmedetomidine", "dexdor"],
-    chapter: "chap. 10",
-    doses: [pk("Charge en 10 min", 1, 1, "µg"), rt("Perfusion", 0.2, 0.7, "µg", "/kg/h")],
+    chapter: "chap. 10 et 12",
+    doses: [pk("Charge en 10 min", 1, 1, "µg"), rt("Perfusion", 0.2, 0.7, "µg", "/kg/h"), fx("Périnerveuse (chap. 12)", 50, 60, "µg", { note: "Prolonge le bloc d'environ 6 h ; hors AMM." })],
     cautions: [{ conditions: ["av_block"], level: "relative", text: "bradycardie, bloc auriculo-ventriculaire : hypotension et bradycardie en perfusion" }],
   },
   {
@@ -367,11 +369,121 @@ export const DRUG_REFERENCES: DrugReference[] = [
   },
 
   // --- Adjuvants d'épargne morphinique (tableau 7.5) ------------------------------------------------
-  { name: "Dexaméthasone", words: ["dexamethasone"], chapter: "chap. 7, tableau 7.5", doses: [pk("Début d'intervention", 0.1, 0.2)], cautions: [{ conditions: ["diabetes_insulin", "diabetes_oral"], level: "adapt", text: "diabète : élévation de la glycémie" }] },
+  { name: "Dexaméthasone", words: ["dexamethasone"], chapter: "chap. 7 et 12", doses: [pk("Début d'intervention (IV lent)", 0.1, 0.2, "mg", { note: "Prolonge aussi un bloc périphérique d'environ 8 h (chap. 12)." }), fx("Périnerveuse (dose plafond)", 4, 4)], cautions: [{ conditions: ["diabetes_insulin", "diabetes_oral"], level: "adapt", text: "diabète : élévation de la glycémie" }] },
   { name: "Kétorolac", words: ["ketorolac", "taradyl"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention", 30, 60)], cautions: [{ conditions: ["ckd", "dialysis", "peptic_ulcer", "gi_bleeding"], level: "contraindicated", text: "insuffisance rénale, ulcère ou hémorragie digestive" }] },
   { name: "Magnésium", words: ["magnesium"], chapter: "chap. 7, tableau 7.5", doses: [pk("Sur 15 min en fin d'intervention", 40, 50)], cautions: [{ conditions: ["myasthenia", "neuromuscular"], level: "relative", text: "potentialise les curares" }] },
   { name: "Lidocaïne IV", words: ["lidocaine iv", "xylocaine iv", "lidocaine intraveineuse"], chapter: "chap. 7, tableau 7.5", doses: [pk("Bolus", 1.5, 1.5), rt("Perfusion", 2, 2, "mg", "/kg/h")], cautions: [{ conditions: ["av_block"], level: "relative", text: "troubles conductifs" }] },
   { name: "Paracétamol", words: ["paracetamol", "perfusalgan", "dafalgan"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention, sur 15 min", 1, 1, "g")], cautions: [{ conditions: ["cirrhosis"], level: "adapt", text: "insuffisance hépatique : réduire" }] },
+
+  // --- Chapitre 11 : hypotenseurs ---------------------------------------------------------------
+  {
+    name: "Nitroglycérine",
+    words: ["nitroglycerine", "trinitrine", "nitronal"],
+    chapter: "chap. 11",
+    doses: [rt("Perfusion", 0.5, 10, "µg", "/kg/min", { note: "Débuter à 5–10 µg/min, +5 µg toutes les 5 min, maximum 500 µg/min ; tubulure en polyéthylène." })],
+    cautions: [
+      { conditions: ["raised_icp", "intracranial_lesion"], level: "relative", text: "hypertension intracrânienne" },
+      { conditions: ["aortic_stenosis"], level: "relative", text: "sténose aortique" },
+      { conditions: ["hcm"], level: "relative", text: "cardiomyopathie obstructive (baisse de précharge)" },
+    ],
+  },
+  {
+    name: "Nitroprussiate",
+    words: ["nitroprussiate", "nitroprusside", "nipride"],
+    chapter: "chap. 11",
+    doses: [rt("Perfusion", 0.5, 3, "µg", "/kg/min", { note: "Deuxième choix ; tachyphylaxie, acidose ou SvO₂ élevée : intoxication au cyanure." })],
+    cautions: [
+      { conditions: ["raised_icp", "intracranial_lesion"], level: "relative", text: "hypertension intracrânienne" },
+      { conditions: ["aortic_stenosis"], level: "relative", text: "sténose aortique" },
+      { conditions: ["recent_mi"], level: "relative", text: "syndrome coronarien aigu" },
+    ],
+  },
+  {
+    name: "Nicardipine",
+    words: ["nicardipine", "loxen"],
+    chapter: "chap. 11",
+    doses: [fx("Bolus IV (1 mg/min)", 1, 10), rt("Perfusion", 2, 4, "mg", "/h", { note: "Paliers de 0,5 mg/h, maximum 10–15 mg/h." })],
+    cautions: [],
+  },
+  {
+    name: "Urapidil",
+    words: ["urapidil", "uradipil", "eupressyl", "ebrantil"],
+    chapter: "chap. 11",
+    doses: [fx("Bolus en 30 s", 10, 50), rt("Entretien", 5, 20, "mg", "/h")],
+    cautions: [],
+  },
+  {
+    name: "Dihydralazine",
+    words: ["dihydralazine", "nepressol"],
+    chapter: "chap. 11",
+    doses: [fx("Bolus IV", 2.5, 20, "mg", { note: "Action en 15 min pendant 2–4 h." })],
+    cautions: [{ conditions: ["coronary", "stable_angina", "recent_mi"], level: "adapt", text: "coronarien : tachycardie réflexe (associer un bêtabloquant)" }, { conditions: ["raised_icp"], level: "relative", text: "hypertension intracrânienne" }],
+  },
+  {
+    name: "Diltiazem",
+    words: ["diltiazem", "tildiem"],
+    chapter: "chap. 11",
+    doses: [rt("Perfusion", 5, 15, "mg", "/h")],
+    cautions: [{ conditions: ["av_block"], level: "relative", text: "bloc auriculo-ventriculaire" }],
+  },
+
+  // --- Chapitres 12 et 13 : anesthésiques locaux ----------------------------------------------------------
+  {
+    name: "Lidocaïne",
+    words: ["lidocaine", "xylocaine", "linisol"],
+    chapter: "chap. 12",
+    doses: [pk("Dose maximale sans adrénaline", 4, 4, "mg", { note: "Total 400 mg ; avec adrénaline 7 mg/kg (500 mg). Doses additives avec les autres anesthésiques locaux." }), pk("Bloc de Bier (bras, lidocaïne 0,5 %)", 3, 4)],
+    cautions: [{ conditions: ["av_block"], level: "relative", text: "troubles conductifs (voie IV)" }],
+    maxDose: { perKg: 4, totalMg: 400, withAdrenalinePerKg: 7, withAdrenalineTotalMg: 500 },
+  },
+  {
+    name: "Mépivacaïne",
+    words: ["mepivacaine", "carbocaine", "scandicaine"],
+    chapter: "chap. 12",
+    doses: [pk("Dose maximale sans adrénaline", 4, 4, "mg", { note: "Total 400 mg ; avec adrénaline 7 mg/kg (500 mg)." })],
+    cautions: [],
+    maxDose: { perKg: 4, totalMg: 400, withAdrenalinePerKg: 7, withAdrenalineTotalMg: 500 },
+  },
+  {
+    name: "Lévobupivacaïne",
+    words: ["levobupivacaine", "chirocaine"],
+    chapter: "chap. 12 et 13",
+    doses: [pk("Dose maximale sans adrénaline", 3, 3, "mg", { note: "Total 150 mg ; avec adrénaline 4 mg/kg (225 mg)." }), fx("Rachianesthésie, hyperbare (tableau 13.3)", 7.5, 15), fx("Rachianesthésie, isobare", 10, 15)],
+    cautions: [],
+    maxDose: { perKg: 3, totalMg: 150, withAdrenalinePerKg: 4, withAdrenalineTotalMg: 225 },
+  },
+  {
+    name: "Bupivacaïne",
+    words: ["bupivacaine", "marcaine"],
+    chapter: "chap. 12 et 13",
+    doses: [pk("Dose maximale sans adrénaline", 3, 3, "mg", { note: "Total 150 mg ; avec adrénaline 4 mg/kg (225 mg). Proscrite pour un bloc de Bier." }), fx("Rachianesthésie, hyperbare (tableau 13.3)", 7.5, 15, "mg", { note: "Durée 90–120 min ; réduire chez la personne âgée." }), fx("Rachianesthésie, isobare", 10, 15, "mg", { note: "Durée 150–300 min." })],
+    cautions: [],
+    maxDose: { perKg: 3, totalMg: 150, withAdrenalinePerKg: 4, withAdrenalineTotalMg: 225 },
+  },
+  {
+    name: "Ropivacaïne",
+    words: ["ropivacaine", "naropeine", "naropin"],
+    chapter: "chap. 12",
+    doses: [pk("Dose maximale sans adrénaline", 3, 3, "mg", { note: "Total 175 mg ; avec adrénaline 4 mg/kg (250 mg). Moins de bloc moteur." })],
+    cautions: [],
+    maxDose: { perKg: 3, totalMg: 175, withAdrenalinePerKg: 4, withAdrenalineTotalMg: 250 },
+  },
+  {
+    name: "Prilocaïne",
+    words: ["prilocaine", "citanest", "baritekal"],
+    chapter: "chap. 12 et 13",
+    doses: [pk("Dose maximale", 8, 8, "mg", { note: "Total 400 mg (600 mg avec adrénaline) ; au-delà de 600 mg : méthémoglobinémie (bleu de méthylène 1–2 mg/kg)." }), fx("Rachianesthésie (Baritekal, tableau 13.3)", 40, 80)],
+    cautions: [{ conditions: ["g6pd"], level: "contraindicated", text: "déficit en G6PD : méthémoglobinémie, bleu de méthylène contre-indiqué" }],
+    maxDose: { perKg: 8, totalMg: 400, withAdrenalineTotalMg: 600 },
+  },
+  {
+    name: "Chloroprocaïne",
+    words: ["chloroprocaine", "clorotekal", "nesacaine", "ivracaine"],
+    chapter: "chap. 12 et 13",
+    doses: [pk("Dose maximale", 12, 12, "mg", { note: "Total 600 mg." }), fx("Rachianesthésie (Clorotekal, tableau 13.3)", 30, 45, "mg", { note: "Durée 40–80 min : ambulatoire." })],
+    cautions: [{ conditions: ["pseudocholinesterase"], level: "relative", text: "ester métabolisé par les pseudocholinestérases : toxicité accrue" }],
+    maxDose: { perKg: 12, totalMg: 600, withAdrenalineTotalMg: 650 },
+  },
 ];
 
 const fold = (t: string) =>
@@ -383,7 +495,14 @@ const fold = (t: string) =>
 /** The reference for a plan drug's name (« Propofol 1 % » → propofol). */
 export function drugReferenceFor(name: string): DrugReference | undefined {
   const f = fold(name);
-  return DRUG_REFERENCES.find((r) => r.words.some((w) => f.includes(w)));
+  // The word that comes first in the name decides: « Lidocaïne adrénalinée » is lidocaine, not adrenaline.
+  let best: { ref: DrugReference; at: number } | undefined;
+  for (const ref of DRUG_REFERENCES)
+    for (const w of ref.words) {
+      const at = f.indexOf(w);
+      if (at >= 0 && (!best || at < best.at)) best = { ref, at };
+    }
+  return best?.ref;
 }
 
 export function formatReferenceDose(d: ReferenceDose): string {
@@ -448,6 +567,43 @@ export function morphineEquivalents(treatments: PatientTreatment[]): { total: nu
     const mEq = Math.round(t.dailyDoseMg * conv.factor);
     total += mEq;
     parts.push(`${t.name} ${t.dailyDoseMg} mg/j ≈ ${mEq} mg de morphine orale`);
+  }
+  return { total, parts, unknown };
+}
+
+// ---------------------------------------------------------------------------
+// Local anaesthetic load of a plan (tableau 12.1: toxic doses add up)
+// ---------------------------------------------------------------------------
+
+export interface LocalAnaestheticLoad {
+  /** Share of the toxic dose, per product and summed (1 = 100 %), without adrenaline — the conservative case. */
+  total: number;
+  parts: { name: string; mg: number; maxMg: number; share: number }[];
+  /** Products whose dose isn't computable yet (weight or dose missing). */
+  unknown: string[];
+}
+
+/** The plan's local anaesthetics as a share of their toxic dose — without adrenaline unless the drug's name says so. */
+export function localAnaestheticLoad(drugs: { name: string; amount: number | null; unit: string; doseMode: "fixed" | "per_kg"; weightBasis: string }[], weightKg: number | undefined, doseOf: (d: (typeof drugs)[number]) => { value: number; unit: string } | null): LocalAnaestheticLoad {
+  const parts: LocalAnaestheticLoad["parts"] = [];
+  const unknown: string[] = [];
+  let total = 0;
+  for (const d of drugs) {
+    const ref = drugReferenceFor(d.name);
+    if (!ref?.maxDose) continue;
+    const dose = doseOf(d);
+    const mg = dose ? (dose.unit === "g" ? dose.value * 1000 : dose.unit === "µg" ? dose.value / 1000 : dose.unit === "mg" ? dose.value : NaN) : NaN;
+    if (!weightKg || !Number.isFinite(mg)) {
+      unknown.push(d.name);
+      continue;
+    }
+    const withAdrenaline = /adr[eé]nalin|epinephrin/i.test(d.name);
+    const perKg = withAdrenaline ? ref.maxDose.withAdrenalinePerKg ?? ref.maxDose.perKg : ref.maxDose.perKg;
+    const cap = withAdrenaline ? ref.maxDose.withAdrenalineTotalMg ?? ref.maxDose.totalMg : ref.maxDose.totalMg;
+    const maxMg = Math.min(perKg * weightKg, cap);
+    const share = mg / maxMg;
+    total += share;
+    parts.push({ name: d.name, mg: Math.round(mg * 10) / 10, maxMg: Math.round(maxMg), share });
   }
   return { total, parts, unknown };
 }
