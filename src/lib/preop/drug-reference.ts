@@ -75,6 +75,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     ],
     cautions: [
       { conditions: ["heart_failure", "dilated_cardiomyopathy", "aortic_stenosis"], level: "adapt", text: "cardiopathie : hypotension de 20–30 % à l'induction — bolus de 30–40 mg toutes les 10 s jusqu'à la perte de conscience" },
+      { conditions: ["pulmonary_hypertension"], level: "relative", text: "hypertension pulmonaire : baisse de la précharge du VD, étomidate préféré (chap. 27)" },
     ],
   },
   {
@@ -85,6 +86,8 @@ export const DRUG_REFERENCES: DrugReference[] = [
     cautions: [
       { conditions: ["porphyria"], level: "contraindicated", text: "porphyrie (surtout porphyrie aiguë intermittente)" },
       { conditions: ["malnutrition", "nephrotic"], level: "adapt", text: "hypoalbuminémie : fraction libre augmentée, réduire la dose" },
+      { conditions: ["coronary", "stable_angina", "recent_mi"], level: "contraindicated", text: "cardiopathie ischémique : augmente la consommation d'O₂ du myocarde (chap. 27)" },
+      { conditions: ["heart_failure", "dilated_cardiomyopathy"], level: "relative", text: "insuffisance cardiaque : cardiomyodépression importante (chap. 27)" },
     ],
   },
   {
@@ -95,6 +98,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     cautions: [
       { conditions: ["porphyria"], level: "contraindicated", text: "porphyrie" },
       { conditions: ["adrenal_insufficiency"], level: "relative", text: "insuffisance surrénalienne : inhibe la synthèse du cortisol pendant 24 h" },
+      { conditions: ["myotonic_dystrophy"], level: "contraindicated", text: "dystrophie myotonique : les myoclonies précipitent des contractures (chap. 29)" },
     ],
   },
   {
@@ -116,6 +120,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
       { conditions: ["porphyria"], level: "contraindicated", text: "porphyrie" },
       { conditions: ["psychosis", "bipolar"], level: "contraindicated", text: "maladie psychiatrique" },
       { atc: ["C07"], level: "adapt", text: "sous bêtabloquant, les effets sympathomimétiques disparaissent (cardiomyodépression)" },
+      { conditions: ["pulmonary_hypertension"], level: "contraindicated", text: "hypertension pulmonaire : élève les résistances vasculaires pulmonaires (chap. 27)" },
     ],
   },
   {
@@ -127,6 +132,8 @@ export const DRUG_REFERENCES: DrugReference[] = [
       { conditions: ["osa", "copd", "obesity_hypoventilation", "raised_icp"], level: "relative", text: "prémédication sédative contre-indiquée : SAOS, BPCO sévère, obstruction des voies aériennes, baisse de la vigilance (chap. 15)" },
       { conditions: ["ckd", "dialysis"], level: "adapt", text: "insuffisance rénale : l'hydroxymidazolam s'accumule" },
       { atc: ["J01FA", "J02AC", "J05A"], level: "adapt", text: "inhibiteur du CYP3A4 : effet prolongé" },
+      { conditions: ["cognitive"], level: "relative", text: "démence : confusion postopératoire (chap. 29)" },
+      { conditions: ["cirrhosis"], level: "relative", text: "cirrhose : pas de prémédication sédative (encéphalopathie, chap. 30)" },
     ],
   },
   {
@@ -229,6 +236,8 @@ export const DRUG_REFERENCES: DrugReference[] = [
       { conditions: ["raised_icp", "intracranial_lesion"], level: "relative", text: "hypertension intracrânienne" },
       { surgery: /globe|oculaire/i, level: "relative", text: "plaie oculaire avec ouverture du globe" },
       { conditions: ["pregnancy", "cirrhosis", "malnutrition"], level: "adapt", text: "grossesse, cachexie, insuffisance hépatique : bloc prolongé" },
+      { conditions: ["myasthenia"], level: "adapt", text: "myasthénie : résistance relative (chap. 29)" },
+      { conditions: ["lambert_eaton"], level: "relative", text: "Lambert-Eaton : sensibilité augmentée (chap. 29)" },
     ],
   },
   {
@@ -280,6 +289,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     cautions: [
       { conditions: ["asthma", "copd"], level: "relative", text: "asthme ou BPCO spastique : bronchoconstriction" },
       { conditions: ["parkinson"], level: "relative", text: "maladie de Parkinson" },
+      { conditions: ["myotonic_dystrophy"], level: "relative", text: "dystrophie myotonique : la décurarisation peut précipiter des contractures (chap. 29)" },
     ],
   },
   {
@@ -334,6 +344,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
       { conditions: ["glaucoma"], level: "relative", text: "glaucome à angle fermé" },
       { conditions: ["urinary_retention"], level: "relative", text: "hypertrophie prostatique, obstacle du col vésical" },
       { conditions: ["heart_transplant"], level: "adapt", text: "cœur dénervé : sans effet" },
+      { conditions: ["parkinson", "cognitive"], level: "relative", text: "Parkinson ou démence : confusion — préférer le glycopyrrolate (chap. 29)" },
     ],
   },
   {
@@ -375,9 +386,23 @@ export const DRUG_REFERENCES: DrugReference[] = [
   // --- Adjuvants d'épargne morphinique (tableau 7.5) ------------------------------------------------
   { name: "Dexaméthasone", words: ["dexamethasone"], chapter: "chap. 7, 12 et 23", doses: [pk("Début d'intervention (IV lent)", 0.1, 0.2, "mg", { note: "Prolonge aussi un bloc périphérique d'environ 8 h (chap. 12)." }), fx("Prévention des NVPO, à l'induction", 4, 8), fx("Périnerveuse (dose plafond)", 4, 4)], cautions: [{ conditions: ["diabetes_insulin", "diabetes_oral"], level: "adapt", text: "diabète : élévation de la glycémie" }] },
   { name: "Kétorolac", words: ["ketorolac", "taradyl"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention", 30, 60)], cautions: [{ conditions: ["ckd", "dialysis", "peptic_ulcer", "gi_bleeding"], level: "contraindicated", text: "insuffisance rénale, ulcère ou hémorragie digestive" }] },
-  { name: "Magnésium", words: ["magnesium"], chapter: "chap. 7, tableau 7.5", doses: [pk("Sur 15 min en fin d'intervention", 40, 50)], cautions: [{ conditions: ["myasthenia", "neuromuscular"], level: "relative", text: "potentialise les curares" }] },
+  { name: "Magnésium", words: ["magnesium"], chapter: "chap. 7 et 28", doses: [pk("Sur 15 min en fin d'intervention", 40, 50), fx("Crise d'asthme (en 15–20 min)", 2, 2, "g")], cautions: [{ conditions: ["myasthenia", "neuromuscular"], level: "relative", text: "potentialise les curares" }] },
   { name: "Lidocaïne IV", words: ["lidocaine iv", "xylocaine iv", "lidocaine intraveineuse"], chapter: "chap. 7, tableau 7.5", doses: [pk("Bolus", 1.5, 1.5), rt("Perfusion", 2, 2, "mg", "/kg/h")], cautions: [{ conditions: ["av_block"], level: "relative", text: "troubles conductifs" }] },
   { name: "Paracétamol", words: ["paracetamol", "perfusalgan", "dafalgan"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention, sur 15 min", 1, 1, "g")], cautions: [{ conditions: ["cirrhosis"], level: "adapt", text: "insuffisance hépatique : réduire (contre-indiqué si sévère, chap. 25)" }] },
+
+  // --- Chapitres 27 à 29 : chirurgie cardiaque, vasculaire et neurochirurgie ------------------------
+  {
+    name: "Acide tranexamique",
+    onlyInPlan: true,
+    words: ["tranexamique", "exacyl", "cyklokapron"],
+    chapter: "chap. 27",
+    doses: [pk("Avant l'ouverture du péricarde (CEC), puis après la protamine", 15, 15, "mg", { note: "3e dose possible puis 10 mg/kg/h, total ≤ 100 mg/kg." }), rt("Entretien", 10, 10, "mg", "/kg/h")],
+    cautions: [{ conditions: ["vte", "thrombophilia", "antiphospholipid"], level: "relative", text: "antécédent thromboembolique ou thrombophilie" }, { conditions: ["epilepsy"], level: "relative", text: "épilepsie : convulsions aux fortes doses" }],
+  },
+  { name: "Héparine (CEC)", onlyInPlan: true, words: ["heparine sodique", "heparine non fractionnee", "heparine cec"], chapter: "chap. 27", doses: [pk("Avant la CEC (ACT 400–480 s)", 300, 400, "UI", { note: "ACT normal 70–160 s ; pontage à cœur battant : ACT 250 s." })], cautions: [{ conditions: ["hit_history"], level: "contraindicated", text: "antécédent de TIH" }] },
+  { name: "Protamine", onlyInPlan: true, words: ["protamine"], chapter: "chap. 27", doses: [fx("Neutralisation : 1 mg pour 100 UI d'héparine, lentement", 1, 1, "mg", { note: "Puis 25–50 mg si le saignement persiste (ACT)." })], cautions: [{ conditions: ["pulmonary_hypertension"], level: "relative", text: "hypertension pulmonaire aiguë possible : injection lente" }] },
+  { name: "Milrinone", onlyInPlan: true, words: ["milrinone", "corotrope"], chapter: "chap. 27", doses: [rt("Perfusion", 0.5, 0.5, "µg", "/kg/min")], cautions: [{ conditions: ["ckd", "dialysis"], level: "adapt", text: "insuffisance rénale : réduire" }] },
+  { name: "Mannitol", onlyInPlan: true, words: ["mannitol"], chapter: "chap. 29", doses: [pk("Osmothérapie 20 % (en 10–20 min, après l'ouverture de la dure-mère)", 0.25, 1, "g", { note: "Osmolarité plasmatique < 320 mOsm/l." })], cautions: [{ conditions: ["heart_failure"], level: "relative", text: "insuffisance cardiaque : expansion volémique" }] },
 
   // --- Chapitres 23 et 25 : NVPO, analgésie, hyperthermie maligne -------------------------------
   { name: "Ondansétron", words: ["ondansetron", "zofran", "zophren"], chapter: "chap. 23", doses: [fx("Prévention des NVPO, 30 min avant la fin", 4, 4, "mg", { note: "50–150 µg/kg, maximum 8 mg ; traitement : 4 mg 3×/j." })], cautions: [{ conditions: ["long_qt"], level: "relative", text: "allongement du QT" }] },

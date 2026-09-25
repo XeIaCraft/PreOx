@@ -519,13 +519,15 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
       const vt = (k: number) => Math.round((ibw * k) / 10) * 10;
       const peepHigh = bmi !== undefined && bmi >= 35;
       const obstructive = anyOf(cond, ["copd", "asthma"]) === true;
+      const restrictive = has(cond, "restrictive") === true;
       const rightHeart = anyOf(cond, ["pulmonary_hypertension"]) === true;
       const lmaSize = p.weightKg === undefined ? "" : p.weightKg < 50 ? "3" : p.weightKg < 70 ? "4" : p.weightKg <= 100 ? "5" : "6";
       add({
         id: "ventilation",
         level: "info",
-        title: `Réglages de départ : Vt ${vt(6)}–${vt(8)} ml, PEP ${peepHigh ? "8–10" : "5"}`,
+        title: `Réglages de départ : Vt ${restrictive ? `${vt(4)}–${vt(6)}` : `${vt(6)}–${vt(8)}`} ml, PEP ${peepHigh ? "8–10" : "5"}`,
         detail: [
+          restrictive ? `Fibrose / syndrome restrictif : Vt 4–6 ml/kg du poids idéal (${Math.round(ibw)} kg), FR 14–18/min, pression contrôlée, FiO₂ la plus basse pour SpO₂ > 90 % (risque de pneumothorax).` : "",
           `Vt 6–8 ml/kg du poids idéal (${Math.round(ibw)} kg), FR 10–12/min, PEP ${peepHigh ? "8–10 cmH₂O (obésité)" : "5 cmH₂O"} ; pression de plateau < 30 cmH₂O, idéalement < 25. Ventilation protectrice : Vt limité, PEP et manœuvres de recrutement (20–30 cmH₂O pendant 20–30 s) si hypoxémie.`,
           obstructive ? "Obstructif : rapport I/E abaissé (allonger l'expiration), surveiller l'auto-PEP (le débit expiratoire ne revient pas à zéro)." : "",
           rightHeart ? "Hypertension pulmonaire / VD fragile : PEP basse (la pression positive augmente la postcharge du VD)." : "",
@@ -534,7 +536,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
           .filter(Boolean)
           .join(" "),
         why: `${p.sex === "M" ? "Homme" : "Femme"}, ${p.heightCm} cm${p.weightKg ? `, ${p.weightKg} kg` : ""} ; anesthésie générale au plan`,
-        source: `${MANUAL}, chap. 16 (équipement), 17 (tableaux 17.1 et 17.2) et 18 (paramètres ventilatoires)`,
+        source: `${MANUAL}, chap. 16 (équipement), 17 (tableaux 17.1 et 17.2), 18 (paramètres ventilatoires) et 28`,
       });
     }
 
@@ -794,12 +796,232 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
       });
   }
 
+  // --- Specialities: day case, heart, vessels, thorax, neuro, digestive (manual, chapters 26–30) -----
+  {
+    const techs = new Set([...(plan?.techniques ?? []), ...c.techniques]);
+    const general = techs.has("general");
+    const name = fold(c.surgery.name);
+    const hours = c.surgery.durationHours;
+    const asaClass = scores.asa ?? 0;
+    const detail = (id: string, key: string) => cond[id]?.details?.[key];
+    const CH = (k: number, what: string) => `${MANUAL}, chap. ${k} (${what})`;
+
+    // Day-case surgery (chap. 26).
+    if (c.surgery.setting === "ambulatory") {
+      const against: string[] = [];
+      if (asaClass >= 4) against.push(`ASA ${asaClass}`);
+      else if (asaClass === 3) against.push("ASA 3 : seulement si stable");
+      if (hours !== undefined && hours > 1.5) against.push(`durée prévue ${n(hours)} h (> 1 h 30)`);
+      if (c.surgery.bleedingRisk === "high") against.push("risque hémorragique élevé");
+      if (has(cond, "osa") || r.stopBang.level === "high") against.push("SAOS : premier du programme et surveillance de 5 à 8 h avant la sortie");
+      add({
+        id: "day-case",
+        level: against.some((x) => !x.startsWith("SAOS") && !x.startsWith("ASA 3")) ? "medium" : "info",
+        title: against.length ? "Ambulatoire : critères à revoir" : "Ambulatoire : consignes de sortie",
+        detail: `Adulte accompagnant pour le retour et la première nuit, téléphone et soins accessibles, ni conduite ni travail pendant 24 h. Sortie : constantes comme avant l'intervention, pas de saignement, voies aériennes libres, orienté, sans nausées, miction reprise (après rachianesthésie ou chirurgie urologique), bloc médullaire levé, marche assurée. Agents de courte durée, analgésie précoce (ALR, infiltration, paracétamol, AINS) et prophylaxie des NVPO systématique.${against.length ? ` À revoir : ${against.join(" ; ")}.` : ""}`,
+        why: `Intervention prévue en ambulatoire${against.length ? ` ; ${against.join(" ; ")}` : ""}`,
+        source: CH(26, "chirurgie ambulatoire"),
+      });
+    }
+
+    // Haemodynamic goals by heart disease (tableaux 27.1 et 27.2).
+    const goals: string[] = [];
+    const which = fold(String(detail("valve", "which") ?? ""));
+    if (anyOf(cond, ["coronary", "stable_angina", "recent_mi", "coronary_stent", "cabg"]) === true)
+      goals.push("cardiopathie ischémique — « lent, mou, normotendu » : FC basse, PAM > 80 mmHg, FC/PAM < 1, Hb > 9 g/dL, ECG 5 dérivations avec ST, halogénés à l'entretien ; ni kétamine ni thiopental");
+    if (has(cond, "heart_failure"))
+      goals.push("insuffisance cardiaque — précharge maintenue sans surcharge, postcharge basse, inotrope si besoin ; induction lente, semi-assise, doses divisées par deux, PAM ≥ 70 mmHg, Hb > 9 g/dL ; l'ALR n'apporte pas de bénéfice et un bloc au-dessus de T5 fait chuter le débit");
+    if (has(cond, "aortic_stenosis"))
+      goals.push("rétrécissement aortique — « plein, régulier, vasoconstricté » : précharge élevée, rythme sinusal lent, phényléphrine ; éviter les anesthésies médullaires");
+    if (/mitral/.test(which) && /stenos|retrec/.test(which))
+      goals.push("rétrécissement mitral — « ventilé, lent, vasodilaté en pulmonaire » : pas de tachycardie, vasoconstriction systémique");
+    else if (/mitral/.test(which) && /prolaps/.test(which))
+      goals.push("prolapsus mitral — « plein, mou, rempli » : précharge élevée, postcharge maintenue, contractilité diminuée");
+    else if (/mitral/.test(which))
+      goals.push("insuffisance mitrale — « ventilé, tonique, vasodilaté » : normovolémie, postcharge basse, légère tachycardie");
+    if (/aortique/.test(which) && /insuff|fuite|regurg/.test(which))
+      goals.push("insuffisance aortique — « plein, rapide, vasodilaté » : pas de bradycardie ni de vasoconstricteur artériel");
+    if (has(cond, "hcm"))
+      goals.push("cardiomyopathie obstructive — « plein, mou, fermé » : précharge élevée, vasoconstriction, bêtabloquant ; les anesthésies médullaires aggravent l'obstruction");
+    if (has(cond, "pericarditis"))
+      goals.push("tamponnade ou constriction — « plein, rapide, fermé » : ventilation spontanée jusqu'à la décompression si la PA baisse au Valsalva ; étomidate et séquence rapide");
+    if (has(cond, "pulmonary_hypertension"))
+      goals.push("hypertension pulmonaire — ne jamais laisser la PA systémique descendre sous la PAP : noradrénaline, FiO₂ élevée, PaCO₂ 25–30 mmHg, PEP < 5, analgésie ; étomidate ; ni kétamine, ni desflurane, ni N₂O ; rachianesthésie déconseillée (péridurale possible)");
+    if (goals.length)
+      add({
+        id: "hemodynamic-goals",
+        level: "info",
+        title: "Objectifs hémodynamiques",
+        detail: goals.map((g) => g.charAt(0).toUpperCase() + g.slice(1)).join(". ") + ".",
+        why: goals.map((g) => g.split(" — ")[0]).join(" ; "),
+        source: CH(27, "tableaux 27.1 et 27.2"),
+      });
+
+    // Hypertension before induction (chap. 27).
+    if ((p.sbp !== undefined && p.sbp >= 180) || (p.dbp !== undefined && p.dbp >= 110))
+      add({
+        id: "bp-180",
+        level: "medium",
+        title: `PA ${p.sbp ?? "?"}/${p.dbp ?? "?"} mmHg : rechercher une atteinte d'organe`,
+        detail: "Sous 180/110, l'intervention peut avoir lieu. Au-delà, elle reste possible sans atteinte des organes cibles (SCA, décompensation, encéphalopathie, AVC) ; contrôler la pression habituelle auprès du médecin traitant. La labilité tensionnelle est plus dangereuse que la valeur : rester à ± 20 % des valeurs habituelles.",
+        why: `PA mesurée à la consultation ${p.sbp ?? "?"}/${p.dbp ?? "?"} mmHg`,
+        source: CH(27, "hypertension artérielle"),
+      });
+
+    // Vascular and cardiac surgery (chap. 27).
+    if (/endarteriectomie|carotid/.test(name))
+      add({ id: "carotid-surgery", level: "info", title: "Endartériectomie carotidienne", detail: "ALR (bloc cervical superficiel ou profond) : surveillance neurologique au clampage (30–40 min) et shunt seulement si besoin ; si déficit, PAM + 20 % puis shunt ; convulsions ou coma : anesthésie générale. Cathéter artériel, ECG 5 dérivations ; après : hyperperfusion (contrôle tensionnel) et hématome cervical.", why: surgeryName, source: CH(27, "endartériectomie carotidienne"), material: ["Cathéter artériel"] });
+    if (/aort|anevrisme|evar|tevar|endoprothese/.test(name) && !/valv|tavi/.test(name) && c.surgery.category !== "D") {
+      const seg = /crosse/.test(name) ? "crosse" : /thoraco-?abdo|descendante|thoracique|tevar/.test(name) ? "descendante" : /ascendante|bentall/.test(name) ? "ascendante" : "abdominale";
+      const endo = /endoprothese|evar|tevar|endovasc/.test(name);
+      const text: Record<string, string> = {
+        ascendante: "CEC ; précharge normale, postcharge abaissée, bêtabloquant, éviter la bradycardie. Cathéters fémoral et radial droit (clampage du tronc brachiocéphalique).",
+        crosse: "Hypothermie profonde et arrêt circulatoire (< 20–30 min) : perfusion cérébrale continue, légère hyperventilation, PAM 80 mmHg. Cathéters radial droit et fémoral droit.",
+        descendante: "Clampage : PAM proximale 70–80 mmHg (esmolol, pas de vasodilatateur), distale 60–70 mmHg (CEC partielle) ; protection médullaire (drainage du LCR, normoglycémie, hypothermie modérée). Cathéter radial droit (jamais gauche) et fémoral droit, sonde à double lumière, pas de péridurale.",
+        abdominale: "Clampage infrarénal bien toléré ; hypotension au déclampage (remplissage, vasopresseur). PAM 80 mmHg, normovolémie, pas d'anémie ; AG + péridurale thoracique. Cathéter radial.",
+      };
+      add({
+        id: "aortic-surgery",
+        level: "info",
+        title: endo ? "Endoprothèse aortique" : `Chirurgie de l'aorte ${seg === "crosse" ? "(crosse)" : seg}`,
+        detail: endo
+          ? `Abdominale : sédation-analgésie possible ; thoracique ou hybride : AG (ETO). PAM abaissée vers 50 mmHg au déploiement. Risques : fuite, néphropathie au contraste, ischémie médullaire.`
+          : `${text[seg]} Deux voies de gros calibre, voie centrale, sonde urinaire, ETO.`,
+        why: surgeryName,
+        source: CH(27, "chirurgie aortique, tableau 27.6"),
+        material: endo ? ["Cathéter artériel"] : ["Cathéter artériel", "Voie veineuse centrale", "ETO"],
+      });
+    }
+    if (c.surgery.category === "F" && !/tavi|percutan|mitraclip|clip/.test(name)) {
+      const swan = [
+        detail("heart_failure", "ef") === "severe" || detail("heart_failure", "ef") === "ref" ? "FE basse" : "",
+        cond.valve?.severe || detail("valve", "severity") === "severe" ? "valvulopathie sévère" : "",
+        has(cond, "pulmonary_hypertension") ? "hypertension pulmonaire" : "",
+        anyOf(cond, ["dialysis", "home_o2"]) === true ? "comorbidité grave (dialyse, BPCO sévère)" : "",
+      ].filter(Boolean);
+      add({
+        id: "cpb",
+        level: "info",
+        title: "Chirurgie sous CEC : préparation",
+        detail: `ECG 5 dérivations, deux voies périphériques, voie centrale multilumière, cathéter artériel, sonde urinaire, températures œsophagienne et vésicale, ETO${swan.length ? ` ; Swan-Ganz à discuter (${swan.join(", ")})` : ""}. Pas de N₂O. Acide tranexamique 15 mg/kg avant l'ouverture du péricarde ; héparine 300–400 UI/kg (ACT > 400 s) ; protamine 1 mg/100 UI. Reprise chirurgicale si drains > 500 ml la 1re heure ou > 300 ml/h pendant 3 h.`,
+        why: surgeryName,
+        source: CH(27, "stratégie anesthésique en CEC"),
+        material: ["Cathéter artériel", "Voie veineuse centrale", "ETO"],
+      });
+    }
+    if (/tavi|mitraclip|clip mitral/.test(name))
+      add({ id: "structural", level: "info", title: /tavi/.test(name) ? "TAVI" : "Plastie mitrale percutanée", detail: /tavi/.test(name) ? "Voie fémorale : sédation-analgésie habituelle ; voie transapicale (mini-thoracotomie) : anesthésie générale. Risques : lésion artérielle, AVC." : "Anesthésie générale (ETO indispensable), peu stimulante : réveil rapide ; objectifs de l'insuffisance mitrale (précharge maintenue, postcharge basse, pas de bradycardie).", why: surgeryName, source: CH(27, "procédures structurelles") });
+
+    // Thoracic surgery (chap. 28).
+    const lungResection = /lobectom|pneumonectom|segmentectom|wedge|bilobectom|thoracotom|decortication|pleurectom/.test(name);
+    const olv = lungResection || /oesophagectom|œsophagectom|aorte thoracique|thoracoscop/.test(name) || (c.surgery.category === "G" && c.surgery.incision === "intrathoracic");
+    if (olv)
+      add({
+        id: "one-lung",
+        level: "info",
+        title: "Ventilation unipulmonaire",
+        detail: `Sonde à double lumière gauche${p.sex ? ` ${p.sex === "M" ? "39–41" : "35–37"} F` : " (39–41 F homme, 35–37 F femme)"}, repère ≈ 29 cm, position contrôlée au fibroscope (bloqueur bronchique si contre-indication). Vt 6–8 ml/kg, PEP 3–4, pression de plateau < 25, FiO₂ 0,5–0,8, pression contrôlée, hypercapnie tolérée. Hypoxémie : FiO₂ 1, position de la sonde, CPAP 5–10 sur le poumon exclu, recrutement. Perfusions < 3 l et bilan < 20 ml/kg sur 24 h ; péridurale ou bloc paravertébral.${lungResection ? " Résection : VEMS prédit postopératoire = VEMS × (1 − segments réséqués/19) ; > 40 % faible risque, < 30 % abstention (avec la DLCO et la VO₂max)." : ""}`,
+        why: surgeryName,
+        source: CH(28, "chirurgie thoracique"),
+        material: ["Sonde à double lumière", "Fibroscope"],
+      });
+
+    // Laparoscopy, laparotomy, liver, oesophagus (chap. 30).
+    if (/coelioscop|cœlioscop|laparoscop|robot/.test(name)) {
+      const ci = [has(cond, "raised_icp") ? "hypertension intracrânienne (absolue)" : "", has(cond, "heart_failure") ? "insuffisance cardiaque" : "", anyOf(cond, ["ckd", "dialysis"]) === true ? "insuffisance rénale" : "", has(cond, "vp_shunt") ? "dérivation ventriculopéritonéale" : "", /foramen|fop/.test(fold(p.history ?? "")) ? "foramen ovale perméable" : ""].filter(Boolean);
+      if (ci.length)
+        add({ id: "laparoscopy-ci", level: ci[0].includes("absolue") ? "high" : "medium", title: "Cœlioscopie : contre-indication", detail: "Pneumopéritoine (PIA ≤ 12–15 mmHg) : baisse du retour veineux et du débit, hypercapnie, hausse de la PIC ; Trendelenburg. L'hypertension intracrânienne est une contre-indication absolue ; insuffisance cardiaque, insuffisance rénale, FOP, hypovolémie et dérivation ventriculopéritonéale sont relatives.", why: ci.join(" ; "), source: CH(30, "laparoscopie") });
+    }
+    if (c.surgery.incision === "upper_abdominal" || /laparotom|hepatectom|whipple|duodenopancreat|gastrectom|oesophagectom|œsophagectom/.test(name)) {
+      const liver = /hepatectom/.test(name);
+      const oeso = /oesophagectom|œsophagectom/.test(name);
+      const rate = oeso ? [2, 3] : [2, 6];
+      add({
+        id: "laparotomy",
+        level: "info",
+        title: liver ? "Hépatectomie" : oeso ? "Œsophagectomie" : "Laparotomie",
+        detail: `AG + péridurale thoracique ; voies de gros calibre, sonde gastrique et urinaire, monitorage dynamique de la volémie. Apports restrictifs ${rate[0]}–${rate[1]} ml/kg/h${p.weightKg ? ` (≈ ${Math.round(rate[0] * p.weightKg)}–${Math.round(rate[1] * p.weightKg)} ml/h)` : ""} : la surcharge augmente les complications.${liver ? " PVC basse pendant la transsection, clampages de 15–20 min entrecoupés de 5–10 min de reperfusion, produits sanguins prêts ; 70 % d'un foie sain résécable, 50 % d'un foie cirrhotique." : ""}${oeso ? " Sonde à double lumière si thoracotomie ouverte ; réanimation après l'intervention." : ""} Réhabilitation améliorée : boissons sucrées jusqu'à 2 h avant, épargne morphinique, mobilisation et réalimentation précoces.`,
+        why: surgeryName,
+        source: CH(30, liver ? "chirurgie hépatique" : oeso ? "œsophagectomie" : "laparotomie"),
+      });
+    }
+
+    // Neurosurgery (chap. 29).
+    if (c.surgery.category === "D") {
+      const awake = /vigile|eveille|stimulation cerebrale|stereotax|parkinson|biopsie/.test(name);
+      const spine = /rachi|laminect|arthrodese|hernie discale|discectom|vertebr/.test(name);
+      const pituitary = /hypophys|transsphenoid/.test(name);
+      add({
+        id: "neurosurgery",
+        level: "info",
+        title: awake ? "Chirurgie stéréotaxique ou vigile" : spine ? "Chirurgie du rachis" : pituitary ? "Chirurgie de l'hypophyse" : "Neurochirurgie intracrânienne",
+        detail: awake
+          ? "Aucun anxiolytique, sédatif ni opioïde en prémédication : la coopération du patient est nécessaire. Sédation consciente (propofol–rémifentanil ou dexmédétomidine) ou endormi-éveillé-endormi, bloc du scalp à l'AL de longue durée."
+          : spine
+            ? "Rachis cervical instable : intubation sans flexion (vidéolaryngoscope ou fibroscope). Potentiels évoqués moteurs : propofol en continu, pas de curare. Décubitus ventral (voir l'installation)."
+            : pituitary
+              ? "Traitement endocrinien poursuivi ; substitution cortisonique : hydrocortisone 100 mg. Intubation difficile possible (Cushing, acromégalie). Voie transsphénoïdale (vasoconstricteurs) ; après : diabète insipide ou SIADH."
+              : "Pas de prémédication sédative si HTIC. Tête surélevée de 30°, sans rotation ni compression jugulaire ; propofol à l'entretien (sévoflurane possible), pas de N₂O ni de dérivés nitrés ; NaCl 0,9 %, jamais de glucosé ; PaCO₂ 35–40 (32–35 si besoin), PEP ≤ 5 ; mannitol après l'ouverture de la dure-mère ; prophylaxie anticomitiale en sus-tentoriel ; réveil au bloc pour l'examen neurologique.",
+        why: surgeryName,
+        source: CH(29, "spécificités de la neuroanesthésie"),
+        material: awake || spine || pituitary ? undefined : ["Cathéter artériel", "BIS / profondeur d'anesthésie"],
+      });
+    }
+    if (/sismotherap|electroconvuls|electrochoc/.test(name)) {
+      const ci = [has(cond, "raised_icp") ? "hypertension intracrânienne (absolue)" : "", anyOf(cond, ["stable_angina", "recent_mi"]) === true ? "angor" : "", has(cond, "heart_failure") ? "insuffisance cardiaque" : "", has(cond, "glaucoma") ? "glaucome" : ""].filter(Boolean);
+      add({ id: "ect", level: ci.some((x) => x.includes("absolue")) ? "high" : "info", title: "Électroconvulsivothérapie", detail: `Protège-dents, garrot sur un bras (observer la crise), propofol ou étomidate (abaisse le seuil) puis succinylcholine ; ventilation au masque et hyperventilation ; crise > 90–120 s : petite dose d'hypnotique. Phase tonique vagale puis décharge sympathique.${ci.length ? ` Contre-indication : ${ci.join(", ")}.` : ""}`, why: surgeryName + (ci.length ? ` ; ${ci.join(", ")}` : ""), source: CH(29, "électroconvulsivothérapie") });
+    }
+
+    // Neuromuscular and neurodegenerative diseases (chap. 29).
+    const neuro: string[] = [];
+    if (has(cond, "myasthenia")) neuro.push("myasthénie : curares non dépolarisants à 1/10–1/5 de la dose avec monitorage ; ventilation postopératoire si maladie ≥ 6 ans, pyridostigmine > 750 mg/j, CV < 40 ml/kg ou pneumopathie associée ; aggravent : morphine, magnésium, benzodiazépines, aminosides, anticalciques");
+    if (has(cond, "lambert_eaton")) neuro.push("Lambert-Eaton : sensibilité à tous les curares (besoins − 50 à 70 %)");
+    if (has(cond, "myotonic_dystrophy")) neuro.push("dystrophie myotonique : ni étomidate ni succinylcholine, éviter la décurarisation, pas de sédation, métoclopramide en prémédication ; ECG ± échographie et EFR");
+    if (has(cond, "parkinson")) neuro.push("Parkinson : traitement poursuivi le matin ; éviter atropine (glycopyrrolate), métoclopramide, dropéridol ; PA instable sous lévodopa");
+    if (has(cond, "cognitive")) neuro.push("démence : éviter midazolam et atropine (glycopyrrolate)");
+    if (has(cond, "multiple_sclerosis")) neuro.push("sclérose en plaques : éviter l'hyperthermie ; rachianesthésie à discuter (poussée), péridurale possible");
+    if (neuro.length)
+      add({
+        id: "neuro-disease",
+        level: "medium",
+        title: "Maladie neurologique : conduite anesthésique",
+        detail: neuro.map((x) => x.charAt(0).toUpperCase() + x.slice(1)).join(". ") + ".",
+        why: neuro.map((x) => x.split(" : ")[0]).join(" ; "),
+        source: CH(29, "maladies neuromusculaires et neurodégénératives"),
+      });
+
+    // Obstructive lung disease and smoking (chap. 28).
+    if (anyOf(cond, ["copd", "asthma", "bronchiectasis", "cystic_fibrosis"]) === true && (general || !techs.size))
+      add({ id: "obstructive", level: "info", title: "Maladie obstructive : conduite", detail: "Exclure une surinfection, aérosols avant l'induction ; propofol (ou kétamine), lidocaïne 1,5 mg/kg avant l'intubation ; halogénés à l'entretien ; pas d'histaminolibérateurs (morphine, atracurium, mivacurium) ; FR 8–10, I/E 1/3 à 1/4, hypercapnie tolérée ; pas de N₂O si bulles d'emphysème ; ALR périphérique à privilégier, anesthésies médullaires discutées ; corticothérapie ≥ 5 mg/j de prednisone : supplément (méthylprednisolone 125 mg).", why: ["copd", "asthma", "bronchiectasis", "cystic_fibrosis"].filter((x) => has(cond, x)).map((x) => catalogs.conditions.find((k) => k.id === x)?.label ?? x).join(", "), source: CH(28, "maladies pulmonaires obstructives") });
+
+    // Cirrhosis (chap. 30).
+    if (has(cond, "cirrhosis")) {
+      const child = detail("cirrhosis", "child");
+      add({
+        id: "cirrhosis-plan",
+        level: child === "c" || child === "b" ? "high" : "medium",
+        title: `Cirrhose${child ? ` Child ${String(child).toUpperCase()}` : ""} : conduite`,
+        detail: `Mortalité en chirurgie abdominale ≈ 10 % (Child A), 30 % (B), 80 % (C). Pas de prémédication sédative ; atracurium, cisatracurium ou rocuronium avec sugammadex ; sévoflurane ou desflurane ; doses d'opioïdes réduites ; éviter hypotension, hypovolémie et pressions de ventilation élevées ; vasopresseur souvent nécessaire (état hyperdynamique) ; produits sanguins selon le bilan, calcium surveillé si transfusion ; ascite évacuée : 20 g d'albumine par litre ; glycémie.`,
+        why: `Cirrhose${child ? ` (Child ${String(child).toUpperCase()})` : " — préciser le Child-Pugh à l'étape Antécédents"}`,
+        source: CH(30, "cirrhose, tableau 30.2"),
+      });
+    }
+  }
+
   // --- Substance use ------------------------------------------------------------------
   const sub = c.substances;
   if (sub.alcoholDependence) add({ id: "alcohol", level: "high", title: "Dépendance à l'alcool", detail: "Prévenir et surveiller le sevrage (échelle adaptée), vitamine B1.", why: "Assuétudes : dépendance à l'alcool" });
   if (sub.drugs?.includes("opioids")) add({ id: "opioid-use", level: "medium", title: "Consommation d'opioïdes", detail: "Tolérance : analgésie multimodale et ALR ; besoins en morphiniques majorés ; substitution poursuivie.", why: "Assuétudes : opioïdes" });
   if (sub.drugs?.includes("cocaine")) add({ id: "cocaine", level: "medium", title: "Cocaïne", detail: "Demander la dernière consommation ; risque cardiovasculaire en cas d'usage récent.", why: "Assuétudes : cocaïne" });
-  if (sub.tobacco === "current") add({ id: "tobacco", level: "info", title: "Tabagisme actif", detail: "Proposer l'arrêt : le bénéfice est d'autant plus grand que l'arrêt est précoce.", why: `Assuétudes : fumeur${sub.packYears ? ` (${sub.packYears} PA)` : ""}` });
+  if (sub.tobacco === "current")
+    add({
+      id: "tobacco",
+      level: sub.packYears !== undefined && sub.packYears >= 20 ? "medium" : "info",
+      title: `Tabagisme actif${sub.packYears !== undefined && sub.packYears >= 20 ? " (≥ 20 paquets-années : risque respiratoire)" : ""}`,
+      detail: "Proposer l'arrêt, idéalement 6 à 8 semaines avant (morbidité respiratoire réduite). Bénéfices : 12–24 h moins de carboxyhémoglobine, 48–72 h voies aériennes moins réactives, 1–2 semaines moins de sécrétions (après une phase d'hypersécrétion), 4–6 semaines EFR améliorées. La SpO₂ surestime l'oxygénation (carboxyhémoglobine).",
+      why: `Assuétudes : fumeur${sub.packYears ? ` (${sub.packYears} PA)` : ""}`,
+      source: "Manuel pratique d'anesthésie 2020, chap. 28 (tableau 28.3)",
+    });
   if (c.surgery.emergency) add({ id: "emergency", level: "info", title: "Chirurgie urgente", detail: "Jeûne à vérifier ; risque majoré.", why: "Intervention marquée urgente" });
 
   return out.sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);

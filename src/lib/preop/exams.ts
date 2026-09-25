@@ -97,6 +97,7 @@ export const ASMBS_2019: ExamSource = { label: "AACE/TOS/ASMBS/OMA/ASA 2019, pri
 export const AAOHNS_2013: ExamSource = { label: "AAO-HNS 2013, voix et chirurgie thyroïdienne (Chandrasekhar et al., Otolaryngol Head Neck Surg)", short: "AAO-HNS 2013", level: "int" };
 export const MANUAL_2020: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 15 (tableau 15.1) — ouvrage de référence", short: "Manuel 2020", level: "book" };
 export const MANUAL_2020_POSITION: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 19 (position assise) — ouvrage de référence", short: "Manuel 2020", level: "book" };
+export const MANUAL_2020_NEURO: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 29 (maladies neuromusculaires) — ouvrage de référence", short: "Manuel 2020", level: "book" };
 
 /**
  * Work-up usual for a family of procedures, each item tied to the guideline
@@ -405,6 +406,12 @@ export function recommendExams({ consultation: c, asa, mets, surgeryProfile, sto
   if (has(cond, "malnutrition")) add("albumin", "recommended", "dénutrition : évaluation et prise en charge nutritionnelles avant chirurgie majeure", ESPEN_2017);
   if (has(cond, "bariatric_history")) add("micronutrients", "consider", "antécédent de chirurgie bariatrique : carences (fer, B12, folates, vitamine D)", ASMBS_2019);
   if (has(cond, "copd") && ((c.patient.spo2 !== undefined && c.patient.spo2 < 92) || has(cond, "home_o2"))) add("abg", "consider", "BPCO sévère ou hypoxémie", MANUAL_2020);
+  if (anyOf(cond, ["myotonic_dystrophy", "duchenne"]) === true) {
+    add("ecg", "recommended", "dystrophie myotonique ou myopathie de Duchenne : troubles conductifs, cardiomyopathie", MANUAL_2020_NEURO);
+    add("echo", "consider", "dystrophie myotonique ou myopathie de Duchenne : cardiomyopathie", MANUAL_2020_NEURO);
+    add("pft", "consider", "myopathie : syndrome restrictif", MANUAL_2020_NEURO);
+  }
+  if (has(cond, "myasthenia") && c.surgery.incision && c.surgery.incision !== "peripheral") add("pft", "consider", "myasthénie et chirurgie thoracique ou abdominale haute : capacité vitale (ventilation postopératoire si < 40 ml/kg)", MANUAL_2020_NEURO);
   if (has(cond, "osa") !== true && stopBang !== undefined && stopBang >= 5)
     add("sleep", "consider", `STOP-BANG ${stopBang} : SAOS probable non diagnostiqué — examen du sommeil si la chirurgie peut attendre, sinon précautions comme pour un SAOS`, SASM_2016);
 

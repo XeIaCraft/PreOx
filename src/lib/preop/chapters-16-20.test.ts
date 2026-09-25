@@ -74,7 +74,8 @@ describe("Manuel pratique d'anesthésie 2020, chapitres 16–20", () => {
   it("adds the chapter 20 draft rules after the existing ones (stable ids)", () => {
     const last = MANUAL_RULES.at(-1)!;
     expect(MANUAL_RULES.some((r) => /Chapitre 20/.test(r.source.title))).toBe(true);
-    expect(last.source.title).toMatch(/Chapitre 23/);
+    expect(MANUAL_RULES.some((r) => /Chapitre 23/.test(r.source.title))).toBe(true);
+    expect(last.source.title).toMatch(/Chapitre 29/);
     expect(new Set(MANUAL_RULES.map((r) => r.id)).size).toBe(MANUAL_RULES.length);
     expect(MANUAL_RULES.find((r) => r.title.startsWith("Infection à distance"))?.action.target).toBe("surgery");
   });

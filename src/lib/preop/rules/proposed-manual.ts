@@ -924,4 +924,58 @@ const COMPLICATIONS: Proposed[] = [
   }),
 ];
 
-export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS];
+// ---------------------------------------------------------------------------
+// Chapitres 27 à 29 — spécialités (cardiovasculaire, neurologie)
+// ---------------------------------------------------------------------------
+
+const CH27 = "Chapitre 27, Système cardiovasculaire et anesthésie, 4e édition (Elsevier Masson)";
+const CH29 = "Chapitre 29, Système nerveux central et anesthésie, 4e édition (Elsevier Masson)";
+const Q_ACEI = (drugName: string) =>
+  `According to current European guidelines (ESC 2022 non-cardiac surgery, ESAIC), should ${drugName} be withheld before non-cardiac surgery, how long before given its half-life, and when should it be resumed?`;
+const longAcei = (atc: string, drugName: string) =>
+  m({
+    title: `${drugName} : arrêt 48 h avant (demi-vie longue)`,
+    statement: `Le ${drugName.toLowerCase()} a une demi-vie supérieure à 24 h et demande un arrêt de 48 h avant l'intervention (sauf intervention mineure).`,
+    conditions: [drug(atc), history("heart_failure", "Insuffisance cardiaque", false), { kind: "surgery", attribute: "grade", in: ["intermediate", "major"] }],
+    action: { type: "stop_before", hours: 48, target: "anaesthesia" },
+    quote: "Arrêt des IEC et des antagonistes des récepteurs à l'angiotensine le matin de l'intervention, sauf en cas d'intervention mineure […] les substances suivantes ont une demi-vie > 24 heures et demandent un arrêt de 48 heures : ramipril, périndopril, cilazapril.",
+    question: Q_ACEI(drugName.toLowerCase()),
+    chapterTitle: CH27,
+    explanations: ["Risque : hypotension réfractaire après l'induction (exceptionnel selon le manuel)."],
+  });
+
+const SPECIALITIES: Proposed[] = [
+  longAcei("C09AA05", "Ramipril"),
+  longAcei("C09AA04", "Périndopril"),
+  longAcei("C09AA08", "Cilazapril"),
+  m({
+    title: "Antiparkinsoniens : poursuivis le matin de l'intervention",
+    statement: "Le traitement antiparkinsonien doit être maintenu le matin de l'intervention.",
+    conditions: [drug("N04B")],
+    action: { type: "info", text: "Antiparkinsonien pris le matin de l'intervention, reprise dès que possible (sonde gastrique si besoin) ; éviter métoclopramide, dropéridol et atropine.", target: "anaesthesia" },
+    quote: "Le traitement antiparkinsonien doit être maintenu le matin de l'intervention. […] Les médicaments à éviter sont : les anticholinergiques (atropine) […] ; les antidopaminergiques (métoclopramide, dropéridol, neuroleptiques classiques).",
+    question: "How should levodopa and other antiparkinsonian drugs be managed around surgery (continuation, timing of the last dose, alternatives when enteral route is unavailable) according to current guidance?",
+    chapterTitle: CH29,
+  }),
+  m({
+    title: "Myasthénie : anticholinestérasique arrêté 6 h avant",
+    statement: "Chez le myasthénique, arrêter les inhibiteurs de l'acétylcholinestérase au moins 6 h avant l'intervention en raison du risque d'interaction avec les curares.",
+    conditions: [drug("N07AA02"), history("myasthenia", "Myasthénie")],
+    action: { type: "stop_before", hours: 6, target: "anaesthesia" },
+    quote: "Arrêt des inhibiteurs de l'acétylcholinestérase au moins 6 h avant l'intervention en raison du risque d'interaction avec les curares.",
+    question: "Should pyridostigmine be continued or withheld on the morning of surgery in myasthenia gravis, according to current guidance and expert reviews?",
+    chapterTitle: CH29,
+    explanations: ["Point débattu : de nombreuses équipes poursuivent la pyridostigmine pour éviter une décompensation ; à trancher avec la référence actuelle."],
+  }),
+  m({
+    title: "AVC récent : chirurgie programmée différée",
+    statement: "Il est conseillé d'éviter toute autre chirurgie élective au cours des 3 à 6 mois qui suivent un AVC.",
+    conditions: [history("stroke", "AVC / AIT"), { kind: "surgery", attribute: "urgency", in: ["elective"] }],
+    action: { type: "requirement", text: "AVC ou AIT de moins de 3 à 6 mois : différer la chirurgie programmée ; sinon, maintenir la pression de perfusion (autorégulation altérée).", blocking: false, target: "both" },
+    quote: "Il est conseillé d'éviter tout autre chirurgie élective au cours des 3–6 mois après un AVC.",
+    question: "How long should elective non-cardiac surgery be delayed after an ischaemic stroke or TIA according to current guidelines (ESC 2022, ESAIC, SNACC)?",
+    chapterTitle: CH29,
+  }),
+];
+
+export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS, ...SPECIALITIES];
