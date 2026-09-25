@@ -6,10 +6,9 @@
 // of well-established precautions, not prescriptions — no dose, no timing
 // that belongs to a guideline (those come from your rules).
 
-import { treatmentMatches } from "./medications";
 import { QUALIFIER_LABELS, has } from "./history";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
-import { fold, type AllergenItem, type AttentionSpec } from "./catalog";
+import { classesOf, fold, medicationOf, type AllergenItem, type AttentionSpec } from "./catalog";
 import type { ConsultationScores } from "./consultation-scores";
 import { examSummary, type AllergyEntry, type ConsultationState } from "./dossier";
 import { ARISCAT_REFERENCE, MASK_VENTILATION_ITEMS, MASK_VENTILATION_REFERENCE, PEN_FAST_REFERENCE, penFast, type MaskVentilationItem } from "./scores";
@@ -143,9 +142,9 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
 
   // --- Treatments (catalogue: the product, then its classes) and their interactions ---------
   for (const t of c.treatments) {
-    const med = catalogs.medications.find((m) => m.atc === t.atc || m.id === t.atc);
+    const med = medicationOf(t, catalogs.medications);
     if (med?.attention) add(fromSpec(`med-${med.id}`, t.name, med.attention, `Traitement : ${t.name}`, med.source));
-    const classes = catalogs.drugClasses.filter((k) => treatmentMatches(t, k.atc));
+    const classes = classesOf(t, catalogs);
     for (const k of classes) if (k.attention) add(fromSpec(`class-${k.id}`, k.label, k.attention, `Traitement : ${t.name} (classe : ${k.label})`, k.source));
     for (const [ix, owner] of [...(med?.interactions ?? []).map((ix) => [ix, t.name] as const), ...classes.flatMap((k) => (k.interactions ?? []).map((ix) => [ix, k.label] as const))]) {
       const planned = planDrugs.filter((d) => ix.words.some((w) => fold(d.name).includes(fold(w))));

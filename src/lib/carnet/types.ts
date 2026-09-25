@@ -140,6 +140,8 @@ export interface CarnetRelatedActivity {
   end_date: string | null;
   appraisal: string;
   responsible: string;
+  /** Signed by the doctor in charge (migration 087). */
+  signature_id: string | null;
   created_at: string;
 }
 
@@ -153,6 +155,8 @@ export interface CarnetCourse {
   subject: string;
   exam_result: string;
   teacher: string;
+  /** Signed by the teacher (migration 087). */
+  signature_id: string | null;
   created_at: string;
 }
 

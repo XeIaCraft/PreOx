@@ -45,6 +45,7 @@ function upgradeFields(collection: CarnetCollection, row: Row, full: boolean): R
     if (full && next.supervisor_id === undefined) next.supervisor_id = null;
     return next;
   }
+  if ((collection === "related_activities" || collection === "courses") && full && row.signature_id === undefined) return { ...row, signature_id: null };
   return row;
 }
 

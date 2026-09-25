@@ -56,8 +56,8 @@ function slug(t: string): string {
 
 export const SURGERY_CATALOG: CatalogSurgery[] = [
   // Orthopédie
-  s("Prothèse totale de hanche", "K", "major", "intermediate", "high", false, "peripheral", "Décubitus latéral ou dorsal selon la voie", ["PTH"]),
-  s("Prothèse totale de genou", "K", "major", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["PTG"]),
+  s("Prothèse totale de hanche", "K", "major", "intermediate", "high", false, "peripheral", "Décubitus latéral ou dorsal selon la voie", ["PTH", "prothèse de hanche"]),
+  s("Prothèse totale de genou", "K", "major", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["PTG", "prothèse de genou"]),
   s("Fracture du col du fémur", "K", "major", "intermediate", "high", false, "peripheral", "Décubitus dorsal (table orthopédique) ou latéral", ["FCF", "prothèse intermédiaire", "clou gamma"]),
   s("Arthrodèse rachidienne", "K", "major", "intermediate", "high", false, "peripheral", "Décubitus ventral", ["rachis", "laminectomie"]),
   s("Arthroscopie du genou", "K", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal", ["ménisectomie", "LCA", "ligamentoplastie"]),

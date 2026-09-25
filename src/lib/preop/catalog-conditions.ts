@@ -69,7 +69,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
     attention: { level: "high", text: "Risque de défaillance ventriculaire droite : avis spécialisé ; éviter hypoxie, hypercapnie, acidose et hypotension." },
   }),
   c({ id: "murmur", label: "Souffle non exploré", system: "cardio", attention: { level: "medium", text: "Échocardiographie avant une chirurgie à risque." } }),
-  c({ id: "arrhythmia", label: "FA / trouble du rythme", system: "cardio", keywords: ["fibrillation auriculaire", "flutter", "arythmie", "ACFA"], asa: 2 }),
+  c({ id: "arrhythmia", label: "FA / trouble du rythme", system: "cardio", keywords: ["FA", "fibrillation auriculaire", "flutter", "arythmie", "ACFA"], asa: 2 }),
   c({ id: "long_qt", label: "QT long / Brugada", system: "cardio", keywords: ["Brugada", "QT"], asa: 2, attention: { level: "high", text: "Éviter les médicaments qui allongent le QT (dropéridol, ondansétron à discuter…) ; défibrillateur en salle.", material: ["Défibrillateur"] } }),
   c({ id: "av_block", label: "Bradycardie / bloc auriculo-ventriculaire", system: "cardio", keywords: ["BAV", "maladie du sinus"], asa: 2, attention: { level: "medium", text: "Stimulation transcutanée disponible ; avis rythmologique si symptomatique.", material: ["Électrodes de stimulation transcutanée"] } }),
   c({
@@ -248,7 +248,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
   c({ id: "advance_directive", label: "Directives anticipées / limitation", system: "other", keywords: ["DNR", "directives anticipées", "non-réanimation", "limitation thérapeutique"], attention: { level: "medium", text: "Discuter et documenter ce qui s'applique en périopératoire (suspension ou maintien)." } }),
 
   // --- Antécédents anesthésiques ------------------------------------------------------
-  c({ id: "ponv", label: "NVPO / mal des transports", system: "anaes", keywords: ["nausées", "vomissements postopératoires"] }),
+  c({ id: "ponv", label: "NVPO / mal des transports", system: "anaes", keywords: ["NVPO", "PONV", "nausées postopératoires", "vomissements postopératoires", "mal des transports"] }),
   c({
     id: "difficult_airway",
     label: "Intubation difficile",

@@ -55,10 +55,10 @@ function sample(): CarnetData {
     });
   }
   data.duties = [{ id: "d1", stage_id: "st1", duty_date: "2025-10-04", duty_type: "on_site", institution: "CHU Saint-Pierre", city: "Bruxelles", head_of_department: "Pr Dupont", supervisor_id: "sup1", signature_id: "sig1", notes: "", created_at: "2025-10-04T20:00:00Z" }];
-  data.courses = [{ id: "co1", kind: "course", start_date: "2025-11-05", end_date: "2025-11-06", city: "Bruxelles", institution: "SARB", subject: "Airway 😀", exam_result: "Réussi", teacher: "Dr X", created_at: "2025-11-05T00:00:00Z" }];
+  data.courses = [{ id: "co1", kind: "course", start_date: "2025-11-05", end_date: "2025-11-06", city: "Bruxelles", institution: "SARB", subject: "Airway 😀", exam_result: "Réussi", signature_id: null, teacher: "Dr X", created_at: "2025-11-05T00:00:00Z" }];
   data.stage_reviews = [{ id: "r1", stage_id: "st1", global_impression: "Très formateur.", liked: "Autonomie", disliked: "Horaires", would_change: "—", would_return: true, score_interest: 9, score_clinical_guidance: 8, score_atmosphere: 7, score_theoretical_guidance: 6, score_responsibilities: 0 }];
   data.years = [{ id: "y2", training_year: 2, absences: { A: 2.5, E: 210 }, activity_counts: { smur: 12 } }];
-  data.related_activities = [{ id: "ra1", nature: "SMUR", institution: "CHU Saint-Pierre", city: "Bruxelles", start_date: "2025-11-01", end_date: "2025-11-30", appraisal: "Très bonne expérience.", responsible: "Dr Leroy", created_at: "2025-11-01T00:00:00Z" }];
+  data.related_activities = [{ id: "ra1", nature: "SMUR", institution: "CHU Saint-Pierre", city: "Bruxelles", start_date: "2025-11-01", end_date: "2025-11-30", appraisal: "Très bonne expérience.", signature_id: null, responsible: "Dr Leroy", created_at: "2025-11-01T00:00:00Z" }];
   data.publications = [{ id: "pu1", title: "Rachianesthésie et chirurgie ambulatoire", details: "Poster, congrès BSAR", pub_date: "2025-12-01", created_at: "2025-12-01T00:00:00Z" }];
   return data;
 }

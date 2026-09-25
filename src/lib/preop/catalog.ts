@@ -8,7 +8,7 @@
 import type { AttentionLevel } from "./attention";
 import type { Qualifier } from "./history";
 import type { SurgeryGrade } from "./surgeries";
-import type { Medication } from "./medications";
+import { treatmentMatches, type Medication } from "./medications";
 import type { Technique } from "./rules/types";
 
 export interface AttentionSpec {
@@ -154,6 +154,8 @@ export interface DrugClassItem extends Verifiable {
   attention?: AttentionSpec;
   needsRule?: boolean;
   interactions?: Interaction[];
+  /** CBIP chapter codes of the class (« HC » = opioids): for CBIP products the app has no ATC code for. */
+  cbip?: string[];
 }
 
 /** Patient values (vitals, biology, body measures) a threshold can watch. */
@@ -243,4 +245,24 @@ export function searchItems<T>(items: T[], query: string, words: (t: T) => strin
     if (score > 0) scored.push({ t, score });
   }
   return scored.sort((a, b) => b.score - a.score).slice(0, limit).map((x) => x.t);
+}
+
+/** The catalogue entry of a patient's treatment: by the id it was picked with, else by ATC code. */
+export function medicationOf(t: { atc: string; catalogId?: string }, list: MedicationItem[]): MedicationItem | undefined {
+  if (t.catalogId) {
+    const m = list.find((x) => x.id === t.catalogId);
+    if (m) return m;
+  }
+  return t.atc ? list.find((m) => m.atc === t.atc || m.id === t.atc) : undefined;
+}
+
+/** The classes a treatment belongs to: by ATC code (itself or its components), or by CBIP chapter. Most specific first. */
+export function classesOf(t: { atc: string; catalogId?: string; components?: string[] }, catalogs: Pick<Catalogs, "medications" | "drugClasses">): DrugClassItem[] {
+  const chapter = medicationOf(t, catalogs.medications)?.cbip?.chapter;
+  const score = (k: DrugClassItem) => Math.max(treatmentMatches(t, k.atc) ? k.atc.length : 0, chapter ? Math.max(0, ...(k.cbip ?? []).filter((p) => chapter.startsWith(p)).map((p) => p.length)) : 0);
+  return catalogs.drugClasses
+    .map((k) => ({ k, s: score(k) }))
+    .filter((x) => x.s > 0)
+    .sort((a, b) => b.s - a.s)
+    .map((x) => x.k);
 }

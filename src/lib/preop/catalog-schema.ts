@@ -64,7 +64,9 @@ const atc = z.string().regex(/^[A-Z]\d{0,2}[A-Z]{0,2}\d{0,2}$/i, "Code ATC inval
 
 const medication = z.object({
   id,
-  atc,
+  // CBIP products may have no ATC code.
+  atc: z.union([z.literal(""), atc]),
+  cbip: z.object({ chapter: text(12), pages: z.record(text(160), z.number().int().positive()) }).optional(),
   name: text(160).min(1),
   brands: words.optional(),
   components: z.array(atc).max(6).optional(),
@@ -75,7 +77,7 @@ const medication = z.object({
   ...verifiable,
 });
 
-const drugClass = z.object({ id, atc, label: text(160).min(1), implies: id.optional(), attention: attention.optional(), needsRule: z.boolean().optional(), interactions: z.array(interaction).max(20).optional(), ...verifiable });
+const drugClass = z.object({ id, atc, label: text(160).min(1), cbip: z.array(text(12)).max(20).optional(), implies: id.optional(), attention: attention.optional(), needsRule: z.boolean().optional(), interactions: z.array(interaction).max(20).optional(), ...verifiable });
 
 const valueCheck = z.object({
   id,

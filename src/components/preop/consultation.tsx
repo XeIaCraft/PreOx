@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, CircleHelp, ClipboardCopy, ExternalLink, FolderPlus, MessageSquareQuote, Plus, Printer, RotateCcw, Search, X, Zap } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, CircleHelp, ClipboardCopy, ExternalLink, FolderPlus, MessageSquareQuote, Plus, Printer, Search, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, MultiChipGroup, ToggleChip } from "@/components/carnet/ui";
@@ -56,13 +56,14 @@ import { consultationRecap, recapText } from "@/lib/preop/recap";
 import { pendingExams } from "@/lib/preop/exams";
 import { emptyConsultation, upgradeConsultation, type ConsultationState } from "@/lib/preop/dossier";
 import { DEFAULT_CATALOGS } from "@/lib/preop/catalog-defaults";
-import { cbipSearchUrl, searchMedications, treatmentMatches } from "@/lib/preop/medications";
+import { cbipSearchUrl, searchMedications } from "@/lib/preop/medications";
 import { matchProtocol, type Protocol, type ProtocolContent } from "@/lib/preop/protocols";
 import { evaluate, indicationLabel, type EvaluationResult } from "@/lib/preop/rules/engine";
 import { describeRule, formatHours } from "@/lib/preop/rules/describe";
 import { combineQuestions, questionForMissingStop, type QuestionInput } from "@/lib/preop/rules/question";
 import { INDICATIONS, TECHNIQUES, type Indication, type PatientTreatment, type Rule, type Technique } from "@/lib/preop/rules/types";
-import type { Catalogs } from "@/lib/preop/catalog";
+import { classesOf, fold, medicationOf, type Catalogs, type MedicationItem } from "@/lib/preop/catalog";
+import { cbipChapterPath, cbipLink } from "@/lib/preop/cbip";
 import { cn } from "@/lib/utils";
 
 type YesNo<K extends string> = Partial<Record<K, boolean>>;
@@ -235,11 +236,19 @@ function StepBar({
 // Treatments and rules
 // ---------------------------------------------------------------------------
 
+/** Under each search result: the brands that match what is typed first, then the CBIP chapter. */
+function brandHint(m: { brands?: string[]; cbip?: { chapter: string } }, q: string): string {
+  const f = fold(q);
+  const brands = [...(m.brands ?? [])].sort((a, b) => Number(fold(b).includes(f)) - Number(fold(a).includes(f)));
+  const chapter = m.cbip?.chapter ? cbipChapterPath(m.cbip.chapter).split(" › ").slice(-1)[0] : "";
+  return [brands.slice(0, 3).join(", "), chapter].filter(Boolean).join(" · ");
+}
+
 /** What the catalogue knows about a treatment: its class, its interactions with anaesthesia, the CBIP monograph. */
 function TreatmentFacts({ t }: { t: PatientTreatment }) {
   const { catalogs } = useCatalogs();
-  const med = catalogs.medications.find((m) => m.atc === t.atc);
-  const classes = catalogs.drugClasses.filter((k) => treatmentMatches(t, k.atc));
+  const med = medicationOf(t, catalogs.medications);
+  const classes = classesOf(t, catalogs);
   const interactions = [...(med?.interactions ?? []), ...classes.flatMap((k) => k.interactions ?? [])];
   return (
     <div className="col-span-2 space-y-1 text-[11px] text-foreground-muted">
@@ -253,8 +262,9 @@ function TreatmentFacts({ t }: { t: PatientTreatment }) {
           ))}
         </ul>
       )}
-      <a href={cbipSearchUrl(t.name.split(" (")[0])} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
-        <ExternalLink className="h-3 w-3" /> Fiche CBIP et RCP
+      {med?.cbip?.chapter && <p>CBIP : {cbipChapterPath(med.cbip.chapter)}</p>}
+      <a href={cbipLink(med) ?? cbipSearchUrl(t.name.split(" (")[0])} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
+        <ExternalLink className="h-3 w-3" /> Fiche CBIP (spécialités, RCP, notice)
       </a>
     </div>
   );
@@ -264,12 +274,15 @@ function TreatmentsEditor({ treatments, onChange }: { treatments: PatientTreatme
   const { catalogs } = useCatalogs();
   const [open, setOpen] = useState<string | null>(null);
   const usage = useUsage("medications");
-  const frequent = usage.top.map((atc) => catalogs.medications.find((m) => m.atc === atc)).filter((m): m is NonNullable<typeof m> => !!m && !treatments.some((t) => t.atc === m.atc));
-  const addMed = (atc: string, name: string) => {
+  const frequent = usage.top
+    .map((key) => catalogs.medications.find((m) => m.id === key || m.atc === key))
+    .filter((m): m is NonNullable<typeof m> => !!m && !treatments.some((t) => (t.catalogId ?? t.atc) === m.id));
+  const addMed = (key: string) => {
+    const m = catalogs.medications.find((x) => x.id === key);
+    if (!m) return;
     const id = crypto.randomUUID();
-    const components = catalogs.medications.find((m) => m.atc === atc)?.components;
-    onChange([...treatments, { id, atc, name, ...(components?.length ? { components } : {}) }]);
-    usage.bump(atc);
+    onChange([...treatments, { id, atc: m.atc, name: m.name, catalogId: m.id, ...(m.components?.length ? { components: m.components } : {}) }]);
+    usage.bump(m.id);
     setOpen(id);
   };
   const update = (id: string, patch: Partial<PatientTreatment>) => onChange(treatments.map((t) => (t.id === id ? { ...t, ...patch } : t)));
@@ -277,15 +290,15 @@ function TreatmentsEditor({ treatments, onChange }: { treatments: PatientTreatme
     <div className="space-y-2">
       <Combobox
         placeholder="Ajouter un traitement (nom ou marque : Xarelto, Asaflow…)"
-        search={(q) => searchMedications(q, 8, catalogs.medications).map((m) => ({ key: m.atc, label: m.name, hint: m.brands?.slice(0, 2).join(", ") }))}
-        onPick={(o) => addMed(o.key, o.label)}
+        search={(q) => searchMedications(q, 10, catalogs.medications).map((m) => ({ key: (m as MedicationItem).id, label: m.name, hint: brandHint(m, q) }))}
+        onPick={(o) => addMed(o.key)}
         onFree={(q) => onChange([...treatments, { id: crypto.randomUUID(), atc: "", name: q }])}
         freeLabel={(q) => `« ${q} » (hors catalogue : ajoutez-le dans Paramètres pour ses implications)`}
       />
       {frequent.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {frequent.slice(0, 8).map((m) => (
-            <button key={m.atc} type="button" onClick={() => addMed(m.atc, m.name)} className="min-h-8 rounded-full border border-dashed border-border-strong px-2.5 text-xs text-foreground hover:bg-surface-muted">
+            <button key={m.id} type="button" onClick={() => addMed(m.id)} className="min-h-8 rounded-full border border-dashed border-border-strong px-2.5 text-xs text-foreground hover:bg-surface-muted">
               + {m.name}
             </button>
           ))}
@@ -1222,9 +1235,21 @@ export function ConsultationView({
             </Button>
           </form>
         ) : (
-          <Button size="sm" variant="secondary" onClick={() => setKeeping(true)}>
-            <FolderPlus className="h-3.5 w-3.5" /> Garder dans un dossier
-          </Button>
+          <div className="flex flex-wrap gap-1.5">
+            <Button size="sm" variant="secondary" onClick={() => setKeeping(true)}>
+              <FolderPlus className="h-3.5 w-3.5" /> Garder dans un dossier
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                const empty = JSON.stringify(s) === JSON.stringify(emptyConsultation());
+                if (empty || confirm("Commencer une nouvelle consultation ? Celle-ci sera effacée (gardez-la d'abord dans un dossier si besoin).")) reset();
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" /> Nouvelle consultation
+            </Button>
+          </div>
         )}
       </div>
       <ConsultationForm
@@ -1234,11 +1259,6 @@ export function ConsultationView({
         protocols={protocols}
         onAskQuestion={onAskQuestion}
         formKey={formKey}
-        patientActions={
-          <Button variant="ghost" size="sm" onClick={reset}>
-            <RotateCcw className="h-3.5 w-3.5" /> Nouvelle
-          </Button>
-        }
       />
     </div>
   );

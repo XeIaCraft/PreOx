@@ -6,6 +6,7 @@ import { DEFAULT_CONDITIONS } from "./catalog-conditions";
 import { MEDICATIONS } from "./medications";
 import { SURGERY_CATALOG } from "./surgeries";
 import { DEFAULT_VALUE_CHECKS } from "./value-checks";
+import { buildMedicationList } from "./cbip";
 
 const a = (item: AllergenItem): AllergenItem => item;
 
@@ -287,11 +288,59 @@ function surgeryItems(): SurgeryItem[] {
 }
 
 function medicationItems(): MedicationItem[] {
-  return MEDICATIONS.map((m) => ({ ...m, id: m.atc, ...MEDICATION_EXTRAS[m.atc] }));
+  // PreOx's ATC list completed with the whole CBIP repertoire (cbip.ts).
+  return buildMedicationList(MEDICATIONS).map((m) => (m.atc && MEDICATION_EXTRAS[m.atc] ? { ...m, ...MEDICATION_EXTRAS[m.atc] } : m));
 }
 
+/** CBIP chapters of each class, for the CBIP products PreOx has no ATC code for. */
+const CLASS_CBIP: Record<string, string[]> = {
+  insulin: ["EAA"],
+  oral_antidiabetics: ["EAB", "EAC", "EAD", "EAE", "EAF", "EAJ"],
+  glp1: ["EAG", "EAH", "EBA"],
+  sglt2: ["EAI"],
+  statins: ["AL"],
+  thyroid_drugs: ["EC"],
+  corticoids: ["EE"],
+  ssri: ["JCA"],
+  snri: ["JCB", "JCD", "JCE"],
+  st_johns_wort: ["JCG"],
+  antipsychotics: ["JB"],
+  benzodiazepines: ["JAA"],
+  hypnotics: ["JAB", "JAC"],
+  antiparkinson: ["JF"],
+  maoi_b: ["JFE"],
+  antiepileptics: ["JG"],
+  anticholinesterases: ["JKA"],
+  anticholinesterases_mg: ["JJ"],
+  opioids: ["HC"],
+  opioid_substitution: ["JEC"],
+  paracetamol: ["HBA"],
+  alpha_blockers: ["GBA"],
+  bph: ["GBB"],
+  pde5: ["GCA"],
+  overactive_bladder: ["GAA"],
+  digoxin: ["ACA"],
+  nitrates: ["ABA"],
+  rate_ccb: ["AFB", "AFC"],
+  immunosuppressants: ["LCA", "LCB"],
+  contraceptives: ["FBA", "FBB"],
+  hrt: ["FC"],
+  ppi: ["CAA"],
+  antiemetics_d2: ["CDA"],
+  laxatives: ["CE"],
+  antiplatelets: ["BAA"],
+  stimulants: ["JDA"],
+  muscle_relaxants: ["JHA", "JHE"],
+  hiv: ["KDD"],
+  checkpoint: ["MCA"],
+  theophylline: ["DAH"],
+  antihistamines: ["LDA"],
+  iron: ["BCA"],
+  ginkgo: ["JKC"],
+};
+
 function drugClassItems(): DrugClassItem[] {
-  return DEFAULT_DRUG_CLASSES.map((k) => (CLASS_INTERACTIONS[k.id] ? { ...k, interactions: CLASS_INTERACTIONS[k.id] } : k));
+  return DEFAULT_DRUG_CLASSES.map((k) => ({ ...k, ...(CLASS_INTERACTIONS[k.id] ? { interactions: CLASS_INTERACTIONS[k.id] } : {}), ...(CLASS_CBIP[k.id] ? { cbip: CLASS_CBIP[k.id] } : {}) }));
 }
 
 export const DEFAULT_CATALOGS: Catalogs = {

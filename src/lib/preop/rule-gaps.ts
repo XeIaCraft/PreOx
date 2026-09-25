@@ -4,9 +4,9 @@
 // with the question to paste into a search tool; the answer, checked,
 // becomes the missing rule.
 
-import { atcMatches, treatmentMatches } from "./medications";
+import { treatmentMatches } from "./medications";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
-import type { Catalogs } from "./catalog";
+import { classesOf, medicationOf, type Catalogs } from "./catalog";
 import type { Conditions } from "./history";
 import type { ConsultationState } from "./dossier";
 import { penFast } from "./scores";
@@ -25,11 +25,10 @@ export interface RuleGap {
 
 const BLEEDING_EN: Record<string, string> = { minimal: "minimal", low: "low", high: "high" };
 
-export function treatmentNeedsRule(atc: string, catalogs: Pick<Catalogs, "medications" | "drugClasses">): boolean {
-  const own = catalogs.medications.find((m) => m.atc === atc || m.id === atc);
+export function treatmentNeedsRule(t: { atc: string; catalogId?: string; components?: string[] }, catalogs: Pick<Catalogs, "medications" | "drugClasses">): boolean {
+  const own = medicationOf(t, catalogs.medications);
   if (own?.needsRule !== undefined) return own.needsRule;
-  const classes = catalogs.drugClasses.filter((k) => atcMatches(atc, k.atc) && k.needsRule !== undefined).sort((a, b) => b.atc.length - a.atc.length);
-  return classes[0]?.needsRule ?? true;
+  return classesOf(t, catalogs).find((k) => k.needsRule !== undefined)?.needsRule ?? true;
 }
 
 export function missingRules(
@@ -52,7 +51,7 @@ export function missingRules(
   const gaps: RuleGap[] = [];
 
   for (const t of c.treatments) {
-    if (!treatmentNeedsRule(t.atc, catalogs)) continue;
+    if (!treatmentNeedsRule(t, catalogs)) continue;
     const covered = usable.some((r) => r.conditions.some((k) => k.kind === "drug" && treatmentMatches(t, k.atc)));
     if (covered) continue;
     const indication = t.indication ? INDICATIONS.find((i) => i.code === t.indication)?.label.toLowerCase() : undefined;

@@ -43,6 +43,8 @@ const SET_NULL_REFERENCES: Partial<Record<CarnetCollection, { collection: Carnet
   signatures: [
     { collection: "cases", field: "signature_id" },
     { collection: "duties", field: "signature_id" },
+    { collection: "related_activities", field: "signature_id" },
+    { collection: "courses", field: "signature_id" },
   ],
 };
 

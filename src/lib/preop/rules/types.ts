@@ -172,6 +172,8 @@ export interface PatientTreatment {
   name: string;
   /** Substances of a fixed combination (ATC), copied from the catalogue. */
   components?: string[];
+  /** Catalogue entry it was picked from (needed for CBIP products without an ATC code). */
+  catalogId?: string;
   dailyDoseMg?: number;
   indication?: Indication;
   /** ISO date of the event behind the indication (stent, stroke…). */

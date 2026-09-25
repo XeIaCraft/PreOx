@@ -36,6 +36,7 @@ import { itemStatements, verificationPrompt, verificationState } from "@/lib/pre
 import { WATCHED_VALUES } from "@/lib/preop/value-checks";
 import { TECHNIQUES, type Technique } from "@/lib/preop/rules/types";
 import { cbipSearchUrl } from "@/lib/preop/medications";
+import { cbipChapterPath, cbipPageUrl } from "@/lib/preop/cbip";
 import type { Protocol } from "@/lib/preop/protocols";
 import { QUALIFIER_LABELS, type Qualifier } from "@/lib/preop/history";
 import { OPERATION_CATEGORIES } from "@/lib/carnet/referentiel";
@@ -663,7 +664,7 @@ function MedicationForm({ item, onChange }: { item: MedicationItem; onChange: (i
         <Line label="Nom (DCI)">
           <Input className="h-9" value={item.name} onChange={(e) => set({ name: e.target.value })} />
         </Line>
-        <Line label="Code ATC">
+        <Line label={item.atc ? "Code ATC" : "Code ATC (absent de l'export CBIP : à ajouter pour que vos règles par classe s'appliquent)"}>
           <Input className="h-9 uppercase" value={item.atc} onChange={(e) => set({ atc: e.target.value.toUpperCase().trim() })} placeholder="ex. B01AF01" />
         </Line>
         <Line label="Marques (virgules)" className="sm:col-span-2">
@@ -686,9 +687,24 @@ function MedicationForm({ item, onChange }: { item: MedicationItem; onChange: (i
         <NeedsRule value={item.needsRule} onChange={(needsRule) => set({ needsRule })} />
       </div>
       {item.name && (
-        <a href={cbipSearchUrl(item.name.split(" (")[0])} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-          <ExternalLink className="h-3.5 w-3.5" /> Fiche CBIP et RCP de {item.name}
-        </a>
+        <div className="space-y-1 text-xs">
+          {item.cbip?.chapter && <p className="text-foreground-subtle">CBIP : {cbipChapterPath(item.cbip.chapter)}</p>}
+          {item.cbip && Object.keys(item.cbip.pages).length > 0 ? (
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              {Object.entries(item.cbip.pages)
+                .slice(0, 12)
+                .map(([brand, id]) => (
+                  <a key={brand} href={cbipPageUrl(id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
+                    <ExternalLink className="h-3 w-3" /> {brand}
+                  </a>
+                ))}
+            </div>
+          ) : (
+            <a href={cbipSearchUrl(item.name.split(" (")[0])} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
+              <ExternalLink className="h-3.5 w-3.5" /> Chercher {item.name} sur le CBIP
+            </a>
+          )}
+        </div>
       )}
       <AttentionEditor value={item.attention} onChange={(attention) => set({ attention })} />
       <InteractionsEditor value={item.interactions ?? []} onChange={(interactions) => set({ interactions })} />
@@ -973,7 +989,7 @@ export function SettingsView({ protocols = [] }: { protocols?: Protocol[] }) {
         )}
       </div>
       <ul className="divide-y divide-border rounded-[var(--radius-lg)] border border-border bg-surface">
-        {shown.map((it) => {
+        {shown.slice(0, 150).map((it) => {
           const added = !defaultIds.has(it.id);
           const edited = !!o.edited[it.id];
           return (
@@ -990,6 +1006,7 @@ export function SettingsView({ protocols = [] }: { protocols?: Protocol[] }) {
           );
         })}
       </ul>
+      {shown.length > 150 && <p className="text-xs text-foreground-subtle">150 premiers sur {shown.length} : cherchez un nom, une marque ou un code pour trouver les autres.</p>}
       {hidden.length > 0 && (
         <div className="space-y-2">
           <button type="button" onClick={() => setShowHidden((v) => !v)} className="text-xs font-medium text-primary hover:underline">

@@ -20,6 +20,8 @@ export interface Medication {
    * class it acts like (tirzépatide → GLP-1 agonists).
    */
   components?: string[];
+  /** From the CBIP export: chapter code, and the CBIP page (amppid) of each brand. */
+  cbip?: { chapter: string; pages: Record<string, number> };
 }
 
 export interface AtcGroup {

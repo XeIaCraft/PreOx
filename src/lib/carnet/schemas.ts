@@ -136,6 +136,7 @@ const relatedActivitySchema = z.object({
   end_date: optionalDate,
   appraisal: text(10000),
   responsible: text(300),
+  signature_id: id.nullable(),
   created_at: timestamp,
 });
 
@@ -149,6 +150,7 @@ const courseSchema = z.object({
   subject: text(1000).min(1, "Sujet requis"),
   exam_result: text(500),
   teacher: text(300),
+  signature_id: id.nullable(),
   created_at: timestamp,
 });
 

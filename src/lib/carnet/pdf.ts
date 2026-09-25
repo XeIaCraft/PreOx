@@ -16,7 +16,7 @@
 import type { PDFDocument, PDFEmbeddedPage, PDFFont, PDFImage, PDFPage } from "pdf-lib";
 import { caseCode, supervisorName } from "./referentiel";
 import { activityReport, caseNumbers, formatDateFr, localDateIso, REPORT_YEARS, sortStages } from "./logic";
-import type { CarnetData, CarnetStage } from "./types";
+import type { CarnetCourse, CarnetData, CarnetRelatedActivity, CarnetStage } from "./types";
 
 export const TEMPLATE_URL = "/carnet/modele-carnet-de-stage.pdf";
 export const FONT_URL = "/carnet/carlito.ttf";
@@ -432,6 +432,67 @@ async function fillGrid(ctx: Ctx, template: PDFDocument, data: CarnetData, stage
   second.line(supervisorName(supervisor), 76, 714, 200, { size: 10 });
 }
 
+/** « Activités connexes » page: one activity, with the doctor in charge's signature once signed. */
+async function fillActivity(ctx: Ctx, template: PDFDocument, data: CarnetData, a: CarnetRelatedActivity | null) {
+  const page = await addTemplatePage(ctx, template, TPL.activity);
+  if (!a) return;
+  const where = `Activités connexes — ${a.nature}`;
+  page.line(a.nature, 125, 288.9, 400, { size: 11, where });
+  page.line(a.institution, 125, 329.2, 400, { size: 11, where });
+  page.line(a.city, 125, 369.6, 400, { size: 11 });
+  page.line(formatDateFr(a.start_date), 125, 409.9, 118, { size: 11 });
+  page.line(formatDateFr(a.end_date), 270, 409.9, 120, { size: 11 });
+  page.box(a.appraisal, 70.9, 469, 525, 530, { size: 10.5, minSize: 7.5, where: `${where} — appréciation` });
+  page.line(a.responsible, 172, 544.4, 142, { size: 10.5, where });
+  const signature = a.signature_id ? data.signatures.find((x) => x.id === a.signature_id) : undefined;
+  const img = await signatureImage(ctx, `sig-${signature?.id}`, signature?.image);
+  if (img) page.image(img, 366, 532, 525, 574);
+}
+
+/** « Cours suivis » or « Présentation de séminaires » pages, with each teacher's signature in the Signature column. */
+async function fillCourses(ctx: Ctx, template: PDFDocument, data: CarnetData, courses: CarnetCourse[], kind: "course" | "seminar") {
+  const period = (a: string | null, b: string | null) => (b && b !== a ? `${formatDateFr(a)} – ${formatDateFr(b)}` : formatDateFr(a));
+  const t = kind === "course" ? COURSES_TABLE : SEMINARS_TABLE;
+  for (const group of chunk(courses, t.rows)) {
+    const page = await addTemplatePage(ctx, template, kind === "course" ? TPL.courses : TPL.seminars);
+    for (const [i, c] of group.entries()) {
+      const top = t.top + i * t.rowHeight;
+      const where = `${kind === "course" ? "Cours suivis" : "Présentation de séminaires"} — ${c.subject}`;
+      const values = kind === "course" ? [period(c.start_date, c.end_date), c.city, c.institution, c.subject, c.exam_result, c.teacher] : [period(c.start_date, c.end_date), c.city, c.institution, c.subject, c.teacher];
+      values.forEach((value, col) => page.cell(value, t.cols[col], top, t.cols[col + 1], top + t.rowHeight, { size: 9, minSize: 6.5, where }));
+      const signature = c.signature_id ? data.signatures.find((x) => x.id === c.signature_id) : undefined;
+      const img = await signatureImage(ctx, `sig-${signature?.id}`, signature?.image);
+      const col = values.length;
+      if (img) page.image(img, t.cols[col] + 2, top + 0.5, t.cols[col + 1] - 2, top + t.rowHeight - 0.5);
+    }
+  }
+}
+
+/** One « Activités connexes » page to print: to fill in and sign by hand, or already signed in the app. */
+export async function buildActivityPdf(data: CarnetData, activity: CarnetRelatedActivity, assets?: CarnetPdfAssets): Promise<Uint8Array> {
+  const { ctx, template } = await createCtx(assets ?? (await loadCarnetPdfAssets()), `Activité connexe — ${activity.nature}`, [TPL.activity]);
+  await fillActivity(ctx, template, data, activity);
+  addAnnex(ctx);
+  return ctx.doc.save();
+}
+
+/** The « Cours suivis » or « Présentation de séminaires » pages, to have them signed on paper or keep the signed version. */
+export async function buildCoursesPdf(data: CarnetData, kind: "course" | "seminar", assets?: CarnetPdfAssets): Promise<Uint8Array> {
+  const list = data.courses.filter((c) => c.kind === kind).sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""));
+  const { ctx, template } = await createCtx(assets ?? (await loadCarnetPdfAssets()), kind === "course" ? "Cours suivis" : "Présentation de séminaires", [kind === "course" ? TPL.courses : TPL.seminars]);
+  await fillCourses(ctx, template, data, list, kind);
+  addAnnex(ctx);
+  return ctx.doc.save();
+}
+
+export async function downloadActivity(data: CarnetData, activity: CarnetRelatedActivity): Promise<void> {
+  downloadPdf(await buildActivityPdf(data, activity), `activite-connexe-${slug(activity.nature)}.pdf`);
+}
+
+export async function downloadCourses(data: CarnetData, kind: "course" | "seminar"): Promise<void> {
+  downloadPdf(await buildCoursesPdf(data, kind), kind === "course" ? "cours-suivis.pdf" : "presentations-seminaires.pdf");
+}
+
 /** The two "Stages hospitaliers" pages for one stage — header filled in, grid left for the maître de stage. */
 export async function buildEvaluationGridPdf(data: CarnetData, stage: CarnetStage, assets?: CarnetPdfAssets): Promise<Uint8Array> {
   const { ctx, template } = await createCtx(assets ?? (await loadCarnetPdfAssets()), `Grille d'évaluation — ${stage.hospital}`, [...TPL.grid]);
@@ -564,46 +625,14 @@ export async function buildCarnetPdf(data: CarnetData, trainingYear: number | "a
   const activities = data.related_activities
     .filter((a) => trainingYear === "all" || inRange(a.start_date, from, to))
     .sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""));
-  for (const a of activities.length > 0 ? activities : [null]) {
-    const page = await addTemplatePage(ctx, template, TPL.activity);
-    if (!a) continue;
-    const where = `Activités connexes — ${a.nature}`;
-    page.line(a.nature, 125, 288.9, 400, { size: 11, where });
-    page.line(a.institution, 125, 329.2, 400, { size: 11, where });
-    page.line(a.city, 125, 369.6, 400, { size: 11 });
-    page.line(formatDateFr(a.start_date), 125, 409.9, 118, { size: 11 });
-    page.line(formatDateFr(a.end_date), 270, 409.9, 120, { size: 11 });
-    page.box(a.appraisal, 70.9, 469, 525, 530, { size: 10.5, minSize: 7.5, where: `${where} — appréciation` });
-    page.line(a.responsible, 172, 544.4, 142, { size: 10.5, where });
-  }
+  for (const a of activities.length > 0 ? activities : [null]) await fillActivity(ctx, template, data, a);
 
   // --- Courses and seminars ---------------------------------------------------------------------------------
   const courses = data.courses
     .filter((c) => trainingYear === "all" || inRange(c.start_date, from, to))
     .sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""));
-  const period = (a: string | null, b: string | null) => (b && b !== a ? `${formatDateFr(a)} – ${formatDateFr(b)}` : formatDateFr(a));
-  for (const group of chunk(courses.filter((c) => c.kind === "course"), COURSES_TABLE.rows)) {
-    const page = await addTemplatePage(ctx, template, TPL.courses);
-    const t = COURSES_TABLE;
-    group.forEach((c, i) => {
-      const top = t.top + i * t.rowHeight;
-      const where = `Cours suivis — ${c.subject}`;
-      [period(c.start_date, c.end_date), c.city, c.institution, c.subject, c.exam_result, c.teacher].forEach((value, col) =>
-        page.cell(value, t.cols[col], top, t.cols[col + 1], top + t.rowHeight, { size: 9, minSize: 6.5, where })
-      );
-    });
-  }
-  for (const group of chunk(courses.filter((c) => c.kind === "seminar"), SEMINARS_TABLE.rows)) {
-    const page = await addTemplatePage(ctx, template, TPL.seminars);
-    const t = SEMINARS_TABLE;
-    group.forEach((c, i) => {
-      const top = t.top + i * t.rowHeight;
-      const where = `Présentation de séminaires — ${c.subject}`;
-      [period(c.start_date, c.end_date), c.city, c.institution, c.subject, c.teacher].forEach((value, col) =>
-        page.cell(value, t.cols[col], top, t.cols[col + 1], top + t.rowHeight, { size: 9, minSize: 6.5, where })
-      );
-    });
-  }
+  await fillCourses(ctx, template, data, courses.filter((c) => c.kind === "course"), "course");
+  await fillCourses(ctx, template, data, courses.filter((c) => c.kind === "seminar"), "seminar");
 
   // --- Publications: one per "-" line of the form, more lines below if needed ---------------------------------
   const publications = data.publications

@@ -5,12 +5,11 @@
 // only fills an unanswered item and always says where it comes from; an
 // explicit answer is never overridden.
 
-import { treatmentMatches } from "./medications";
 import { bmi, ckdEpi2021, cockcroftGault } from "./scores";
 import { valueFindings, type PatientValues } from "./value-checks";
 import type { ConditionCode, ConditionEntry, Conditions } from "./history";
 import type { ConsultationState } from "./dossier";
-import type { Catalogs } from "./catalog";
+import { classesOf, medicationOf, type Catalogs } from "./catalog";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 
 export interface Deduction {
@@ -49,9 +48,9 @@ export function deduceConditions(c: ConsultationState, catalogs: Pick<Catalogs, 
 
   for (const t of c.treatments) {
     // The treatment itself (Paramètres › Traitements), then its classes.
-    const own = catalogs.medications.find((m) => m.atc === t.atc || m.id === t.atc)?.implies;
+    const own = medicationOf(t, catalogs.medications)?.implies;
     if (own) add(own, t.name);
-    for (const k of catalogs.drugClasses) if (k.implies && treatmentMatches(t, k.atc)) add(k.implies, t.name);
+    for (const k of classesOf(t, catalogs)) if (k.implies) add(k.implies, t.name);
     const fromIndication = t.indication ? BY_INDICATION[t.indication] : undefined;
     if (fromIndication) {
       // A stent or an event of less than 3 months counts as recent.

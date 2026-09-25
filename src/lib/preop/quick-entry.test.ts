@@ -15,7 +15,9 @@ describe("quick entry", () => {
     ]);
     expect(r.allergies).toMatchObject([{ allergenId: "betalactams" }]);
     expect(r.substances).toMatchObject({ tobacco: "current", packYears: 20, alcoholUnitsPerWeek: 14 });
-    expect(r.unknown).toEqual(["prothèse de hanche 2019"]);
+    // A known procedure with a year is a past operation.
+    expect(r.surgicalHistory).toEqual(["prothèse de hanche 2019"]);
+    expect(r.unknown).toEqual([]);
   });
 
   it("doesn't take short words for acronyms, knows former smokers and free allergies", () => {
@@ -33,7 +35,7 @@ describe("applying a quick entry", () => {
     const { emptyConsultation } = await import("./dossier");
     const base = { ...emptyConsultation(), treatments: [{ id: "x", atc: "A10BA02", name: "Metformine", dailyDoseMg: undefined as number | undefined }] };
     const r = parseQuickEntry("HTA, metformine, Xarelto 20 mg, allergie latex, ex-fumeur, vitiligo", DEFAULT_CATALOGS);
-    const sel = { ...selectAll(r), conditions: [] };
+    const sel = new Set([...selectAll(r)].filter((k) => !k.startsWith("c:")));
     const next = applyQuickEntry(base, r, sel);
     expect(next.conditions.hypertension).toBeUndefined();
     expect(next.treatments.map((t) => [t.name, t.dailyDoseMg])).toEqual([
@@ -69,5 +71,84 @@ describe("quick entry, spoken style", () => {
     expect(r.allergies.map((a) => a.allergenId)).toEqual(["betalactams", "latex"]);
     expect(r.conditions.map((c) => c.id)).toEqual(["diabetes_insulin"]);
     expect(parseQuickEntry("diabète", DEFAULT_CATALOGS).conditions.map((c) => c.id)).toEqual(["diabetes_oral"]);
+  });
+});
+
+const REPORT = `Consultation d'anesthésie du 12/09/2026
+Madame X, 72 ans
+Intervention prévue : prothèse totale de genou droit le 08/10/2026
+Antécédents médicaux :
+- HTA traitée
+- Diabète de type 2 (HbA1c 7,8 % en août)
+- FA paroxystique
+- Pas de coronaropathie connue
+- SAOS sévère appareillé
+- Arthrose diffuse
+Antécédents familiaux : diabète chez la mère
+Antécédents chirurgicaux : cholécystectomie (2015, AG sans particularité), NVPO après cholécystectomie
+Allergies : pénicilline (urticaire)
+Traitement :
+- Xarelto 20 mg 1x/j
+- Bisoprolol 5 mg 1-0-0
+- Metformine 1 g 2x/j
+- Pantomed 40 mg le matin
+- Dafalgan 1 g si besoin
+- Crème hydratante
+Habitudes : ex-fumeuse (20 PA)
+Examen : PA 145/85 mmHg, FC 68/min, SpO2 95 %, poids 92 kg, taille 1,65 m. Mallampati II. Auscultation cardio-pulmonaire normale, pas de souffle.
+Biologie : Hb 12,1 g/dl, plaquettes 245 000/mm3, INR 1,1, créatinine 97 µmol/l
+Conclusion : ASA III`;
+
+describe("pasting a report", () => {
+  const r = parseQuickEntry(REPORT, DEFAULT_CATALOGS);
+
+  it("reads it section by section, with negations and family history apart", () => {
+    expect(r.document).toBe(true);
+    expect(r.conditions.map((c) => c.id)).toEqual(["hypertension", "diabetes_oral", "arrhythmia", "osa", "ponv"]);
+    expect(r.conditions.find((c) => c.id === "osa")?.details).toEqual({ ahi: "severe" });
+    expect(r.conditions.find((c) => c.id === "arrhythmia")?.details).toEqual({ type: "paroxysmal" });
+    expect(r.negated.map((c) => c.id)).toEqual(["coronary"]);
+    expect(r.ignored).toEqual(["diabète chez la mère"]);
+    expect(r.history).toEqual(["Arthrose diffuse"]);
+    expect(r.surgicalHistory).toEqual(["cholécystectomie (2015, AG sans particularité)", "NVPO après cholécystectomie"]);
+  });
+
+  it("finds treatments by any Belgian brand, with the daily dose, and keeps the unknown ones as free text", () => {
+    expect(r.treatments.map((t) => [t.name, t.dailyDoseMg])).toEqual([
+      ["Rivaroxaban", 20],
+      ["Bisoprolol", 5],
+      ["Metformine", 2000],
+      ["Pantoprazole", 40],
+      ["Paracétamol", undefined],
+    ]);
+    expect(r.freeTreatments).toEqual(["Crème hydratante"]);
+    expect(r.allergies).toMatchObject([{ allergenId: "betalactams", reaction: "urticaire" }]);
+  });
+
+  it("picks up values, exam, scores and the planned intervention", () => {
+    const v = Object.fromEntries(r.values.map((x) => [x.key, x.value]));
+    expect(v).toMatchObject({ sbp: 145, dbp: 85, hr: 68, spo2: 95, weightKg: 92, heightCm: 165, age: 72, hb: 12.1, platelets: 245, inr: 1.1, hba1c: 7.8 });
+    expect(v.creatinineMgDl).toBeCloseTo(1.1, 1);
+    expect(r.sex).toBe("F");
+    expect(r.exam).toEqual({ heart: "normal", lungs: "normal" });
+    expect([r.asa, r.mallampati]).toEqual([3, 2]);
+    expect(r.surgery).toMatchObject({ id: "prothese-totale-de-genou", side: "droit", plannedAt: "2026-10-08T08:00" });
+  });
+
+  it("applies everything recognised, never over an answer already given, and marks what is absent", async () => {
+    const { applyQuickEntry } = await import("./quick-entry");
+    const { emptyConsultation } = await import("./dossier");
+    const base = { ...emptyConsultation(), patient: { age: 73 }, conditions: { arrhythmia: { present: true, details: { type: "permanent" } } } };
+    const next = applyQuickEntry(base, r);
+    expect(next.patient.age).toBe(73);
+    expect(next.patient.sbp).toBe(145);
+    expect(next.conditions.coronary).toEqual({ present: false });
+    expect(next.conditions.arrhythmia?.details).toEqual({ type: "permanent" });
+    expect(next.conditions.osa).toMatchObject({ present: true, details: { ahi: "severe" } });
+    expect(next.treatments.map((t) => t.name)).toContain("Crème hydratante");
+    expect(next.patient.history).toBe("Arthrose diffuse");
+    expect(next.asa).toBe(3);
+    // Leftovers of a pasted document are not added by default.
+    expect(next.notes).toBe("");
   });
 });
