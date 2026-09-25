@@ -6,7 +6,7 @@
 // of well-established precautions, not prescriptions — no dose, no timing
 // that belongs to a guideline (those come from your rules).
 
-import { atcMatches } from "./medications";
+import { treatmentMatches } from "./medications";
 import { has } from "./history";
 import { bpLabel } from "./derive";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
@@ -104,7 +104,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
   for (const t of c.treatments) {
     const med = catalogs.medications.find((m) => m.atc === t.atc || m.id === t.atc);
     if (med?.attention) add(fromSpec(`med-${med.id}`, t.name, med.attention));
-    for (const k of catalogs.drugClasses) if (k.attention && atcMatches(t.atc, k.atc)) add(fromSpec(`class-${k.id}`, k.label, k.attention));
+    for (const k of catalogs.drugClasses) if (k.attention && treatmentMatches(t, k.atc)) add(fromSpec(`class-${k.id}`, k.label, k.attention));
   }
 
   // --- Computed from the scores and the intervention ----------------------------------------

@@ -181,7 +181,7 @@ export function parseAnswer(text: string): ParsedAnswer {
         reference,
         checks,
         // An article, or a sentence without anything to do (no delay, no dose, no "must"), explains rather than prescribes.
-        suggestedUse: level === "article" || !/\d+\s*(h\b|heures?|jours?|mg|ml|%)|\b(doit|doivent|ne pas|contre-indiqu|arr[êe]t|reprendre|observer|requis|recommand)/i.test(statement) ? "explanation" : "rule",
+        suggestedUse: level === "article" || !/\d+\s*(h\b|heures?|jours?|mg|ml|%)|\b(doit|doivent|ne pas|contre-indiqu|arr[êe]t|reprendre|observer|requis|recommand|peu[tv]e?n?t? [êe]tre (utilis|administr|donn|prescri)|[ée]viter|privil[ée]gier|utiliser|administrer)/i.test(statement) ? "explanation" : "rule",
       });
     }
     current = null;

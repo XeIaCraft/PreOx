@@ -6,7 +6,7 @@
 // DASI only before an intermediate/high cardiac-risk surgery).
 
 import { APFEL_ITEMS, DASI_ITEMS, HAS_BLED_ITEMS, HEMSTOP_ITEMS, STOP_BANG_ITEMS } from "./scores";
-import { atcMatches } from "./medications";
+import { treatmentMatches } from "./medications";
 import { has } from "./history";
 import type { ConsultationScores } from "./consultation-scores";
 import type { ConsultationState } from "./dossier";
@@ -93,11 +93,11 @@ export function remainingQuestions(c: ConsultationState, scores: ConsultationSco
     });
 
   // AF / anticoagulation: CHA₂DS₂-VASc and HAS-BLED items left.
-  const anticoagulated = c.treatments.some((t) => atcMatches(t.atc, "B01AA") || atcMatches(t.atc, "B01AE") || atcMatches(t.atc, "B01AF"));
+  const anticoagulated = c.treatments.some((t) => treatmentMatches(t, "B01AA") || treatmentMatches(t, "B01AE") || treatmentMatches(t, "B01AF"));
   if (has(cond, "arrhythmia") || anticoagulated) {
     const af: Question[] = [];
     if (m.cha.merged.vascularDisease === undefined) af.push({ key: "cond-pad", label: "Maladie vasculaire (artériopathie, antécédent d'IDM)", value: undefined, apply: setCondition("pad") });
-    const hb = unanswered(m.hasBled.merged, ["hypertension", "renal", "liver", "bleeding", "labileInr", "drugs", "alcohol"] as const).filter((k) => k !== "labileInr" || c.treatments.some((t) => atcMatches(t.atc, "B01AA")));
+    const hb = unanswered(m.hasBled.merged, ["hypertension", "renal", "liver", "bleeding", "labileInr", "drugs", "alcohol"] as const).filter((k) => k !== "labileInr" || c.treatments.some((t) => treatmentMatches(t, "B01AA")));
     for (const k of hb) af.push({ key: `hb-${k}`, label: HAS_BLED_ITEMS[k], value: undefined, apply: (x, v) => ({ ...x, hasBled: { ...x.hasBled, [k]: v } }) });
     if (af.length) groups.push({ id: "af", title: "FA / anticoagulation", feeds: "CHA₂DS₂-VASc, HAS-BLED", questions: af });
   }

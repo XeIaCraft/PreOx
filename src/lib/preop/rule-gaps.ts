@@ -4,18 +4,19 @@
 // with the question to paste into a search tool; the answer, checked,
 // becomes the missing rule.
 
-import { atcMatches } from "./medications";
+import { atcMatches, treatmentMatches } from "./medications";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 import type { Catalogs } from "./catalog";
 import type { Conditions } from "./history";
 import type { ConsultationState } from "./dossier";
-import { questionForCondition, questionForTreatment, type CaseContext, type QuestionInput } from "./rules/question";
+import { penFast } from "./scores";
+import { questionForAllergy, questionForCondition, questionForTreatment, type CaseContext, type QuestionInput } from "./rules/question";
 import { INDICATIONS, type Rule, type Technique } from "./rules/types";
 import { SURGERY_GRADES } from "./surgeries";
 
 export interface RuleGap {
   key: string;
-  kind: "treatment" | "condition";
+  kind: "treatment" | "condition" | "allergy";
   /** "Rivaroxaban", "Pacemaker / DAI". */
   subject: string;
   label: string;
@@ -52,7 +53,7 @@ export function missingRules(
 
   for (const t of c.treatments) {
     if (!treatmentNeedsRule(t.atc, catalogs)) continue;
-    const covered = usable.some((r) => r.conditions.some((k) => k.kind === "drug" && atcMatches(t.atc, k.atc)));
+    const covered = usable.some((r) => r.conditions.some((k) => k.kind === "drug" && treatmentMatches(t, k.atc)));
     if (covered) continue;
     const indication = t.indication ? INDICATIONS.find((i) => i.code === t.indication)?.label.toLowerCase() : undefined;
     gaps.push({
@@ -74,6 +75,29 @@ export function missingRules(
       subject: item.label,
       label: `${item.label} : aucune règle de prise en charge périopératoire`,
       question: questionForCondition({ condition: item.label.toLowerCase(), id: item.id, label: item.label, ...ctx }),
+    });
+  }
+
+  for (const a of c.patient.allergyList ?? []) {
+    const item = a.allergenId ? catalogs.allergens.find((x) => x.id === a.allergenId) : undefined;
+    if (!item?.needsRule || gaps.some((g) => g.key === `a:${item.id}`)) continue;
+    const covered = usable.some((r) => r.conditions.some((k) => k.kind === "allergy" && k.allergen === item.id && k.present));
+    if (covered) continue;
+    const pf = item.assessment === "pen-fast" && a.penFast ? penFast(a.penFast) : null;
+    const decided = pf && (pf.value >= 3 || pf.level === "low");
+    gaps.push({
+      key: `a:${item.id}`,
+      kind: "allergy",
+      subject: item.label,
+      label: `Allergie ${item.label.toLowerCase()} : aucune règle — que proposer à la place, faut-il un bilan ?`,
+      question: questionForAllergy({
+        allergen: item.label.toLowerCase(),
+        id: item.id,
+        label: item.label,
+        reaction: a.reaction,
+        penFast: decided ? { value: pf.value, low: pf.value < 3 } : undefined,
+        ...ctx,
+      }),
     });
   }
   return gaps;

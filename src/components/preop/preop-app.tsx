@@ -132,6 +132,7 @@ function PreopScreens() {
       {view === "dossiers" && (
         <DossierList
           dossiers={dossierStore.dossiers}
+          rules={rules}
           status={dossierStore.status}
           onOpen={(id) => openDossier(id)}
           onCreate={async (initials) => {

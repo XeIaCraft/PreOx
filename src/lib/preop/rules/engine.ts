@@ -10,8 +10,8 @@
 // is the daily dose?"). That's how primary vs secondary prevention, a
 // recent stent or a reduced creatinine clearance change the outcome.
 
-import { cockcroftGault, bmi, ckdEpi2021 } from "../scores";
-import { atcMatches } from "../medications";
+import { cockcroftGault, bmi, ckdEpi2021, penFast } from "../scores";
+import { atcMatches, treatmentMatches } from "../medications";
 import { INDICATIONS, PATIENT_VALUES, SOURCE_LEVELS, SURGERY_ATTRIBUTES, TECHNIQUES } from "./types";
 import { defaultConditionLabel } from "../catalog-conditions";
 import type { Comparator, Condition, PatientContext, PatientTreatment, PatientValue, Rule, SourceLevel, Technique } from "./types";
@@ -36,7 +36,7 @@ export type Outcome =
   | { kind: "stop_before"; hours: number; treatment: PatientTreatment; lastDoseBy: string | null; conflict: { earliestAt: string } | null }
   | { kind: "resume_after"; hours: number; treatment: PatientTreatment | null; resumeFrom: string | null }
   | { kind: "requirement"; text: string; blocking: boolean }
-  | { kind: "exam"; exam: string }
+  | { kind: "exam"; exam: string; withinDays?: number; notBefore: string | null }
   | { kind: "info"; text: string };
 
 export interface Finding {
@@ -134,6 +134,8 @@ function evaluateCondition(c: Condition, ctx: PatientContext, now: string): Cond
     return { truth: e.present === c.present, missing: [], matched: [] };
   }
 
+  if (c.kind === "allergy") return evaluateAllergy(c, ctx);
+
   if (c.kind === "value") {
     const v = patientValue(ctx, c.value);
     if (v === undefined) return { truth: "unknown", missing: missingForValue(ctx, c.value), matched: [] };
@@ -141,7 +143,7 @@ function evaluateCondition(c: Condition, ctx: PatientContext, now: string): Cond
   }
 
   // drug: true if one treatment of that ATC meets every sub-condition; unknown if one might
-  const candidates = ctx.treatments.filter((t) => atcMatches(t.atc, c.atc));
+  const candidates = ctx.treatments.filter((t) => treatmentMatches(t, c.atc));
   if (candidates.length === 0) return { truth: false, missing: [], matched: [] };
   const matched: PatientTreatment[] = [];
   const missing: MissingInfo[] = [];
@@ -177,6 +179,32 @@ function evaluateCondition(c: Condition, ctx: PatientContext, now: string): Cond
   return anyUnknown ? { truth: "unknown", missing, matched: [] } : { truth: false, missing: [], matched: [] };
 }
 
+/**
+ * An allergy is known present when it is in the list; known absent when
+ * allergies were asked (a list, or "none known") and it isn't there.
+ * A PEN-FAST condition stays unknown until enough items are answered to
+ * know on which side of 3 the score falls.
+ */
+function evaluateAllergy(c: Extract<Condition, { kind: "allergy" }>, ctx: PatientContext): ConditionResult {
+  const name = c.label ?? c.allergen;
+  const entries = (ctx.allergyList ?? []).filter((a) => a.allergenId === c.allergen);
+  const asked = ctx.noKnownAllergy || (ctx.allergyList?.length ?? 0) > 0;
+  if (!entries.length) {
+    if (!asked) return { truth: "unknown", missing: [{ key: "allergies", label: "Allergies (à demander au patient)" }], matched: [] };
+    return { truth: !c.present, missing: [], matched: [] };
+  }
+  if (!c.present) return { truth: false, missing: [], matched: [] };
+  if (!c.penFast) return { truth: true, missing: [], matched: [] };
+  let undecided = false;
+  for (const e of entries) {
+    const r = penFast(e.penFast ?? {});
+    const side = r.value >= 3 ? "high" : r.level === "low" ? "low" : null;
+    if (side === c.penFast) return { truth: true, missing: [], matched: [] };
+    if (side === null) undecided = true;
+  }
+  return undecided ? { truth: "unknown", missing: [{ key: `penfast:${c.allergen}`, label: `Score PEN-FAST de l'allergie : ${name}` }], matched: [] } : { truth: false, missing: [], matched: [] };
+}
+
 // ---------------------------------------------------------------------------
 // Rules
 // ---------------------------------------------------------------------------
@@ -201,7 +229,7 @@ function outcomesOf(rule: Rule, ctx: PatientContext, matched: PatientTreatment[]
     case "requirement":
       return [{ kind: "requirement", text: a.text, blocking: a.blocking }];
     case "exam":
-      return [{ kind: "exam", exam: a.exam }];
+      return [{ kind: "exam", exam: a.exam, withinDays: a.withinDays, notBefore: a.withinDays !== undefined && ctx.plannedAt ? addHours(ctx.plannedAt, -a.withinDays * 24) : null }];
     case "info":
       return [{ kind: "info", text: a.text }];
   }
@@ -275,7 +303,7 @@ export const WATCHED: { atc: string; techniques: Technique[] | "any"; type: "sto
 function ruleCovers(rule: Rule, t: PatientTreatment, technique: Technique | null): boolean {
   if (rule.status !== "active" || rule.action.type !== "stop_before") return false;
   const drugConds = rule.conditions.filter((c): c is Extract<Condition, { kind: "drug" }> => c.kind === "drug");
-  if (!drugConds.some((c) => atcMatches(t.atc, c.atc))) return false;
+  if (!drugConds.some((c) => treatmentMatches(t, c.atc))) return false;
   if (!technique) return true;
   const techConds = rule.conditions.filter((c): c is Extract<Condition, { kind: "technique" }> => c.kind === "technique");
   return techConds.length === 0 || techConds.some((c) => c.in.includes(technique));
@@ -284,7 +312,7 @@ function ruleCovers(rule: Rule, t: PatientTreatment, technique: Technique | null
 export function findGaps(rules: Rule[], ctx: PatientContext): Gap[] {
   const gaps: Gap[] = [];
   for (const t of ctx.treatments) {
-    for (const watch of WATCHED.filter((w) => atcMatches(t.atc, w.atc))) {
+    for (const watch of WATCHED.filter((w) => treatmentMatches(t, w.atc))) {
       const techniques: (Technique | null)[] = watch.techniques === "any" ? [null] : ctx.techniques.filter((x) => (watch.techniques as Technique[]).includes(x));
       for (const technique of techniques) {
         if (rules.some((r) => ruleCovers(r, t, technique))) continue;

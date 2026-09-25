@@ -19,6 +19,10 @@ export function describeCondition(c: Condition): string {
     return `${(a?.label ?? c.attribute).toLowerCase()} : ${c.in.map((v) => a?.values.find((x) => x.code === v)?.label ?? v).join(" ou ")}`;
   }
   if (c.kind === "history") return `antécédent ${c.present ? "" : "absent : "}${(c.label ?? defaultConditionLabel(c.condition) ?? c.condition).toLowerCase()}`;
+  if (c.kind === "allergy") {
+    const pf = c.penFast === "low" ? " avec PEN-FAST < 3 (allergie vraie peu probable)" : c.penFast === "high" ? " avec PEN-FAST ≥ 3 (allergie vraie possible)" : "";
+    return `allergie ${c.present ? "" : "absente : "}${(c.label ?? c.allergen).toLowerCase()}${c.present ? pf : ""}`;
+  }
   if (c.kind === "value") {
     const v = PATIENT_VALUES.find((x) => x.code === c.value);
     return `${v?.label ?? c.value} ${OP[c.op]} ${c.threshold}${v?.unit ? ` ${v.unit}` : ""}`;
@@ -39,7 +43,7 @@ export function describeAction(a: RuleAction): string {
     case "requirement":
       return `${a.blocking ? "condition obligatoire" : "à vérifier"} : ${a.text}`;
     case "exam":
-      return `examen : ${a.exam}`;
+      return `examen : ${a.exam}${a.withinDays !== undefined ? (a.withinDays === 0 ? " (le jour même)" : ` (dans les ${a.withinDays} jour${a.withinDays > 1 ? "s" : ""} avant le geste)`) : ""}`;
     case "info":
       return `information : ${a.text}`;
   }
@@ -48,7 +52,7 @@ export function describeAction(a: RuleAction): string {
 /** "Si traitement : Rivaroxaban, dose ≥ 20 mg/j et geste : … → dernière prise au moins 72 h (3 jours) avant le geste." */
 export function describeRule(rule: { conditions: Condition[]; action: RuleAction }): string {
   const when = rule.conditions.map(describeCondition);
-  const then = describeAction(rule.action);
+  const then = describeAction(rule.action).replace(/[.\s]+$/, "");
   if (when.length === 0) return `Toujours : ${then}.`;
   return `Si ${when.join(" et ")} → ${then}.`;
 }

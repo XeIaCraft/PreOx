@@ -11,6 +11,8 @@ import { SurgeryPanel } from "@/components/preop/surgery-panel";
 import { AllergiesEditor, ConditionsEditor, SubstancesEditor } from "@/components/preop/history-editor";
 import { ExamsPanel } from "@/components/preop/exams-panel";
 import { AttentionPanel, InstructionsPanel } from "@/components/preop/attention-panel";
+import { TimelinePanel } from "@/components/preop/timeline-panel";
+import { consultationTimeline, reminderSuggestions } from "@/lib/preop/timeline";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { QuickEntryPanel } from "@/components/preop/quick-entry-panel";
 import { printSections } from "@/components/preop/print";
@@ -159,7 +161,8 @@ function TreatmentsEditor({ treatments, onChange }: { treatments: PatientTreatme
   const frequent = usage.top.map((atc) => catalogs.medications.find((m) => m.atc === atc)).filter((m): m is NonNullable<typeof m> => !!m && !treatments.some((t) => t.atc === m.atc));
   const addMed = (atc: string, name: string) => {
     const id = crypto.randomUUID();
-    onChange([...treatments, { id, atc, name }]);
+    const components = catalogs.medications.find((m) => m.atc === atc)?.components;
+    onChange([...treatments, { id, atc, name, ...(components?.length ? { components } : {}) }]);
     usage.bump(atc);
     setOpen(id);
   };
@@ -317,7 +320,12 @@ function RulesPanel({ evaluation, gaps, onAskQuestion, crcl, rulesCount }: { eva
                       </>
                     )}
                     {o.kind === "requirement" && <span className={o.blocking ? "font-medium text-danger" : undefined}>{o.text}</span>}
-                    {o.kind === "exam" && <>Examen : {o.exam}</>}
+                    {o.kind === "exam" && (
+                      <>
+                        Examen : {o.exam}
+                        {o.notBefore && <> — pas avant le {formatDateTime(o.notBefore)}</>}
+                      </>
+                    )}
                     {o.kind === "info" && <>{o.text}</>}
                   </p>
                 ))}
@@ -682,6 +690,7 @@ export function ConsultationForm({
   }, [quick]);
   const recap = useMemo(() => consultationRecap(s, scores, { points, instructions, initials }), [s, scores, points, instructions, initials]);
   const toRequest = pendingExams(s, scores.exams);
+  const timeline = useMemo(() => consultationTimeline(s, evaluation), [s, evaluation]);
   const protocol = matchProtocol(protocols, s.surgery, s.hospital);
   const high = points.filter((x) => x.level === "high").length;
   const ruleGaps = gaps.length + evaluation.gaps.filter((g) => !gaps.some((x) => x.key === `t:${g.treatment.id}`)).length;
@@ -881,6 +890,19 @@ export function ConsultationForm({
               onGo={go}
               onPrint={() => printSections(`Consultation d'anesthésie${initials ? ` — ${initials}` : ""}`, recap, "Récapitulatif PreOx — à reporter sur la feuille officielle.")}
               onPrintPatient={() => printSections("Préparation à votre anesthésie", patientSheet(s, instructions, scores.conditions), "Gardez cette fiche avec vous le jour de l'intervention.")}
+            />
+            <TimelinePanel
+              items={timeline}
+              plannedAt={s.plannedAt}
+              reminders={s.reminders ?? []}
+              onReminders={(reminders) => set({ reminders })}
+              suggestions={reminderSuggestions(
+                s,
+                evaluation,
+                scores.exams.recommendations.filter((r) => s.exams[r.code]?.status === "requested").map((r) => r.label),
+                instructions.undecided
+              )}
+              prefix={initials}
             />
             <InstructionsPanel instructions={instructions} />
             {ruleGaps > 0 && (

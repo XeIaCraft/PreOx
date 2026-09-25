@@ -11,7 +11,7 @@
 import { anyOf, has, type Conditions, type Substances } from "./history";
 import type { ConsultationState } from "./dossier";
 import type { PatientTreatment } from "./rules/types";
-import { atcMatches } from "./medications";
+import { treatmentMatches } from "./medications";
 
 export type ExamCode = "fbc" | "renal" | "haemostasis" | "ecg" | "hba1c" | "pregnancy" | "troponin" | "bnp" | "echo" | "lung";
 export type ExamStrength = "recommended" | "consider";
@@ -60,7 +60,7 @@ export interface ExamInput {
   mets?: number;
 }
 
-const isAnticoagulated = (t: PatientTreatment[]) => t.some((x) => atcMatches(x.atc, "B01AA") || atcMatches(x.atc, "B01AF") || atcMatches(x.atc, "B01AE"));
+const isAnticoagulated = (t: PatientTreatment[]) => t.some((x) => treatmentMatches(x, "B01AA") || treatmentMatches(x, "B01AF") || treatmentMatches(x, "B01AE"));
 
 /** Known cardiovascular disease (ESC 2022). */
 function cardiovascularDisease(c: Conditions): boolean | undefined {

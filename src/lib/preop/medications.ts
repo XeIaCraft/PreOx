@@ -14,6 +14,12 @@ export interface Medication {
   name: string;
   /** Belgian brand names, searched but not displayed. */
   brands?: string[];
+  /**
+   * Other ATC codes it counts as, so rules and implications on them apply:
+   * each substance of a fixed combination (Janumet → metformin), or the
+   * class it acts like (tirzépatide → GLP-1 agonists).
+   */
+  components?: string[];
 }
 
 export interface AtcGroup {
@@ -60,6 +66,16 @@ export const ATC_GROUPS: AtcGroup[] = [
   { prefix: "N06DA", label: "Anticholinestérasiques (démence)" },
   { prefix: "N07BC", label: "Traitements de substitution aux opioïdes" },
   { prefix: "R03", label: "Médicaments de l'asthme et de la BPCO" },
+  { prefix: "A10BD", label: "Associations d'antidiabétiques oraux" },
+  { prefix: "B03", label: "Antianémiques (fer, érythropoïétine)" },
+  { prefix: "C08D", label: "Inhibiteurs calciques bradycardisants (vérapamil, diltiazem)" },
+  { prefix: "G04BE", label: "Inhibiteurs de la phosphodiestérase 5" },
+  { prefix: "N06AG", label: "IMAO-A (moclobémide)" },
+  { prefix: "N04BD", label: "IMAO-B (antiparkinsoniens)" },
+  { prefix: "N07AA", label: "Anticholinestérasiques (myasthénie)" },
+  { prefix: "N07BB", label: "Traitements de la dépendance à l'alcool" },
+  { prefix: "N06BA", label: "Psychostimulants" },
+  { prefix: "L04AB", label: "Anti-TNF" },
 ];
 
 export const MEDICATIONS: Medication[] = [
@@ -107,7 +123,7 @@ export const MEDICATIONS: Medication[] = [
   { atc: "C09AA03", name: "Lisinopril", brands: ["Zestril"] },
   { atc: "C09CA07", name: "Telmisartan", brands: ["Micardis"] },
   { atc: "C09CA04", name: "Irbésartan", brands: ["Aprovel"] },
-  { atc: "C09DX04", name: "Sacubitril + valsartan", brands: ["Entresto"] },
+  { atc: "C09DX04", name: "Sacubitril + valsartan", brands: ["Entresto"], components: ["C09CA03"] },
   { atc: "C03AA03", name: "Hydrochlorothiazide", brands: ["Esidrex"] },
   { atc: "C03BA11", name: "Indapamide", brands: ["Fludex"] },
   { atc: "C03CA01", name: "Furosémide", brands: ["Lasix"] },
@@ -138,9 +154,9 @@ export const MEDICATIONS: Medication[] = [
   { atc: "A10BB09", name: "Gliclazide", brands: ["Uni Diamicron"] },
   { atc: "A10BB12", name: "Glimépiride", brands: ["Amarylle"] },
   { atc: "A10BH01", name: "Sitagliptine", brands: ["Januvia"] },
-  { atc: "A10BD07", name: "Sitagliptine + metformine", brands: ["Janumet"] },
-  { atc: "A10BJ06", name: "Sémaglutide oral", brands: ["Rybelsus"] },
-  { atc: "A10BX16", name: "Tirzépatide", brands: ["Mounjaro"] },
+  { atc: "A10BD07", name: "Sitagliptine + metformine", brands: ["Janumet"], components: ["A10BH01", "A10BA02"] },
+  // Dual GIP / GLP-1 agonist: counts as a GLP-1 agonist (gastric emptying).
+  { atc: "A10BX16", name: "Tirzépatide", brands: ["Mounjaro"], components: ["A10BJ"] },
   { atc: "H03AA01", name: "Lévothyroxine", brands: ["L-Thyroxine", "Euthyrox"] },
   { atc: "H03BB02", name: "Thiamazole", brands: ["Strumazol"] },
   { atc: "H02AB09", name: "Hydrocortisone", brands: ["Hydrocortone"] },
@@ -216,11 +232,177 @@ export const MEDICATIONS: Medication[] = [
   { atc: "L04AD01", name: "Ciclosporine", brands: ["Neoral"] },
   { atc: "L04AA06", name: "Mycophénolate", brands: ["Cellcept"] },
   { atc: "P01BA02", name: "Hydroxychloroquine", brands: ["Plaquenil"] },
+  // --- Added: antithrombotiques -----------------------------------------------------
+  { atc: "B01AB01", name: "Héparine non fractionnée", brands: ["Héparine", "Calciparine"] },
+  { atc: "B01AC07", name: "Dipyridamole", brands: ["Persantine"] },
+  { atc: "B01AC30", name: "Dipyridamole + acide acétylsalicylique", brands: ["Aggrenox"], components: ["B01AC07", "B01AC06"] },
+  { atc: "B01AC23", name: "Cilostazol", brands: ["Pletal"] },
+  // --- Cardiovasculaire ----------------------------------------------------------------
+  { atc: "C09AA01", name: "Captopril", brands: ["Capoten"] },
+  { atc: "C09AA06", name: "Quinapril", brands: ["Accupril"] },
+  { atc: "C09AA10", name: "Trandolapril", brands: ["Gopten"] },
+  { atc: "C09CA08", name: "Olmésartan", brands: ["Belsar", "Olmetec"] },
+  { atc: "C09BA04", name: "Périndopril + indapamide", brands: ["Coversyl Plus", "Preterax"], components: ["C09AA04", "C03BA11"] },
+  { atc: "C09BB04", name: "Périndopril + amlodipine", brands: ["Coveram"], components: ["C09AA04", "C08CA01"] },
+  { atc: "C09DA01", name: "Losartan + hydrochlorothiazide", brands: ["Cozaar Plus", "Loortan Plus"], components: ["C09CA01", "C03AA03"] },
+  { atc: "C09DA03", name: "Valsartan + hydrochlorothiazide", brands: ["Co-Diovane"], components: ["C09CA03", "C03AA03"] },
+  { atc: "C09DA07", name: "Telmisartan + hydrochlorothiazide", brands: ["MicardisPlus"], components: ["C09CA07", "C03AA03"] },
+  { atc: "C09DB01", name: "Amlodipine + valsartan", brands: ["Exforge"], components: ["C08CA01", "C09CA03"] },
+  { atc: "C08CA05", name: "Nifédipine", brands: ["Adalat"] },
+  { atc: "C08CA02", name: "Félodipine", brands: ["Plendil"] },
+  { atc: "C08DA01", name: "Vérapamil", brands: ["Isoptine", "Lodixal"] },
+  { atc: "C08DB01", name: "Diltiazem", brands: ["Tildiem"] },
+  { atc: "C07AA05", name: "Propranolol", brands: ["Inderal"] },
+  { atc: "C07AB08", name: "Céliprolol", brands: ["Selectol"] },
+  { atc: "C03CA04", name: "Torasémide", brands: ["Torrem"] },
+  { atc: "C03BA04", name: "Chlortalidone", brands: ["Hygroton"] },
+  { atc: "C02CA04", name: "Doxazosine", brands: ["Cardura"] },
+  { atc: "C02AB01", name: "Méthyldopa", brands: ["Aldomet"] },
+  { atc: "C01BC03", name: "Propafénone", brands: ["Rytmonorm"] },
+  { atc: "C01DA02", name: "Nitroglycérine", brands: ["Nitrolingual", "Nitroderm", "Trinipatch"] },
+  { atc: "C01DA08", name: "Isosorbide dinitrate", brands: ["Cedocard"] },
+  { atc: "C01DX12", name: "Molsidomine", brands: ["Corvaton"] },
+  { atc: "C01EB18", name: "Ranolazine", brands: ["Ranexa"] },
+  { atc: "C10AA03", name: "Pravastatine", brands: ["Pravasine"] },
+  { atc: "C10AB05", name: "Fénofibrate", brands: ["Lipanthyl"] },
+  { atc: "C10AX13", name: "Évolocumab", brands: ["Repatha"] },
+  { atc: "C10AX14", name: "Alirocumab", brands: ["Praluent"] },
+  { atc: "C10BA02", name: "Simvastatine + ézétimibe", brands: ["Inegy"], components: ["C10AA01", "C10AX09"] },
+  { atc: "C10BA05", name: "Atorvastatine + ézétimibe", brands: ["Atozet"], components: ["C10AA05", "C10AX09"] },
+  // --- Diabète ---------------------------------------------------------------------------
+  { atc: "A10AB01", name: "Insuline humaine rapide", brands: ["Actrapid", "Humuline Regular"] },
+  { atc: "A10AB06", name: "Insuline glulisine", brands: ["Apidra"] },
+  { atc: "A10AD04", name: "Insuline lispro biphasique", brands: ["Humalog Mix"] },
+  { atc: "A10AD05", name: "Insuline asparte biphasique", brands: ["NovoMix"] },
+  { atc: "A10AE54", name: "Insuline glargine + lixisénatide", brands: ["Suliqua"], components: ["A10AE04", "A10BJ03"] },
+  { atc: "A10AE56", name: "Insuline dégludec + liraglutide", brands: ["Xultophy"], components: ["A10AE06", "A10BJ02"] },
+  { atc: "A10BB01", name: "Glibenclamide", brands: ["Daonil"] },
+  { atc: "A10BF01", name: "Acarbose", brands: ["Glucobay"] },
+  { atc: "A10BG03", name: "Pioglitazone", brands: ["Actos"] },
+  { atc: "A10BH02", name: "Vildagliptine", brands: ["Galvus"] },
+  { atc: "A10BH05", name: "Linagliptine", brands: ["Trajenta"] },
+  { atc: "A10BD08", name: "Vildagliptine + metformine", brands: ["Eucreas"], components: ["A10BH02", "A10BA02"] },
+  { atc: "A10BD15", name: "Dapagliflozine + metformine", brands: ["Xigduo"], components: ["A10BK01", "A10BA02"] },
+  { atc: "A10BD19", name: "Linagliptine + empagliflozine", brands: ["Glyxambi"], components: ["A10BH05", "A10BK03"] },
+  { atc: "A10BD20", name: "Empagliflozine + metformine", brands: ["Synjardy"], components: ["A10BK03", "A10BA02"] },
+  { atc: "A10BJ01", name: "Exénatide", brands: ["Byetta", "Bydureon"] },
+  // --- Endocrinologie, hormones ----------------------------------------------------------
+  { atc: "H02AB02", name: "Dexaméthasone" },
+  { atc: "H02AA02", name: "Fludrocortisone" },
+  { atc: "H01BA02", name: "Desmopressine", brands: ["Minirin"] },
+  { atc: "H03BA02", name: "Propylthiouracile" },
+  { atc: "G03AC09", name: "Désogestrel (pilule progestative)", brands: ["Cerazette"] },
+  { atc: "G03CA03", name: "Estradiol", brands: ["Estrogel", "Oestrogel", "Progynova"] },
+  { atc: "G03XC01", name: "Raloxifène", brands: ["Evista"] },
+  { atc: "L02BG03", name: "Anastrozole", brands: ["Arimidex"] },
+  { atc: "L02BG04", name: "Létrozole", brands: ["Femara"] },
+  { atc: "M05BX04", name: "Dénosumab", brands: ["Prolia", "Xgeva"] },
+  // --- Sang ------------------------------------------------------------------------------
+  { atc: "B03AA07", name: "Fer oral (sulfate ferreux)", brands: ["Fero-Grad", "Ferogradumet"] },
+  { atc: "B03AC", name: "Fer injectable", brands: ["Injectafer", "Venofer", "Monofer"] },
+  { atc: "B03XA01", name: "Érythropoïétine", brands: ["Eprex", "Aranesp", "Binocrit"] },
+  // --- Système nerveux ------------------------------------------------------------------
+  { atc: "N06AA04", name: "Clomipramine", brands: ["Anafranil"] },
+  { atc: "N06AA10", name: "Nortriptyline", brands: ["Nortrilen"] },
+  { atc: "N06AG02", name: "Moclobémide", brands: ["Aurorix"] },
+  { atc: "N06AX12", name: "Bupropion", brands: ["Wellbutrin", "Zyban"] },
+  { atc: "N06AX22", name: "Agomélatine", brands: ["Valdoxan"] },
+  { atc: "N06AX26", name: "Vortioxétine", brands: ["Brintellix"] },
+  { atc: "N06AX25", name: "Millepertuis", brands: ["Hyperiplant", "millepertuis"] },
+  { atc: "N05AH02", name: "Clozapine", brands: ["Leponex"] },
+  { atc: "N05AX12", name: "Aripiprazole", brands: ["Abilify"] },
+  { atc: "N05AX13", name: "Palipéridone", brands: ["Xeplion", "Invega"] },
+  { atc: "N05AA02", name: "Lévomépromazine", brands: ["Nozinan"] },
+  { atc: "N05AL01", name: "Sulpiride", brands: ["Dogmatil"] },
+  { atc: "N05BA04", name: "Oxazépam", brands: ["Seresta"] },
+  { atc: "N05BA09", name: "Clobazam", brands: ["Frisium"] },
+  { atc: "N05BB01", name: "Hydroxyzine", brands: ["Atarax"] },
+  { atc: "N05CF01", name: "Zopiclone", brands: ["Imovane"] },
+  { atc: "N05CH01", name: "Mélatonine", brands: ["Circadin"] },
+  { atc: "N03AE01", name: "Clonazépam", brands: ["Rivotril"] },
+  { atc: "N03AB02", name: "Phénytoïne", brands: ["Diphantoïne"] },
+  { atc: "N03AF02", name: "Oxcarbazépine", brands: ["Trileptal"] },
+  { atc: "N03AX18", name: "Lacosamide", brands: ["Vimpat"] },
+  { atc: "N03AX23", name: "Brivaracétam", brands: ["Briviact"] },
+  { atc: "N03AA02", name: "Phénobarbital", brands: ["Gardénal"] },
+  { atc: "N04BC04", name: "Ropinirole", brands: ["Requip"] },
+  { atc: "N04BC09", name: "Rotigotine (patch)", brands: ["Neupro"] },
+  { atc: "N04BA03", name: "Lévodopa + carbidopa + entacapone", brands: ["Stalevo"] },
+  { atc: "N04BX02", name: "Entacapone", brands: ["Comtan"] },
+  { atc: "N04BB01", name: "Amantadine", brands: ["Amantan"] },
+  { atc: "N04BD03", name: "Safinamide", brands: ["Xadago"] },
+  { atc: "N06DA04", name: "Galantamine", brands: ["Reminyl"] },
+  { atc: "N06DX01", name: "Mémantine", brands: ["Ebixa"] },
+  { atc: "N07AA02", name: "Pyridostigmine", brands: ["Mestinon"] },
+  { atc: "N07BB01", name: "Disulfirame", brands: ["Antabuse"] },
+  { atc: "N07BB03", name: "Acamprosate", brands: ["Campral"] },
+  { atc: "N07BB04", name: "Naltrexone", brands: ["Nalorex"] },
+  { atc: "N07BB05", name: "Nalméfène", brands: ["Selincro"] },
+  { atc: "A08AA62", name: "Naltrexone + bupropion", brands: ["Mysimba"], components: ["N07BB04", "N06AX12"] },
+  { atc: "N07BA01", name: "Nicotine (substitution)", brands: ["Nicorette", "Nicotinell"] },
+  { atc: "N06BA09", name: "Atomoxétine", brands: ["Strattera"] },
+  { atc: "N06BA12", name: "Lisdexamfétamine", brands: ["Elvanse"] },
+  { atc: "N02CC01", name: "Sumatriptan", brands: ["Imitrex"] },
+  // --- Antalgiques ----------------------------------------------------------------------
+  { atc: "N02AJ13", name: "Tramadol + paracétamol", brands: ["Zaldiar"], components: ["N02AX02", "N02BE01"] },
+  { atc: "N02AJ06", name: "Codéine + paracétamol", brands: ["Dafalgan Codéine"], components: ["N02BE01"] },
+  { atc: "N02AA03", name: "Hydromorphone", brands: ["Palladone"] },
+  { atc: "M01AC06", name: "Méloxicam", brands: ["Mobic"] },
+  { atc: "M01AH05", name: "Étoricoxib", brands: ["Arcoxia"] },
+  // --- Respiratoire -----------------------------------------------------------------------
+  { atc: "R03BA02", name: "Budésonide inhalé", brands: ["Pulmicort"] },
+  { atc: "R03BA05", name: "Fluticasone inhalée", brands: ["Flixotide"] },
+  { atc: "R03BB01", name: "Ipratropium", brands: ["Atrovent"] },
+  { atc: "R03AK10", name: "Fluticasone furoate + vilantérol", brands: ["Relvar"] },
+  { atc: "R03AL03", name: "Uméclidinium + vilantérol", brands: ["Anoro"] },
+  { atc: "R03AL06", name: "Tiotropium + olodatérol", brands: ["Spiolto"] },
+  { atc: "R03AL08", name: "Fluticasone + uméclidinium + vilantérol", brands: ["Trelegy"] },
+  { atc: "R03DA04", name: "Théophylline", brands: ["Theolair"] },
+  { atc: "R03DX05", name: "Omalizumab", brands: ["Xolair"] },
+  { atc: "R03DX09", name: "Mépolizumab", brands: ["Nucala"] },
+  // --- Digestif ---------------------------------------------------------------------------
+  { atc: "A03FA01", name: "Métoclopramide", brands: ["Primperan"] },
+  { atc: "A03FA03", name: "Dompéridone", brands: ["Motilium"] },
+  { atc: "A07EC01", name: "Sulfasalazine", brands: ["Salazopyrine"] },
+  { atc: "A07EC02", name: "Mésalazine", brands: ["Pentasa", "Asacol"] },
+  { atc: "A05AA02", name: "Acide ursodésoxycholique", brands: ["Ursochol"] },
+  { atc: "A06AD65", name: "Macrogol", brands: ["Movicol", "Forlax"] },
+  // --- Urologie ---------------------------------------------------------------------------
+  { atc: "G04CA01", name: "Alfuzosine", brands: ["Xatral"] },
+  { atc: "G04CA04", name: "Silodosine", brands: ["Urorec"] },
+  { atc: "G04CB02", name: "Dutastéride", brands: ["Avodart"] },
+  { atc: "G04BD08", name: "Solifénacine", brands: ["Vesicare"] },
+  { atc: "G04BD12", name: "Mirabégron", brands: ["Betmiga"] },
+  { atc: "G04BE03", name: "Sildénafil", brands: ["Viagra", "Revatio"] },
+  { atc: "G04BE08", name: "Tadalafil", brands: ["Cialis"] },
+  // --- Immunologie, rhumatologie, divers ---------------------------------------------------
+  { atc: "L04AB01", name: "Étanercept", brands: ["Enbrel"] },
+  { atc: "L04AB02", name: "Infliximab", brands: ["Remicade", "Inflectra"] },
+  { atc: "L04AC07", name: "Tocilizumab", brands: ["RoActemra"] },
+  { atc: "L04AX01", name: "Azathioprine", brands: ["Imuran"] },
+  { atc: "L04AX04", name: "Lénalidomide", brands: ["Revlimid"] },
+  { atc: "J05AR20", name: "Bictégravir + emtricitabine + ténofovir alafénamide", brands: ["Biktarvy"] },
+  { atc: "M04AA03", name: "Fébuxostat", brands: ["Adenuric"] },
+  { atc: "S01ED01", name: "Timolol (collyre)", brands: ["Timoptol"] },
+  { atc: "S01EC01", name: "Acétazolamide", brands: ["Diamox"] },
+  { atc: "N06DX02", name: "Ginkgo biloba", brands: ["Tanakan", "ginkgo"] },
+  { atc: "A11CC05", name: "Colécalciférol (vitamine D)", brands: ["D-Cure"] },
 ];
 
 /** Does an ATC code belong to a code or group (prefix)? */
 export function atcMatches(code: string, target: string): boolean {
   return code.toUpperCase().startsWith(target.toUpperCase());
+}
+
+/**
+ * Does a patient's treatment belong to a code or group — itself, or one of
+ * the substances of a fixed combination (Janumet → metformin too)?
+ */
+export function treatmentMatches(t: { atc: string; components?: string[] }, target: string): boolean {
+  if (!t.atc && !t.components?.length) return false;
+  if (t.atc && atcMatches(t.atc, target)) return true;
+  const parts = t.components ?? MEDICATIONS.find((m) => m.atc === t.atc && m.components)?.components ?? [];
+  return parts.some((a) => atcMatches(a, target));
 }
 
 /** Most specific group label for a code or prefix ("B01AF01" → "Inhibiteurs directs du facteur Xa"). */

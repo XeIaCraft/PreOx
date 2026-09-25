@@ -38,6 +38,7 @@ function withPreset(conditions: Condition[], preset: Condition[] | undefined): C
   for (const p of preset) {
     if (p.kind === "drug" && out.some((c) => c.kind === "drug")) continue;
     if (p.kind === "history" && out.some((c) => c.kind === "history" && c.condition === p.condition)) continue;
+    if (p.kind === "allergy" && out.some((c) => c.kind === "allergy" && c.allergen === p.allergen)) continue;
     out.unshift(p);
   }
   return out;

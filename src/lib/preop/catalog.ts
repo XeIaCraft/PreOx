@@ -62,6 +62,8 @@ export interface AllergenItem {
   attention: AttentionSpec;
   /** Score used to judge whether the reported allergy is likely true. */
   assessment?: "pen-fast";
+  /** What to do (alternative product, test, referral) should come from a rule: flagged when none exists. */
+  needsRule?: boolean;
 }
 
 export type BleedingRisk = "minimal" | "low" | "high";

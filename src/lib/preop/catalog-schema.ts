@@ -25,7 +25,7 @@ const condition = z.object({
   female: z.boolean().optional(),
 });
 
-const allergen = z.object({ id, label: text(120).min(1), keywords: words, drugWords: words, attention, assessment: z.enum(["pen-fast"]).optional() });
+const allergen = z.object({ id, label: text(120).min(1), keywords: words, drugWords: words, attention, assessment: z.enum(["pen-fast"]).optional(), needsRule: z.boolean().optional() });
 
 const surgery = z.object({
   id,
@@ -48,6 +48,7 @@ const medication = z.object({
   atc,
   name: text(160).min(1),
   brands: words.optional(),
+  components: z.array(atc).max(6).optional(),
   implies: id.optional(),
   attention: attention.optional(),
   needsRule: z.boolean().optional(),

@@ -19,6 +19,7 @@ export interface QuickCondition {
 export interface QuickTreatment {
   atc: string;
   name: string;
+  components?: string[];
   dailyDoseMg?: number;
   from: string;
 }
@@ -102,15 +103,15 @@ export function parseQuickEntry(text: string, catalogs: Pick<Catalogs, "conditio
 
     // Allergies: "allergie à la pénicilline", "allergique au latex", "AL : …",
     // and the continuation "… et au latex" split off by the "et".
-    const continuation: RegExpMatchArray | null = allergyContext ? f.match(/^(?:a|au|aux|a la|a l')\s+(.*)$/) : null;
-    const allergyMatch: RegExpMatchArray | null = continuation ?? f.match(/^(?:allergi(?:e|es|que)s?|al)\s*(?::|a|au|aux|a la|a l')?\s*(.*)$/) ?? f.match(/allergi(?:e|es|que)s?\s+(?:a|au|aux|a la|a l')?\s*(.*)$/);
+    const continuation: RegExpMatchArray | null = allergyContext ? f.match(/^(?:aux|au|a la|a l'|a)\s+(.*)$/) : null;
+    const allergyMatch: RegExpMatchArray | null = continuation ?? f.match(/^(?:allergi(?:e|es|que)s?|al\b)\s*(?::|aux\b|au\b|a la\b|a l'|a\b)?\s*(.*)$/) ?? f.match(/allergi(?:e|es|que)s?\s+(?:aux\b|au\b|a la\b|a l'|a\b)?\s*(.*)$/);
     allergyContext = !!allergyMatch;
     if (allergyMatch) {
       const rest = allergyMatch[1].trim();
       const restWords = words(rest);
       const found = catalogs.allergens.filter((a) => [a.label, ...a.keywords].some((k) => fold(k).length >= 3 && containsPhrase(restWords, words(k))));
       for (const a of found) if (!result.allergies.some((x) => x.allergenId === a.id)) result.allergies.push({ allergenId: a.id, label: a.label, from: segment });
-      if (!found.length && rest) result.allergies.push({ label: segment.replace(/^.*?allergi\w*\s*(?:à|au|aux|à la|à l')?\s*/i, "").replace(/^(?:à|au|aux|à la|à l')\s+/i, "").trim() || rest, from: segment });
+      if (!found.length && rest) result.allergies.push({ label: segment.replace(/^.*?allergi\w*\s*(?:aux\s|au\s|à la\s|à l'|à\s)?\s*/i, "").replace(/^(?:aux|au|à la|à l'|à)\s+/i, "").trim() || rest, from: segment });
       if (/aucune|pas d/.test(rest)) result.allergies = [];
       continue;
     }
@@ -127,7 +128,7 @@ export function parseQuickEntry(text: string, catalogs: Pick<Catalogs, "conditio
         const times = f.match(/(\d)\s*(?:x|fois)\s*(?:\/|par)?\s*(?:j|jour)/);
         if (times) dailyDoseMg *= Number(times[1]);
       }
-      result.treatments.push({ atc: m.atc, name: m.name, dailyDoseMg, from: segment });
+      result.treatments.push({ atc: m.atc, name: m.name, components: m.components, dailyDoseMg, from: segment });
       matched = true;
     }
 
@@ -169,7 +170,7 @@ export function selectAll(r: QuickEntryResult): QuickSelection {
 /** Adds what was recognised (and kept) to the consultation — never removes anything. */
 export function applyQuickEntry<C extends {
   conditions: Record<string, { present: boolean } & Partial<Record<Qualifier, boolean>> | undefined>;
-  treatments: { id: string; atc: string; name: string; dailyDoseMg?: number }[];
+  treatments: { id: string; atc: string; name: string; dailyDoseMg?: number; components?: string[] }[];
   substances: Substances;
   patient: { allergyList?: { allergenId?: string; label: string }[]; noKnownAllergy?: boolean; history?: string };
 }>(c: C, r: QuickEntryResult, sel: QuickSelection = selectAll(r)): C {
@@ -179,7 +180,7 @@ export function applyQuickEntry<C extends {
   }
   const treatments = [...c.treatments];
   for (const t of r.treatments.filter((x) => sel.treatments.includes(x.atc))) {
-    if (!treatments.some((x) => x.atc === t.atc)) treatments.push({ id: crypto.randomUUID(), atc: t.atc, name: t.name, dailyDoseMg: t.dailyDoseMg });
+    if (!treatments.some((x) => x.atc === t.atc)) treatments.push({ id: crypto.randomUUID(), atc: t.atc, name: t.name, dailyDoseMg: t.dailyDoseMg, ...(t.components?.length ? { components: t.components } : {}) });
   }
   const allergyList = [...(c.patient.allergyList ?? [])];
   r.allergies.forEach((a, i) => {

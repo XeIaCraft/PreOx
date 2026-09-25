@@ -5,7 +5,7 @@
 // only fills an unanswered item and always says where it comes from; an
 // explicit answer is never overridden.
 
-import { atcMatches } from "./medications";
+import { treatmentMatches } from "./medications";
 import { ckdEpi2021 } from "./scores";
 import type { ConditionCode, ConditionEntry, Conditions } from "./history";
 import type { ConsultationState } from "./dossier";
@@ -41,7 +41,7 @@ export function deduceConditions(c: ConsultationState, catalogs: Pick<Catalogs, 
     // The treatment itself (Paramètres › Traitements), then its classes.
     const own = catalogs.medications.find((m) => m.atc === t.atc || m.id === t.atc)?.implies;
     if (own) add(own, t.name);
-    for (const k of catalogs.drugClasses) if (k.implies && atcMatches(t.atc, k.atc)) add(k.implies, t.name);
+    for (const k of catalogs.drugClasses) if (k.implies && treatmentMatches(t, k.atc)) add(k.implies, t.name);
     const fromIndication = t.indication ? BY_INDICATION[t.indication] : undefined;
     if (fromIndication) {
       // A stent or an event of less than 3 months counts as recent.

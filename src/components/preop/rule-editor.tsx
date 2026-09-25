@@ -60,12 +60,13 @@ function defaultAction(type: RuleType, current: RuleAction): RuleAction {
 }
 
 function ConditionEditor({ c, onChange, onRemove }: { c: Condition; onChange: (c: Condition) => void; onRemove: () => void }) {
-  const conditionItems = useCatalogs().catalogs.conditions;
+  const { catalogs } = useCatalogs();
+  const conditionItems = catalogs.conditions;
   return (
     <div className="space-y-2 rounded-[var(--radius-md)] border border-border bg-surface-muted/40 p-2.5">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">
-          {c.kind === "drug" ? "Traitement du patient" : c.kind === "technique" ? "Geste prévu" : c.kind === "surgery" ? "Chirurgie" : c.kind === "history" ? "Antécédent" : "Valeur du patient"}
+          {c.kind === "drug" ? "Traitement du patient" : c.kind === "technique" ? "Geste prévu" : c.kind === "surgery" ? "Chirurgie" : c.kind === "history" ? "Antécédent" : c.kind === "allergy" ? "Allergie" : "Valeur du patient"}
         </span>
         <button type="button" onClick={onRemove} className="rounded p-1 text-foreground-subtle hover:text-danger" aria-label="Retirer la condition">
           <Trash2 className="h-4 w-4" />
@@ -175,6 +176,36 @@ function ConditionEditor({ c, onChange, onRemove }: { c: Condition; onChange: (c
         </div>
       )}
 
+      {c.kind === "allergy" && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={c.present ? "yes" : "no"} onChange={(e) => onChange({ ...c, present: e.target.value === "yes", penFast: e.target.value === "yes" ? c.penFast : undefined })} className="w-auto">
+              <option value="yes">signalée</option>
+              <option value="no">absente</option>
+            </Select>
+            <Select
+              value={c.allergen}
+              onChange={(e) => onChange({ ...c, allergen: e.target.value, label: catalogs.allergens.find((x) => x.id === e.target.value)?.label, penFast: undefined })}
+              className="w-auto min-w-0 flex-1"
+            >
+              {!catalogs.allergens.some((x) => x.id === c.allergen) && <option value={c.allergen}>{c.label ?? c.allergen}</option>}
+              {catalogs.allergens.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+          {c.present && catalogs.allergens.find((x) => x.id === c.allergen)?.assessment === "pen-fast" && (
+            <Select value={c.penFast ?? ""} onChange={(e) => onChange({ ...c, penFast: (e.target.value || undefined) as "low" | "high" | undefined })}>
+              <option value="">Quel que soit le score PEN-FAST</option>
+              <option value="low">Seulement si PEN-FAST &lt; 3 (allergie vraie peu probable)</option>
+              <option value="high">Seulement si PEN-FAST ≥ 3 (allergie vraie possible)</option>
+            </Select>
+          )}
+        </div>
+      )}
+
       {c.kind === "value" && (
         <div className="flex flex-wrap items-end gap-2">
           <Select value={c.value} onChange={(e) => onChange({ ...c, value: e.target.value as PatientValue })} className="w-auto min-w-0 flex-1">
@@ -236,6 +267,9 @@ export function RuleEditor({ value, onChange }: { value: RuleDraft; onChange: (r
           <Button type="button" size="sm" variant="secondary" onClick={() => set({ conditions: [...value.conditions, { kind: "history", condition: "coronary", present: true }] })}>
             <Plus className="h-3.5 w-3.5" /> Antécédent
           </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={() => set({ conditions: [...value.conditions, { kind: "allergy", allergen: "betalactams", label: "Pénicillines / bêtalactamines", present: true }] })}>
+            <Plus className="h-3.5 w-3.5" /> Allergie
+          </Button>
           <Button type="button" size="sm" variant="secondary" onClick={() => set({ conditions: [...value.conditions, { kind: "value", value: "crcl", op: ">=", threshold: 30 }] })}>
             <Plus className="h-3.5 w-3.5" /> Valeur du patient
           </Button>
@@ -281,7 +315,22 @@ export function RuleEditor({ value, onChange }: { value: RuleDraft; onChange: (r
             </label>
           </>
         )}
-        {a.type === "exam" && <Input value={a.exam} onChange={(e) => set({ action: { ...a, exam: e.target.value } })} placeholder="ex. ECG" />}
+        {a.type === "exam" && (
+          <div className="space-y-2">
+            <Input value={a.exam} onChange={(e) => set({ action: { ...a, exam: e.target.value } })} placeholder="ex. INR" />
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={a.withinDays !== undefined} onChange={(e) => set({ action: { ...a, withinDays: e.target.checked ? 1 : undefined } })} />
+                À faire au plus tôt … jours avant le geste
+              </label>
+              {a.withinDays !== undefined && (
+                <span className="w-28">
+                  <NumberField label="" unit="jours" value={a.withinDays} onChange={(v) => v !== undefined && set({ action: { ...a, withinDays: Math.max(0, Math.round(v)) } })} />
+                </span>
+              )}
+            </div>
+          </div>
+        )}
         {a.type === "info" && <Textarea rows={2} value={a.text} onChange={(e) => set({ action: { ...a, text: e.target.value } })} />}
       </div>
 

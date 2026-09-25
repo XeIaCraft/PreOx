@@ -30,7 +30,7 @@ import type { ConsultationState } from "./dossier";
 import { anyOf, has, qualified } from "./history";
 import { suggestAsa } from "./asa";
 import { recommendExams } from "./exams";
-import { atcMatches } from "./medications";
+import { treatmentMatches } from "./medications";
 import { effectiveConditions } from "./derive";
 import { drugClassOf } from "@/lib/carnet/pharmaco";
 import type { ProtocolContent } from "./protocols";
@@ -111,7 +111,7 @@ export function consultationScores(c: ConsultationState, opts: { plan?: Protocol
       stroke: has(cond, "stroke"),
       bleeding: has(cond, "bleeding_disorder"),
       elderly: p.age !== undefined ? p.age > 65 : undefined,
-      drugs: c.treatments.some((t) => atcMatches(t.atc, "B01AC") || atcMatches(t.atc, "M01A")) || undefined,
+      drugs: c.treatments.some((t) => treatmentMatches(t, "B01AC") || treatmentMatches(t, "M01A")) || undefined,
       alcohol: sub.alcoholUnitsPerWeek !== undefined ? sub.alcoholUnitsPerWeek >= 8 : undefined,
     }),
     cha: withDerived(c.cha, {

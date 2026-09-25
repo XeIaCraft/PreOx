@@ -104,6 +104,16 @@ export function questionForCondition(p: { condition: string; id?: string; label?
   };
 }
 
+/** A reported allergy whose consequences (alternative product, testing, delabelling) should come from a rule. */
+export function questionForAllergy(p: { allergen: string; id?: string; label?: string; reaction?: string; penFast?: { value: number; low: boolean } } & CaseContext): QuestionInput {
+  const pf = p.penFast ? `; PEN-FAST score ${p.penFast.value}/5 (${p.penFast.low ? "low risk of true allergy" : "true allergy possible"})` : "";
+  return {
+    question: `In a patient reporting an allergy to ${p.allergen}${p.reaction ? ` (reported reaction: ${p.reaction})` : ""}${pf}, how should it be managed around surgery under ${gestures(p.techniques)}: which agents to avoid, which alternatives (including antibiotic prophylaxis and antisepsis when relevant), whether cross-reactivity matters, and whether allergy testing, direct challenge or referral is recommended before elective surgery?`,
+    context: caseBits(p),
+    preset: p.id ? [{ kind: "allergy", allergen: p.id, present: true, label: p.label }] : undefined,
+  };
+}
+
 /** Several questions in one prompt: the answer format allows several blocks, read in one go. */
 export function combineQuestions(questions: QuestionInput[]): QuestionInput {
   if (questions.length === 1) return questions[0];

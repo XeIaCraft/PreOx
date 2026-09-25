@@ -63,7 +63,7 @@ function hintOf(kind: CatalogKind, item: AnyItem): string {
       return [SYSTEM_LABELS[c.system], c.asa ? `ASA ${c.asa}` : "", c.attention || c.attentionIf ? "point d'attention" : "", c.needsRule ? "règle attendue" : ""].filter(Boolean).join(" · ");
     }
     case "allergens":
-      return (item as AllergenItem).keywords.slice(0, 4).join(", ");
+      return [(item as AllergenItem).keywords.slice(0, 4).join(", "), (item as AllergenItem).needsRule ? "règle attendue" : ""].filter(Boolean).join(" · ");
     case "surgeries": {
       const s = item as SurgeryItem;
       return [s.category, SURGERY_GRADES.find((g) => g.code === s.grade)?.label.toLowerCase(), s.position].filter(Boolean).join(" · ");
@@ -223,6 +223,9 @@ function AllergenForm({ item, onChange }: { item: AllergenItem; onChange: (i: Al
       <ToggleChip pressed={item.assessment === "pen-fast"} onChange={(on) => set({ assessment: on ? "pen-fast" : undefined })} className="min-h-9 text-xs">
         Évaluer avec PEN-FAST (allergie à la pénicilline déclarée)
       </ToggleChip>
+      <ToggleChip pressed={!!item.needsRule} onChange={(needsRule) => set({ needsRule })} className="min-h-9 text-xs">
+        La conduite à tenir doit venir d&apos;une règle
+      </ToggleChip>
     </div>
   );
 }
@@ -348,6 +351,17 @@ function MedicationForm({ item, onChange }: { item: MedicationItem; onChange: (i
         </Line>
         <Line label="Marques (virgules)" className="sm:col-span-2">
           <Input className="h-9" defaultValue={(item.brands ?? []).join(", ")} onChange={(e) => set({ brands: list(e.target.value) })} />
+        </Line>
+        <Line label="Association : codes ATC de chaque substance (virgules)" className="sm:col-span-2">
+          <Input
+            className="h-9 uppercase"
+            defaultValue={(item.components ?? []).join(", ")}
+            onChange={(e) => {
+              const components = list(e.target.value.toUpperCase());
+              set({ components: components.length ? components : undefined });
+            }}
+            placeholder="ex. A10BH01, A10BA02"
+          />
         </Line>
         <Line label="Antécédent impliqué">
           <ImpliesSelect value={item.implies} onChange={(implies) => set({ implies })} />

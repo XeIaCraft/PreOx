@@ -7,7 +7,8 @@
 // - bleeding risk (low / high) in the spirit of the EHRA practical guide
 //   for anticoagulated patients — to confirm per procedure and surgeon;
 // - "high-risk surgery" of the Lee index (intraperitoneal, intrathoracic,
-//   suprainguinal vascular) and the ARISCAT incision site.
+//   suprainguinal vascular) and the ARISCAT incision site;
+// - an indicative duration (ARISCAT), to adjust to the team.
 
 import type { AriscatInput } from "./scores";
 import type { RiskGrade } from "./dossier";
@@ -112,7 +113,102 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Pneumonectomie", "G", "major", "high", "high", true, "intrathoracic", "Décubitus latéral"),
   s("Chirurgie plastique ou reconstructrice", "L", "intermediate", "low", "low", false, "peripheral", "Selon la localisation", ["lambeau", "abdominoplastie", "plastie mammaire"]),
   s("Endoscopie digestive", "X", "minor", "low", "minimal", false, "peripheral", "Décubitus latéral gauche ou dorsal", ["gastroscopie", "coloscopie", "CPRE"]),
+  // --- Added -------------------------------------------------------------------
+  // Orthopédie
+  s("Prothèse d'épaule", "K", "major", "intermediate", "high", false, "peripheral", "Semi-assise (beach chair)", ["PTE", "prothèse inversée"]),
+  s("Reprise de prothèse de hanche ou de genou", "K", "major", "intermediate", "high", false, "peripheral", "Selon l'articulation", ["révision de PTH", "révision de PTG", "reprise PTH"]),
+  s("Arthroscopie de hanche", "K", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal, table de traction"),
+  s("Ostéotomie", "K", "intermediate", "low", "high", false, "peripheral", "Décubitus dorsal", ["ostéotomie tibiale", "ostéotomie de valgisation"]),
+  s("Ostéosynthèse du poignet", "K", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal, bras sur table", ["fracture du radius", "Pouteau-Colles"]),
+  s("Ostéosynthèse de la cheville", "K", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal", ["fracture de cheville", "malléole"]),
+  s("Vertébroplastie / cyphoplastie", "K", "minor", "low", "low", false, "peripheral", "Décubitus ventral", ["tassement vertébral"]),
+  // Chirurgie générale et digestive
+  s("Cure d'éventration", "A", "intermediate", "intermediate", "low", true, "upper_abdominal", "Décubitus dorsal", ["éventration", "hernie ventrale", "hernie incisionnelle"]),
+  s("Cure de hernie ombilicale", "A", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["hernie ombilicale", "hernie de la ligne blanche"]),
+  s("Fundoplicature / cure de hernie hiatale", "A", "intermediate", "intermediate", "low", true, "upper_abdominal", "Décubitus dorsal, proclive", ["Nissen", "Toupet", "hernie hiatale"]),
+  s("Splénectomie", "A", "intermediate", "intermediate", "high", true, "upper_abdominal", "Décubitus dorsal ou latéral droit", ["rate"]),
+  s("Surrénalectomie", "A", "major", "high", "high", true, "upper_abdominal", "Décubitus latéral", ["surrénale"]),
+  s("Chirurgie des voies biliaires", "A", "major", "high", "high", true, "upper_abdominal", "Décubitus dorsal", ["anastomose bilio-digestive", "cholédoque"]),
+  s("Résection du rectum", "A", "major", "intermediate", "high", true, "upper_abdominal", "Position de Lloyd-Davies, Trendelenburg", ["résection antérieure du rectum", "amputation abdomino-périnéale", "TME"]),
+  s("Rétablissement de continuité", "A", "intermediate", "intermediate", "high", true, "upper_abdominal", "Décubitus dorsal", ["fermeture de stomie", "Hartmann"]),
+  s("Laparotomie pour occlusion", "A", "major", "intermediate", "high", true, "upper_abdominal", "Décubitus dorsal", ["occlusion", "laparotomie exploratrice", "adhérences", "bride"]),
+  s("Pose de chambre implantable", "A", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["PAC", "port-a-cath", "chambre implantable"]),
+  s("Sinus pilonidal", "A", "minor", "low", "low", false, "peripheral", "Décubitus ventral", ["kyste pilonidal"]),
+  // Vasculaire
+  s("Chirurgie des varices", "A", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["stripping", "crossectomie", "phlébectomie"]),
+  s("Angioplastie périphérique", "A", "intermediate", "intermediate", "low", false, "peripheral", "Décubitus dorsal", ["angioplastie", "stent périphérique"]),
+  // Urologie
+  s("Néphrolithotomie percutanée", "J2", "intermediate", "low", "high", false, "peripheral", "Décubitus ventral ou dorsal", ["NLPC"]),
+  s("Énucléation de prostate au laser", "J2", "intermediate", "low", "high", false, "peripheral", "Lithotomie", ["HoLEP", "vaporisation laser"]),
+  s("Transplantation rénale", "J2", "major", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["greffe rénale"]),
+  s("Chirurgie scrotale", "J2", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["hydrocèle", "orchidectomie", "orchidopexie", "varicocèle"]),
+  s("Circoncision", "J2", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["posthectomie", "phimosis"]),
+  s("Cystoscopie / sonde JJ", "J2", "minor", "low", "minimal", false, "peripheral", "Lithotomie", ["cystoscopie", "sonde double J", "JJ"]),
+  s("Bandelette sous-urétrale", "J1", "minor", "low", "low", false, "peripheral", "Lithotomie", ["TVT", "TOT", "incontinence urinaire"]),
+  // Gynécologie, obstétrique
+  s("Myomectomie", "J1", "intermediate", "intermediate", "high", true, "peripheral", "Décubitus dorsal ou lithotomie", ["fibrome", "myome"]),
+  s("Cure de prolapsus", "J1", "intermediate", "intermediate", "low", true, "peripheral", "Lithotomie, Trendelenburg", ["promontofixation", "prolapsus"]),
+  s("Ponction ovocytaire", "J1", "minor", "low", "minimal", false, "peripheral", "Lithotomie", ["FIV", "PMA"]),
+  s("Aspiration endo-utérine", "J1", "minor", "low", "low", false, "peripheral", "Lithotomie", ["IVG", "fausse couche", "aspiration"]),
+  s("Cerclage du col", "B", "minor", "low", "low", false, "peripheral", "Lithotomie", ["cerclage"]),
+  s("Révision utérine / délivrance artificielle", "B", "minor", "low", "high", false, "peripheral", "Lithotomie", ["délivrance", "rétention placentaire", "hémorragie du post-partum"]),
+  // ORL, ophtalmologie
+  s("Parotidectomie", "C", "intermediate", "intermediate", "low", false, "peripheral", "Décubitus dorsal, tête tournée", ["parotide", "sous-maxillectomie"]),
+  s("Chirurgie de l'oreille", "C", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal, tête tournée", ["tympanoplastie", "stapédectomie", "mastoïdectomie", "implant cochléaire"]),
+  s("Aérateurs transtympaniques", "C", "minor", "low", "minimal", false, "peripheral", "Décubitus dorsal", ["yoyos", "drains transtympaniques", "paracentèse"]),
+  s("Microchirurgie laryngée", "C", "minor", "low", "low", false, "peripheral", "Décubitus dorsal, laryngoscopie en suspension", ["laryngoscopie", "polype des cordes vocales", "panendoscopie"]),
+  s("Trachéotomie", "C", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal, cou en extension"),
+  s("Chirurgie du strabisme", "I", "minor", "low", "minimal", false, "peripheral", "Décubitus dorsal", ["strabisme"]),
+  s("Chirurgie du glaucome", "I", "minor", "low", "minimal", false, "peripheral", "Décubitus dorsal", ["trabéculectomie"]),
+  s("Chirurgie des paupières", "I", "minor", "low", "minimal", false, "peripheral", "Décubitus dorsal", ["blépharoplastie", "ptosis", "ectropion"]),
+  // Neurochirurgie, thorax, cardiaque
+  s("Décompression lombaire", "D", "intermediate", "intermediate", "high", false, "peripheral", "Décubitus ventral", ["canal lombaire étroit", "laminectomie lombaire"]),
+  s("Arthrodèse cervicale antérieure", "D", "intermediate", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["ACDF", "hernie discale cervicale"]),
+  s("Dérivation ventriculo-péritonéale", "D", "intermediate", "intermediate", "high", false, "peripheral", "Décubitus dorsal, tête tournée", ["DVP", "valve de dérivation"]),
+  s("Médiastinoscopie", "G", "intermediate", "low", "high", false, "peripheral", "Décubitus dorsal, cou en extension", ["EBUS chirurgical"]),
+  s("Thoracoscopie / talcage", "G", "intermediate", "low", "low", false, "intrathoracic", "Décubitus latéral", ["pleuroscopie", "talcage", "décortication"]),
+  s("Bronchoscopie rigide", "G", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["stent trachéal", "désobstruction bronchique"]),
+  s("Chirurgie cardiaque sous CEC", "F", "major", "high", "high", true, "intrathoracic", "Décubitus dorsal", ["pontage aorto-coronarien", "remplacement valvulaire", "CEC"]),
+  s("TAVI", "F", "intermediate", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["TAVR", "valve aortique percutanée"]),
+  // Plastique
+  s("Liposuccion", "L", "intermediate", "low", "low", false, "peripheral", "Selon les zones", ["lipoaspiration"]),
+  s("Excision-greffe de brûlure", "L", "intermediate", "low", "high", false, "peripheral", "Selon les zones", ["brûlure", "greffe de peau"]),
+  // Hors bloc
+  s("Cardioversion électrique", "X", "minor", "low", "minimal", false, "peripheral", "Décubitus dorsal", ["CEE", "choc électrique externe"]),
+  s("Électroconvulsivothérapie", "X", "minor", "low", "minimal", false, "peripheral", "Décubitus dorsal", ["sismothérapie", "ECT"]),
+  s("Échographie transœsophagienne", "X", "minor", "low", "minimal", false, "peripheral", "Décubitus latéral gauche", ["ETO"]),
+  s("Bronchoscopie souple / EBUS", "X", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["fibroscopie bronchique", "EBUS", "LBA"]),
+  s("Radiologie interventionnelle", "X", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal", ["embolisation", "TIPS", "chimioembolisation", "drainage percutané"]),
+  s("Thrombectomie cérébrale", "X", "intermediate", "intermediate", "low", false, "peripheral", "Décubitus dorsal", ["AVC", "thrombectomie mécanique"]),
+  s("Imagerie sous anesthésie", "X", "minor", "low", "minimal", false, "peripheral", "Décubitus dorsal", ["IRM", "scanner"]),
 ];
+
+/** Indicative durations (skin to skin, hours) — feed ARISCAT; always editable. */
+const DURATIONS: Record<string, number> = {
+  "prothese-totale-de-hanche": 1.5, "prothese-totale-de-genou": 1.5, "fracture-du-col-du-femur": 1.25, "arthrodese-rachidienne": 3,
+  "arthroscopie-du-genou": 1, "arthroscopie-de-l-epaule": 1.5, "chirurgie-du-pied": 1.25, "chirurgie-de-la-main": 0.5, "osteosynthese-de-membre": 1.5, "ablation-de-materiel": 0.75,
+  "cholecystectomie-c-lioscopique": 1.25, "cure-de-hernie-inguinale": 1, "appendicectomie": 1, "colectomie": 3, "chirurgie-bariatrique": 2, "gastrectomie": 4,
+  "duodenopancreatectomie-cephalique": 6, "hepatectomie": 4, "sophagectomie": 6, "reparation-de-perforation-digestive": 2, "thyroidectomie": 1.5, "chirurgie-du-sein": 1.5,
+  "proctologie": 0.5, "exerese-cutanee": 0.5, "chirurgie-aortique-ouverte": 4, "endoprothese-aortique": 2.5, "endarteriectomie-carotidienne": 2,
+  "revascularisation-ouverte-du-membre-inferieur": 3.5, "amputation-de-membre-inferieur": 1.25, "fistule-arterio-veineuse": 1,
+  "resection-transuretrale-de-prostate": 1, "resection-transuretrale-de-vessie": 0.75, "prostatectomie-radicale": 3, "cystectomie-totale": 5, "nephrectomie": 2.5, "ureteroscopie": 0.75,
+  "hysterectomie": 2, "c-lioscopie-gynecologique": 1.25, "hysteroscopie": 0.5, "cesarienne": 0.75,
+  "amygdalectomie": 0.5, "chirurgie-endonasale": 1.25, "chirurgie-carcinologique-tete-et-cou": 5, "cataracte": 0.33, "vitrectomie": 1.25, "extractions-dentaires": 0.75,
+  "chirurgie-maxillo-faciale-majeure": 3, "craniotomie": 4, "cure-de-hernie-discale": 1.25, "lobectomie-pulmonaire": 3, "pneumonectomie": 3.5,
+  "chirurgie-plastique-ou-reconstructrice": 2, "endoscopie-digestive": 0.5,
+  "prothese-d-epaule": 2, "reprise-de-prothese-de-hanche-ou-de-genou": 3, "arthroscopie-de-hanche": 2, "osteotomie": 1.5, "osteosynthese-du-poignet": 1, "osteosynthese-de-la-cheville": 1.25,
+  "vertebroplastie-cyphoplastie": 1, "cure-d-eventration": 2, "cure-de-hernie-ombilicale": 0.75, "fundoplicature-cure-de-hernie-hiatale": 2, "splenectomie": 2, "surrenalectomie": 2.5,
+  "chirurgie-des-voies-biliaires": 4, "resection-du-rectum": 4, "retablissement-de-continuite": 2.5, "laparotomie-pour-occlusion": 2, "pose-de-chambre-implantable": 0.75, "sinus-pilonidal": 0.5,
+  "chirurgie-des-varices": 1, "angioplastie-peripherique": 1.5, "nephrolithotomie-percutanee": 2, "enucleation-de-prostate-au-laser": 1.5, "transplantation-renale": 3.5,
+  "chirurgie-scrotale": 0.75, "circoncision": 0.5, "cystoscopie-sonde-jj": 0.5, "bandelette-sous-uretrale": 0.5, "myomectomie": 2, "cure-de-prolapsus": 2.5,
+  "ponction-ovocytaire": 0.25, "aspiration-endo-uterine": 0.25, "cerclage-du-col": 0.5, "revision-uterine-delivrance-artificielle": 0.5,
+  "parotidectomie": 2.5, "chirurgie-de-l-oreille": 2, "aerateurs-transtympaniques": 0.25, "microchirurgie-laryngee": 0.5, "tracheotomie": 0.75,
+  "chirurgie-du-strabisme": 1, "chirurgie-du-glaucome": 1, "chirurgie-des-paupieres": 1, "decompression-lombaire": 2, "arthrodese-cervicale-anterieure": 2,
+  "derivation-ventriculo-peritoneale": 1.5, "mediastinoscopie": 1, "thoracoscopie-talcage": 1, "bronchoscopie-rigide": 0.75, "chirurgie-cardiaque-sous-cec": 4, "tavi": 1.5,
+  "liposuccion": 2, "excision-greffe-de-brulure": 2, "cardioversion-electrique": 0.25, "electroconvulsivotherapie": 0.25, "echographie-trans-sophagienne": 0.25,
+  "bronchoscopie-souple-ebus": 0.5, "radiologie-interventionnelle": 1.5, "thrombectomie-cerebrale": 1.5, "imagerie-sous-anesthesie": 1,
+};
+for (const x of SURGERY_CATALOG) if (DURATIONS[x.id] !== undefined) x.durationHours = DURATIONS[x.id];
 
 export const SURGERY_CATALOG_SOURCE =
   "Classes proposées : grade selon les exemples de NICE NG45 (2016), risque cardiaque selon ESC 2022 (chirurgie non cardiaque), risque hémorragique d'après le guide EHRA 2021 — à confirmer pour chaque patient.";

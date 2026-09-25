@@ -102,6 +102,16 @@ export interface ConsultationState {
   plannedAt: string;
   hospital: string;
   notes: string;
+  /** Your own reminders before (or after) the intervention — see timeline.ts. */
+  reminders?: Reminder[];
+}
+
+export interface Reminder {
+  id: string;
+  text: string;
+  /** Days before the intervention (0: the day itself, -1: the day after). */
+  daysBefore: number;
+  done?: boolean;
 }
 
 export function emptySurgery(): Surgery {

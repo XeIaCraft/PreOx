@@ -5,6 +5,7 @@
 // field before the rule can be applied.
 
 import { CLASS_WORDS, MEDICATIONS } from "../medications";
+import { DEFAULT_ALLERGENS } from "../catalog-defaults";
 import type { Comparator, Condition, RuleAction, Technique } from "./types";
 
 export interface StructureSuggestion {
@@ -73,14 +74,38 @@ export function findDailyDose(text: string): number | null {
   return m ? Number(m[1].replace(",", ".")) : null;
 }
 
+/**
+ * "allergie (déclarée) à la pénicilline", "PEN-FAST < 3": an allergy
+ * condition — only when the text speaks of an allergy, not of the drug itself.
+ */
+export function findAllergies(text: string): Condition[] {
+  const t = fold(text);
+  if (!/allergi|pen-?fast/.test(t)) return [];
+  const penFast: "low" | "high" | undefined = /pen-?fast[^.]{0,30}(<|inf[ée]rieur|faible|moins de)\s*(a\s*)?3|pen-?fast[^.]{0,20}(0|1|2)\b/.test(t)
+    ? "low"
+    : /pen-?fast[^.]{0,30}(≥|>=|sup[ée]rieur|[ée]lev[ée]|au moins)\s*(ou [ée]gal )?(a\s*)?3/.test(t)
+      ? "high"
+      : undefined;
+  const out: Condition[] = [];
+  for (const a of DEFAULT_ALLERGENS) {
+    const words = [a.label, ...a.keywords].map(fold).filter((k) => k.length >= 4);
+    if (!words.some((k) => new RegExp(`allergi[^.]{0,40}${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(t))) continue;
+    out.push({ kind: "allergy", allergen: a.id, present: true, label: a.label, ...(penFast && a.assessment === "pen-fast" ? { penFast } : {}) });
+  }
+  return out;
+}
+
 export function suggestStructure(statement: string, conditionsText: string): StructureSuggestion {
   const all = `${statement}\n${conditionsText}`;
   const unresolved: string[] = [];
   const conditions: Condition[] = [];
 
-  const drugs = findDrugs(all);
+  const allergies = findAllergies(all);
+  conditions.push(...allergies);
+  // The drugs named in an allergy rule are the alternatives, not a condition.
+  const drugs = allergies.length ? [] : findDrugs(all);
   const dose = findDailyDose(conditionsText) ?? findDailyDose(statement);
-  if (drugs.length === 0) unresolved.push("Médicament concerné");
+  if (drugs.length === 0 && allergies.length === 0) unresolved.push("Médicament concerné");
   for (const atc of drugs) conditions.push({ kind: "drug", atc, ...(dose && drugs.length === 1 ? { dailyDose: { op: ">=", mg: dose } } : {}) });
 
   const techniques = findTechniques(all);

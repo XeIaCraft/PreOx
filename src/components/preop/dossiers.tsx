@@ -15,6 +15,10 @@ import { consultationScores } from "@/lib/preop/consultation-scores";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { attentionPoints } from "@/lib/preop/attention";
 import { pendingExams } from "@/lib/preop/exams";
+import { evaluateConsultation } from "@/components/preop/consultation";
+import { consultationTimeline, plannedIso, relativeDay, type TimelineItem } from "@/lib/preop/timeline";
+import type { Rule } from "@/lib/preop/rules/types";
+import { BellRing } from "lucide-react";
 
 export const STATUS_LABELS: Record<DossierStatus, string> = {
   consultation: "Consultation",
@@ -253,8 +257,63 @@ function DossierCard({ d, onOpen }: { d: Dossier; onOpen: () => void }) {
   );
 }
 
+/** What falls due in the next two days across your dossiers: last doses, exams, your reminders. */
+function DueSoon({ dossiers, rules, onOpen }: { dossiers: Dossier[]; rules: Rule[]; onOpen: (id: string) => void }) {
+  const { catalogs } = useCatalogs();
+  // The moment the list is shown (reopening the tab refreshes it).
+  const [now] = useState(() => Date.now());
+  const due = useMemo(() => {
+    const horizon = new Date(now);
+    horizon.setDate(horizon.getDate() + 2);
+    horizon.setHours(23, 59, 59, 999);
+    const out: { d: Dossier; it: TimelineItem; planned: string | null; late: boolean }[] = [];
+    for (const d of dossiers) {
+      if (d.status === "done" || d.status === "cancelled") continue;
+      const planned = plannedIso(d.consultation);
+      if (planned && new Date(planned).getTime() < now) continue;
+      const items = consultationTimeline(d.consultation, evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }, catalogs));
+      for (const it of items) {
+        if (it.kind === "surgery" || it.kind === "fasting" || it.kind === "resume" || it.reminder?.done || !it.at) continue;
+        const t = new Date(it.at).getTime();
+        // Overdue reminders stay until ticked; past last doses and exams drop off.
+        if (t > horizon.getTime() || (t < now - 12 * 3_600_000 && it.kind !== "reminder")) continue;
+        out.push({ d, it, planned, late: t < now && it.kind === "reminder" });
+      }
+    }
+    return out.sort((a, b) => a.it.at!.localeCompare(b.it.at!));
+  }, [dossiers, rules, catalogs, now]);
+  if (due.length === 0) return null;
+  return (
+    <Panel
+      title={
+        <span className="flex items-center gap-2">
+          <BellRing className="h-4 w-4 text-accent" /> À faire ces jours-ci
+        </span>
+      }
+    >
+      <ul className="space-y-1">
+        {due.map(({ d, it, planned, late }) => (
+          <li key={`${d.id}:${it.key}`}>
+            <button type="button" onClick={() => onOpen(d.id)} className="flex w-full items-start gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-left hover:bg-surface-muted">
+              <span className="mt-0.5 shrink-0 rounded bg-primary-tint px-1.5 text-xs font-semibold uppercase text-primary-strong">{d.initials}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm text-foreground">{it.text}</span>
+                <span className={cn("block text-[11px] tabular-nums", late ? "text-danger" : "text-foreground-subtle")}>
+                  {late ? "En retard · " : ""}
+                  {new Date(it.at!).toLocaleString("fr-BE", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} · {relativeDay(it, planned)}
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
 export function DossierList({
   dossiers,
+  rules = [],
   status,
   onOpen,
   onCreate,
@@ -263,6 +322,7 @@ export function DossierList({
   onImport,
 }: {
   dossiers: Dossier[];
+  rules?: Rule[];
   status: "loading" | "ready" | "error";
   onOpen: (id: string) => void;
   onCreate: (initials: string) => void;
@@ -326,7 +386,10 @@ export function DossierList({
           </section>
         )}
       </div>
-      <BackupPanel count={dossiers.length} onExport={onExport} onImport={onImport} />
+      <div className="space-y-4">
+        <DueSoon dossiers={dossiers} rules={rules} onOpen={onOpen} />
+        <BackupPanel count={dossiers.length} onExport={onExport} onImport={onImport} />
+      </div>
     </div>
   );
 }

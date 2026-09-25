@@ -36,6 +36,13 @@ const condition = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("surgery"), attribute: z.enum(["bleedingRisk", "cardiacRisk", "grade"]), in: z.array(z.enum(["minimal", "low", "intermediate", "high", "minor", "major"])).min(1).max(3) }),
   z.object({ kind: z.literal("history"), condition: z.string().regex(/^[a-z0-9_-]{1,64}$/i, "Antécédent invalide"), present: z.boolean(), label: text(200).optional() }),
+  z.object({
+    kind: z.literal("allergy"),
+    allergen: z.string().regex(/^[a-z0-9_-]{1,64}$/i, "Allergène invalide"),
+    present: z.boolean(),
+    label: text(200).optional(),
+    penFast: z.enum(["low", "high"]).optional(),
+  }),
 ]);
 
 const hours = z.number().min(0).max(24 * 60);
@@ -43,7 +50,7 @@ const action = z.discriminatedUnion("type", [
   z.object({ type: z.literal("stop_before"), hours }),
   z.object({ type: z.literal("resume_after"), hours }),
   z.object({ type: z.literal("requirement"), text: text(1000).min(1), blocking: z.boolean() }),
-  z.object({ type: z.literal("exam"), exam: text(300).min(1) }),
+  z.object({ type: z.literal("exam"), exam: text(300).min(1), withinDays: z.number().int().min(0).max(365).optional() }),
   z.object({ type: z.literal("info"), text: text(2000).min(1) }),
 ]);
 

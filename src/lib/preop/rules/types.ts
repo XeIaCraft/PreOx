@@ -3,7 +3,7 @@
 // answer (an AI search tool, a guideline PDF) — never generated in bulk.
 import type { ConditionCode } from "../history";
 
-import type { Sex } from "../scores";
+import type { PenFastItem, Sex } from "../scores";
 
 /** Where a source sits in the hierarchy (highest first) — see SOURCE_LEVELS. */
 export type SourceLevel = "local" | "be_inst" | "be_soc" | "eu" | "int" | "article";
@@ -101,7 +101,13 @@ export type Condition =
   /** The intervention: bleeding risk, ESC cardiac risk or grade among the listed ones. */
   | { kind: "surgery"; attribute: SurgeryAttribute; in: string[] }
   /** An antecedent of the consultation, present or absent. */
-  | { kind: "history"; condition: ConditionCode; present: boolean; /** Kept for antecedents added by the user. */ label?: string };
+  | { kind: "history"; condition: ConditionCode; present: boolean; /** Kept for antecedents added by the user. */ label?: string }
+  /**
+   * A reported allergy (allergen of the catalogue), present or absent;
+   * optionally only when the PEN-FAST score says a true allergy is unlikely
+   * (< 3, "low") or possible (≥ 3, "high").
+   */
+  | { kind: "allergy"; allergen: string; present: boolean; label?: string; penFast?: "low" | "high" };
 
 export type SurgeryAttribute = "bleedingRisk" | "cardiacRisk" | "grade";
 
@@ -125,7 +131,8 @@ export type RuleAction =
   | { type: "stop_before"; hours: number }
   | { type: "resume_after"; hours: number }
   | { type: "requirement"; text: string; blocking: boolean }
-  | { type: "exam"; exam: string }
+  /** withinDays: to be done at most this many days before the gesture (INR the day before…). */
+  | { type: "exam"; exam: string; withinDays?: number }
   | { type: "info"; text: string };
 
 export type RuleStatus = "draft" | "active" | "archived";
@@ -163,6 +170,8 @@ export interface PatientTreatment {
   id: string;
   atc: string;
   name: string;
+  /** Substances of a fixed combination (ATC), copied from the catalogue. */
+  components?: string[];
   dailyDoseMg?: number;
   indication?: Indication;
   /** ISO date of the event behind the indication (stent, stroke…). */
@@ -189,4 +198,7 @@ export interface PatientContext {
   surgery?: Partial<Record<SurgeryAttribute, string>>;
   /** Structured antecedents (tri-state). */
   conditions?: Partial<Record<ConditionCode, { present: boolean }>>;
+  /** Allergies asked: the list, or "none known" confirmed. Neither: not asked. */
+  allergyList?: { allergenId?: string; label: string; penFast?: Partial<Record<PenFastItem, boolean>> }[];
+  noKnownAllergy?: boolean;
 }

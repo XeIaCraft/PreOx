@@ -323,3 +323,53 @@ describe("missing rules", () => {
     expect(gaps[1].question.preset?.[0]).toMatchObject({ kind: "history", condition: "pacemaker" });
   });
 });
+
+describe("allergy conditions", () => {
+  const cefazolinOk = rule({
+    id: "cefa",
+    conditions: [{ kind: "allergy", allergen: "betalactams", present: true, label: "Pénicillines", penFast: "low" }],
+    action: { type: "info", text: "Céfazoline possible" },
+  });
+  const noAllergy = rule({ id: "none", conditions: [{ kind: "allergy", allergen: "betalactams", present: false }], action: { type: "info", text: "Céfazoline" } });
+  const pen = (penFast: Record<string, boolean>) => patient({ allergyList: [{ allergenId: "betalactams", label: "Pénicilline", penFast }] });
+
+  it("asks for allergies when they weren't asked, knows absence when they were", () => {
+    expect(evaluateRule(noAllergy, patient())?.missing.map((m) => m.key)).toEqual(["allergies"]);
+    expect(evaluateRule(noAllergy, patient({ noKnownAllergy: true }))?.status).toBe("applies");
+    expect(evaluateRule(noAllergy, patient({ allergyList: [{ allergenId: "latex", label: "Latex" }] }))?.status).toBe("applies");
+    expect(evaluateRule(noAllergy, pen({}))).toBeNull();
+  });
+
+  it("follows the side of the PEN-FAST threshold, and asks for the score while undecided", () => {
+    expect(evaluateRule(cefazolinOk, pen({ withinFiveYears: false, anaphylaxisOrSevere: false }))?.status).toBe("applies");
+    expect(evaluateRule(cefazolinOk, pen({ withinFiveYears: true, anaphylaxisOrSevere: true }))).toBeNull();
+    const undecided = evaluateRule(cefazolinOk, pen({ withinFiveYears: true }));
+    expect(undecided?.status).toBe("needs_info");
+    expect(undecided?.missing[0].label).toContain("PEN-FAST");
+  });
+
+  it("an exam with a delay gives the date from which to do it", () => {
+    const inr = rule({ id: "inr", conditions: [{ kind: "drug", atc: "B01AF" }], action: { type: "exam", exam: "INR", withinDays: 1 } });
+    expect(evaluateRule(inr, patient())?.outcomes[0]).toMatchObject({ kind: "exam", notBefore: "2026-10-07T08:00:00.000Z" });
+  });
+
+  it("a reported allergy flagged in the catalogue is a question to ask, with the PEN-FAST score", async () => {
+    const { missingRules } = await import("../rule-gaps");
+    const { emptyConsultation } = await import("../dossier");
+    const base = emptyConsultation();
+    const c = { ...base, patient: { ...base.patient, allergyList: [{ allergenId: "betalactams", label: "Pénicilline", reaction: "urticaire", penFast: { withinFiveYears: false, anaphylaxisOrSevere: false, treatmentRequired: true } }] } };
+    const gaps = missingRules([], c, {});
+    expect(gaps.map((g) => g.key)).toEqual(["a:betalactams"]);
+    expect(gaps[0].question.question).toContain("PEN-FAST score 1/5 (low risk");
+    expect(gaps[0].question.preset?.[0]).toMatchObject({ kind: "allergy", allergen: "betalactams" });
+    expect(missingRules([cefazolinOk], c, {})).toEqual([]);
+  });
+});
+
+describe("structuring an allergy rule", () => {
+  it("reads the allergy and the PEN-FAST side, not the alternative drug", () => {
+    const s = suggestStructure("La céfazoline peut être utilisée si le score PEN-FAST est inférieur à 3.", "allergie déclarée à la pénicilline");
+    expect(s.conditions).toEqual([{ kind: "allergy", allergen: "betalactams", present: true, label: "Pénicillines / bêtalactamines", penFast: "low" }]);
+    expect(parseAnswer("RÈGLE: La céfazoline peut être utilisée si PEN-FAST < 3.\nSOURCE: ESAIC, x, 2023").blocks[0].suggestedUse).toBe("rule");
+  });
+});
