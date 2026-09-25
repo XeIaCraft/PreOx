@@ -108,7 +108,11 @@ export const DEFAULT_CONDITION_DETAILS: Record<string, ConditionDetail[]> = {
   anemia: [choice("iron", "Bilan martial", [o("todo", "À faire"), o("deficient", "Carence martiale", { attention: medium("Carence martiale : fer (IV si délai court) avant une chirurgie à risque hémorragique.") }), o("normal", "Normal")]), text("cause", "Cause")],
   thrombocytopenia: [text("cause", "Cause", "Médicament, hépatopathie, PTI, hémopathie…")],
   bleeding_disorder: [text("which", "Trouble et sévérité", "ex. Willebrand type 1, taux de facteur…")],
-  pregnancy: [num("weeks", "Terme", "SA", "Au-delà de 20 SA : décubitus latéral gauche, risque d'inhalation.")],
+  pregnancy: [
+    num("weeks", "Terme", "SA", "Au-delà de 20 SA : décubitus latéral gauche, risque d'inhalation."),
+    choice("rhesus", "Rhésus", [o("pos", "Positif"), o("neg", "Négatif", { attention: medium("Rhésus négatif : immunoglobulines anti-D (200 µg) dans les 72 h après l'accouchement ou tout saignement (manuel, chap. 36).") })]),
+  ],
+  ex_premature: [num("birthWeeks", "Terme de naissance", "SA", "Sert à calculer l'âge post-conceptionnel (apnées jusqu'à 52 semaines).")],
   difficult_airway: [
     choice("letter", "Courrier ou carte d'intubation difficile", [o("yes", "Oui, récupéré"), o("no", "Non, à récupérer")]),
     text("what", "Ce qui a été difficile et ce qui a marché"),

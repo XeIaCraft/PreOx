@@ -12,7 +12,7 @@ import { computeDose, type ProtocolDrug } from "./protocols";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 import { classesOf, fold, medicationOf, type AllergenItem, type AttentionSpec } from "./catalog";
 import type { ConsultationScores } from "./consultation-scores";
-import { examSummary, type AllergyEntry, type ConsultationState } from "./dossier";
+import { examSummary, urgencyOf, type AllergyEntry, type ConsultationState } from "./dossier";
 import { ARISCAT_REFERENCE, MASK_VENTILATION_ITEMS, MASK_VENTILATION_REFERENCE, PEN_FAST_REFERENCE, penFast, type MaskVentilationItem } from "./scores";
 import { implausibleValues, valueFindings } from "./value-checks";
 import type { ProtocolContent, ProtocolRisk } from "./protocols";
@@ -514,7 +514,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
       add({ id: "nasal-intubation", level: "medium", title: "Intubation nasotrachéale contre-indiquée", detail: "Contre-indiquée en cas de trouble majeur de l'hémostase ou de fracture de la base du crâne : en discuter avec le chirurgien (voie orale, sonde préformée).", why: `${surgeryName} (intubation nasale habituelle) ; ${haemostasis.join(", ")}`, source: `${MANUAL}, chap. 17` });
 
     // Starting settings and sizes (chap. 16–18), when the plan is being prepared.
-    if (plan && general && p.sex && p.heightCm) {
+    if (plan && general && p.sex && p.heightCm && !(p.age !== undefined && p.age < 16)) {
       const ibw = scores.derived.ibw ?? 0;
       const vt = (k: number) => Math.round((ibw * k) / 10) * 10;
       const peepHigh = bmi !== undefined && bmi >= 35;
@@ -1094,6 +1094,334 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
       add({ id: "haemostasis-disorder", level: "high", title: has(cond, "hemophilia") ? "Hémophilie : préparation" : "Maladie de Willebrand : préparation", detail: has(cond, "hemophilia") ? `Avis hématologique ; facteur VIII ou IX à 40–70 % avant l'intervention (1 UI/kg élève le taux de 1 %${p.weightKg ? ` : ≈ ${Math.round(p.weightKg * 40)}–${Math.round(p.weightKg * 70)} UI depuis un taux nul` : ""}) ; desmopressine pour l'hémophilie A légère ; inhibiteur : facteur VIIa recombinant ou FEIBA ; le PFC n'est pas indiqué. ALR à peser soigneusement.` : "Avis hématologique ; type I : desmopressine 0,3 µg/kg en 20 min, 1 h avant (contre-indiquée dans le sous-type IIB) ; sinon facteur Willebrand ± facteur VIII. ALR : au moindre doute, s'abstenir.", why: has(cond, "hemophilia") ? "Antécédent : hémophilie" : "Antécédent : maladie de Willebrand", source: CH(35, "pathologies de l'hémostase") });
     if (has(cond, "hit_history"))
       add({ id: "hit-plan", level: "high", title: "Antécédent de TIH : pas d'héparine", detail: "Aucune héparine (HNF, HBPM, rinçages, circuits héparinés, certains complexes prothrombiniques). Alternatives : fondaparinux ou AOD si stable ; argatroban ou bivalirudine si instable ou à risque hémorragique (argatroban seul si clairance < 30). TIH aiguë : seulement les urgences, sous AG ; pas de transfusion de plaquettes.", why: "Antécédent : thrombopénie induite par l'héparine", source: CH(35, "TIH") });
+  }
+
+  // --- Obstetrics, paediatrics, eye, ENT, orthopaedics (manual, chapters 36–40) ---------------------
+  {
+    const name = fold(c.surgery.name);
+    const CH = (k: number, what: string) => `${MANUAL}, chap. ${k} (${what})`;
+    const urgency = urgencyOf(c.surgery);
+    const age = p.age;
+    const w = p.weightKg;
+    const caesarean = /cesarienne/.test(name);
+    const detailOf = (id: string, key: string) => cond[id]?.details?.[key];
+    const onAntithrombotic = c.treatments.some((t) => t.atc.startsWith("B01A"));
+
+    // Pregnancy, non-obstetric surgery (chap. 36).
+    if (has(cond, "pregnancy") && c.surgery.name && !caesarean && !/accouchement|cerclage|curetage|ivg|interruption de grossesse|extra-uterine/.test(name)) {
+      const weeks = Number(detailOf("pregnancy", "weeks"));
+      const sa = Number.isFinite(weeks) && weeks > 0 ? weeks : undefined;
+      const trimester = sa === undefined ? undefined : sa < 14 ? 1 : sa < 28 ? 2 : 3;
+      add({
+        id: "pregnancy-plan",
+        level: "high",
+        title: `Grossesse${sa ? ` (${sa} SA, ${trimester === 1 ? "1er" : `${trimester}e`} trimestre)` : ""} : chirurgie non obstétricale`,
+        detail: [
+          urgency === "elective"
+            ? "Chirurgie programmée déconseillée pendant la grossesse : reporter après l'accouchement si possible ; si l'urgence n'est que relative, préférer le 2e trimestre (organogenèse entre 5 et 12 SA, accouchement prématuré au 3e)."
+            : "Prévenir l'obstétricien : tocolyse et CTG périopératoires selon son avis.",
+          "ALR à privilégier.",
+          sa === undefined || sa >= 15 ? "Dès 15 SA : estomac plein (induction en séquence rapide) et inclinaison latérale gauche." : "",
+          sa === undefined || sa < 14 ? "1er trimestre : pas de protoxyde d'azote." : "",
+          "Traiter toute hypotension (phényléphrine), normoventilation (l'hyperventilation diminue le débit utéroplacentaire), bonne oxygénation. Agents éprouvés : propofol, thiopental, fentanyl, succinylcholine, rocuronium, vécuronium, sévoflurane. Cœlioscopie possible à tout terme.",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        why: `Grossesse${sa ? ` de ${sa} SA` : ""} ; ${surgeryName}`,
+        source: CH(36, "intervention chirurgicale durant la grossesse"),
+      });
+    }
+
+    // Caesarean section (chap. 36).
+    if (caesarean) {
+      const rhNeg = detailOf("pregnancy", "rhesus") === "neg";
+      const pe = has(cond, "preeclampsia") === true;
+      add({
+        id: "caesarean",
+        level: "medium",
+        title: "Césarienne : conduite",
+        detail: [
+          "Rachianesthésie de référence (bupivacaïne hyperbare 0,5 % 10 mg + fentanyl 20 µg + morphine 100 µg) ; cathéter péridural en place : ropivacaïne 0,75 % par bolus de 5 ml (12–20 ml), chloroprocaïne 3 % si souffrance fœtale. AG pour l'urgence extrême ou une contre-indication.",
+          "Antiacide (IPP ou anti-H2, citrate de sodium 30 ml), inclinaison latérale gauche de 20°, phényléphrine en continu (3–5 mg/h) plutôt qu'éphédrine (acidose fœtale).",
+          `AG : estomac plein et intubation difficile — préoxygénation, séquence rapide (propofol 2,5 mg/kg, succinylcholine 1 mg/kg), pas d'opioïde avant le clampage${pe ? " sauf prééclampsie (rémifentanil 0,5–1 µg/kg ou nitroglycérine 50–100 µg)" : ""}, halogéné ≤ 0,75 CAM, FiO₂ 1 à l'hystérotomie ; bloc TAP ou carré des lombes avant le réveil.`,
+          `Après la naissance : ocytocine 5 UI en bolus lent${rhNeg ? " ; anti-D 200 µg (mère Rhésus négatif)" : ""} ; thromboprophylaxie, paracétamol et AINS.`,
+          "Hémorragie : massage, ocytocine puis sulprostone, acide tranexamique, fibrinogène 2 g ; objectifs fibrinogène > 2 g/l, plaquettes > 50 G/l, Ca²⁺ > 0,8 mmol/l, T > 35 °C, pH > 7,2, Hb > 80 g/l.",
+        ].join(" "),
+        why: [surgeryName, pe ? "prééclampsie" : "", rhNeg ? "Rhésus négatif" : ""].filter(Boolean).join(" ; "),
+        source: CH(36, "césarienne, hémorragie du post-partum"),
+        material: ["Phényléphrine en seringue", "Ocytocine", "Acide tranexamique et fibrinogène disponibles"],
+      });
+    }
+
+    // Pre-eclampsia (chap. 36).
+    if (has(cond, "preeclampsia")) {
+      const plt = p.platelets;
+      add({
+        id: "preeclampsia-plan",
+        level: "high",
+        title: "Prééclampsie : conduite",
+        detail: [
+          `Plaquettes et hémostase avant toute ALR${plt !== undefined ? ` (plaquettes ${plt} G/L${plt < 75 ? " : sous le seuil de 75 G/L de la péridurale" : ""})` : ""} ; la rachianesthésie n'est pas contre-indiquée. Péridurale sans adrénaline ; ropivacaïne 0,75 % ou bupivacaïne 0,5 % + fentanyl plutôt que lidocaïne.`,
+          "AG : intubation difficile (œdème des voies aériennes) ; prévenir le pic hypertensif de l'intubation (rémifentanil 0,5–1 µg/kg, fentanyl 3–5 µg/kg ou sufentanil 0,3–0,5 µg/kg, ou nitroglycérine 50–100 µg ; dépression respiratoire du nouveau-né).",
+          "Forme sévère : sulfate de magnésium 4 g puis 1–2 g/h (magnésémie 2,5–3,5 mmol/l, réflexes, potentialise les curares) ; nicardipine, labétalol ou dihydralazine. Surveillance continue 24–48 h.",
+        ].join(" "),
+        why: `Antécédent : prééclampsie${plt !== undefined ? ` ; plaquettes ${plt} G/L` : ""}`,
+        source: CH(36, "prééclampsie, implications anesthésiques"),
+      });
+    }
+
+    // Children (chap. 37).
+    if (age !== undefined && age < 16) {
+      const months = Math.round(age * 12);
+      const ageText = age < 2 ? `${months} mois` : `${n(age)} ans`;
+      const round5 = (x: number) => Math.round(x * 2) / 2;
+      const tube = age >= 2 ? round5(4 + age / 4) : undefined;
+      const tubeText =
+        tube !== undefined
+          ? `sonde ${n(tube)} sans ballonnet ou ${n(tube - 0.5)} à ballonnet (préparer aussi ${n(tube - 0.5)} et ${n(tube + 0.5)}), ${n(12 + age / 2)} cm aux lèvres, ${n(15 + age / 2)} cm au nez`
+          : age < 0.25
+            ? `sonde ${w !== undefined && w < 3.5 ? "3,0" : "3,5"} (prématuré 2,5), ${w !== undefined && w < 3.5 ? "8,5" : "9–10"} cm aux lèvres`
+            : age < 1
+              ? "sonde 3,5–4,0, 10–11 cm aux lèvres"
+              : "sonde 4,0–4,5, 11–12 cm aux lèvres";
+      const lma = w === undefined ? undefined : w < 5 ? "1" : w < 10 ? "1,5" : w < 20 ? "2" : w < 30 ? "2,5" : w <= 50 ? "3" : "4";
+      const blade = age < 1 / 12 ? "Miller 0" : age < 1 ? "Miller 1" : "Macintosh";
+      const bag = w === undefined ? undefined : age < 1 / 12 ? "0,5 l" : w < 10 ? "1 l" : w <= 20 ? "1,5 l" : "2 l";
+      const gastric = age < 1 ? "Ch 8" : age < 2 ? "Ch 10" : age < 6 ? "Ch 12" : age <= 12 ? "Ch 14" : "Ch 16";
+      const urinary = age < 2 ? "Ch 6" : age <= 8 ? "Ch 8" : "Ch 10";
+      const hourly = w === undefined ? undefined : w <= 10 ? 4 * w : w <= 20 ? 40 + 2 * (w - 10) : 60 + (w - 20);
+      const bloodVolume = w === undefined ? undefined : Math.round(w * (age < 1 / 12 ? 90 : age < 1 ? 80 : 70));
+      const vitals = age < 0.5 ? "FR 40, FC 140, PA 65/40" : age < 2 ? "FR 30, FC 120, PA 95/65" : age < 8 ? "FR 25, FC 100, PA 100/70" : "FR 20, FC 80, PA 110/60";
+      const f2 = (x: number) => x.toLocaleString("fr-BE", { maximumFractionDigits: 2 });
+      const dose = (label: string, perKg: number, unit: string, max?: number) =>
+        w === undefined ? `${label} ${f2(perKg)} ${unit}/kg` : `${label} ${f2(perKg)} ${unit}/kg (${f2(Math.min(perKg * w, max ?? Infinity))} ${unit})`;
+      const uri = has(cond, "recent_uri") === true;
+      add({
+        id: "paediatric",
+        level: uri && urgency === "elective" ? "medium" : "info",
+        title: `Enfant de ${ageText}${w !== undefined ? ` (${n(w)} kg)` : ""} : repères`,
+        detail: [
+          uri && urgency === "elective" ? "Infection des voies aériennes récente : reporter une intervention non urgente de 3–4 semaines après la fin des symptômes (sauf rhinorrhée claire sans fièvre)." : "",
+          `Matériel : ${tubeText} ; lame ${blade}${lma ? ` ; masque laryngé ${lma}` : ""}${bag ? ` ; ballon ${bag}` : ""} ; sonde gastrique ${gastric}, urinaire ${urinary}.`,
+          `Normes : ${vitals} (hypotension = baisse de 10–20 % de la valeur avant l'induction).`,
+          w !== undefined && w < 10 ? "Ventilation en pression contrôlée 10–25 cmH₂O, PEP 3–5, Vt 6–8 ml/kg." : "",
+          `Doses : ${dose("atropine", 0.02, "mg", 0.6)}, ${dose("propofol", 3, "mg")} (2,5–4), ${dose("succinylcholine", 2, "mg")} (1,5–2), ${dose("paracétamol", 15, "mg", 1000)}, ${dose("dexaméthasone", 0.15, "mg", 8)}, ${dose("ondansétron", 0.1, "mg", 4)}, ${dose("morphine", 0.05, "mg")} par bolus${age >= 0.5 && (w === undefined || w >= 10) ? `, ${dose("ibuprofène", 10, "mg", 400)}` : " ; pas d'AINS avant 6 mois ni sous 10 kg"} ; pas d'aspirine (syndrome de Reye).`,
+          hourly !== undefined ? `Entretien 4-2-1 : ${Math.round(hourly)} ml/h ; volume sanguin ≈ ${bloodVolume} ml ; remplissage par bolus de 10–20 ml/kg de cristalloïde non glucosé.` : "",
+          "Induction inhalatoire au sévoflurane possible à tout âge (EMLA 45–60 min avant la ponction) ; température continue, salle ≥ 25 °C ; glycémie si intervention longue ; prémédication dès 1 an (midazolam 0,3–0,5 mg/kg per os).",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        why: `Âge ${ageText}${w !== undefined ? `, ${n(w)} kg` : ""}${uri ? " ; infection respiratoire récente" : ""}`,
+        source: CH(37, "tableaux 37.1 à 37.3, posologies, matériel"),
+        material: [tube !== undefined ? `Sondes ${n(tube - 0.5)}, ${n(tube)} et ${n(tube + 0.5)}` : "Sondes d'intubation pédiatriques", `Lame ${blade}`, lma ? `Masque laryngé ${lma}` : "", `Sonde gastrique ${gastric}`, "Réchauffement (matelas, air pulsé)"].filter(Boolean),
+      });
+    }
+
+    // Infants and former preterm babies: postoperative apnoea (chap. 37).
+    if (has(cond, "ex_premature") || (age !== undefined && age < 1)) {
+      const birth = Number(detailOf("ex_premature", "birthWeeks"));
+      const preterm = has(cond, "ex_premature") === true || (Number.isFinite(birth) && birth > 0 && birth < 37);
+      const pca = age !== undefined && Number.isFinite(birth) && birth > 0 ? Math.round(birth + age * 52.18) : undefined;
+      const limit = preterm ? 52 : 48;
+      const atRisk = pca === undefined ? undefined : pca < limit;
+      if (atRisk !== false)
+        add({
+          id: "infant-apnoea",
+          level: atRisk ? "high" : "medium",
+          title: pca !== undefined ? `Âge post-conceptionnel ${pca} semaines : apnées postopératoires` : "Nourrisson : âge post-conceptionnel à calculer",
+          detail: [
+            pca === undefined ? `Préciser le terme de naissance : risque d'apnées postopératoires jusqu'à ${limit} semaines d'âge post-conceptionnel (${preterm ? "prématuré" : "né à terme"}).` : "",
+            "Apnées jusqu'à 12 h après une AG ou des opioïdes intrathécaux : monitorage de l'apnée et saturomètre en unité surveillée (pas d'ambulatoire) ; citrate de caféine 20 mg/kg (caféine 10 mg/kg) en fin d'intervention. Majorées par Ht < 30 %, alcalose, hypoglycémie, hypothermie. Rachianesthésie seule possible sous 5 kg (hernie inguinale).",
+            age !== undefined && age < 1 / 12 ? "Nouveau-né : vitamine K avant l'intervention, SpO₂ pré- et post-ductale, glycémie (hypoglycémie < 2,3 mmol/l après 72 h)." : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+          why: [preterm ? "ancien prématuré" : "", age !== undefined ? `âge ${Math.round(age * 12)} mois` : "", pca !== undefined ? `âge post-conceptionnel ${pca} semaines` : ""].filter(Boolean).join(" ; "),
+          source: CH(37, "apnées du prématuré"),
+          material: atRisk ? ["Citrate de caféine", "Monitorage d'apnée postopératoire"] : undefined,
+        });
+    }
+
+    // Paediatric procedures (chap. 37).
+    const tonsilBleed = /hemorragie.*amygdal|reprise.*amygdal|saignement.*amygdal/.test(name);
+    const paedProc = tonsilBleed
+      ? { id: "tonsil-bleed", level: "high" as const, title: "Hémorragie après amygdalectomie", text: "Estomac plein (sang avalé) : hypovolémie à corriger avant l'induction, sonde gastrique avant l'induction si possible, séquence rapide, deux aspirations, laryngoscopie gênée par le sang (matériel d'intubation difficile). Groupe sanguin.", material: ["Deux aspirations", "Matériel d'intubation difficile"] }
+      : /amygdal|adenoid|vegetations/.test(name)
+        ? { id: "tonsillectomy", level: "info" as const, title: "Amygdalectomie", text: "Induction inhalatoire puis voie veineuse ; sonde préformée (RAE), souvent sans curare ; douleur importante (opioïdes) ; NVPO fréquents : dexaméthasone 0,1–0,2 mg/kg et ondansétron 0,1–0,2 mg/kg (ou dropéridol). Hémorragie possible jusqu'à J7." }
+        : /pylor/.test(name)
+          ? { id: "pyloric-stenosis", level: "medium" as const, title: "Sténose du pylore", text: "Corriger d'abord déshydratation, alcalose hypochlorémique hypokaliémique et glycémie. Aspirer la sonde gastrique avant l'induction ; pas de curare après l'intubation (20 min) ; alcalose : apnées — saturomètre avant et après, opioïdes limités (fentanyl 1–2 µg/kg), bloc para-ombilical." }
+          : null;
+    if (paedProc) add({ id: paedProc.id, level: paedProc.level, title: paedProc.title, detail: paedProc.text, why: surgeryName, source: CH(37, "pathologies pédiatriques"), material: "material" in paedProc ? paedProc.material : undefined });
+
+    // Eye surgery (chap. 38).
+    const eye = c.surgery.category === "I" || /catarac|strabism|retin|vitrect|glaucom|keratopl|cornee|paupiere|lacrymal|dacryo|pterygion|globe|oculaire|enucleation/.test(name);
+    if (eye) {
+      const strab = /strabism/.test(name);
+      const retina = /retin|vitrect/.test(name);
+      const openGlobe = /plaie.*(globe|oeil|oculaire)|perforation.*(globe|oculaire)|globe ouvert/.test(name);
+      const cataract = /catarac/.test(name);
+      const lids = /paupiere|lacrymal|dacryo|blepharo/.test(name);
+      const antithrombotic = cataract || /glaucom/.test(name)
+        ? "cataracte ou glaucome : antiagrégants, AVK et AOD poursuivis"
+        : retina
+          ? "segment postérieur : antithrombotiques le plus souvent poursuivis (bloc péribulbaire ou sous-ténonien)"
+          : lids
+            ? "paupières, voies lacrymales : arrêt de tous les antithrombotiques"
+            : /pterygion/.test(name)
+              ? "ptérygion : arrêt des AVK et AOD, antiagrégants selon le chirurgien"
+              : /keratopl|cornee/.test(name)
+                ? "greffe de cornée : antithrombotiques poursuivis"
+                : "";
+      add({
+        id: "eye-surgery",
+        level: openGlobe ? "medium" : "info",
+        title: openGlobe ? "Plaie du globe oculaire" : strab ? "Chirurgie du strabisme" : retina ? "Chirurgie de la rétine" : cataract ? "Chirurgie de la cataracte" : "Chirurgie ophtalmologique",
+        detail: [
+          openGlobe ? "Induction la plus douce possible, sans toux (lidocaïne 1–1,5 mg/kg IV ou anesthésie locale de la glotte) ; la succinylcholine n'est pas contre-indiquée pour un estomac plein. Pas de bloc péribulbaire, sauf AG impossible (3 ml par injection, sans compression)." : "",
+          strab ? "Réflexe oculocardiaque (traction du droit médial) : arrêt des tractions, approfondir, O₂ 100 %, atropine 0,5–1 mg (0,02 mg/kg chez l'enfant). NVPO très fréquents : double prophylaxie. Curare non dépolarisant (test de duction ininterprétable 10–15 min après la succinylcholine)." : "",
+          retina ? "Pas de protoxyde d'azote (bulle de gaz) ; NVPO fréquents ; après injection de gaz : ni avion ni altitude > 1 000 m pendant 3–6 semaines." : "",
+          cataract ? "Anesthésie topique ± intracamérulaire : patient coopérant, capable de rester à plat ; sédation légère seulement (une sédation profonde fait bouger)." : "",
+          !openGlobe && !cataract ? "AG : profondeur suffisante (ni mouvement ni plafonnement), PIO stable (proclive modéré, légère hypocapnie), réveil sans toux. Bloc péribulbaire plutôt que rétrobulbaire ; risque de perforation si myopie forte, staphylome, cerclage." : "",
+          antithrombotic ? `Antithrombotiques — ${antithrombotic}.` : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        why: `${surgeryName}${onAntithrombotic && antithrombotic ? " ; antithrombotique en cours" : ""}`,
+        source: CH(38, "chirurgie ophtalmique et implications anesthésiques"),
+        material: strab ? ["Atropine prête"] : undefined,
+      });
+    }
+    {
+      const drops: string[] = [];
+      const on = (prefix: string) => c.treatments.filter((t) => t.atc.startsWith(prefix)).map((t) => t.name);
+      const beta = on("S01ED");
+      const cai = [...on("S01EC")];
+      const echo = on("S01EB03");
+      if (beta.length) drops.push(`${beta.join(", ")} (bêtabloquant en collyre) : bradycardie, hypotension, bronchospasme`);
+      if (cai.length) drops.push(`${cai.join(", ")} (inhibiteur de l'anhydrase carbonique) : acidose métabolique, hypokaliémie`);
+      if (echo.length) drops.push(`${echo.join(", ")} (échothiophate) : succinylcholine, mivacurium et AL esters prolongés jusqu'à 4–6 semaines après l'arrêt`);
+      if (drops.length)
+        add({ id: "eye-drops", level: echo.length ? "medium" : "info", title: "Collyres : effets systémiques", detail: `${drops.join(". ")}. Absorption conjonctivale (1 goutte de phényléphrine 10 % = 5 mg) : occlusion du canal lacrymal.`, why: drops.map((x) => x.split(" (")[0]).join(", "), source: CH(38, "effets systémiques des médicaments administrés par voie oculaire") });
+    }
+
+    // ENT surgery (chap. 39).
+    const laser = /laser/.test(name);
+    const jet = /jet|microlaryng|microchirurgie laryng|laryngoscopie en suspension/.test(name);
+    const foreign = /corps etranger/.test(name);
+    const neck = /curage|evidement|parotid|laryngect|pharyngect|glossect|carcinolog.*(tete|cou|orl)|tete et cou/.test(name);
+    const endo = /panendoscop|bronchoscop|oesophagoscop|laryngoscop|endoscopie du sommeil/.test(name);
+    if (laser || jet || foreign || neck || endo) {
+      add({
+        id: "ent-airway",
+        level: laser || foreign ? "medium" : "info",
+        title: laser ? "Laser des voies aériennes" : foreign ? "Corps étranger des voies aériennes" : neck ? "Chirurgie carcinologique cervicale" : "Endoscopie ORL : voies aériennes partagées",
+        detail: [
+          "Voies aériennes partagées avec le chirurgien : stratégie décidée ensemble. Rechercher stridor (aggravé en décubitus), dysphagie haute, déviation trachéale, langue fixée, position de sommeil ; intubation difficile fréquente (tumeur, radiothérapie). Contrôle difficile prévu : pas d'induction IV standard — intubation vigile au fibroscope ou sévoflurane en ventilation spontanée ; laryngoscopie indirecte par l'ORL avant l'induction si doute.",
+          foreign ? "Corps étranger : induction en ventilation spontanée (sévoflurane 8 %), pas de pression positive avant la libération des voies aériennes (refoulement distal), bronchoscope rigide." : "",
+          laser ? "Laser : FiO₂ 0,21–0,3, ni N₂O ni by-pass d'O₂, sonde laser à ballonnet rempli de NaCl, 60 ml d'eau à portée, champs et paupières humides, lunettes adaptées. Feu : NaCl dans la trachée, couper l'O₂, retirer la sonde, ventiler, réintuber, bronchoscopie." : "",
+          jet ? "Jet-ventilation : curarisation profonde, départ à 0,5 bar puis 0,02–0,03 bar/kg ; expiration libre obligatoire (barotraumatisme) ; le CO₂ n'est pas éliminé : normaliser l'ETCO₂ après." : "",
+          endo && !neck ? "Geste court et très réflexogène : propofol en continu et bolus de rémifentanil ; glycopyrrolate 0,2–0,3 mg contre les sécrétions ; bronchoscope rigide : curarisation profonde." : "",
+          neck ? "Trachéotomie possible en début d'intervention ; entretien IV (propofol, rémifentanil ou sufentanil) ; pas de curare pendant le repérage du nerf facial ; infiltration du sinus carotidien ; test de fuite avant l'extubation (absent : différer, endoscopie)." : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        why: surgeryName,
+        source: CH(39, "chirurgie ORL et implications anesthésiques"),
+        material: laser ? ["Sonde laser", "Seringue de 60 ml de NaCl"] : jet ? ["Jet-ventilateur"] : undefined,
+      });
+    }
+
+    // Orthopaedics (chap. 40).
+    const hipFracture = /col du femur|col femoral|fracture.*(hanche|femur)|pertrochanter|sous-trochanter|hemiarthroplast|prothese intermediaire|osteosynthese de la hanche|\bpih\b/.test(name);
+    if (hipFracture)
+      add({
+        id: "hip-fracture",
+        level: "medium",
+        title: "Fracture du fémur proximal",
+        detail: "Opérer dans les plus brefs délais (alitement : escarres, pneumopathie, confusion) ; un antithrombotique ne doit retarder l'intervention que le temps nécessaire. Bloc ilio-fascial ou fémoral avant la mobilisation et l'installation (sinon propofol 20–40 mg, attention à l'inhalation). Rachianesthésie : moins de morbidité. Rechercher anémie, dénutrition, rhabdomyolyse (station au sol prolongée : CK). Deux concentrés érythrocytaires disponibles.",
+        why: `${surgeryName}${age !== undefined ? ` ; ${age} ans` : ""}${onAntithrombotic ? " ; antithrombotique en cours" : ""}`,
+        source: CH(40, "fractures du fémur proximal"),
+        material: ["Bloc ilio-fascial (échographe)", "Deux concentrés érythrocytaires"],
+      });
+    const prosthesis = /prothese|arthroplast|\bpth\b|\bptg\b|moore/.test(name) && !/non cimente/.test(name);
+    if (prosthesis) {
+      const risk = [has(cond, "heart_failure") ? "insuffisance cardiaque" : "", has(cond, "pulmonary_hypertension") ? "hypertension pulmonaire" : "", hipFracture ? "fracture de hanche" : "", age !== undefined && age >= 80 ? `${age} ans (os ostéoporotique)` : ""].filter(Boolean);
+      if (risk.length)
+        add({
+          id: "cement",
+          level: "medium",
+          title: "Syndrome d'implantation du ciment : terrain à risque",
+          detail: "Hypotension, hypoxémie, troubles neurologiques voire arrêt au cimentage (emboles de graisse, ciment, air). Discuter une prothèse non cimentée ; sinon pression artérielle invasive (voie centrale si fonction cardiaque altérée), FiO₂ élevée, pas de N₂O, normovolémie, vasopresseur prêt ; demander lavage et aspiration du fût médullaire, drain avant le ciment.",
+          why: risk.join(", "),
+          source: CH(40, "syndrome d'implantation du ciment"),
+          material: ["Cathéter artériel", "Noradrénaline prête"],
+        });
+    }
+    const region = /epaule|coiffe|acromio/.test(name)
+      ? "Épaule : bloc interscalénique (cathéter pour une prothèse) ± AG ; parésie phrénique homolatérale."
+      : /coude/.test(name) && c.surgery.category === "K"
+        ? "Coude : bloc supra- ou infraclaviculaire (cathéter pour une prothèse) ± AG."
+        : /hanche|\bpth\b/.test(name) && !hipFracture
+          ? `Hanche : rachianesthésie (bupivacaïne isobare 10–15 mg, possible directement sur le côté sain) ± infiltration périarticulaire ; acide tranexamique 10–15 mg/kg en début d'intervention${w !== undefined ? ` (≈ ${Math.round(w * 10)}–${Math.round(w * 15)} mg)` : ""}. Décubitus latéral : billot axillaire ; voie postérieure : nerf sciatique ; voie antérieure : nerf cutané latéral de la cuisse.`
+          : /genou|\bptg\b|ligament croise|\blca\b|menisc|valgisation/.test(name)
+            ? `Genou : bloc du canal des adducteurs (ou fémoral) + rachianesthésie ± infiltration de la capsule postérieure (le bloc fémoral seul ne couvre pas le genou)${/prothese|\bptg\b/.test(name) ? `; acide tranexamique 10–15 mg/kg${w !== undefined ? ` (≈ ${Math.round(w * 10)}–${Math.round(w * 15)} mg)` : ""}` : ""}.`
+            : /cheville/.test(name)
+              ? "Cheville (prothèse, arthrodèse) : cathéter poplité + rachianesthésie."
+              : /avant-pied|hallux|orteil/.test(name)
+                ? "Avant-pied : bloc de cheville (garrot à la cheville) ; garrot à la cuisse : rachianesthésie ; garrot au tiers distal de jambe : sciatique poplité + saphène."
+                : "";
+    if (region && c.surgery.category === "K")
+      add({ id: "ortho-strategy", level: "info", title: "Orthopédie : technique proposée", detail: `${region} L'anesthésie périmédullaire réduit morbidité et mortalité après prothèse de hanche ou de genou ; thromboprophylaxie.`, why: surgeryName, source: CH(40, "tableau 40.1") });
+
+    const tourniquet = c.surgery.tourniquet === true || (plan?.tourniquetAlertMin ?? 0) > 0;
+    if (tourniquet) {
+      const ci = [has(cond, "pad") ? "artériopathie" : "", has(cond, "sickle_cell") ? "drépanocytose" : "", has(cond, "vte") ? "antécédent de thrombose veineuse" : "", has(cond, "neuropathy") ? "neuropathie périphérique" : "", has(cond, "dialysis") ? "fistule artérioveineuse (côté ?)" : ""].filter(Boolean);
+      const sbp = p.sbp;
+      add({
+        id: "tourniquet",
+        level: ci.length ? "high" : "info",
+        title: ci.length ? "Garrot : contre-indication possible" : "Garrot pneumatique",
+        detail: [
+          ci.length ? `À discuter avec le chirurgien : ${ci.join(", ")} (contre-indications : artériopathie sévère, pontage, fistule, thrombose veineuse, drépanocytose, lésions cutanées, neuropathie).` : "",
+          `Pression : membre supérieur PAS + 70–100 mmHg, inférieur PAS + 100–150 mmHg, maximum 350${sbp ? ` (PAS ${sbp} : ≈ ${sbp + 70}–${sbp + 100} et ${sbp + 100}–${Math.min(350, sbp + 150)} mmHg)` : ""}. Durée ≤ 120 min (sinon relâcher 5–20 min) ; antibioprophylaxie 5–15 min avant le gonflage ; dégonfler après la fermeture cutanée.`,
+          "Gonflage : +400–500 ml de volémie (cuisse) ; HTA et tachycardie après 30–60 min. Lâchage : hypotension, K⁺, lactates et ETCO₂ en hausse, baisse de la température, emboles.",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        why: `Garrot prévu${ci.length ? ` ; ${ci.join(", ")}` : ""}`,
+        source: CH(40, "garrot"),
+      });
+    }
+    if (/fracture|ecrasement|crush|enclouage|plateau tibial|diaphys|bassin|cotyle/.test(name))
+      add({
+        id: "fracture-complications",
+        level: "info",
+        title: "Fracture : syndrome des loges et embolie graisseuse",
+        detail: "Syndrome des loges (fracture de jambe ou d'avant-bras, écrasement, plâtre serré) : douleur résistante aux antalgiques et à l'étirement passif, puis pâleur, paresthésies, parésie ; un bloc périnerveux ne le masque pas mais impose une surveillance ; pression > 30 mmHg : aponévrotomie dans les 4 h. Embolie graisseuse (fémur, bassin) jusqu'à 72 h : hypoxémie, confusion, pétéchies, baisse de l'ETCO₂ sous AG ; ostéosynthèse précoce.",
+        why: surgeryName,
+        source: CH(40, "syndrome des loges, embolie graisseuse"),
+      });
+    if (c.surgery.category === "K" && /rachis|arthrodese|scoliose|vertebr|cervical|lombaire|hernie discale|laminect|cyphoplast/.test(name)) {
+      const cervical = /cervical/.test(name);
+      add({
+        id: "ortho-spine",
+        level: "info",
+        title: cervical ? "Chirurgie du rachis cervical" : "Chirurgie du rachis thoracique ou lombaire",
+        detail: cervical
+          ? "Intubation au fibroscope si la laryngoscopie risque d'aggraver une lésion médullaire. Obstruction des voies aériennes postopératoire (≈ 5 %, un tiers réintubés) si > 5 h, > 3 niveaux, pertes > 300 ml : test de fuite avant l'extubation, corticoïdes ; sinon réanimation 24–48 h. Dysphagie, dysphonie (nerf récurrent)."
+          : "Décubitus ventral prolongé : œdème facial et pharyngé, yeux. Correction de scoliose : potentiels évoqués — anesthésie IV totale (propofol, rémifentanil), curare seulement à l'induction ; pertes importantes : cathéter artériel, voies de gros calibre, récupérateur, acide tranexamique ; morphine intrathécale 100–300 µg ou péridurale posée par le chirurgien. > 3 h ou courbure > 60° : réanimation 24–48 h.",
+        why: surgeryName,
+        source: CH(40, "chirurgie du rachis"),
+      });
+    }
+    {
+      const rheum: string[] = [];
+      if (has(cond, "rheumatoid")) rheum.push("Polyarthrite rhumatoïde : subluxation atlanto-axoïdienne (radiographie en flexion-extension, > 3 mm), ankylose temporomandibulaire, arthrite crico-aryténoïdienne (stridor : sonde 6,5–7) — intubation vigile au fibroscope, nuque dans l'axe ; cathéter artériel brachial ou fémoral plutôt que radial ; insuffisance surrénale possible.");
+      if (has(cond, "ankylosing")) rheum.push("Spondylarthrite ankylosante : rachis cervical soudé (fibroscope), neuraxial difficile ; insuffisance aortique, troubles conductifs.");
+      if (has(cond, "osteogenesis_imperfecta")) rheum.push("Ostéogenèse imparfaite : fonction plaquettaire à vérifier, installation très prudente, pression artérielle invasive plutôt que brassard répété (fractures), pas de succinylcholine, intubation sans mobiliser le rachis.");
+      if (has(cond, "achondroplasia")) rheum.push("Achondroplasie : ventilation et intubation difficiles, canal cervical étroit, hypertension pulmonaire (SAOS, cyphoscoliose).");
+      if (rheum.length) add({ id: "rheum-plan", level: "medium", title: "Maladie ostéoarticulaire : précautions", detail: rheum.join(" "), why: rheum.map((x) => x.split(" :")[0]).join(", "), source: CH(40, "polyarthrite rhumatoïde et autres maladies ostéoarticulaires, tableau 40.2") });
+    }
   }
 
   // --- Substance use ------------------------------------------------------------------

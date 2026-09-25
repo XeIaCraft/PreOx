@@ -98,6 +98,7 @@ export const AAOHNS_2013: ExamSource = { label: "AAO-HNS 2013, voix et chirurgie
 export const MANUAL_2020: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 15 (tableau 15.1) — ouvrage de référence", short: "Manuel 2020", level: "book" };
 export const MANUAL_2020_POSITION: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 19 (position assise) — ouvrage de référence", short: "Manuel 2020", level: "book" };
 export const MANUAL_2020_NEURO: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitre 29 (maladies neuromusculaires) — ouvrage de référence", short: "Manuel 2020", level: "book" };
+export const MANUAL_2020_SPECIALTIES: ExamSource = { label: "Manuel pratique d'anesthésie, 4e éd. 2020, chapitres 36 à 40 (obstétrique, pédiatrie, orthopédie) — ouvrage de référence", short: "Manuel 2020", level: "book" };
 
 /**
  * Work-up usual for a family of procedures, each item tied to the guideline
@@ -412,6 +413,22 @@ export function recommendExams({ consultation: c, asa, mets, surgeryProfile, sto
     add("pft", "consider", "myopathie : syndrome restrictif", MANUAL_2020_NEURO);
   }
   if (has(cond, "myasthenia") && c.surgery.incision && c.surgery.incision !== "peripheral") add("pft", "consider", "myasthénie et chirurgie thoracique ou abdominale haute : capacité vitale (ventilation postopératoire si < 40 ml/kg)", MANUAL_2020_NEURO);
+  if (has(cond, "preeclampsia")) {
+    add("fbc", "recommended", "prééclampsie : plaquettes (HELLP), à contrôler avant toute ALR", MANUAL_2020_SPECIALTIES);
+    add("haemostasis", "recommended", "prééclampsie : TP, TCA et fibrinogène avant toute ALR", MANUAL_2020_SPECIALTIES);
+    add("renal", "recommended", "prééclampsie : fonction rénale, acide urique, tests hépatiques", MANUAL_2020_SPECIALTIES);
+  }
+  const surgeryName = fold(c.surgery.name);
+  if (/col du femur|col femoral|fracture.*(hanche|femur)|pertrochanter|sous-trochanter|hemiarthroplast|prothese intermediaire|osteosynthese de la hanche|\bpih\b/.test(surgeryName)) {
+    add("group", "recommended", "fracture du fémur proximal : deux concentrés érythrocytaires disponibles", MANUAL_2020_SPECIALTIES);
+    add("fbc", "recommended", "fracture du fémur proximal : anémie (pertes de 500 à 1 000 ml)", MANUAL_2020_SPECIALTIES);
+  }
+  if (/scoliose/.test(surgeryName)) {
+    add("pft", "consider", "scoliose : syndrome restrictif (complications pulmonaires si courbure > 60°)", MANUAL_2020_SPECIALTIES);
+    add("echo", "consider", "scoliose : hypertension pulmonaire ou cardiomyopathie (myopathie associée)", MANUAL_2020_SPECIALTIES);
+    add("group", "recommended", "correction de scoliose : pertes sanguines importantes", MANUAL_2020_SPECIALTIES);
+  }
+  if (has(cond, "osteogenesis_imperfecta")) add("haemostasis", "consider", "ostéogenèse imparfaite : fonction plaquettaire souvent diminuée", MANUAL_2020_SPECIALTIES);
   if (has(cond, "osa") !== true && stopBang !== undefined && stopBang >= 5)
     add("sleep", "consider", `STOP-BANG ${stopBang} : SAOS probable non diagnostiqué — examen du sommeil si la chirurgie peut attendre, sinon précautions comme pour un SAOS`, SASM_2016);
 

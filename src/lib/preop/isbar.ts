@@ -6,6 +6,7 @@ import { consultationScores, consultationSummary } from "./consultation-scores";
 import { attentionPoints } from "./attention";
 import type { Catalogs } from "./catalog";
 import { lowerFirst } from "./derive";
+import { fold } from "./catalog";
 import { conditionsSummary, substanceSummary } from "./history";
 import { allergySummary } from "./dossier";
 import { EXAM_LABELS, type ExamCode } from "./exams";
@@ -138,8 +139,17 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
 export function suggestedCallCriteria(d: Dossier): string[] {
   const w = d.consultation.patient.weightKg;
   const techs = new Set([...d.plan.techniques, ...d.consultation.techniques]);
+  const cond = d.consultation.conditions;
+  const name = fold(d.consultation.surgery.name ?? "");
+  const age = d.consultation.patient.age;
   return [
     "saignement des drains ou du pansement > 200 ml/h",
+    /cesarienne|accouchement/.test(name) || cond.pregnancy?.present ? "saignement vaginal > 500 ml ou utérus mou (atonie)" : "",
+    cond.preeclampsia?.present ? "PA ≥ 160/110 mmHg, céphalées, troubles visuels ou convulsions ; sous magnésium : réflexes ostéotendineux abolis ou FR < 12/min" : "",
+    (age !== undefined && age < 1) || cond.ex_premature?.present ? "apnée > 15 s, bradycardie ou désaturation (nourrisson, ancien prématuré)" : "",
+    age !== undefined && age < 16 ? "enfant : agitation persistante (douleur ? hypoxie ?) ou vomissements répétés" : "",
+    /fracture|ecrasement|crush|garrot/.test(name) || d.consultation.surgery.tourniquet ? "douleur croissante malgré l'analgésie ou à l'étirement passif des doigts ou des orteils (syndrome des loges)" : "",
+    /thyroid|cervicotom|curage|evidement|laryng|pharyng|amygdal|rachis cervical|arthrodese cervicale|cervicale anterieure/.test(name) ? "stridor, dyspnée, dysphonie ou gonflement cervical (hématome)" : "",
     `diurèse < 0,5 ml/kg/h${w ? ` (< ${Math.round(w * 0.5)} ml/h)` : ""} ou globe vésical (agitation)`,
     "SpO₂ < 90 %, fréquence respiratoire < 10/min ou somnolence",
     "PA systolique < 90 mmHg ou variation > 20 % par rapport à la valeur préopératoire",

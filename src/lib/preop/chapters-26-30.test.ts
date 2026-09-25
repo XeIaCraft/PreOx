@@ -59,6 +59,6 @@ describe("Manuel pratique d'anesthésie 2020, chapitres 26–30", () => {
   it("adds the long half-life ACE inhibitors as drafts at the end", () => {
     const ramipril = MANUAL_RULES.find((r) => r.title.startsWith("Ramipril"))!;
     expect(ramipril.action).toMatchObject({ type: "stop_before", hours: 48 });
-    expect(MANUAL_RULES.at(-1)!.source.title).toMatch(/Chapitre 35/);
+    expect(MANUAL_RULES.at(-1)!.source.title).toMatch(/Chapitre 40/);
   });
 });

@@ -131,7 +131,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Midazolam",
     words: ["midazolam", "dormicum", "hypnovel"],
     chapter: "chap. 6",
-    doses: [pk("Prémédication, per os", 0.05, 0.1), pk("Sédation IV", 0.1, 0.2, "mg", { note: "Titrer par petites doses." }), pk("Induction IV", 0.2, 0.3)],
+    doses: [pk("Prémédication, per os", 0.05, 0.1), pk("Prémédication de l'enfant, per os (chap. 37)", 0.3, 0.5), pk("Sédation IV", 0.1, 0.2, "mg", { note: "Titrer par petites doses." }), pk("Induction IV", 0.2, 0.3)],
     cautions: [
       { conditions: ["osa", "copd", "obesity_hypoventilation", "raised_icp"], level: "relative", text: "prémédication sédative contre-indiquée : SAOS, BPCO sévère, obstruction des voies aériennes, baisse de la vigilance (chap. 15)" },
       { conditions: ["ckd", "dialysis"], level: "adapt", text: "insuffisance rénale : l'hydroxymidazolam s'accumule" },
@@ -233,9 +233,11 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Suxaméthonium (succinylcholine)",
     words: ["suxamethonium", "succinylcholine", "celocurine", "lysthenon"],
     chapter: "chap. 8",
-    doses: [pk("Intubation", 1, 1.5)],
+    doses: [pk("Intubation", 1, 1.5), pk("Intubation de l'enfant (chap. 37)", 1.5, 2), pk("Laryngospasme de l'enfant qui désature (chap. 37)", 0.3, 0.3)],
     cautions: [
       { conditions: ["malignant_hyperthermia"], level: "contraindicated", text: "hyperthermie maligne" },
+      { conditions: ["osteogenesis_imperfecta"], level: "relative", text: "ostéogenèse imparfaite : les fasciculations peuvent provoquer des fractures (chap. 40)" },
+      { atc: ["S01EB03"], level: "adapt", text: "échothiophate (collyre) : bloc prolongé jusqu'à 4–6 semaines après l'arrêt (chap. 38)" },
       { conditions: HYPERKALAEMIA_RISK, level: "contraindicated", text: "risque d'hyperkaliémie : brûlures étendues après 24 h, hémiplégie, paraplégie, myopathie, myotonie, alitement prolongé, insuffisance rénale terminale" },
       { conditions: ["pseudocholinesterase"], level: "contraindicated", text: "déficit en pseudocholinestérases : paralysie prolongée" },
       { conditions: ["raised_icp", "intracranial_lesion"], level: "relative", text: "hypertension intracrânienne" },
@@ -283,7 +285,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     words: ["mivacurium", "mivacron"],
     chapter: "chap. 8",
     doses: [pk("Intubation", 0.2, 0.25)],
-    cautions: [{ conditions: ["pseudocholinesterase"], level: "contraindicated", text: "déficit en pseudocholinestérases" }, { conditions: ["pheochromocytoma", "carcinoid"], level: "relative", text: "phéochromocytome ou carcinoïde : histaminolibération (chap. 34)" }],
+    cautions: [{ conditions: ["pseudocholinesterase"], level: "contraindicated", text: "déficit en pseudocholinestérases" }, { atc: ["S01EB03"], level: "adapt", text: "échothiophate (collyre) : bloc prolongé jusqu'à 4–6 semaines après l'arrêt (chap. 38)" }, { conditions: ["pheochromocytoma", "carcinoid"], level: "relative", text: "phéochromocytome ou carcinoïde : histaminolibération (chap. 34)" }],
   },
 
   // --- Chapitre 9 : décurarisation ------------------------------------------------------------
@@ -319,13 +321,14 @@ export const DRUG_REFERENCES: DrugReference[] = [
       { atc: ["C07"], level: "adapt", text: "bêtabloquant au long cours : effet indirect diminué" },
       { atc: MAOI, level: "contraindicated", text: "IMAO : sympathomimétique indirect, crise hypertensive" },
       { conditions: ["pheochromocytoma"], level: "contraindicated", text: "phéochromocytome : sympathomimétique (chap. 34)" },
+      { conditions: ["pregnancy"], level: "adapt", text: "grossesse : acidose fœtale et atonie utérine — préférer la phényléphrine (chap. 36)" },
     ],
   },
   {
     name: "Phényléphrine",
     words: ["phenylephrine", "neosynephrine"],
     chapter: "chap. 10",
-    doses: [pk("Hypotension : bolus", 0.5, 2, "µg", { note: "En général 50–200 µg." }), rt("Perfusion", 1, 10, "µg", "/kg/min")],
+    doses: [pk("Hypotension : bolus", 0.5, 2, "µg", { note: "En général 50–200 µg." }), rt("Perfusion", 1, 10, "µg", "/kg/min"), rt("Césarienne sous rachianesthésie (débit continu, chap. 36)", 3, 5, "mg", "/h")],
     cautions: [],
   },
   {
@@ -346,7 +349,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Atropine",
     words: ["atropine"],
     chapter: "chap. 10",
-    doses: [fx("Bradycardie (à répéter 2 fois)", 0.5, 0.5), pk("Sécrétions oropharyngées", 0.02, 0.02, "mg", { note: "Maximum 0,6 mg." }), pk("Avec la néostigmine", 20, 20, "µg")],
+    doses: [fx("Bradycardie (à répéter 2 fois)", 0.5, 0.5), fx("Réflexe oculocardiaque (après l'arrêt des tractions, chap. 38)", 0.5, 1), pk("Sécrétions oropharyngées", 0.02, 0.02, "mg", { note: "Maximum 0,6 mg." }), pk("Avec la néostigmine", 20, 20, "µg")],
     cautions: [
       { conditions: ["glaucoma"], level: "relative", text: "glaucome à angle fermé" },
       { conditions: ["urinary_retention"], level: "relative", text: "hypertrophie prostatique, obstacle du col vésical" },
@@ -359,14 +362,14 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Clonidine",
     words: ["clonidine", "catapressan"],
     chapter: "chap. 10 et 12",
-    doses: [pk("Épargne anesthésique ou frissons (IV lent)", 2, 3, "µg"), fx("Bloc périphérique (chap. 12)", 150, 150, "µg", { note: "Prolonge le bloc d'environ 2 h." }), pk("Bloc central (chap. 12)", 0.5, 1, "µg"), rt("Agitation", 0.5, 2, "µg", "/kg/h")],
+    doses: [pk("Épargne anesthésique ou frissons (IV lent)", 2, 3, "µg"), fx("Bloc périphérique (chap. 12)", 150, 150, "µg", { note: "Prolonge le bloc d'environ 2 h." }), pk("Bloc central (chap. 12)", 0.5, 1, "µg"), rt("Agitation", 0.5, 2, "µg", "/kg/h"), pk("Prémédication de l'enfant, per os (chap. 37)", 4, 4, "µg"), pk("Caudale de l'enfant > 6 mois, avec l'AL (chap. 37)", 1, 1, "µg")],
     cautions: [{ conditions: ["av_block"], level: "relative", text: "bradycardie, bloc auriculo-ventriculaire" }, { conditions: ["porphyria"], level: "relative", text: "porphyrie : médicament porphyrinogène (chap. 35)" }],
   },
   {
     name: "Dexmédétomidine",
     words: ["dexmedetomidine", "dexdor"],
     chapter: "chap. 10 et 12",
-    doses: [pk("Charge en 10 min", 1, 1, "µg"), rt("Perfusion", 0.2, 0.7, "µg", "/kg/h"), fx("Périnerveuse (chap. 12)", 50, 60, "µg", { note: "Prolonge le bloc d'environ 6 h ; hors AMM." })],
+    doses: [pk("Charge en 10 min", 1, 1, "µg"), rt("Perfusion", 0.2, 0.7, "µg", "/kg/h"), fx("Périnerveuse (chap. 12)", 50, 60, "µg", { note: "Prolonge le bloc d'environ 6 h ; hors AMM." }), pk("Prémédication de l'enfant, intranasale (chap. 37)", 1, 2, "µg")],
     cautions: [{ conditions: ["av_block"], level: "relative", text: "bradycardie, bloc auriculo-ventriculaire : hypotension et bradycardie en perfusion" }],
   },
   {
@@ -394,17 +397,22 @@ export const DRUG_REFERENCES: DrugReference[] = [
   // --- Adjuvants d'épargne morphinique (tableau 7.5) ------------------------------------------------
   { name: "Dexaméthasone", words: ["dexamethasone"], chapter: "chap. 7, 12 et 23", doses: [pk("Début d'intervention (IV lent)", 0.1, 0.2, "mg", { note: "Prolonge aussi un bloc périphérique d'environ 8 h (chap. 12)." }), fx("Prévention des NVPO, à l'induction", 4, 8), fx("Périnerveuse (dose plafond)", 4, 4)], cautions: [{ conditions: ["diabetes_insulin", "diabetes_oral"], level: "adapt", text: "diabète : élévation de la glycémie" }] },
   { name: "Kétorolac", words: ["ketorolac", "taradyl"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention", 30, 60)], cautions: [{ conditions: ["ckd", "dialysis", "peptic_ulcer", "gi_bleeding"], level: "contraindicated", text: "insuffisance rénale, ulcère ou hémorragie digestive" }, { conditions: ["porphyria"], level: "relative", text: "porphyrie : médicament porphyrinogène (chap. 35)" }] },
-  { name: "Magnésium", words: ["magnesium"], chapter: "chap. 7 et 28", doses: [pk("Sur 15 min en fin d'intervention", 40, 50), fx("Crise d'asthme (en 15–20 min)", 2, 2, "g")], cautions: [{ conditions: ["myasthenia", "neuromuscular"], level: "relative", text: "potentialise les curares" }] },
+  { name: "Magnésium", words: ["magnesium"], chapter: "chap. 7 et 28", doses: [pk("Sur 15 min en fin d'intervention", 40, 50), fx("Crise d'asthme (en 15–20 min)", 2, 2, "g"), fx("Prééclampsie sévère, éclampsie : bolus IV (chap. 36)", 4, 4, "g", { note: "Puis 1–2 g/h ; magnésémie 2,5–3,5 mmol/l ; surveiller réflexes ostéotendineux, fréquence respiratoire, ECG." }), rt("Prééclampsie : entretien", 1, 2, "g", "/h")], cautions: [{ conditions: ["myasthenia", "neuromuscular"], level: "relative", text: "potentialise les curares" }] },
   { name: "Lidocaïne IV", words: ["lidocaine iv", "xylocaine iv", "lidocaine intraveineuse"], chapter: "chap. 7, tableau 7.5", doses: [pk("Bolus", 1.5, 1.5), rt("Perfusion", 2, 2, "mg", "/kg/h")], cautions: [{ conditions: ["av_block"], level: "relative", text: "troubles conductifs" }] },
-  { name: "Paracétamol", words: ["paracetamol", "perfusalgan", "dafalgan"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention, sur 15 min", 1, 1, "g")], cautions: [{ conditions: ["cirrhosis"], level: "adapt", text: "insuffisance hépatique : réduire (contre-indiqué si sévère, chap. 25)" }] },
+  { name: "Paracétamol", words: ["paracetamol", "perfusalgan", "dafalgan"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention, sur 15 min", 1, 1, "g"), pk("Enfant, IV ou per os, 4×/j (chap. 37)", 15, 15, "mg", { note: "Voie rectale : charge 30 mg/kg puis 20 mg/kg 4×/j. Nouveau-né < 32 SA : 10 mg/kg 2×/j ; 32–37 SA : 15 mg/kg 3×/j." })], cautions: [{ conditions: ["cirrhosis"], level: "adapt", text: "insuffisance hépatique : réduire (contre-indiqué si sévère, chap. 25)" }] },
 
   // --- Chapitres 27 à 29 : chirurgie cardiaque, vasculaire et neurochirurgie ------------------------
   {
     name: "Acide tranexamique",
     onlyInPlan: true,
     words: ["tranexamique", "exacyl", "cyklokapron"],
-    chapter: "chap. 27",
-    doses: [pk("Avant l'ouverture du péricarde (CEC), puis après la protamine", 15, 15, "mg", { note: "3e dose possible puis 10 mg/kg/h, total ≤ 100 mg/kg." }), rt("Entretien", 10, 10, "mg", "/kg/h")],
+    chapter: "chap. 27, 36 et 40",
+    doses: [
+      pk("Avant l'ouverture du péricarde (CEC), puis après la protamine", 15, 15, "mg", { note: "3e dose possible puis 10 mg/kg/h, total ≤ 100 mg/kg." }),
+      rt("Entretien", 10, 10, "mg", "/kg/h"),
+      pk("Prothèse de hanche ou de genou, en début d'intervention (chap. 40)", 10, 15),
+      fx("Hémorragie du post-partum (chap. 36)", 1, 2, "g", { note: "Manuel : 2 g dès 500 ml (voie basse) ou 1 000 ml (césarienne) ; essai WOMAN : 1 g en 10 min dans les 3 h, répétable une fois." }),
+    ],
     cautions: [{ conditions: ["vte", "thrombophilia", "antiphospholipid"], level: "relative", text: "antécédent thromboembolique ou thrombophilie" }, { conditions: ["epilepsy"], level: "relative", text: "épilepsie : convulsions aux fortes doses" }],
   },
   { name: "Héparine (CEC)", onlyInPlan: true, words: ["heparine sodique", "heparine non fractionnee", "heparine cec"], chapter: "chap. 27", doses: [pk("Avant la CEC (ACT 400–480 s)", 300, 400, "UI", { note: "ACT normal 70–160 s ; pontage à cœur battant : ACT 250 s." })], cautions: [{ conditions: ["hit_history"], level: "contraindicated", text: "antécédent de TIH" }] },
@@ -417,7 +425,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
   { name: "Octréotide", words: ["octreotide", "sandostatine"], chapter: "chap. 34", doses: [fx("Tumeur carcinoïde : avant l'intervention (SC, 2×/j)", 50, 500, "µg", { note: "Crise peropératoire : somatostatine 150–200 µg/h." })], cautions: [] },
   { name: "Desmopressine", onlyInPlan: true, words: ["desmopressine", "minirin", "octostim"], chapter: "chap. 35", doses: [pk("Willebrand type I, hémophilie A légère (dans 250 ml NaCl en 20 min, 1 h avant)", 0.3, 0.3, "µg")], cautions: [{ conditions: ["hyponatremia"], level: "relative", text: "hyponatrémie (effet antidiurétique)" }] },
   { name: "Complexe prothrombinique", onlyInPlan: true, words: ["ppsb", "prothromplex", "octaplex", "confidex", "kanokad", "beriplex", "complexe prothrombinique"], chapter: "chap. 35", doses: [pk("Antagonisation d'un AVK en urgence", 20, 20, "UI", { note: "Objectif TP ≥ 50 % ; AOD en hémorragie : 25–50 UI/kg." })], cautions: [{ conditions: ["hit_history"], level: "relative", text: "certaines préparations contiennent de l'héparine" }] },
-  { name: "Fibrinogène", onlyInPlan: true, words: ["fibrinogene", "riastap", "clottafact", "haemocomplettan"], chapter: "chap. 27 et 35", doses: [fx("Saignement avec fibrinogène < 1–1,5 g/l", 2, 2, "g")], cautions: [] },
+  { name: "Fibrinogène", onlyInPlan: true, words: ["fibrinogene", "riastap", "clottafact", "haemocomplettan"], chapter: "chap. 27 et 35", doses: [fx("Saignement avec fibrinogène < 1–1,5 g/l", 2, 2, "g"), fx("Hémorragie du post-partum : dès 500 ml (voie basse) ou 1 000 ml (césarienne), chap. 36", 2, 2, "g", { note: "Objectif fibrinogène > 2 g/l." })], cautions: [] },
   { name: "Vitamine K", onlyInPlan: true, words: ["vitamine k", "phytomenadione", "konakion"], chapter: "chap. 35", doses: [fx("Chirurgie différée sous AVK (PO, INR 8–12 h après)", 1, 10, "mg", { note: "Voie IV réservée à l'urgence (réactions allergiques)." })], cautions: [] },
   { name: "Idarucizumab", onlyInPlan: true, words: ["idarucizumab", "praxbind"], chapter: "chap. 35", doses: [fx("Antidote du dabigatran (2 × 2,5 g)", 5, 5, "g", { note: "Seconde dose possible après 24 h si récidive." })], cautions: [] },
   { name: "Bleu de méthylène", onlyInPlan: true, words: ["bleu de methylene", "methylthioninium", "proveblue"], chapter: "chap. 35", doses: [pk("Méthémoglobinémie (solution 1 %, en 3–5 min)", 1, 2, "mg", { note: "Total ≤ 5–7 mg/kg ; fait baisser transitoirement la SpO₂." })], cautions: [{ conditions: ["g6pd"], level: "contraindicated", text: "déficit en G6PD : hémolyse" }, { atc: ["N06AB", "N06AX"], level: "relative", text: "antidépresseur sérotoninergique : syndrome sérotoninergique" }] },
@@ -480,7 +488,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Nicardipine",
     words: ["nicardipine", "loxen"],
     chapter: "chap. 11",
-    doses: [fx("Bolus IV (1 mg/min)", 1, 10), rt("Perfusion", 2, 4, "mg", "/h", { note: "Paliers de 0,5 mg/h, maximum 10–15 mg/h." })],
+    doses: [fx("Bolus IV (1 mg/min)", 1, 10), rt("Perfusion", 2, 4, "mg", "/h", { note: "Paliers de 0,5 mg/h, maximum 10–15 mg/h." }), rt("Prééclampsie : 30 min, puis 2–4 mg/h (chap. 36)", 8, 15, "mg", "/h")],
     cautions: [],
   },
   {
@@ -494,7 +502,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Dihydralazine",
     words: ["dihydralazine", "nepressol"],
     chapter: "chap. 11",
-    doses: [fx("Bolus IV", 2.5, 20, "mg", { note: "Action en 15 min pendant 2–4 h." })],
+    doses: [fx("Bolus IV", 2.5, 20, "mg", { note: "Action en 15 min pendant 2–4 h." }), fx("Prééclampsie : toutes les 20 min (chap. 36)", 5, 5, "mg", { note: "Maximum 20 mg ; surveillance fœtale (chute de pression fœtale)." })],
     cautions: [{ conditions: ["coronary", "stable_angina", "recent_mi"], level: "adapt", text: "coronarien : tachycardie réflexe (associer un bêtabloquant)" }, { conditions: ["raised_icp"], level: "relative", text: "hypertension intracrânienne" }],
   },
   {
@@ -534,7 +542,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Bupivacaïne",
     words: ["bupivacaine", "marcaine"],
     chapter: "chap. 12 et 13",
-    doses: [pk("Dose maximale sans adrénaline", 3, 3, "mg", { note: "Total 150 mg ; avec adrénaline 4 mg/kg (225 mg). Proscrite pour un bloc de Bier." }), fx("Rachianesthésie, hyperbare (tableau 13.3)", 7.5, 15, "mg", { note: "Durée 90–120 min ; réduire chez la personne âgée." }), fx("Rachianesthésie, isobare", 10, 15, "mg", { note: "Durée 150–300 min." })],
+    doses: [pk("Dose maximale sans adrénaline", 3, 3, "mg", { note: "Total 150 mg ; avec adrénaline 4 mg/kg (225 mg). Proscrite pour un bloc de Bier." }), fx("Rachianesthésie, hyperbare (tableau 13.3)", 7.5, 15, "mg", { note: "Durée 90–120 min ; réduire chez la personne âgée." }), fx("Rachianesthésie, isobare", 10, 15, "mg", { note: "Durée 150–300 min." }), fx("Rachianesthésie pour césarienne, hyperbare 0,5 % (chap. 36)", 10, 10, "mg", { note: "+ fentanyl 20 µg + morphine 100 µg." }), pk("Caudale de l'enfant, 0,25 % à 1 ml/kg (chap. 37)", 2.5, 2.5, "mg", { note: "Jusqu'à 6 ans (20 kg), au plus 8 ans (30 kg). 1,25 ml/kg (haut abdomen) dépasse 3 mg/kg : ropivacaïne 0,2 % alors." })],
     cautions: [],
     maxDose: { perKg: 3, totalMg: 150, withAdrenalinePerKg: 4, withAdrenalineTotalMg: 225 },
   },
@@ -542,7 +550,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Ropivacaïne",
     words: ["ropivacaine", "naropeine", "naropin"],
     chapter: "chap. 12",
-    doses: [pk("Dose maximale sans adrénaline", 3, 3, "mg", { note: "Total 175 mg ; avec adrénaline 4 mg/kg (250 mg). Moins de bloc moteur." })],
+    doses: [pk("Dose maximale sans adrénaline", 3, 3, "mg", { note: "Total 175 mg ; avec adrénaline 4 mg/kg (250 mg). Moins de bloc moteur." }), fx("Césarienne par le cathéter péridural (0,75 %, bolus de 5 ml)", 90, 150, "mg", { note: "12–20 ml au total ; lidocaïne 2 % adrénalinée en alternative, chloroprocaïne 3 % en cas de souffrance fœtale (chap. 36)." })],
     cautions: [],
     maxDose: { perKg: 3, totalMg: 175, withAdrenalinePerKg: 4, withAdrenalineTotalMg: 250 },
   },
@@ -562,6 +570,36 @@ export const DRUG_REFERENCES: DrugReference[] = [
     cautions: [{ conditions: ["pseudocholinesterase"], level: "relative", text: "ester métabolisé par les pseudocholinestérases : toxicité accrue" }],
     maxDose: { perKg: 12, totalMg: 600, withAdrenalineTotalMg: 650 },
   },
+
+  // --- Chapitres 36 à 40 : obstétrique, pédiatrie, ophtalmologie, ORL, orthopédie ---------------------
+  {
+    name: "Ocytocine",
+    onlyInPlan: true,
+    words: ["ocytocine", "oxytocine", "syntocinon"],
+    chapter: "chap. 36",
+    doses: [fx("Après la naissance, bolus lent (5 min)", 5, 5, "UI"), rt("Perfusion (10–20 UI en 2 h)", 5, 10, "UI", "/h")],
+    cautions: [{ conditions: ["long_qt"], level: "relative", text: "bolus rapide : hypotension, tachycardie, allongement du QT" }],
+  },
+  {
+    name: "Sulprostone",
+    onlyInPlan: true,
+    words: ["sulprostone", "nalador"],
+    chapter: "chap. 36",
+    doses: [rt("Atonie utérine, sur 60 min", 100, 500, "µg", "/h", { note: "Pas en même temps que l'ocytocine." })],
+    cautions: [{ conditions: ["asthma", "coronary", "stable_angina", "recent_mi", "heart_failure"], level: "contraindicated", text: "asthme ou cardiopathie (RCP) : bronchospasme, spasme coronaire" }],
+  },
+  {
+    name: "Labétalol",
+    onlyInPlan: true,
+    words: ["labetalol", "trandate"],
+    chapter: "chap. 36",
+    doses: [rt("Prééclampsie (IV)", 20, 160, "mg", "/h", { note: "Passe le placenta : légère bradycardie fœtale." })],
+    cautions: [{ conditions: ["asthma"], level: "relative", text: "asthme : bêtabloquant non sélectif" }, { conditions: ["av_block"], level: "relative", text: "bloc auriculo-ventriculaire" }],
+  },
+  { name: "Immunoglobulines anti-D", onlyInPlan: true, words: ["anti-d", "anti d", "rhophylac"], chapter: "chap. 36", doses: [fx("Mère Rhésus négatif, dans les 72 h", 200, 200, "µg", { note: "200 µg = 1 000 UI ; systématique à 28 SA puis à l'accouchement si l'enfant est Rhésus positif." })], cautions: [] },
+  { name: "Citrate de sodium", onlyInPlan: true, words: ["citrate de sodium"], chapter: "chap. 36", doses: [fx("Avant une césarienne (per os, 0,3 M)", 30, 30, "mL")], cautions: [] },
+  { name: "Caféine (citrate)", onlyInPlan: true, words: ["cafeine", "citrate de cafeine", "peyona"], chapter: "chap. 37", doses: [pk("Ancien prématuré : fin d'intervention (citrate de caféine)", 20, 20, "mg", { note: "= 10 mg/kg de caféine base ; diminue les désaturations postopératoires." })], cautions: [] },
+  { name: "Glycopyrronium", words: ["glycopyrr", "robinul"], chapter: "chap. 37 et 39", doses: [fx("Antisialagogue (endoscopie ORL)", 0.2, 0.3), pk("Enfant", 0.01, 0.01)], cautions: [{ conditions: ["glaucoma"], level: "relative", text: "glaucome à angle fermé" }] },
 
   // --- Chapitre 20 : antibioprophylaxie et prophylaxie de l'endocardite -------------------------------
   {

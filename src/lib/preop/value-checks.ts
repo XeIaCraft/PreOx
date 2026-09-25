@@ -207,11 +207,15 @@ const LEVEL_RANK = { high: 0, medium: 1, info: 2 } as const;
  * attention is shown; every met check still counts for its implication.
  * Implausible values are left out (see implausibleValues).
  */
+const ADULT_ONLY = new Set<string>(["bmi", "sbp", "dbp", "hr"]);
+
 export function valueFindings(p: ConsultationPatient, derived: PatientValues, checks: ValueCheckItem[]): ValueFinding[] {
   const bad = new Set<string>(implausibleValues(p).map((x) => x.value));
   const met = checks.filter((c) => {
     if (c.sex && p.sex !== c.sex) return false;
     if (bad.has(c.value)) return false;
+    // Adult thresholds: a child's BMI, blood pressure and heart rate are read against age norms (chap. 37).
+    if (p.age !== undefined && p.age < 16 && ADULT_ONLY.has(c.value)) return false;
     const n = watchedValue(p, derived, c.value);
     return n !== undefined && compare(n, c.op, c.threshold);
   });

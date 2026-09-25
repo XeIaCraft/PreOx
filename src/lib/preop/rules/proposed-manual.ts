@@ -1045,4 +1045,83 @@ const LABS: Proposed[] = [
   }),
 ];
 
-export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS, ...SPECIALITIES, ...LABS];
+// ---------------------------------------------------------------------------
+// Chapitres 36 à 40 — obstétrique, pédiatrie, ophtalmologie, orthopédie
+// ---------------------------------------------------------------------------
+
+const CH36 = "Chapitre 36, Gynécologie, obstétrique et anesthésie, 4e édition (Elsevier Masson)";
+const CH37 = "Chapitre 37, Pédiatrie et anesthésie, 4e édition (Elsevier Masson)";
+const CH38 = "Chapitre 38, Ophtalmologie et anesthésie, 4e édition (Elsevier Masson)";
+const CH40 = "Chapitre 40, Orthopédie, traumatologie et rhumatologie, 4e édition (Elsevier Masson)";
+
+const OBSTETRICS_PAEDIATRICS: Proposed[] = [
+  m({
+    title: "Grossesse : pas de chirurgie programmée",
+    statement: "La chirurgie élective n'est pas recommandée pendant la grossesse ; lorsque l'urgence est relative, la période la plus favorable est le 2e trimestre.",
+    conditions: [history("pregnancy", "Grossesse"), ELECTIVE],
+    action: { type: "requirement", text: "Grossesse : reporter la chirurgie programmée après l'accouchement ; si l'urgence est relative, 2e trimestre (tératogénicité au 1er, accouchement prématuré au 3e).", blocking: false, target: "both" },
+    quote: "La chirurgie élective n'est pas recommandée pendant la grossesse. […] Lorsque l'urgence est relative, la période la plus favorable est le 2e trimestre. En effet, le 1er trimestre est associé à un risque augmenté de tératogénicité (l'organogenèse s'effectuant entre la 5e et la 12e semaine) et le 3e trimestre augmente le risque d'accouchement prématuré.",
+    question: "What do current guidelines (ACOG/ASA committee opinion on non-obstetric surgery during pregnancy, ESAIC) recommend about the timing of elective and semi-urgent non-obstetric surgery during pregnancy?",
+    chapterTitle: CH36,
+  }),
+  m({
+    title: "Grossesse dès 15 SA : séquence rapide et inclinaison gauche",
+    statement: "En cas d'AG chez une femme enceinte dès 15 SA, une induction en séquence rapide est recommandée et la table est inclinée du côté gauche.",
+    conditions: [history("pregnancy", "Grossesse")],
+    action: { type: "requirement", text: "Dès 15 SA : induction en séquence rapide si AG, inclinaison latérale gauche ; pas de N₂O au 1er trimestre ; normoventilation, traiter toute hypotension.", blocking: false, target: "anaesthesia" },
+    quote: "En cas d'AG, une induction à séquence rapide est recommandée dès la 15e SA […] Le N2O est proscrit durant le 1er trimestre de la grossesse en raison de l'inhibition de la synthèse d'ADN. Dès la 15e SA, la table d'opération doit être inclinée du côté gauche (tilt gauche).",
+    question: "From which gestational age should a pregnant patient be considered at risk of aspiration (rapid sequence induction) and receive left uterine displacement, according to current obstetric anaesthesia guidance (OAA, SOAP, ESAIC)?",
+    chapterTitle: CH36,
+    explanations: ["Le seuil de 15 SA est discuté : plusieurs recommandations retiennent 18 à 20 SA pour l'inclinaison et l'estomac plein."],
+  }),
+  m({
+    title: "Prééclampsie : plaquettes et hémostase avant l'ALR",
+    statement: "La numération plaquettaire et l'hémostase doivent être contrôlées avant toute anesthésie locorégionale chez la patiente prééclamptique.",
+    conditions: [history("preeclampsia", "Prééclampsie"), { kind: "technique", in: ["neuraxial"] }],
+    action: { type: "requirement", text: "Numération plaquettaire et hémostase récentes avant la ponction (péridurale contre-indiquée sous 75 G/l selon le manuel).", blocking: false, target: "anaesthesia" },
+    quote: "La numération plaquettaire et l'hémostase doivent être contrôlées avant toute anesthésie locorégionale. La rachianesthésie n'est pas contre-indiquée ; il n'y a notamment pas de risque supplémentaire d'hypotension.",
+    question: "What platelet count threshold and how recent a count are required before neuraxial anaesthesia in pre-eclampsia (SOAP 2021 consensus on thrombocytopenia, OAA/AAGBI), and is a coagulation screen needed?",
+    chapterTitle: CH36,
+  }),
+  m({
+    title: "Enfant avec infection des voies aériennes récente : reporter",
+    statement: "Une infection des voies aériennes supérieures augmente le risque de complications respiratoires périopératoires : repousser toute opération non urgente jusqu'à 3–4 semaines après la fin des symptômes.",
+    conditions: [history("recent_uri", "Infection respiratoire < 1 mois"), { kind: "value", value: "age", op: "<", threshold: 16 }, ELECTIVE],
+    action: { type: "requirement", text: "Reporter l'intervention non urgente de 3–4 semaines après la fin des symptômes (sauf rhinorrhée claire sans fièvre) ; sinon, surveillance respiratoire postopératoire.", blocking: false, target: "both" },
+    quote: "Une infection des voies aériennes supérieures augmente le risque de complications respiratoires périopératoires à moins que cette infection ne se limite à un simple écoulement clair, sans état fébrile majeur […] Par conséquent, il faut : repousser toute opération non urgente jusqu'à 3–4 semaines après la fin des symptômes.",
+    question: "In children with a recent or current upper respiratory tract infection, when should elective anaesthesia be postponed and for how long, according to current European paediatric anaesthesia guidance (ESPA, APRICOT data)?",
+    chapterTitle: CH37,
+    explanations: ["Les données plus récentes (APRICOT) nuancent : 2 semaines peuvent suffire selon la sévérité ; à vérifier."],
+  }),
+  m({
+    title: "Nourrisson ancien prématuré : surveillance des apnées 12 h",
+    statement: "Après une AG, les anciens prématurés de moins de 52 semaines d'âge post-conceptionnel doivent être équipés d'un saturomètre et d'un monitorage d'apnée pendant 12 h en unité surveillée.",
+    conditions: [history("ex_premature", "Ancien prématuré"), { kind: "value", value: "age", op: "<", threshold: 1 }],
+    action: { type: "requirement", text: "Pas d'ambulatoire : monitorage de l'apnée et saturomètre 12 h en unité surveillée si l'âge post-conceptionnel est < 52 semaines ; caféine 10 mg/kg en fin d'intervention.", blocking: false, target: "anaesthesia" },
+    quote: "L'incidence des apnées augmente après une anesthésie générale ou l'administration intrathécale d'opioïdes, et ceci jusqu'à 12 h après l'intervention. Durant cette période, les enfants doivent être équipés d'un saturomètre et d'un monitorage d'apnée et surveillés dans une unité de réanimation. […] la limite est fixée à 48 semaines post-conception pour les enfants nés à terme […] et 52 semaines postconception pour les prématurés.",
+    question: "Up to which postconceptional age should former preterm and term infants be admitted with apnoea monitoring after general anaesthesia, and what is the role of caffeine, according to current paediatric anaesthesia guidance?",
+    chapterTitle: CH37,
+    explanations: ["Seuils variables selon les équipes (50 à 60 semaines) ; l'âge seul ne suffit pas : le terme de naissance est à saisir dans l'antécédent."],
+  }),
+  m({
+    title: "Échothiophate : succinylcholine et mivacurium prolongés",
+    statement: "L'échothiophate (collyre) inhibe de manière irréversible les cholinestérases plasmatiques, qui ne retrouvent une activité normale que 4 à 6 semaines après l'arrêt.",
+    conditions: [drug("S01EB03")],
+    action: { type: "info", text: "Éviter succinylcholine, mivacurium et anesthésiques locaux esters jusqu'à 4–6 semaines après l'arrêt du collyre.", target: "anaesthesia" },
+    quote: "Échothiophate (inhibiteur irréversible des cholinestérases plasmatiques) […] Effets secondaires : prolongation des effets du suxaméthonium, du mivacurium et des anesthésiques locaux de type ester ; les cholinestérases plasmatiques ne retrouvent une activité normale que 4 à 6 semaines après l'arrêt du médicament.",
+    question: "How long does echothiophate eye drop therapy affect plasma cholinesterase activity, and which anaesthetic drugs should be avoided?",
+    chapterTitle: CH38,
+  }),
+  m({
+    title: "Polyarthrite rhumatoïde : rachis cervical à explorer",
+    statement: "La radiographie du rachis cervical en flexion et en extension permet de mesurer la distance entre l'apophyse odontoïde et l'arc antérieur de l'atlas (norme : 3 mm).",
+    conditions: [history("rheumatoid", "Polyarthrite rhumatoïde")],
+    action: { type: "exam", exam: "Radiographie du rachis cervical en flexion-extension (subluxation atlanto-axoïdienne)", target: "anaesthesia" },
+    quote: "La subluxation atlanto-axoïdienne est la conséquence d'une érosion des ligaments reliant l'atlas à l'axis. La radiographie du rachis cervical en flexion et en extension permet de mesurer la distance entre l'apophyse odontoïde et l'arc antérieur de l'atlas (norme : 3 mm).",
+    question: "Which patients with rheumatoid arthritis need preoperative cervical spine imaging (flexion-extension radiographs) before airway management, according to current guidance?",
+    chapterTitle: CH40,
+    explanations: ["Imagerie à réserver aux patients symptomatiques ou à maladie ancienne et sévère selon plusieurs recommandations : à vérifier."],
+  }),
+];
+
+export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS, ...SPECIALITIES, ...LABS, ...OBSTETRICS_PAEDIATRICS];

@@ -3,6 +3,7 @@
 // Fasting times: ESAIC guidelines (adults 2011: solids 6 h, clear fluids
 // 2 h; children 2022: clear fluids 1 h, breast milk 3 h, formula 4 h).
 
+import { fold } from "./catalog";
 import type { ConsultationState } from "./dossier";
 import type { EvaluationResult } from "./rules/engine";
 
@@ -80,6 +81,8 @@ export function patientSheet(c: ConsultationState, i: Instructions, conditions: 
   out.push({ title: "À apporter", lines: bring });
   const advice: string[] = [];
   if (c.substances.tobacco === "current") advice.push("Arrêter de fumer dès maintenant diminue les complications : parlez-en à votre médecin (aide au sevrage).");
+  if (conditions.intraocular_gas?.present || /retine|vitrectomie/.test(fold(c.surgery.name)))
+    advice.push("Si du gaz est injecté dans l'œil : ni avion ni montagne (plus de 1 000 m d'altitude) pendant 3 à 6 semaines, et signalez-le à tout anesthésiste (pas de protoxyde d'azote).");
   advice.push("Retirez bijoux, piercings et vernis à ongles avant l'intervention.");
   advice.push("En cas de fièvre, de rhume important ou de changement de traitement avant l'intervention, prévenez le service.");
   out.push({ title: "Conseils", lines: advice });
