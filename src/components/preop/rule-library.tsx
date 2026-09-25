@@ -10,6 +10,7 @@ import { RuleEditor, type RuleDraft } from "@/components/preop/rule-editor";
 import { SourceBadge } from "@/components/preop/ui";
 import { describeRule } from "@/lib/preop/rules/describe";
 import type { Rule, RuleStatus } from "@/lib/preop/rules/types";
+import { PROPOSED_RULES } from "@/lib/preop/rules/proposed";
 
 function RuleEditModal({ rule, onSave, onClose }: { rule: Rule; onSave: (r: RuleDraft) => Promise<Rule>; onClose: () => void }) {
   const { toast } = useToast();
@@ -87,8 +88,50 @@ export function RuleLibrary({
     }
   }
 
+  const proposals = PROPOSED_RULES.filter((p) => !rules.some((r) => r.id === p.id));
+  const [importing, setImporting] = useState(false);
+
   return (
     <div className="space-y-4">
+      {proposals.length > 0 && (
+        <div className="space-y-2 rounded-[var(--radius-md)] border border-accent/40 bg-accent-tint/50 p-3">
+          <p className="text-sm font-medium text-foreground">{proposals.length} règle(s) proposée(s) à partir des principales recommandations</p>
+          <p className="text-xs text-foreground-muted">
+            Antithrombotiques et ponction neuraxiale (ESAIC/ESRA 2022), SGLT2, ECG préopératoire (ESC 2022), anémie, allergie à la pénicilline, HbA1c. Elles arrivent en <strong>brouillon</strong> : aucune ne s&apos;applique avant que vous ayez ouvert la source,
+            recopié la phrase exacte et activé la règle. Chacune contient la question à poser à Consensus pour la vérifier.
+          </p>
+          <details className="text-xs text-foreground-muted">
+            <summary className="cursor-pointer text-primary">Voir la liste</summary>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {proposals.map((p) => (
+                <li key={p.id}>{p.title}</li>
+              ))}
+            </ul>
+          </details>
+          <Button
+            size="sm"
+            disabled={importing}
+            onClick={async () => {
+              setImporting(true);
+              let done = 0;
+              try {
+                for (const p of proposals) {
+                  await onSave(p);
+                  done++;
+                }
+                toast(`${done} règle(s) ajoutée(s) en brouillon : ouvrez chacune pour la vérifier.`, { variant: "success" });
+                setStatus("draft");
+              } catch (err) {
+                toast(`${done} ajoutée(s) ; ${err instanceof Error ? err.message : "échec"}`, { variant: "error" });
+              } finally {
+                setImporting(false);
+              }
+            }}
+          >
+            <Plus className="h-3.5 w-3.5" /> Ajouter en brouillon
+          </Button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <ChipGroup
           size="sm"

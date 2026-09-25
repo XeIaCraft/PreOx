@@ -25,9 +25,14 @@ type View = "consultation" | "dossiers" | "dossier" | "protocoles" | "regles" | 
 const TABS: { view: View; label: string; short: string; icon: typeof Stethoscope }[] = [
   { view: "consultation", label: "Consultation", short: "Consult.", icon: Stethoscope },
   { view: "dossiers", label: "Dossiers", short: "Dossiers", icon: FolderOpen },
-  { view: "protocoles", label: "Protocoles", short: "Protocoles", icon: NotebookTabs },
-  { view: "regles", label: "Règles", short: "Règles", icon: BookMarked },
   { view: "parametres", label: "Paramètres", short: "Réglages", icon: Settings2 },
+];
+
+/** Paramètres holds the lists, the protocols and the rules. */
+const SETTINGS_SECTIONS: { view: View; label: string; icon: typeof Stethoscope }[] = [
+  { view: "parametres", label: "Listes et seuils", icon: Settings2 },
+  { view: "protocoles", label: "Protocoles", icon: NotebookTabs },
+  { view: "regles", label: "Règles", icon: BookMarked },
 ];
 
 const VIEWS: View[] = ["consultation", "dossiers", "dossier", "protocoles", "regles", "nouvelle", "parametres"];
@@ -78,7 +83,8 @@ function PreopScreens() {
   };
 
   const dossier = view === "dossier" ? dossierStore.dossiers.find((d) => d.id === dossierId) : undefined;
-  const activeTab: View = view === "dossier" ? "dossiers" : view === "nouvelle" ? "regles" : view;
+  const activeTab: View = view === "dossier" ? "dossiers" : view === "nouvelle" || view === "regles" || view === "protocoles" ? "parametres" : view;
+  const settingsSection: View = view === "nouvelle" ? "regles" : view;
 
   return (
     <div className="min-w-0 space-y-5 [&_.grid>*]:min-w-0">
@@ -90,7 +96,7 @@ function PreopScreens() {
             {error ? <span className="text-danger">{error}</span> : `${rules.filter((r) => r.status === "active").length} règle(s) · ${protocolLib.protocols.length} protocole(s)`}
           </span>
         </div>
-        <nav className="grid grid-cols-5 gap-1 sm:flex" aria-label="Sections">
+        <nav className="grid grid-cols-3 gap-1 sm:flex" aria-label="Sections">
           {TABS.map((t) => (
             <button
               key={t.view}
@@ -177,6 +183,27 @@ function PreopScreens() {
           <p className="text-sm text-foreground-muted">Ce dossier n&apos;est pas sur cet appareil.</p>
         ))}
 
+      {activeTab === "parametres" && (
+        <nav className="flex gap-1 overflow-x-auto border-b border-border pb-2" aria-label="Paramètres">
+          {SETTINGS_SECTIONS.map((sct) => (
+            <button
+              key={sct.view}
+              type="button"
+              onClick={() => go(sct.view)}
+              aria-current={settingsSection === sct.view ? "page" : undefined}
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium",
+                settingsSection === sct.view ? "bg-primary-tint text-primary-strong" : "text-foreground-muted hover:bg-surface-muted"
+              )}
+            >
+              <sct.icon className="h-3.5 w-3.5" /> {sct.label}
+              {sct.view === "regles" && <span className="tabular-nums opacity-70">({rules.filter((r) => r.status === "active").length})</span>}
+              {sct.view === "protocoles" && <span className="tabular-nums opacity-70">({protocolLib.protocols.length})</span>}
+            </button>
+          ))}
+        </nav>
+      )}
+
       {view === "protocoles" && <ProtocolLibrary protocols={protocolLib.protocols} onSave={protocolLib.save} onRemove={protocolLib.remove} />}
 
       {view === "regles" && (
@@ -192,7 +219,7 @@ function PreopScreens() {
         />
       )}
       {view === "nouvelle" && <RuleWizard key={wizardKey} initial={pendingQuestion} onSave={save} onDone={() => go("regles")} />}
-      {view === "parametres" && <SettingsView />}
+      {view === "parametres" && <SettingsView protocols={protocolLib.protocols} />}
     </div>
   );
 }

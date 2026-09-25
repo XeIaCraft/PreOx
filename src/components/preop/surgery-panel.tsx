@@ -30,6 +30,9 @@ export function surgeryFromItem(s: Surgery, c: SurgeryItem): Surgery {
     incision: c.incision,
     position: c.position ?? s.position,
     durationHours: c.durationHours ?? s.durationHours,
+    catalogId: c.id,
+    setting: c.setting ?? s.setting,
+    tourniquet: c.tourniquet ?? s.tourniquet,
   };
 }
 

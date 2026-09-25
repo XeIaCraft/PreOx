@@ -221,7 +221,7 @@ export function PreparationView({
 
   // Opening an unprepared dossier: the protocol that fits the intervention is applied by itself (once).
   const autoApplied = useRef(new Set<string>());
-  const match = planEmpty && !d.protocolId ? matchProtocol(protocols, d.consultation.surgery, d.consultation.hospital) : null;
+  const match = planEmpty && !d.protocolId ? matchProtocol(protocols, d.consultation.surgery, d.consultation.hospital, catalogs.surgeries) : null;
   useEffect(() => {
     if (!match || autoApplied.current.has(d.id)) return;
     autoApplied.current.add(d.id);

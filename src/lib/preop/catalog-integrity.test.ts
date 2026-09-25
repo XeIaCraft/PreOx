@@ -36,3 +36,9 @@ describe("default catalogues", () => {
     expect(shared).toEqual([]);
   });
 });
+
+describe("interventions", () => {
+  it("every intervention has a usual technique", () => {
+    expect(SURGERY_CATALOG.filter((s) => !s.techniques?.length).map((s) => s.id)).toEqual([]);
+  });
+});

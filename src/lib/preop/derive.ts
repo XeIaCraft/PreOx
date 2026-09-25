@@ -6,7 +6,8 @@
 // explicit answer is never overridden.
 
 import { treatmentMatches } from "./medications";
-import { ckdEpi2021 } from "./scores";
+import { bmi, ckdEpi2021, cockcroftGault } from "./scores";
+import { valueFindings, type PatientValues } from "./value-checks";
 import type { ConditionCode, ConditionEntry, Conditions } from "./history";
 import type { ConsultationState } from "./dossier";
 import type { Catalogs } from "./catalog";
@@ -30,7 +31,16 @@ const BY_INDICATION: Partial<Record<string, ConditionCode>> = {
   mechanical_valve: "valve",
 };
 
-export function deduceConditions(c: ConsultationState, catalogs: Pick<Catalogs, "medications" | "drugClasses"> = DEFAULT_CATALOGS): Deduction[] {
+/** BMI, eGFR and clearance from the patient data (what thresholds can watch). */
+export function patientDerived(p: ConsultationState["patient"]): PatientValues {
+  return {
+    bmi: p.weightKg && p.heightCm ? bmi(p.weightKg, p.heightCm) : undefined,
+    egfr: p.age !== undefined && p.sex && p.creatinineMgDl ? ckdEpi2021({ age: p.age, sex: p.sex, creatinineMgDl: p.creatinineMgDl }) : undefined,
+    crcl: p.age !== undefined && p.weightKg && p.sex && p.creatinineMgDl ? cockcroftGault({ age: p.age, weightKg: p.weightKg, sex: p.sex, creatinineMgDl: p.creatinineMgDl }) : undefined,
+  };
+}
+
+export function deduceConditions(c: ConsultationState, catalogs: Pick<Catalogs, "medications" | "drugClasses"> & Partial<Pick<Catalogs, "values">> = DEFAULT_CATALOGS): Deduction[] {
   const out: Deduction[] = [];
   const add = (code: ConditionCode, because: string, entry: Partial<ConditionEntry> = {}) => {
     if (out.some((d) => d.code === code)) return;
@@ -55,24 +65,38 @@ export function deduceConditions(c: ConsultationState, catalogs: Pick<Catalogs, 
     if (i >= 0) out.splice(i, 1);
   }
 
+  // The clinical exam.
+  const exam = c.patient.exam;
+  if (exam?.heart === "murmur" && !c.conditions.valve?.present && !c.conditions.aortic_stenosis?.present) add("murmur", "examen : souffle");
+  if (exam?.heart === "irregular") add("arrhythmia", "examen : rythme irrégulier (à confirmer à l'ECG)");
+  if (exam?.veins === "difficult") add("difficult_iv", "examen : abord veineux difficile");
+  if (exam?.spine === "difficult") add("scoliosis", "examen : repères rachidiens difficiles");
+  if (exam?.neuroDeficit) add("neuropathy", "examen : déficit neurologique préexistant");
+
+  // Values past a threshold of Paramètres › Valeurs à signaler (Hb below the WHO
+  // anaemia threshold, eGFR < 60, BP ≥ 180/110…): suggested, to confirm.
   const p = c.patient;
-  if (p.sbp !== undefined || p.dbp !== undefined) {
-    if ((p.sbp ?? 0) >= 180 || (p.dbp ?? 0) >= 110) add("hypertension", bpLabel(p.sbp, p.dbp), { poorlyControlled: true });
-  }
-  if (p.hb !== undefined && p.sex) {
-    // WHO anaemia thresholds: < 13 g/dL (men), < 12 g/dL (non-pregnant women).
-    if (p.hb < (p.sex === "M" ? 13 : 12)) add("anemia", `Hb ${String(p.hb).replace(".", ",")} g/dL`);
-  }
-  if (p.age !== undefined && p.sex && p.creatinineMgDl) {
-    const egfr = ckdEpi2021({ age: p.age, sex: p.sex, creatinineMgDl: p.creatinineMgDl });
-    // One value doesn't make chronic kidney disease: suggested, to confirm.
-    if (egfr < 60) add("ckd", `DFGe ${Math.round(egfr)} mL/min/1,73 m² (à confirmer : chronique ?)`);
+  const derived = patientDerived(p);
+  const insulin = c.conditions.diabetes_insulin?.present || out.some((d) => d.code === "diabetes_insulin");
+  for (const f of valueFindings(p, derived, catalogs.values ?? DEFAULT_CATALOGS.values)) {
+    if (!f.check.implies) continue;
+    // A diabetes value applies to the diabetes the patient has.
+    const code = f.check.implies === "diabetes_oral" && insulin ? "diabetes_insulin" : f.check.implies;
+    const existing = out.find((d) => d.code === code);
+    if (existing) {
+      if (f.check.qualifier && !existing.entry[f.check.qualifier]) {
+        existing.entry = { ...existing.entry, [f.check.qualifier]: true };
+        existing.because = `${existing.because}, ${f.measured}`;
+      }
+      continue;
+    }
+    add(code, `${f.measured}${f.check.qualifier ? "" : ""}`, f.check.qualifier ? { [f.check.qualifier]: true } : {});
   }
   return out;
 }
 
 /** The antecedents as used by the scores: explicit answers, completed by the deductions. */
-export function effectiveConditions(c: ConsultationState, catalogs: Pick<Catalogs, "medications" | "drugClasses" | "conditions"> = DEFAULT_CATALOGS): { conditions: Conditions; deduced: Map<ConditionCode, string> } {
+export function effectiveConditions(c: ConsultationState, catalogs: Pick<Catalogs, "medications" | "drugClasses" | "conditions"> & Partial<Pick<Catalogs, "values">> = DEFAULT_CATALOGS): { conditions: Conditions; deduced: Map<ConditionCode, string> } {
   const conditions: Conditions = { ...c.conditions };
   const deduced = new Map<ConditionCode, string>();
   for (const d of deduceConditions(c, catalogs)) {
@@ -80,10 +104,22 @@ export function effectiveConditions(c: ConsultationState, catalogs: Pick<Catalog
     if (explicit === undefined) {
       conditions[d.code] = d.entry;
       deduced.set(d.code, d.because);
-    } else if (explicit.present && d.entry.poorlyControlled && explicit.poorlyControlled === undefined) {
-      // "HTA: yes" answered, and the measured BP says it isn't controlled.
-      conditions[d.code] = { ...explicit, poorlyControlled: true };
-      deduced.set(d.code, d.because);
+    } else if (explicit.present) {
+      // "HTA: yes" answered, and the measured BP says it isn't controlled (same for any qualifier).
+      const added = (["poorlyControlled", "severe", "recent"] as const).filter((q) => d.entry[q] && explicit[q] === undefined);
+      if (added.length) {
+        conditions[d.code] = { ...explicit, ...Object.fromEntries(added.map((q) => [q, true])) };
+        deduced.set(d.code, d.because);
+      }
+    }
+  }
+  // A structured detail answered (« GOLD 3 », « < 3 mois ») counts as its qualifier for the scores and rules.
+  for (const item of catalogs.conditions) {
+    const e = conditions[item.id];
+    if (!e?.present || !e.details || !item.details) continue;
+    for (const d of item.details) {
+      const opt = d.kind === "choice" ? d.options?.find((x) => x.code === e.details![d.id]) : undefined;
+      if (opt?.qualifier && e[opt.qualifier] === undefined) conditions[item.id] = { ...conditions[item.id]!, [opt.qualifier]: true };
     }
   }
   // Systems reviewed with nothing else (« RAS »): what isn't listed is absent.

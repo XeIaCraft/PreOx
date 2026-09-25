@@ -4,10 +4,12 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { ChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { Input } from "@/components/ui/input";
-import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, Tag, TextArea, YesNoChip } from "@/components/preop/ui";
+import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, Tag, TextArea, YesNoChip, Disclosure } from "@/components/preop/ui";
 import { PEN_FAST_ITEMS, PEN_FAST_REFERENCE, penFast, type PenFastItem } from "@/lib/preop/scores";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { useUsage } from "@/components/preop/use-usage";
+import { conditionDetailsText } from "@/lib/preop/attention";
+import type { ConditionDetail } from "@/lib/preop/catalog";
 import { DRUGS, QUALIFIER_LABELS, type Conditions, type DrugCode, type Qualifier, type Substances, type TobaccoStatus } from "@/lib/preop/history";
 import { SYSTEM_LABELS, SYSTEM_ORDER, searchItems, type ConditionItem, type SystemCode } from "@/lib/preop/catalog";
 import type { AllergyEntry, ConsultationPatient } from "@/lib/preop/dossier";
@@ -21,6 +23,48 @@ import { cn } from "@/lib/utils";
  * else (its unlisted antecedents then count as « no » for the scores).
  * Tapping a system opens its most useful items as one-tap chips.
  */
+/** One structured detail of an antecedent: chips for a choice, a field otherwise. */
+function DetailField({ detail: d, value, onChange }: { detail: ConditionDetail; value: string | number | undefined; onChange: (v: string | number | undefined) => void }) {
+  return (
+    <div className="space-y-0.5">
+      <p className="text-[11px] text-foreground-subtle">{d.label}</p>
+      {d.kind === "choice" ? (
+        <div className="flex flex-wrap gap-1">
+          {(d.options ?? []).map((o) => (
+            <ToggleChip key={o.code} pressed={value === o.code} onChange={(on) => onChange(on ? o.code : undefined)} className="min-h-7 px-2 text-[11px]">
+              {o.label}
+            </ToggleChip>
+          ))}
+        </div>
+      ) : d.kind === "number" ? (
+        <span className="flex items-center gap-1">
+          <input
+            type="text"
+            inputMode="decimal"
+            defaultValue={value === undefined ? "" : String(value).replace(".", ",")}
+            onChange={(e) => {
+              const n = Number(e.target.value.trim().replace(",", "."));
+              onChange(e.target.value.trim() && Number.isFinite(n) ? n : undefined);
+            }}
+            className="h-8 w-24 rounded-[var(--radius-sm)] border border-border bg-surface px-2 text-sm"
+            aria-label={d.label}
+          />
+          {d.unit && <span className="text-[11px] text-foreground-subtle">{d.unit}</span>}
+        </span>
+      ) : (
+        <input
+          type={d.kind === "date" ? "date" : "text"}
+          defaultValue={value === undefined ? "" : String(value)}
+          onChange={(e) => onChange(e.target.value || undefined)}
+          className="h-8 w-full max-w-xs rounded-[var(--radius-sm)] border border-border bg-surface px-2 text-sm"
+          aria-label={d.label}
+        />
+      )}
+      {d.hint && <p className="text-[10px] text-foreground-subtle">{d.hint}</p>}
+    </div>
+  );
+}
+
 export function ConditionsEditor({
   conditions,
   onChange,
@@ -130,19 +174,38 @@ export function ConditionsEditor({
                           .filter((q) => effective[i.id]?.[q])
                           .map((q) => ` · ${i.qualifiers?.[q] ?? QUALIFIER_LABELS[q]}`)
                           .join("")}
+                        {conditionDetailsText(i, effective[i.id] ?? {}).map((t) => ` · ${t.split(" : ").slice(1).join(" : ").split(" (")[0].split(" :")[0]}`).join("")}
                         {deduced.has(i.id) ? ` · auto (${deduced.get(i.id)})` : ""}
                       </Tag>
                     ))}
                   </div>
                   {present
-                    .filter((i) => i.qualifiers && Object.keys(i.qualifiers).length)
+                    .filter((i) => (i.qualifiers && Object.keys(i.qualifiers).length) || i.details?.length)
                     .map((i) => (
-                      <div key={i.id} className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] text-foreground-subtle">{i.label} :</span>
-                        {(Object.entries(i.qualifiers!) as [Qualifier, string][]).map(([q, label]) => (
-                          <ToggleChip key={q} pressed={!!effective[i.id]?.[q]} onChange={(v) => setEntry(i.id, { [q]: v })} className="min-h-7 px-2 text-[11px]">
-                            {label}
-                          </ToggleChip>
+                      <div key={i.id} className="space-y-1.5 rounded-[var(--radius-sm)] bg-surface-muted/40 px-2 py-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] font-medium text-foreground-muted">{i.label} :</span>
+                          {(Object.entries(i.qualifiers ?? {}) as [Qualifier, string][])
+                            // A qualifier also given by a detail (« GOLD 3 » → sévère) is shown there.
+                            .filter(([q]) => !(i.details ?? []).some((d) => d.options?.some((o) => o.qualifier === q && effective[i.id]?.details?.[d.id] === o.code)))
+                            .map(([q, label]) => (
+                              <ToggleChip key={q} pressed={!!effective[i.id]?.[q]} onChange={(v) => setEntry(i.id, { [q]: v })} className="min-h-7 px-2 text-[11px]">
+                                {label}
+                              </ToggleChip>
+                            ))}
+                        </div>
+                        {(i.details ?? []).map((d) => (
+                          <DetailField
+                            key={d.id}
+                            detail={d}
+                            value={effective[i.id]?.details?.[d.id]}
+                            onChange={(v) => {
+                              const details = { ...(effective[i.id]?.details ?? {}) };
+                              if (v === undefined || v === "") delete details[d.id];
+                              else details[d.id] = v;
+                              setEntry(i.id, { details: Object.keys(details).length ? details : undefined });
+                            }}
+                          />
                         ))}
                       </div>
                     ))}
@@ -206,6 +269,16 @@ export function ConditionsEditor({
 }
 
 /** Allergies: recognised allergens (Paramètres › Allergies) or free entries, « aucune connue » in one tap. */
+const ROMAN = ["I", "II", "III", "IV"];
+
+/** Ring and Messmer grades of an immediate hypersensitivity reaction (used for perioperative anaphylaxis). */
+const RING_GRADES: { grade: 1 | 2 | 3 | 4; short: string; detail: string }[] = [
+  { grade: 1, short: "cutané", detail: "Grade I : signes cutanéo-muqueux généralisés (érythème, urticaire, avec ou sans angio-œdème)." },
+  { grade: 2, short: "modéré", detail: "Grade II : atteinte multiviscérale modérée (hypotension, tachycardie, toux, bronchospasme léger, signes digestifs)." },
+  { grade: 3, short: "grave", detail: "Grade III : atteinte grave menaçant la vie (collapsus, bronchospasme sévère, trouble du rythme) — anaphylaxie." },
+  { grade: 4, short: "arrêt", detail: "Grade IV : arrêt cardiaque et/ou respiratoire." },
+];
+
 export function AllergiesEditor({ patient: p, onChange }: { patient: ConsultationPatient; onChange: (p: ConsultationPatient) => void }) {
   const { catalogs } = useCatalogs();
   const list = p.allergyList ?? [];
@@ -247,7 +320,7 @@ export function AllergiesEditor({ patient: p, onChange }: { patient: Consultatio
           {list.map((a, i) => (
             <Tag key={`${a.label}-${i}`} tone="danger" onRemove={() => onChange({ ...p, allergyList: list.filter((_, j) => j !== i) })}>
               {a.label}
-              {a.reaction ? ` (${a.reaction})` : ""}
+              {a.ringGrade ? ` · grade ${ROMAN[a.ringGrade - 1]}` : ""}
               {!a.allergenId ? " · non reconnue" : ""}
             </Tag>
           ))}
@@ -255,31 +328,102 @@ export function AllergiesEditor({ patient: p, onChange }: { patient: Consultatio
       )}
       {list.map((a, i) => {
         const allergen = a.allergenId ? catalogs.allergens.find((x) => x.id === a.allergenId) : undefined;
-        if (allergen?.assessment !== "pen-fast") return null;
+        const update = (patch: Partial<AllergyEntry>) => onChange({ ...p, allergyList: list.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
         const answers = a.penFast ?? {};
         const r = penFast(answers);
-        const setAnswer = (k: PenFastItem, v: boolean) => onChange({ ...p, allergyList: list.map((x, j) => (j === i ? { ...x, penFast: { ...answers, [k]: v } } : x)) });
+        const summary = [a.timing === "immediate" ? "immédiate" : a.timing === "delayed" ? "retardée" : "", a.ringGrade ? `grade ${ROMAN[a.ringGrade - 1]}` : "", a.year ? String(a.year) : "", a.workup === "confirmed" ? "bilan positif" : a.workup === "negative" ? "bilan négatif" : ""].filter(Boolean).join(" · ");
         return (
-          <div key={`pf-${i}`} className="space-y-1.5 rounded-[var(--radius-md)] border border-border p-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-medium text-foreground">PEN-FAST — {a.label}</span>
-              {r.label ? (
-                <RiskPill level={r.level}>
-                  {r.value}/5 · {r.label}
-                </RiskPill>
-              ) : (
-                <span className="text-[11px] text-foreground-subtle">l&apos;allergie déclarée est-elle probable ?</span>
+          <Disclosure
+            key={`detail-${i}`}
+            className="rounded-[var(--radius-md)] border border-border"
+            initialOpen={!summary && !a.reaction}
+            summaryClassName="cursor-pointer px-2.5 py-1.5 text-xs"
+            summary={
+              <>
+                <span className="font-medium text-foreground">{a.label}</span>
+                <span className="text-foreground-subtle"> — {summary || "préciser la réaction"}</span>
+              </>
+            }
+          >
+            <div className="space-y-2 px-2.5 pb-2.5">
+              <Input className="h-9" defaultValue={a.reaction} onChange={(e) => update({ reaction: e.target.value || undefined })} placeholder="Réaction (ex. urticaire, œdème de Quincke, choc)" aria-label={`Réaction : ${a.label}`} />
+              <div className="flex flex-wrap items-center gap-2">
+                <ChipGroup
+                  size="sm"
+                  options={[
+                    { code: "immediate" as const, label: "Immédiate (< 1 h)", title: "Dans l'heure (jusqu'à 6 h) : mécanisme IgE, risque d'anaphylaxie" },
+                    { code: "delayed" as const, label: "Retardée", title: "Après des heures ou des jours : éruption, toxidermie" },
+                  ]}
+                  value={a.timing ?? null}
+                  onChange={(v) => update({ timing: v ?? undefined })}
+                  allowClear
+                />
+                <label className="flex items-center gap-1 text-[11px] text-foreground-subtle">
+                  Année
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    defaultValue={a.year ?? ""}
+                    onChange={(e) => {
+                      const y = Number(e.target.value);
+                      const year = /^\d{4}$/.test(e.target.value) ? y : undefined;
+                      // The year answers PEN-FAST's « within 5 years » if it isn't answered yet.
+                      const pf = allergen?.assessment === "pen-fast" && year && answers.withinFiveYears === undefined ? { penFast: { ...answers, withinFiveYears: new Date().getFullYear() - year <= 5 } } : {};
+                      update({ year, ...pf });
+                    }}
+                    className="h-8 w-16 rounded-[var(--radius-sm)] border border-border bg-surface px-2 text-sm text-foreground"
+                  />
+                </label>
+              </div>
+              {a.timing !== "delayed" && (
+                <div className="space-y-1">
+                  <p className="text-[11px] text-foreground-subtle">Gravité (Ring et Messmer)</p>
+                  <div className="flex flex-wrap gap-1">
+                    {RING_GRADES.map((g) => (
+                      <ToggleChip key={g.grade} pressed={a.ringGrade === g.grade} onChange={(on) => update({ ringGrade: on ? g.grade : undefined })} className="min-h-7 px-2 text-[11px]">
+                        {ROMAN[g.grade - 1]} · {g.short}
+                      </ToggleChip>
+                    ))}
+                  </div>
+                  {a.ringGrade && <p className="text-[10px] text-foreground-subtle">{RING_GRADES[a.ringGrade - 1].detail}</p>}
+                </div>
+              )}
+              <div className="space-y-1">
+                <p className="text-[11px] text-foreground-subtle">Bilan allergologique</p>
+                <ChipGroup
+                  size="sm"
+                  options={[
+                    { code: "none" as const, label: "Pas fait" },
+                    { code: "negative" as const, label: "Fait : négatif / toléré" },
+                    { code: "confirmed" as const, label: "Fait : confirmé" },
+                  ]}
+                  value={a.workup ?? null}
+                  onChange={(v) => update({ workup: v ?? undefined })}
+                  allowClear
+                />
+              </div>
+              {allergen?.assessment === "pen-fast" && (
+                <div className="space-y-1.5 rounded-[var(--radius-md)] bg-surface-muted/50 p-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-foreground">PEN-FAST</span>
+                    {r.label ? (
+                      <RiskPill level={r.level}>
+                        {r.value}/5 · {r.label}
+                      </RiskPill>
+                    ) : (
+                      <span className="text-[11px] text-foreground-subtle">l&apos;allergie déclarée est-elle probable ?</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(Object.keys(PEN_FAST_ITEMS) as PenFastItem[]).map((k) => (
+                      <YesNoChip key={k} label={PEN_FAST_ITEMS[k]} value={answers[k]} onChange={(v) => update({ penFast: { ...answers, [k]: v } })} />
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-foreground-subtle">Moins de 3 points : allergie vraie peu probable (moins de 1 % de tests positifs dans l&apos;étude de validation). {PEN_FAST_REFERENCE.label}.</p>
+                </div>
               )}
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              {(Object.keys(PEN_FAST_ITEMS) as PenFastItem[]).map((k) => (
-                <YesNoChip key={k} label={PEN_FAST_ITEMS[k]} value={answers[k]} onChange={(v) => setAnswer(k, v)} />
-              ))}
-            </div>
-            <p className="text-[11px] text-foreground-subtle">
-              Moins de 3 points : allergie vraie peu probable. {PEN_FAST_REFERENCE.label}.
-            </p>
-          </div>
+          </Disclosure>
         );
       })}
       {list.length > 0 && <Input className="h-9" defaultValue={p.allergies} onChange={(e) => onChange({ ...p, allergies: e.target.value })} placeholder="Réactions, précisions (ex. urticaire en 2019)" />}

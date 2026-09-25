@@ -40,6 +40,50 @@ export interface ConsultationPatient {
   history?: string;
   /** Previous operations and anaesthesias, free text. */
   surgicalHistory?: string;
+  /** Basic clinical examination. */
+  exam?: ClinicalExam;
+}
+
+/** The basic examination of the consultation — each finding feeds the deductions and points of attention. */
+export interface ClinicalExam {
+  heart?: "normal" | "murmur" | "irregular";
+  lungs?: "normal" | "wheeze" | "crackles" | "diminished";
+  /** Lower-limb oedema. */
+  edema?: boolean;
+  /** Jugular venous distension. */
+  jvd?: boolean;
+  veins?: "good" | "difficult";
+  /** Spine for a neuraxial puncture. */
+  spine?: "normal" | "difficult";
+  /** Pre-existing neurological deficit (documented before a regional block). */
+  neuroDeficit?: boolean;
+  /** Skin infection or lesion at a planned puncture site. */
+  punctureSite?: boolean;
+  notes?: string;
+}
+
+export const EXAM_LABELS = {
+  heart: { normal: "B1B2 réguliers, pas de souffle", murmur: "Souffle", irregular: "Rythme irrégulier" },
+  lungs: { normal: "Murmure vésiculaire normal", wheeze: "Sibilants", crackles: "Crépitants", diminished: "Murmure diminué" },
+  veins: { good: "Bon capital veineux", difficult: "Abord veineux difficile" },
+  spine: { normal: "Repères rachidiens palpables", difficult: "Repères difficiles / déformation" },
+} as const;
+
+/** « Souffle, crépitants, OMI » — what the exam found (normal findings left out). */
+export function examSummary(e: ClinicalExam | undefined): string {
+  if (!e) return "";
+  const parts = [
+    e.heart ? EXAM_LABELS.heart[e.heart] : "",
+    e.lungs ? EXAM_LABELS.lungs[e.lungs] : "",
+    e.edema ? "œdèmes des membres inférieurs" : "",
+    e.jvd ? "turgescence jugulaire" : "",
+    e.veins ? EXAM_LABELS.veins[e.veins] : "",
+    e.spine ? EXAM_LABELS.spine[e.spine] : "",
+    e.neuroDeficit ? "déficit neurologique préexistant" : "",
+    e.punctureSite ? "lésion ou infection au site de ponction" : "",
+    e.notes?.trim() ?? "",
+  ].filter(Boolean);
+  return parts.join(", ");
 }
 
 export interface AllergyEntry {
@@ -49,6 +93,14 @@ export interface AllergyEntry {
   reaction?: string;
   /** PEN-FAST answers, for a reported penicillin allergy. */
   penFast?: Partial<Record<PenFastItem, boolean>>;
+  /** Immediate (< 1–6 h, IgE-type) or delayed (hours to days, T-cell) reaction. */
+  timing?: "immediate" | "delayed";
+  /** Severity of an immediate reaction, Ring and Messmer grade I–IV. */
+  ringGrade?: 1 | 2 | 3 | 4;
+  /** Year of the reaction. */
+  year?: number;
+  /** Allergy workup: not done, done and negative (tolerated), done and confirmed. */
+  workup?: "none" | "negative" | "confirmed";
 }
 
 export type ExamStatus = "todo" | "requested" | "available" | "not_needed";
@@ -164,6 +216,10 @@ export interface Surgery {
   emergency?: boolean;
   durationHours?: number;
   position: string;
+  /** Catalogue entry it was picked from (Paramètres › Interventions): its protocol and usual technique. */
+  catalogId?: string;
+  setting?: "ambulatory" | "inpatient" | "icu";
+  tourniquet?: boolean;
 }
 
 export const KCE_SEVERITIES = [
@@ -388,7 +444,8 @@ export function allergySummary(p: ConsultationPatient): string {
   const list = (p.allergyList ?? []).map((a) => {
     const pf = a.penFast ? penFast(a.penFast) : null;
     const score = pf && pf.label ? ` — PEN-FAST ${pf.value}/5 : ${pf.label.charAt(0).toLowerCase()}${pf.label.slice(1)}` : "";
-    return `${a.label}${a.reaction ? ` (${a.reaction})` : ""}${score}`;
+    const facts = [a.reaction, a.timing === "immediate" ? "immédiate" : a.timing === "delayed" ? "retardée" : "", a.ringGrade ? `grade ${["I", "II", "III", "IV"][a.ringGrade - 1]}` : "", a.year ? String(a.year) : "", a.workup === "confirmed" ? "bilan positif" : a.workup === "negative" ? "bilan négatif" : a.workup === "none" ? "pas de bilan" : ""].filter(Boolean);
+    return `${a.label}${facts.length ? ` (${facts.join(", ")})` : ""}${score}`;
   });
   const text = p.allergies?.trim();
   const all = [...list, ...(text ? [text] : [])];

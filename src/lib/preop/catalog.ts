@@ -9,6 +9,7 @@ import type { AttentionLevel } from "./attention";
 import type { Qualifier } from "./history";
 import type { SurgeryGrade } from "./surgeries";
 import type { Medication } from "./medications";
+import type { Technique } from "./rules/types";
 
 export interface AttentionSpec {
   level: AttentionLevel;
@@ -33,7 +34,38 @@ export const SYSTEM_LABELS: Record<SystemCode, string> = {
 
 export const SYSTEM_ORDER: SystemCode[] = ["cardio", "resp", "endo", "renal", "digest", "neuro", "psy", "hemato", "other", "anaes"];
 
-export interface ConditionItem {
+/** When and against what the item was last checked in the literature. */
+export interface Verifiable {
+  /** ISO date of the last check against the literature. */
+  verifiedAt?: string;
+  /** Guideline or reference it rests on. */
+  source?: string;
+}
+
+/** One answer of a structured detail (stage, class…) and what it implies. */
+export interface DetailOption {
+  code: string;
+  label: string;
+  /** ASA class this answer suggests. */
+  asa?: number;
+  /** Replaces the antecedent's point of attention when chosen. */
+  attention?: AttentionSpec;
+  /** Also counts as this qualifier (scores and rules use qualifiers). */
+  qualifier?: Qualifier;
+}
+
+/** A structured detail asked once the antecedent is present (stage, score, date of the event…). */
+export interface ConditionDetail {
+  id: string;
+  label: string;
+  kind: "choice" | "number" | "date" | "text";
+  options?: DetailOption[];
+  unit?: string;
+  /** Short help shown under the field (how to grade it). */
+  hint?: string;
+}
+
+export interface ConditionItem extends Verifiable {
   id: string;
   label: string;
   system: SystemCode;
@@ -50,9 +82,11 @@ export interface ConditionItem {
   /** Its perioperative management should come from a rule: flagged when none exists. */
   needsRule?: boolean;
   female?: boolean;
+  /** Structured details (stage, class, date…) asked once present. */
+  details?: ConditionDetail[];
 }
 
-export interface AllergenItem {
+export interface AllergenItem extends Verifiable {
   id: string;
   label: string;
   /** Words recognised in what is typed in "Allergies". */
@@ -68,7 +102,9 @@ export interface AllergenItem {
 
 export type BleedingRisk = "minimal" | "low" | "high";
 
-export interface SurgeryItem {
+export type CareSetting = "ambulatory" | "inpatient" | "icu";
+
+export interface SurgeryItem extends Verifiable {
   id: string;
   name: string;
   aka?: string[];
@@ -80,25 +116,64 @@ export interface SurgeryItem {
   incision: "peripheral" | "upper_abdominal" | "intrathoracic";
   position?: string;
   durationHours?: number;
+  /** Usual anaesthetic techniques — pre-fill « Technique envisagée » when no protocol matches. */
+  techniques?: Technique[];
+  /** Protocol applied to this intervention (else matched by name). */
+  protocolId?: string;
+  setting?: CareSetting;
+  tourniquet?: boolean;
+  notes?: string;
 }
 
-export interface MedicationItem extends Medication {
+/** A known interaction with a product anaesthesia may use. */
+export interface Interaction {
+  /** What it interacts with, as shown ("tramadol, péthidine"). */
+  with: string;
+  /** Words matched against the drugs of the plan (a planned drug raises an alert). */
+  words: string[];
+  effect: string;
+  level: AttentionLevel;
+}
+
+export interface MedicationItem extends Medication, Verifiable {
   id: string;
   /** Antecedent (condition id) this treatment implies. */
   implies?: string;
   attention?: AttentionSpec;
   /** false: no perioperative rule expected (paracetamol…). Default: expected. */
   needsRule?: boolean;
+  interactions?: Interaction[];
 }
 
 /** Implications of a whole ATC class (all SSRIs, all opioids…). */
-export interface DrugClassItem {
+export interface DrugClassItem extends Verifiable {
   id: string;
   atc: string;
   label: string;
   implies?: string;
   attention?: AttentionSpec;
   needsRule?: boolean;
+  interactions?: Interaction[];
+}
+
+/** Patient values (vitals, biology, body measures) a threshold can watch. */
+export type WatchedValue = "sbp" | "dbp" | "hr" | "spo2" | "hb" | "platelets" | "inr" | "hba1c" | "egfr" | "crcl" | "bmi" | "age";
+
+/** A value to flag: « FC > 100 /min », with what it means and what it implies. */
+export interface ValueCheckItem extends Verifiable {
+  id: string;
+  label: string;
+  value: WatchedValue;
+  op: "<" | "<=" | ">" | ">=";
+  threshold: number;
+  /** Only for this sex (WHO anaemia thresholds…). */
+  sex?: "M" | "F";
+  attention?: AttentionSpec;
+  /** Antecedent it suggests (to confirm), with a qualifier. */
+  implies?: string;
+  qualifier?: Qualifier;
+  /** Checks of the same group: only the most severe one met is shown. */
+  group?: string;
 }
 
 export interface Catalogs {
@@ -107,11 +182,12 @@ export interface Catalogs {
   surgeries: SurgeryItem[];
   medications: MedicationItem[];
   drugClasses: DrugClassItem[];
+  values: ValueCheckItem[];
 }
 
 export type CatalogKind = keyof Catalogs;
 
-export const CATALOG_KINDS: CatalogKind[] = ["conditions", "allergens", "surgeries", "medications", "drugClasses"];
+export const CATALOG_KINDS: CatalogKind[] = ["conditions", "allergens", "surgeries", "medications", "drugClasses", "values"];
 
 /** The user's changes to one list. */
 export interface CatalogOverrides<T extends { id: string }> {
@@ -140,6 +216,7 @@ export function mergeCatalogs(defaults: Catalogs, overrides: AllOverrides): Cata
     surgeries: mergeList(defaults.surgeries, overrides.surgeries),
     medications: mergeList(defaults.medications, overrides.medications),
     drugClasses: mergeList(defaults.drugClasses, overrides.drugClasses),
+    values: mergeList(defaults.values, overrides.values),
   };
 }
 

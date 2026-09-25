@@ -27,13 +27,18 @@ export function suggestAsa(patient: ConsultationPatient, conditions: Conditions,
   const reasons: AsaReason[] = [];
   for (const item of items) {
     const e = conditions[item.id];
-    if (!e?.present || item.asa === undefined) continue;
+    if (!e?.present) continue;
+    // A detail answered with its own class (« GOLD 3 », « FEVG < 30 % ») replaces the default class.
+    const chosen = (item.details ?? []).flatMap((d) => (d.kind === "choice" ? (d.options ?? []).filter((x) => x.code === e.details?.[d.id]) : []));
+    const fromDetails = chosen.filter((x) => x.asa !== undefined);
+    const base = fromDetails.length ? Math.max(...fromDetails.map((x) => x.asa!)) : item.asa;
+    if (base === undefined) continue;
     // The most severe qualifier set wins.
-    let asa = item.asa;
-    const labels: string[] = [];
+    let asa = base;
+    const labels: string[] = fromDetails.map((x) => x.label.split(" :")[0].split(" (")[0]);
     for (const [q, value] of Object.entries(item.asaIf ?? {}) as [Qualifier, number][]) {
       if (e[q] && value > asa) asa = value;
-      if (e[q]) labels.push(item.qualifiers?.[q] ?? QUALIFIER_LABELS[q]);
+      if (e[q] && !chosen.some((x) => x.qualifier === q)) labels.push(item.qualifiers?.[q] ?? QUALIFIER_LABELS[q]);
     }
     reasons.push({ asa, label: `${lowerFirst(item.label)}${labels.length ? ` (${labels.join(", ")})` : ""}` });
   }

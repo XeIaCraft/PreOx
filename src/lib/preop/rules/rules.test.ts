@@ -373,3 +373,33 @@ describe("structuring an allergy rule", () => {
     expect(parseAnswer("RÈGLE: La céfazoline peut être utilisée si PEN-FAST < 3.\nSOURCE: ESAIC, x, 2023").blocks[0].suggestedUse).toBe("rule");
   });
 });
+
+describe("proposed rules", () => {
+  it("are drafts the server accepts, with a verification question", async () => {
+    const { PROPOSED_RULES } = await import("./proposed");
+    const { ruleSchema } = await import("./schema");
+    const ids = PROPOSED_RULES.map((r) => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const r of PROPOSED_RULES) {
+      const parsed = ruleSchema.safeParse(r);
+      expect(parsed.success, `${r.title}: ${parsed.success ? "" : parsed.error.message}`).toBe(true);
+      expect(r.status).toBe("draft");
+      expect(r.verified_at).toBeNull();
+      expect(r.question.length).toBeGreaterThan(20);
+    }
+  });
+
+  it("the dabigatran drafts pick one delay per clearance band", async () => {
+    const { PROPOSED_RULES } = await import("./proposed");
+    const dabi = PROPOSED_RULES.filter((r) => r.title.startsWith("Dabigatran")).map((r) => ({ ...r, status: "active" as const, verified_at: "2026-01-01", created_at: "", updated_at: "" }));
+    const at = (crcl: number) => {
+      // Cockcroft-Gault ≈ crcl for these values: build a patient whose clearance is known.
+      const ctx = patient({ treatments: [{ id: "d", atc: "B01AE07", name: "Dabigatran" }], age: 50, weightKg: 70, sex: "M", creatinineMgDl: (140 - 50) * 70 / (72 * crcl) });
+      return evaluate(dabi, ctx, "2026-10-01T00:00:00Z").findings.filter((f) => f.status === "applies").map((f) => (f.rule.action as { hours: number }).hours);
+    };
+    expect(at(90)).toEqual([72]);
+    expect(at(60)).toEqual([96]);
+    expect(at(40)).toEqual([120]);
+    expect(at(20)).toEqual([]);
+  });
+});

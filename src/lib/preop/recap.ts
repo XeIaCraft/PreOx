@@ -4,7 +4,8 @@
 import { ASA_CLASSES, CLINICAL_FRAILTY_SCALE, MALLAMPATI_CLASSES } from "./scores";
 import { SYSTEM_LABELS, SYSTEM_ORDER } from "./catalog";
 import { QUALIFIER_LABELS, substanceSummary, type Qualifier } from "./history";
-import { allergySummary, RISK_GRADES, type ConsultationState } from "./dossier";
+import { allergySummary, examSummary, RISK_GRADES, type ConsultationState } from "./dossier";
+import { conditionDetailsShort } from "./attention";
 import { BLEEDING_RISKS, SURGERY_GRADES } from "./surgeries";
 import { EXAM_LABELS, autoExamState, type ExamCode } from "./exams";
 import { INDICATIONS, TECHNIQUES } from "./rules/types";
@@ -57,8 +58,10 @@ export function consultationRecap(c: ConsultationState, scores: ConsultationScor
     const items = scores.catalogs.conditions.filter((i) => i.system === sys && scores.conditions[i.id]?.present);
     const labels = items.map((i) => {
       const e = scores.conditions[i.id]!;
-      const q = (Object.keys(i.qualifiers ?? {}) as Qualifier[]).filter((k) => e[k]).map((k) => i.qualifiers?.[k] ?? QUALIFIER_LABELS[k]);
-      return `${i.label}${q.length ? ` (${q.join(", ")})` : ""}${e.detail ? ` : ${e.detail}` : ""}`;
+      const short = conditionDetailsShort(i, e);
+      const q = (Object.keys(i.qualifiers ?? {}) as Qualifier[]).filter((k) => e[k] && !short.qualifiers.includes(k)).map((k) => i.qualifiers?.[k] ?? QUALIFIER_LABELS[k]);
+      const all = [...new Set([...q, ...short.text])];
+      return `${i.label}${all.length ? ` (${all.join(", ")})` : ""}${e.detail ? ` : ${e.detail}` : ""}`;
     });
     if (labels.length) bySystem.push(`${SYSTEM_LABELS[sys]} : ${labels.join(", ")}`);
     else if (reviewed.has(sys)) bySystem.push(`${SYSTEM_LABELS[sys]} : RAS`);
@@ -87,6 +90,7 @@ export function consultationRecap(c: ConsultationState, scores: ConsultationScor
   ].filter(Boolean);
   push("Examen clinique", [
     [p.sbp !== undefined && `PA ${p.sbp}${p.dbp !== undefined ? `/${p.dbp}` : ""} mmHg`, p.hr !== undefined && `FC ${p.hr}/min`, p.spo2 !== undefined && `SpO₂ ${p.spo2} %`].filter(Boolean).join(" · "),
+    examSummary(p.exam) && `Examen : ${examSummary(p.exam)}`,
     airway.length > 0 && `Voies aériennes : ${airway.join(", ")}`,
     r.airway.label && `${r.airway.label} (El-Ganzouri ${r.airway.value})`,
     r.mask.label && `${r.mask.label} (Langeron ${r.mask.value}/5)`,

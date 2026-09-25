@@ -338,3 +338,14 @@ export function Tag({ children, onRemove, tone = "default", onClick }: { childre
     </span>
   );
 }
+
+/** A <details> whose open state is kept by React (it stays open while its content changes). */
+export function Disclosure({ initialOpen = false, summary, children, className, summaryClassName }: { initialOpen?: boolean; summary: React.ReactNode; children: React.ReactNode; className?: string; summaryClassName?: string }) {
+  const [open, setOpen] = useState(initialOpen);
+  return (
+    <details className={className} open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className={summaryClassName}>{summary}</summary>
+      {children}
+    </details>
+  );
+}

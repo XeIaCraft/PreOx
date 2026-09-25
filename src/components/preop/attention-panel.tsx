@@ -40,6 +40,13 @@ export function AttentionPanel({ points, onAdd, added, title = "Points d'attenti
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-foreground">{p.title}</p>
                 <p className="text-xs text-foreground-muted">{p.detail}</p>
+                {p.why && (
+                  <p className="mt-0.5 text-[11px] text-foreground-subtle">
+                    <span className="font-medium text-foreground-muted">Pourquoi : </span>
+                    {p.why}
+                    {p.source ? <span className="italic"> · {p.source}</span> : null}
+                  </p>
+                )}
                 {p.material?.length ? <p className="text-[11px] text-foreground-subtle">Matériel : {p.material.join(", ")}</p> : null}
               </div>
               {canAdd &&

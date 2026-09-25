@@ -96,7 +96,7 @@ describe("deductions", () => {
     expect(conditions.coronary).toMatchObject({ present: true, recent: true });
     expect(conditions.hypertension).toMatchObject({ present: true, poorlyControlled: true });
     expect(conditions.anemia?.present).toBe(false); // explicit "no" wins
-    expect(deduced.get("ckd")).toMatch(/^DFGe \d+/);
+    expect(deduced.get("ckd")).toMatch(/^DFGe \(CKD-EPI\) \d+/);
     expect(consultationScores(c).asa).toBe(4);
   });
   it("tests already done are available with their value", async () => {

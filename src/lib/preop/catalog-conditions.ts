@@ -4,6 +4,7 @@
 // doses belong to rules. Editable in Paramètres.
 
 import type { ConditionItem } from "./catalog";
+import { DEFAULT_CONDITION_DETAILS } from "./catalog-condition-details";
 
 const c = (item: ConditionItem): ConditionItem => item;
 
@@ -272,6 +273,8 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
   c({ id: "las_toxicity", label: "Toxicité des anesthésiques locaux", system: "anaes", keywords: ["toxicité des anesthésiques locaux", "LAST"], attention: { level: "high", text: "Doses réduites, échoguidage ; intralipide disponible.", material: ["Intralipide 20 %"] } }),
   c({ id: "dental_fragile", label: "Dents fragiles / appareil dentaire", system: "anaes", keywords: ["dentier", "bridge", "implants dentaires", "dents mobiles", "couronne"], attention: { level: "info", text: "Signaler au patient le risque dentaire ; protège-dents et laryngoscopie douce." } }),
 ];
+
+for (const item of DEFAULT_CONDITIONS) if (DEFAULT_CONDITION_DETAILS[item.id]) item.details = DEFAULT_CONDITION_DETAILS[item.id];
 
 const LABELS = new Map(DEFAULT_CONDITIONS.map((x) => [x.id, x.label]));
 

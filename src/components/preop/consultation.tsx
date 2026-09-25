@@ -1,18 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, CircleHelp, ClipboardCopy, FolderPlus, MessageSquareQuote, Plus, Printer, RotateCcw, Search, X, Zap } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, CircleHelp, ClipboardCopy, ExternalLink, FolderPlus, MessageSquareQuote, Plus, Printer, RotateCcw, Search, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, MultiChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { useToast } from "@/components/ui/toast";
-import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, ScoreCard, SourceBadge, YesNoChip, formatDateTime, localToIso, toLocalInput } from "@/components/preop/ui";
+import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, ScoreCard, SourceBadge, YesNoChip, formatDateTime, localToIso, toLocalInput, Disclosure } from "@/components/preop/ui";
 import { SurgeryPanel } from "@/components/preop/surgery-panel";
 import { AllergiesEditor, ConditionsEditor, SubstancesEditor } from "@/components/preop/history-editor";
 import { ExamsPanel } from "@/components/preop/exams-panel";
 import { AttentionPanel, InstructionsPanel } from "@/components/preop/attention-panel";
 import { TimelinePanel } from "@/components/preop/timeline-panel";
 import { consultationTimeline, reminderSuggestions } from "@/lib/preop/timeline";
+import { implausibleValues, valueFindings, type PatientValues } from "@/lib/preop/value-checks";
+import { EXAM_LABELS as CLINICAL_EXAM_LABELS, examSummary, type ClinicalExam } from "@/lib/preop/dossier";
+import type { WatchedValue } from "@/lib/preop/catalog";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { QuickEntryPanel } from "@/components/preop/quick-entry-panel";
 import { printSections } from "@/components/preop/print";
@@ -53,7 +56,7 @@ import { consultationRecap, recapText } from "@/lib/preop/recap";
 import { pendingExams } from "@/lib/preop/exams";
 import { emptyConsultation, upgradeConsultation, type ConsultationState } from "@/lib/preop/dossier";
 import { DEFAULT_CATALOGS } from "@/lib/preop/catalog-defaults";
-import { searchMedications } from "@/lib/preop/medications";
+import { cbipSearchUrl, searchMedications, treatmentMatches } from "@/lib/preop/medications";
 import { matchProtocol, type Protocol, type ProtocolContent } from "@/lib/preop/protocols";
 import { evaluate, indicationLabel, type EvaluationResult } from "@/lib/preop/rules/engine";
 import { describeRule, formatHours } from "@/lib/preop/rules/describe";
@@ -78,6 +81,84 @@ export function evaluateConsultation(rules: Rule[], c: ConsultationState, catalo
     // Deduced antecedents count too (insulin → insulin-treated diabetes…).
     conditions: effectiveConditions(c, catalogs).conditions,
   });
+}
+
+/** Basic clinical examination: one tap per finding; normal answers count too (for the official sheet). */
+function ExamEditor({ value: e, onChange }: { value: ClinicalExam; onChange: (e: ClinicalExam) => void }) {
+  const set = (patch: Partial<ClinicalExam>) => onChange({ ...e, ...patch });
+  const opts = <K extends keyof typeof CLINICAL_EXAM_LABELS>(k: K) => (Object.entries(CLINICAL_EXAM_LABELS[k]) as [string, string][]).map(([code, label]) => ({ code, label }));
+  const filled = examSummary(e);
+  return (
+    <Disclosure
+      className="rounded-[var(--radius-md)] border border-border"
+      initialOpen={!!filled}
+      summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground"
+      summary={
+        <>
+          Examen clinique{filled ? <span className="font-normal text-foreground-subtle"> — {filled}</span> : null}
+        </>
+      }
+    >
+      <div className="space-y-2 px-3 pb-3">
+        <div className="space-y-1">
+          <FieldLabel>Auscultation cardiaque</FieldLabel>
+          <ChipGroup size="sm" options={opts("heart")} value={e.heart ?? null} onChange={(v) => set({ heart: (v ?? undefined) as ClinicalExam["heart"] })} allowClear />
+        </div>
+        <div className="space-y-1">
+          <FieldLabel>Auscultation pulmonaire</FieldLabel>
+          <ChipGroup size="sm" options={opts("lungs")} value={e.lungs ?? null} onChange={(v) => set({ lungs: (v ?? undefined) as ClinicalExam["lungs"] })} allowClear />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <ToggleChip pressed={!!e.edema} onChange={(edema) => set({ edema: edema || undefined })} className="min-h-8 text-xs">
+            Œdèmes des membres inférieurs
+          </ToggleChip>
+          <ToggleChip pressed={!!e.jvd} onChange={(jvd) => set({ jvd: jvd || undefined })} className="min-h-8 text-xs">
+            Turgescence jugulaire
+          </ToggleChip>
+          <ToggleChip pressed={!!e.neuroDeficit} onChange={(neuroDeficit) => set({ neuroDeficit: neuroDeficit || undefined })} className="min-h-8 text-xs">
+            Déficit neurologique préexistant
+          </ToggleChip>
+          <ToggleChip pressed={!!e.punctureSite} onChange={(punctureSite) => set({ punctureSite: punctureSite || undefined })} className="min-h-8 text-xs">
+            Lésion / infection au site de ponction
+          </ToggleChip>
+        </div>
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
+          <div className="space-y-1">
+            <FieldLabel>Abord veineux</FieldLabel>
+            <ChipGroup size="sm" options={opts("veins")} value={e.veins ?? null} onChange={(v) => set({ veins: (v ?? undefined) as ClinicalExam["veins"] })} allowClear />
+          </div>
+          <div className="space-y-1">
+            <FieldLabel>Rachis (ponction)</FieldLabel>
+            <ChipGroup size="sm" options={opts("spine")} value={e.spine ?? null} onChange={(v) => set({ spine: (v ?? undefined) as ClinicalExam["spine"] })} allowClear />
+          </div>
+        </div>
+        <Input className="h-9" defaultValue={e.notes} onChange={(ev) => set({ notes: ev.target.value || undefined })} placeholder="Autre (abdomen, cicatrices, état cutané, dentition…)" aria-label="Autres éléments de l'examen" />
+      </div>
+    </Disclosure>
+  );
+}
+
+/** Values of this block past a threshold (Paramètres › Valeurs à signaler), right under the fields. */
+function ValueFlags({ patient, derived, kinds }: { patient: ConsultationState["patient"]; derived: PatientValues; kinds: WatchedValue[] }) {
+  const { catalogs } = useCatalogs();
+  const flags = valueFindings(patient, derived, catalogs.values).filter((f) => f.primary && kinds.includes(f.check.value));
+  const wrong = implausibleValues(patient).filter((x) => (kinds as string[]).includes(x.value) || (kinds.includes("egfr") && x.value === "creatinine") || (kinds.includes("bmi") && (x.value === "weight" || x.value === "height")));
+  if (!flags.length && !wrong.length) return null;
+  const tone = { high: "border-danger/40 bg-danger-tint text-danger", medium: "border-accent/40 bg-accent-tint text-accent", info: "border-border bg-surface-muted text-foreground-muted" } as const;
+  return (
+    <ul className="flex flex-wrap gap-1.5" aria-label="Valeurs à signaler">
+      {wrong.map((x) => (
+        <li key={x.value} className="rounded-full border border-danger/40 bg-danger-tint px-2 py-0.5 text-[11px] text-danger">
+          {x.label} : impossible, à vérifier
+        </li>
+      ))}
+      {flags.map((f) => (
+        <li key={f.check.id} title={f.check.attention?.text} className={cn("rounded-full border px-2 py-0.5 text-[11px]", tone[f.check.attention?.level ?? "info"])}>
+          {f.measured} · {f.check.label}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +235,31 @@ function StepBar({
 // Treatments and rules
 // ---------------------------------------------------------------------------
 
+/** What the catalogue knows about a treatment: its class, its interactions with anaesthesia, the CBIP monograph. */
+function TreatmentFacts({ t }: { t: PatientTreatment }) {
+  const { catalogs } = useCatalogs();
+  const med = catalogs.medications.find((m) => m.atc === t.atc);
+  const classes = catalogs.drugClasses.filter((k) => treatmentMatches(t, k.atc));
+  const interactions = [...(med?.interactions ?? []), ...classes.flatMap((k) => k.interactions ?? [])];
+  return (
+    <div className="col-span-2 space-y-1 text-[11px] text-foreground-muted">
+      {classes.length > 0 && <p>Classe : {classes.map((k) => k.label).join(", ")}</p>}
+      {interactions.length > 0 && (
+        <ul className="space-y-0.5">
+          {interactions.map((x, i) => (
+            <li key={i}>
+              <span className="font-medium text-foreground">Avec {x.with} :</span> {x.effect}
+            </li>
+          ))}
+        </ul>
+      )}
+      <a href={cbipSearchUrl(t.name.split(" (")[0])} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
+        <ExternalLink className="h-3 w-3" /> Fiche CBIP et RCP
+      </a>
+    </div>
+  );
+}
+
 function TreatmentsEditor({ treatments, onChange }: { treatments: PatientTreatment[]; onChange: (t: PatientTreatment[]) => void }) {
   const { catalogs } = useCatalogs();
   const [open, setOpen] = useState<string | null>(null);
@@ -227,6 +333,7 @@ function TreatmentsEditor({ treatments, onChange }: { treatments: PatientTreatme
                       <span className="block text-[11px] font-medium text-foreground-subtle">Dernière prise</span>
                       <Input type="datetime-local" className="mt-0.5 h-9" value={t.lastDoseAt ? toLocalInput(t.lastDoseAt) : ""} onChange={(e) => update(t.id, { lastDoseAt: localToIso(e.target.value) })} />
                     </label>
+                    <TreatmentFacts t={t} />
                   </div>
                 )}
               </li>
@@ -691,18 +798,21 @@ export function ConsultationForm({
   const recap = useMemo(() => consultationRecap(s, scores, { points, instructions, initials }), [s, scores, points, instructions, initials]);
   const toRequest = pendingExams(s, scores.exams);
   const timeline = useMemo(() => consultationTimeline(s, evaluation), [s, evaluation]);
-  const protocol = matchProtocol(protocols, s.surgery, s.hospital);
+  const protocol = matchProtocol(protocols, s.surgery, s.hospital, catalogs.surgeries);
+  const surgeryItem = s.surgery.catalogId ? catalogs.surgeries.find((x) => x.id === s.surgery.catalogId) : undefined;
   const high = points.filter((x) => x.level === "high").length;
   const ruleGaps = gaps.length + evaluation.gaps.filter((g) => !gaps.some((x) => x.key === `t:${g.treatment.id}`)).length;
 
-  // The protocol of this intervention gives the technique, once (then it's yours to change).
-  const autoProtocol = useRef<string | null>(null);
+  // The technique comes from the protocol of this intervention, else from its usual technique
+  // (Paramètres › Interventions) — once per intervention, then it's yours to change.
+  const autoTechnique = useRef<string | null>(null);
+  const techniqueSource = protocol?.content.techniques.length ? { key: `p:${protocol.id}`, techniques: protocol.content.techniques } : surgeryItem?.techniques?.length ? { key: `s:${surgeryItem.id}`, techniques: surgeryItem.techniques } : null;
   useEffect(() => {
-    if (!protocol || s.techniques.length > 0 || autoProtocol.current === protocol.id || protocol.content.techniques.length === 0) return;
-    autoProtocol.current = protocol.id;
-    onChange({ ...s, techniques: [...protocol.content.techniques] });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a protocol matches
-  }, [protocol?.id]);
+    if (!techniqueSource || s.techniques.length > 0 || autoTechnique.current === techniqueSource.key) return;
+    autoTechnique.current = techniqueSource.key;
+    onChange({ ...s, techniques: [...techniqueSource.techniques] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the source of the technique changes
+  }, [techniqueSource?.key]);
 
   const idx = STEPS.findIndex((x) => x.step === step);
   const go = (next: Step) => {
@@ -768,16 +878,27 @@ export function ConsultationForm({
               <MiniNumber label="FC" unit="/min" value={p.hr} onChange={(v) => set({ patient: { ...p, hr: v } })} />
               <MiniNumber label="SpO₂" unit="%" value={p.spo2} onChange={(v) => set({ patient: { ...p, spo2: v } })} />
             </div>
-            <p className="text-[11px] text-foreground-subtle">
-              {[
-                scores.derived.bmi !== undefined && `IMC ${round(scores.derived.bmi, 1)}`,
-                scores.derived.ibw !== undefined && `poids idéal ${round(scores.derived.ibw)} kg`,
-                scores.derived.lbw !== undefined && `maigre ${round(scores.derived.lbw)} kg`,
-                scores.derived.abw !== undefined && `ajusté ${round(scores.derived.abw)} kg`,
-              ]
-                .filter(Boolean)
-                .join(" · ") || "IMC et poids de référence se calculent avec sexe, poids et taille."}
-            </p>
+            <ValueFlags patient={p} derived={scores.derived} kinds={["sbp", "dbp", "hr", "spo2", "bmi", "age"]} />
+            <details className="text-[11px] text-foreground-subtle">
+              <summary className="cursor-pointer">
+                {[
+                  scores.derived.bmi !== undefined && `IMC ${round(scores.derived.bmi, 1)}`,
+                  scores.derived.ibw !== undefined && `poids idéal ${round(scores.derived.ibw)} kg`,
+                  scores.derived.lbw !== undefined && `maigre ${round(scores.derived.lbw)} kg`,
+                  scores.derived.abw !== undefined && `ajusté ${round(scores.derived.abw)} kg`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "IMC et poids de référence se calculent avec sexe, poids et taille."}{" "}
+                <span className="underline">comment ?</span>
+              </summary>
+              <ul className="mt-1 space-y-0.5 pl-3">
+                <li>IMC = poids / taille² (kg/m²).</li>
+                <li>Poids idéal (Devine) = 50 kg (homme) ou 45,5 kg (femme) + 0,91 × (taille en cm − 152,4) — c&apos;est aussi le « poids prédit » de la ventilation protectrice.</li>
+                <li>Poids maigre (Janmahasatian 2005) = 9 270 × poids / (6 680 + 216 × IMC) chez l&apos;homme, / (8 780 + 244 × IMC) chez la femme — pour l&apos;induction (propofol, morphiniques) chez l&apos;obèse.</li>
+                <li>Poids ajusté = poids idéal + 0,4 × (poids réel − poids idéal) — souvent pour les antibiotiques et certains curares.</li>
+                <li>Le poids à utiliser dépend de chaque produit : voir vos protocoles.</li>
+              </ul>
+            </details>
             <details className="rounded-[var(--radius-md)] border border-border" open={p.hb !== undefined || p.creatinineMgDl !== undefined}>
               <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-foreground">Biologie</summary>
               <div className="grid grid-cols-3 gap-2 px-3 pb-3 sm:grid-cols-5">
@@ -786,6 +907,9 @@ export function ConsultationForm({
                 <MiniNumber label="INR" value={p.inr} onChange={(v) => set({ patient: { ...p, inr: v } })} />
                 <MiniNumber label="Créatinine" unit="mg/dL" value={p.creatinineMgDl} onChange={(v) => set({ patient: { ...p, creatinineMgDl: v !== undefined && v > 20 ? Math.round((v / 88.4) * 100) / 100 : v } })} />
                 <MiniNumber label="HbA1c" unit="%" value={p.hba1c} onChange={(v) => set({ patient: { ...p, hba1c: v } })} />
+                <div className="col-span-3 sm:col-span-5">
+                  <ValueFlags patient={p} derived={scores.derived} kinds={["hb", "platelets", "inr", "hba1c", "egfr", "crcl"]} />
+                </div>
                 <p className="col-span-3 text-[11px] text-foreground-subtle sm:col-span-5">
                   Unités converties d&apos;office : créatinine en µmol/L, Hb en g/L, plaquettes en /µL, taille en m.
                   {p.creatinineMgDl !== undefined ? ` Créatinine retenue : ${String(p.creatinineMgDl).replace(".", ",")} mg/dL.` : ""}
@@ -798,6 +922,7 @@ export function ConsultationForm({
                 )}
               </div>
             </details>
+            <ExamEditor value={p.exam ?? {}} onChange={(exam) => set({ patient: { ...p, exam } })} />
             <AllergiesEditor patient={p} onChange={(patient) => set({ patient })} />
           </Panel>
         );

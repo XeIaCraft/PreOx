@@ -1,10 +1,11 @@
 // Default allergens and treatment-class implications, and the assembled
 // default catalogues. Editable in Paramètres.
 
-import type { AllergenItem, Catalogs, DrugClassItem, MedicationItem, SurgeryItem } from "./catalog";
+import type { AllergenItem, Catalogs, DrugClassItem, Interaction, MedicationItem, SurgeryItem } from "./catalog";
 import { DEFAULT_CONDITIONS } from "./catalog-conditions";
 import { MEDICATIONS } from "./medications";
 import { SURGERY_CATALOG } from "./surgeries";
+import { DEFAULT_VALUE_CHECKS } from "./value-checks";
 
 const a = (item: AllergenItem): AllergenItem => item;
 
@@ -132,6 +133,13 @@ export const DEFAULT_ALLERGENS: AllergenItem[] = [
   a({ id: "protamine", label: "Protamine", keywords: ["protamine"], drugWords: ["protamine"], attention: { level: "high", text: "Neutralisation de l'héparine sans protamine à prévoir ; risque plus élevé si insuline NPH ou allergie au poisson." } }),
   a({ id: "seafood", label: "Poissons, crustacés, fruits de mer", keywords: ["crustacés", "crustaces", "fruits de mer", "poisson", "crevette", "moules"], drugWords: [], attention: { level: "info", text: "Pas de réactivité croisée avec la povidone iodée ni les produits de contraste iodés." } }),
   a({ id: "nickel", label: "Nickel / métaux", keywords: ["nickel", "métaux", "metaux", "bijoux fantaisie"], drugWords: [], attention: { level: "info", text: "Signaler au chirurgien en cas d'implant métallique." } }),
+  a({ id: "aminoglycosides", label: "Aminosides", keywords: ["gentamicine", "amikacine", "tobramycine", "aminoside", "geomycine"], drugWords: ["gentamicine", "amikacine", "tobramycine"], attention: { level: "medium", text: "Pas d'aminoside : antibioprophylaxie alternative à prévoir." } }),
+  a({ id: "metronidazole", label: "Métronidazole", keywords: ["métronidazole", "metronidazole", "flagyl"], drugWords: ["métronidazole", "metronidazole"], attention: { level: "medium", text: "Antibioprophylaxie alternative (chirurgie colorectale, gynécologique)." } }),
+  a({ id: "macrolides", label: "Macrolides", keywords: ["macrolide", "clarithromycine", "azithromycine", "érythromycine", "zithromax", "biclar"], drugWords: ["clarithromycine", "azithromycine", "érythromycine"], attention: { level: "info", text: "Éviter les macrolides." } }),
+  a({ id: "ethylene_oxide", label: "Oxyde d'éthylène", keywords: ["oxyde d'éthylène", "oxyde d'ethylene"], drugWords: [], attention: { level: "high", text: "Matériel stérilisé à l'oxyde d'éthylène à éviter (cathéters, circuits, dialyse) : prévenir la stérilisation et le bloc.", material: ["Matériel non stérilisé à l'oxyde d'éthylène"] } }),
+  a({ id: "hyaluronidase", label: "Hyaluronidase", keywords: ["hyaluronidase", "hylase"], drugWords: ["hyaluronidase"], attention: { level: "medium", text: "Bloc ophtalmique sans hyaluronidase." } }),
+  a({ id: "benzodiazepines", label: "Benzodiazépines", keywords: ["benzodiazépine", "midazolam", "dormicum", "lorazépam", "diazépam", "valium"], drugWords: ["midazolam", "lorazépam", "diazépam"], attention: { level: "medium", text: "Préciser la réaction (souvent effet paradoxal ou intolérance) ; prémédication sans benzodiazépine." } }),
+  a({ id: "setrons", label: "Sétrons", keywords: ["ondansétron", "ondansetron", "zofran", "granisétron", "sétron"], drugWords: ["ondansétron", "ondansetron", "granisétron"], attention: { level: "info", text: "Prophylaxie des NVPO sans sétron (dexaméthasone, dropéridol selon le QT)." } }),
   a({ id: "adhesives", label: "Adhésifs / pansements", keywords: ["sparadrap", "pansement", "adhésif", "plâtre adhésif", "tegaderm"], drugWords: [], attention: { level: "info", text: "Matériel de fixation hypoallergénique.", material: ["Adhésifs hypoallergéniques"] } }),
 ];
 
@@ -195,15 +203,95 @@ export const DEFAULT_DRUG_CLASSES: DrugClassItem[] = [
   d({ id: "st_johns_wort", atc: "N06AX25", label: "Millepertuis", attention: { level: "medium", text: "Millepertuis : inducteur enzymatique (baisse de nombreux médicaments, dont anticoagulants et immunosuppresseurs) et risque sérotoninergique." } }),
   d({ id: "ginkgo", atc: "N06DX02", label: "Ginkgo biloba", attention: { level: "info", text: "Ginkgo : effet antiplaquettaire possible." } }),
   d({ id: "theophylline", atc: "R03DA", label: "Xanthines", attention: { level: "info", text: "Théophylline : marge thérapeutique étroite, arythmies ; interactions." } }),
+  d({ id: "vka", atc: "B01AA", label: "Antivitamines K" }),
+  d({ id: "xabans", atc: "B01AF", label: "Anti-Xa directs (xabans)" }),
+  d({ id: "thrombin_inhibitors", atc: "B01AE", label: "Inhibiteurs directs de la thrombine" }),
+  d({ id: "antiplatelets", atc: "B01AC", label: "Antiagrégants plaquettaires" }),
+  d({ id: "checkpoint", atc: "L01FF", label: "Immunothérapies (anti-PD-1 / PD-L1)", attention: { level: "medium", text: "Toxicités immunitaires à rechercher : thyroïdite, insuffisance surrénale ou hypophysaire, pneumopathie, myocardite, colite." } }),
+  d({ id: "btk", atc: "L01EL", label: "Inhibiteurs de la BTK", attention: { level: "medium", text: "Effet antiplaquettaire : risque hémorragique ; arrêt périopératoire selon vos règles." } }),
+  d({ id: "vegf", atc: "L01FG", label: "Anti-VEGF", attention: { level: "medium", text: "Anti-VEGF : cicatrisation retardée, risque hémorragique et thrombotique, HTA ; délai avant chirurgie selon l'oncologue." } }),
+  d({ id: "muscle_relaxants", atc: "M03BX", label: "Myorelaxants centraux", attention: { level: "high", text: "Baclofène (surtout en pompe intrathécale) : ne jamais interrompre brutalement (sevrage grave : hyperthermie, convulsions, rhabdomyolyse)." } }),
+  d({ id: "antiandrogens", atc: "G03HA", label: "Anti-androgènes", attention: { level: "info", text: "Cyprotérone : risque thromboembolique à intégrer." } }),
+  d({ id: "abiraterone", atc: "L02BX03", label: "Abiratérone", attention: { level: "medium", text: "Abiratérone : associée à la prednisone (supplémentation en corticoïdes à discuter), hypokaliémie, HTA." } }),
+  d({ id: "rifampicin", atc: "J04AB02", label: "Rifampicine", attention: { level: "medium", text: "Inducteur enzymatique puissant : baisse de nombreux médicaments (anticoagulants oraux, morphiniques, immunosuppresseurs)." } }),
+  d({ id: "hemostatics", atc: "B02AA", label: "Antifibrinolytiques", needsRule: false }),
+  d({ id: "platelet_reducers", atc: "L01XX35", label: "Anagrélide", implies: "myeloproliferative", attention: { level: "info", text: "Anagrélide : effet antiplaquettaire modeste, QT." } }),
+  d({ id: "hydroxyurea", atc: "L01XX05", label: "Hydroxycarbamide", implies: "myeloproliferative" }),
+  d({ id: "potassium", atc: "A12B", label: "Potassium", needsRule: false }),
+  d({ id: "folates_b12", atc: "B03B", label: "Folates et vitamine B12", needsRule: false }),
+  d({ id: "eye_prostaglandins", atc: "S01EE", label: "Prostaglandines en collyre", implies: "glaucoma", needsRule: false }),
+  d({ id: "eye_betablockers_glaucoma", atc: "S01E", label: "Antiglaucomateux", implies: "glaucoma" }),
   d({ id: "antiemetics_d2", atc: "A03FA", label: "Prokinétiques antidopaminergiques", attention: { level: "info", text: "Métoclopramide / dompéridone : allongement du QT, contre-indiqués dans la maladie de Parkinson (métoclopramide)." } }),
 ];
+
+// ---------------------------------------------------------------------------
+// Interactions with what anaesthesia may use — well-established ones only
+// (SmPC, CBIP). A planned product that matches raises a major alert.
+// ---------------------------------------------------------------------------
+
+const ix = (withLabel: string, words: string[], effect: string, level: Interaction["level"] = "medium"): Interaction => ({ with: withLabel, words, effect, level });
+
+const OPIOID_WORDS = ["morphine", "oxycodone", "piritramide", "dipidolor", "sufentanil", "fentanyl", "rémifentanil", "remifentanil", "hydromorphone", "tramadol"];
+const NSAID_WORDS = ["kétorolac", "ketorolac", "ibuprofène", "ibuprofene", "diclofénac", "diclofenac", "kétoprofène", "naproxène", "célécoxib", "parécoxib"];
+const SEROTONERGIC_WORDS = ["tramadol", "péthidine", "pethidine", "bleu de méthylène", "méthylène", "methylene", "méthadone"];
+const QT_WORDS = ["dropéridol", "droperidol", "ondansétron", "ondansetron", "halopéridol", "haloperidol", "granisétron"];
+const NMBA_WORDS = ["rocuronium", "vécuronium", "vecuronium", "atracurium", "cisatracurium"];
+const SUX_WORDS = ["succinylcholine", "suxaméthonium", "suxamethonium", "célocurine"];
+
+const CLASS_INTERACTIONS: Record<string, Interaction[]> = {
+  maoi: [
+    ix("éphédrine et sympathomimétiques indirects", ["éphédrine", "ephedrine"], "Crise hypertensive : préférer un vasopresseur direct (phényléphrine, noradrénaline) à faible dose.", "high"),
+    ix("péthidine, tramadol, méthadone, bleu de méthylène", SEROTONERGIC_WORDS, "Syndrome sérotoninergique potentiellement mortel : à éviter.", "high"),
+  ],
+  maoi_a: [
+    ix("éphédrine", ["éphédrine", "ephedrine"], "Poussée hypertensive possible : préférer un vasopresseur direct.", "medium"),
+    ix("péthidine, tramadol, bleu de méthylène", SEROTONERGIC_WORDS, "Syndrome sérotoninergique : à éviter.", "high"),
+  ],
+  maoi_b: [ix("péthidine, tramadol, méthadone", SEROTONERGIC_WORDS, "Syndrome sérotoninergique : à éviter.", "medium")],
+  ssri: [
+    ix("tramadol, péthidine, bleu de méthylène", SEROTONERGIC_WORDS, "Syndrome sérotoninergique (agitation, hyperthermie, myoclonies) : préférer une autre option.", "medium"),
+    ix("AINS", NSAID_WORDS, "Risque hémorragique majoré (effet antiplaquettaire des ISRS).", "info"),
+  ],
+  snri: [ix("tramadol, péthidine, bleu de méthylène", SEROTONERGIC_WORDS, "Syndrome sérotoninergique : préférer une autre option.", "medium")],
+  lithium: [
+    ix("curares", [...NMBA_WORDS, ...SUX_WORDS], "Effet des curares prolongé : monitorage de la curarisation.", "medium"),
+    ix("AINS", NSAID_WORDS, "Lithémie augmentée (toxicité) : éviter les AINS.", "medium"),
+  ],
+  anticholinesterases: [ix("succinylcholine ; curares non dépolarisants", [...SUX_WORDS, ...NMBA_WORDS], "Succinylcholine prolongée ; curares non dépolarisants moins efficaces : monitorage.", "medium")],
+  anticholinesterases_mg: [ix("succinylcholine ; curares non dépolarisants", [...SUX_WORDS, ...NMBA_WORDS], "Résistance à la succinylcholine et sensibilité variable aux non dépolarisants : doses titrées, monitorage.", "high")],
+  naltrexone: [ix("morphiniques", OPIOID_WORDS, "Antagoniste opioïde : les morphiniques sont peu ou pas efficaces (et des doses élevées deviennent dangereuses à la levée du blocage).", "high")],
+  nalmefene: [ix("morphiniques", OPIOID_WORDS, "Antagoniste opioïde : les morphiniques sont peu ou pas efficaces.", "high")],
+  amiodarone: [ix("produits qui allongent le QT", QT_WORDS, "Allongement additif du QT (torsades de pointes) : ECG, éviter l'association si QT long.", "medium")],
+  antipsychotics: [ix("produits qui allongent le QT", QT_WORDS, "Allongement additif du QT : ECG, prudence.", "info")],
+  digoxin: [ix("succinylcholine", SUX_WORDS, "Arythmies possibles (hyperkaliémie) : éviter si possible, kaliémie.", "info")],
+  vka: [ix("AINS", NSAID_WORDS, "Risque hémorragique majoré (et INR modifié).", "medium")],
+  xabans: [ix("AINS", NSAID_WORDS, "Risque hémorragique majoré.", "medium")],
+  thrombin_inhibitors: [ix("AINS", NSAID_WORDS, "Risque hémorragique majoré.", "medium")],
+  antiplatelets: [ix("AINS", NSAID_WORDS, "Risque hémorragique majoré (et effet de l'aspirine diminué par l'ibuprofène).", "info")],
+  opioid_substitution: [ix("morphiniques (buprénorphine)", OPIOID_WORDS, "Buprénorphine : agoniste partiel de forte affinité, les autres morphiniques sont moins efficaces ; méthadone : tolérance et QT long. Analgésie multimodale et ALR.", "medium")],
+  antiemetics_d2: [ix("dropéridol, ondansétron", QT_WORDS, "Allongement additif du QT.", "info")],
+};
+
+/** Treatments with implications of their own (the class is not enough). */
+const MEDICATION_EXTRAS: Record<string, Partial<MedicationItem>> = {
+  N03AF01: { interactions: [ix("curares non dépolarisants", NMBA_WORDS, "Carbamazépine (inducteur, traitement prolongé) : résistance aux curares non dépolarisants, besoins augmentés : monitorage.", "info")] },
+  N03AB02: { interactions: [ix("curares non dépolarisants", NMBA_WORDS, "Phénytoïne au long cours : résistance aux curares non dépolarisants : monitorage.", "info")] },
+  N03AA02: { interactions: [ix("curares non dépolarisants, hypnotiques", NMBA_WORDS, "Phénobarbital (inducteur) : besoins en curares augmentés ; sédation additive.", "info")] },
+  N07BC02: { attention: { level: "medium", text: "Méthadone : poursuivre la dose habituelle ; tolérance aux opioïdes ; QT long possible (ECG)." }, interactions: [ix("produits qui allongent le QT", QT_WORDS, "Allongement additif du QT : ECG.", "medium")] },
+  N07BC01: { attention: { level: "medium", text: "Buprénorphine : poursuivre en général (plan avec le prescripteur) ; analgésie multimodale, ALR ; morphiniques moins efficaces." } },
+  L04AX03: { interactions: [ix("protoxyde d'azote, AINS", ["protoxyde", "kétorolac", "ibuprofène", "diclofénac"], "Méthotrexate : toxicité majorée par le protoxyde d'azote (métabolisme des folates) et les AINS (élimination rénale).", "info")] },
+};
 
 function surgeryItems(): SurgeryItem[] {
   return SURGERY_CATALOG.map((s) => ({ ...s }));
 }
 
 function medicationItems(): MedicationItem[] {
-  return MEDICATIONS.map((m) => ({ ...m, id: m.atc }));
+  return MEDICATIONS.map((m) => ({ ...m, id: m.atc, ...MEDICATION_EXTRAS[m.atc] }));
+}
+
+function drugClassItems(): DrugClassItem[] {
+  return DEFAULT_DRUG_CLASSES.map((k) => (CLASS_INTERACTIONS[k.id] ? { ...k, interactions: CLASS_INTERACTIONS[k.id] } : k));
 }
 
 export const DEFAULT_CATALOGS: Catalogs = {
@@ -211,5 +299,6 @@ export const DEFAULT_CATALOGS: Catalogs = {
   allergens: DEFAULT_ALLERGENS,
   surgeries: surgeryItems(),
   medications: medicationItems(),
-  drugClasses: DEFAULT_DRUG_CLASSES,
+  drugClasses: drugClassItems(),
+  values: DEFAULT_VALUE_CHECKS,
 };

@@ -23,6 +23,8 @@ export interface ConditionEntry {
   recent?: boolean;
   severe?: boolean;
   detail?: string;
+  /** Structured details defined in Paramètres (stage, score, date…), by detail id. */
+  details?: Record<string, string | number>;
 }
 
 export type Conditions = Partial<Record<ConditionCode, ConditionEntry>>;
@@ -92,8 +94,19 @@ export function conditionsSummary(c: Conditions, items: ConditionItem[] = DEFAUL
     known.add(def.id);
     const e = c[def.id];
     if (!e?.present) continue;
-    const q = (Object.keys(def.qualifiers ?? {}) as Qualifier[]).filter((k) => e[k]).map((k) => def.qualifiers![k] ?? QUALIFIER_LABELS[k]);
-    out.push(`${def.label}${q.length ? ` (${q.join(", ")})` : ""}${e.detail ? ` : ${e.detail}` : ""}`);
+    // Structured details: the answer alone for a choice (« GOLD 3 : 30–49 % »), « FEVG 35 % » otherwise.
+    const fromDetails = new Set<string>();
+    const details = (def.details ?? []).flatMap((d) => {
+      const v = e.details?.[d.id];
+      if (v === undefined || v === "") return [];
+      if (d.kind !== "choice") return [`${d.label} ${String(v).replace(".", ",")}${d.unit ? ` ${d.unit}` : ""}`];
+      const opt = d.options?.find((o) => o.code === v);
+      if (opt?.qualifier) fromDetails.add(opt.qualifier);
+      return [opt?.label ?? String(v)];
+    });
+    const q = (Object.keys(def.qualifiers ?? {}) as Qualifier[]).filter((k) => e[k] && !fromDetails.has(k)).map((k) => def.qualifiers![k] ?? QUALIFIER_LABELS[k]);
+    const all = [...q, ...details];
+    out.push(`${def.label}${all.length ? ` (${all.join(", ")})` : ""}${e.detail ? ` : ${e.detail}` : ""}`);
   }
   // Antecedents recorded with an item since removed from the catalogue.
   for (const [id, e] of Object.entries(c)) if (e?.present && !known.has(id)) out.push(e.detail ? `${id} : ${e.detail}` : id);

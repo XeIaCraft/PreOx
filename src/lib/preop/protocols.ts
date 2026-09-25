@@ -156,7 +156,11 @@ const words = (t: string) => new Set(foldText(t).split(/[^a-z0-9]+/).filter((w) 
  * the patient's hospital before a general one, same carnet category as a
  * tie-breaker. null when nothing matches the intervention at all.
  */
-export function matchProtocol(protocols: Protocol[], surgery: { name: string; category: string }, hospital: string): Protocol | null {
+export function matchProtocol(protocols: Protocol[], surgery: { name: string; category: string; catalogId?: string }, hospital: string, linked?: { id: string; protocolId?: string }[]): Protocol | null {
+  // The protocol linked to the intervention in Paramètres wins over name matching.
+  const linkedId = surgery.catalogId ? linked?.find((x) => x.id === surgery.catalogId)?.protocolId : undefined;
+  const explicit = linkedId ? protocols.find((p) => p.id === linkedId) : undefined;
+  if (explicit) return explicit;
   const target = words(surgery.name);
   if (target.size === 0) return null;
   const h = foldText(hospital.trim());

@@ -13,6 +13,7 @@
 import type { AriscatInput } from "./scores";
 import type { RiskGrade } from "./dossier";
 import type { BleedingRisk } from "./catalog";
+import type { Technique } from "./rules/types";
 
 export type SurgeryGrade = "minor" | "intermediate" | "major";
 
@@ -29,6 +30,7 @@ export interface CatalogSurgery {
   incision: NonNullable<AriscatInput["incision"]>;
   position?: string;
   durationHours?: number;
+  techniques?: Technique[];
 }
 
 const s = (
@@ -209,6 +211,122 @@ const DURATIONS: Record<string, number> = {
   "bronchoscopie-souple-ebus": 0.5, "radiologie-interventionnelle": 1.5, "thrombectomie-cerebrale": 1.5, "imagerie-sous-anesthesie": 1,
 };
 for (const x of SURGERY_CATALOG) if (DURATIONS[x.id] !== undefined) x.durationHours = DURATIONS[x.id];
+
+/** Usual technique(s), to pre-fill « Technique envisagée » when no protocol applies — a starting point, to adapt to the patient and the team. */
+const USUAL_TECHNIQUES: Record<string, Technique[]> = {
+  "prothese-totale-de-hanche": ["neuraxial"],
+  "prothese-totale-de-genou": ["neuraxial", "superficial_block"],
+  "fracture-du-col-du-femur": ["neuraxial", "superficial_block"],
+  "arthrodese-rachidienne": ["general"],
+  "arthroscopie-du-genou": ["general"],
+  "arthroscopie-de-l-epaule": ["general", "superficial_block"],
+  "chirurgie-du-pied": ["superficial_block", "general"],
+  "chirurgie-de-la-main": ["superficial_block"],
+  "osteosynthese-de-membre": ["general"],
+  "ablation-de-materiel": ["general"],
+  "cholecystectomie-c-lioscopique": ["general"],
+  "cure-de-hernie-inguinale": ["general"],
+  "appendicectomie": ["general"],
+  "colectomie": ["general"],
+  "chirurgie-bariatrique": ["general"],
+  "gastrectomie": ["general", "neuraxial"],
+  "duodenopancreatectomie-cephalique": ["general", "neuraxial"],
+  "hepatectomie": ["general"],
+  "sophagectomie": ["general", "neuraxial"],
+  "reparation-de-perforation-digestive": ["general"],
+  "thyroidectomie": ["general"],
+  "chirurgie-du-sein": ["general"],
+  "proctologie": ["general"],
+  "exerese-cutanee": ["sedation"],
+  "chirurgie-aortique-ouverte": ["general", "neuraxial"],
+  "endoprothese-aortique": ["general"],
+  "endarteriectomie-carotidienne": ["general"],
+  "revascularisation-ouverte-du-membre-inferieur": ["general"],
+  "amputation-de-membre-inferieur": ["general"],
+  "fistule-arterio-veineuse": ["superficial_block"],
+  "resection-transuretrale-de-prostate": ["neuraxial"],
+  "resection-transuretrale-de-vessie": ["neuraxial"],
+  "prostatectomie-radicale": ["general"],
+  "cystectomie-totale": ["general", "neuraxial"],
+  "nephrectomie": ["general"],
+  "ureteroscopie": ["general"],
+  "hysterectomie": ["general"],
+  "c-lioscopie-gynecologique": ["general"],
+  "hysteroscopie": ["general"],
+  "cesarienne": ["neuraxial"],
+  "amygdalectomie": ["general"],
+  "chirurgie-endonasale": ["general"],
+  "chirurgie-carcinologique-tete-et-cou": ["general"],
+  "cataracte": ["sedation"],
+  "vitrectomie": ["sedation"],
+  "extractions-dentaires": ["general"],
+  "chirurgie-maxillo-faciale-majeure": ["general"],
+  "craniotomie": ["general"],
+  "cure-de-hernie-discale": ["general"],
+  "lobectomie-pulmonaire": ["general", "deep_block"],
+  "pneumonectomie": ["general", "deep_block"],
+  "chirurgie-plastique-ou-reconstructrice": ["general"],
+  "endoscopie-digestive": ["sedation"],
+  "prothese-d-epaule": ["general", "superficial_block"],
+  "reprise-de-prothese-de-hanche-ou-de-genou": ["general"],
+  "arthroscopie-de-hanche": ["general"],
+  "osteotomie": ["general"],
+  "osteosynthese-du-poignet": ["superficial_block"],
+  "osteosynthese-de-la-cheville": ["superficial_block", "general"],
+  "vertebroplastie-cyphoplastie": ["sedation"],
+  "cure-d-eventration": ["general"],
+  "cure-de-hernie-ombilicale": ["general"],
+  "fundoplicature-cure-de-hernie-hiatale": ["general"],
+  "splenectomie": ["general"],
+  "surrenalectomie": ["general"],
+  "chirurgie-des-voies-biliaires": ["general"],
+  "resection-du-rectum": ["general"],
+  "retablissement-de-continuite": ["general"],
+  "laparotomie-pour-occlusion": ["general"],
+  "pose-de-chambre-implantable": ["sedation"],
+  "sinus-pilonidal": ["general"],
+  "chirurgie-des-varices": ["general"],
+  "angioplastie-peripherique": ["sedation"],
+  "nephrolithotomie-percutanee": ["general"],
+  "enucleation-de-prostate-au-laser": ["general"],
+  "transplantation-renale": ["general"],
+  "chirurgie-scrotale": ["general"],
+  "circoncision": ["general"],
+  "cystoscopie-sonde-jj": ["general"],
+  "bandelette-sous-uretrale": ["general"],
+  "myomectomie": ["general"],
+  "cure-de-prolapsus": ["general"],
+  "ponction-ovocytaire": ["sedation"],
+  "aspiration-endo-uterine": ["sedation"],
+  "cerclage-du-col": ["neuraxial"],
+  "revision-uterine-delivrance-artificielle": ["general"],
+  "parotidectomie": ["general"],
+  "chirurgie-de-l-oreille": ["general"],
+  "aerateurs-transtympaniques": ["general"],
+  "microchirurgie-laryngee": ["general"],
+  "tracheotomie": ["general"],
+  "chirurgie-du-strabisme": ["general"],
+  "chirurgie-du-glaucome": ["sedation"],
+  "chirurgie-des-paupieres": ["sedation"],
+  "decompression-lombaire": ["general"],
+  "arthrodese-cervicale-anterieure": ["general"],
+  "derivation-ventriculo-peritoneale": ["general"],
+  "mediastinoscopie": ["general"],
+  "thoracoscopie-talcage": ["general"],
+  "bronchoscopie-rigide": ["general"],
+  "chirurgie-cardiaque-sous-cec": ["general"],
+  "tavi": ["sedation"],
+  "liposuccion": ["general"],
+  "excision-greffe-de-brulure": ["general"],
+  "cardioversion-electrique": ["sedation"],
+  "electroconvulsivotherapie": ["general"],
+  "echographie-trans-sophagienne": ["sedation"],
+  "bronchoscopie-souple-ebus": ["sedation"],
+  "radiologie-interventionnelle": ["sedation"],
+  "thrombectomie-cerebrale": ["sedation", "general"],
+  "imagerie-sous-anesthesie": ["sedation"],
+};
+for (const x of SURGERY_CATALOG) if (USUAL_TECHNIQUES[x.id]) x.techniques = USUAL_TECHNIQUES[x.id];
 
 export const SURGERY_CATALOG_SOURCE =
   "Classes proposées : grade selon les exemples de NICE NG45 (2016), risque cardiaque selon ESC 2022 (chirurgie non cardiaque), risque hémorragique d'après le guide EHRA 2021 — à confirmer pour chaque patient.";
