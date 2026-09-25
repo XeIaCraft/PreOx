@@ -1,3 +1,6 @@
+import { DEFAULT_CONDITIONS } from "./catalog-conditions";
+import type { ConditionItem } from "./catalog";
+
 // Structured antecedents and substance use of the consultation. Each
 // condition is tri-state (not asked / no / yes), with the qualifiers that
 // change the anaesthetic assessment (poorly controlled, recent < 3 months,
@@ -5,51 +8,13 @@
 // HAS-BLED…), the ASA suggestion and the recommended tests — the same
 // answer is never asked twice.
 
-export type ConditionCode =
-  // Cardiovascular
-  | "hypertension"
-  | "dyslipidemia"
-  | "coronary"
-  | "heart_failure"
-  | "valve"
-  | "murmur"
-  | "arrhythmia"
-  | "pacemaker"
-  | "pad"
-  | "vte"
-  // Respiratory
-  | "asthma"
-  | "copd"
-  | "osa"
-  | "home_o2"
-  // Metabolic / endocrine
-  | "diabetes_oral"
-  | "diabetes_insulin"
-  | "thyroid"
-  // Renal / hepatic / digestive
-  | "ckd"
-  | "dialysis"
-  | "cirrhosis"
-  | "gerd"
-  // Neurological
-  | "stroke"
-  | "epilepsy"
-  | "neuromuscular"
-  | "cognitive"
-  // Haematology / other
-  | "bleeding_disorder"
-  | "anemia"
-  | "cancer"
-  | "pregnancy"
-  // Anaesthetic history
-  | "ponv"
-  | "difficult_airway"
-  | "malignant_hyperthermia"
-  | "anaesthetic_allergy"
-  | "pseudocholinesterase";
+/** Id of an antecedent in the catalogue (built-in ones are listed in catalog-conditions.ts; users can add theirs). */
+export type ConditionCode = string;
 
 /** Qualifiers that change the class of risk. */
 export type Qualifier = "poorlyControlled" | "recent" | "severe";
+
+export const QUALIFIER_LABELS: Record<Qualifier, string> = { poorlyControlled: "mal contrôlé(e)", recent: "< 3 mois", severe: "sévère" };
 
 export interface ConditionEntry {
   present: boolean;
@@ -61,107 +26,6 @@ export interface ConditionEntry {
 }
 
 export type Conditions = Partial<Record<ConditionCode, ConditionEntry>>;
-
-export interface ConditionDef {
-  code: ConditionCode;
-  label: string;
-  qualifiers?: { key: Qualifier; label: string }[];
-  /** Female patients only (pregnancy). */
-  female?: boolean;
-}
-
-export interface SystemDef {
-  code: string;
-  label: string;
-  conditions: ConditionDef[];
-}
-
-const POOR = { key: "poorlyControlled" as const, label: "mal contrôlé(e)" };
-const RECENT = { key: "recent" as const, label: "< 3 mois" };
-const SEVERE = (label: string) => ({ key: "severe" as const, label });
-
-export const SYSTEMS: SystemDef[] = [
-  {
-    code: "cardio",
-    label: "Cardiovasculaire",
-    conditions: [
-      { code: "hypertension", label: "HTA", qualifiers: [POOR] },
-      { code: "dyslipidemia", label: "Dyslipidémie" },
-      { code: "coronary", label: "Coronaropathie (IDM, stent, angor)", qualifiers: [RECENT, SEVERE("ischémie active")] },
-      { code: "heart_failure", label: "Insuffisance cardiaque", qualifiers: [SEVERE("FEVG sévèrement ↓")] },
-      { code: "valve", label: "Valvulopathie", qualifiers: [SEVERE("sévère")] },
-      { code: "murmur", label: "Souffle non exploré" },
-      { code: "arrhythmia", label: "FA / trouble du rythme" },
-      { code: "pacemaker", label: "Pacemaker / DAI" },
-      { code: "pad", label: "Artériopathie (AOMI, carotide)" },
-      { code: "vte", label: "Antécédent de MTEV" },
-    ],
-  },
-  {
-    code: "resp",
-    label: "Respiratoire",
-    conditions: [
-      { code: "asthma", label: "Asthme", qualifiers: [POOR] },
-      { code: "copd", label: "BPCO", qualifiers: [SEVERE("sévère")] },
-      { code: "osa", label: "SAOS connu", qualifiers: [{ key: "poorlyControlled", label: "non appareillé" }] },
-      { code: "home_o2", label: "O₂ à domicile" },
-    ],
-  },
-  {
-    code: "metab",
-    label: "Métabolique",
-    conditions: [
-      { code: "diabetes_oral", label: "Diabète (sans insuline)", qualifiers: [POOR] },
-      { code: "diabetes_insulin", label: "Diabète insulinotraité", qualifiers: [POOR] },
-      { code: "thyroid", label: "Dysthyroïdie" },
-    ],
-  },
-  {
-    code: "renal",
-    label: "Rein, foie, digestif",
-    conditions: [
-      { code: "ckd", label: "Insuffisance rénale chronique", qualifiers: [SEVERE("terminale, non dialysée")] },
-      { code: "dialysis", label: "Dialyse" },
-      { code: "cirrhosis", label: "Cirrhose / hépatopathie", qualifiers: [SEVERE("décompensée")] },
-      { code: "gerd", label: "RGO / estomac plein" },
-    ],
-  },
-  {
-    code: "neuro",
-    label: "Neurologique",
-    conditions: [
-      { code: "stroke", label: "AVC / AIT", qualifiers: [RECENT] },
-      { code: "epilepsy", label: "Épilepsie" },
-      { code: "neuromuscular", label: "Maladie neuromusculaire" },
-      { code: "cognitive", label: "Troubles cognitifs" },
-    ],
-  },
-  {
-    code: "other",
-    label: "Hématologie et autres",
-    conditions: [
-      { code: "bleeding_disorder", label: "Trouble de l'hémostase" },
-      { code: "anemia", label: "Anémie connue" },
-      { code: "cancer", label: "Cancer évolutif" },
-      { code: "pregnancy", label: "Grossesse", female: true },
-    ],
-  },
-  {
-    code: "anaes",
-    label: "Antécédents anesthésiques",
-    conditions: [
-      { code: "ponv", label: "NVPO / mal des transports" },
-      { code: "difficult_airway", label: "Intubation difficile" },
-      { code: "malignant_hyperthermia", label: "Hyperthermie maligne (perso/famille)" },
-      { code: "anaesthetic_allergy", label: "Allergie per-anesthésique" },
-      { code: "pseudocholinesterase", label: "Déficit en pseudocholinestérase" },
-    ],
-  },
-];
-
-export const CONDITION_CODES: ConditionCode[] = SYSTEMS.flatMap((s) => s.conditions.map((c) => c.code));
-
-export const CONDITION_DEFS: Map<ConditionCode, ConditionDef> = new Map(SYSTEMS.flatMap((s) => s.conditions.map((c) => [c.code, c] as [ConditionCode, ConditionDef])));
 
 /** true / false / undefined (not asked). */
 export function has(c: Conditions, code: ConditionCode): boolean | undefined {
@@ -220,16 +84,18 @@ export function substanceSummary(s: Substances): string {
   return parts.join(" · ");
 }
 
-/** "HTA mal contrôlée, coronaropathie (< 3 mois), diabète insulinotraité" */
-export function conditionsSummary(c: Conditions): string {
+/** "HTA (mal contrôlée), coronaropathie (< 3 mois), diabète insulinotraité" — in catalogue order. */
+export function conditionsSummary(c: Conditions, items: ConditionItem[] = DEFAULT_CONDITIONS): string {
   const out: string[] = [];
-  for (const s of SYSTEMS) {
-    for (const def of s.conditions) {
-      const e = c[def.code];
-      if (!e?.present) continue;
-      const q = (def.qualifiers ?? []).filter((x) => e[x.key]).map((x) => x.label);
-      out.push(`${def.label}${q.length ? ` (${q.join(", ")})` : ""}${e.detail ? ` : ${e.detail}` : ""}`);
-    }
+  const known = new Set<string>();
+  for (const def of items) {
+    known.add(def.id);
+    const e = c[def.id];
+    if (!e?.present) continue;
+    const q = (Object.keys(def.qualifiers ?? {}) as Qualifier[]).filter((k) => e[k]).map((k) => def.qualifiers![k] ?? QUALIFIER_LABELS[k]);
+    out.push(`${def.label}${q.length ? ` (${q.join(", ")})` : ""}${e.detail ? ` : ${e.detail}` : ""}`);
   }
+  // Antecedents recorded with an item since removed from the catalogue.
+  for (const [id, e] of Object.entries(c)) if (e?.present && !known.has(id)) out.push(e.detail ? `${id} : ${e.detail}` : id);
   return out.join(" ; ");
 }

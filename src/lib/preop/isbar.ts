@@ -4,8 +4,10 @@
 
 import { consultationScores, consultationSummary } from "./consultation-scores";
 import { attentionPoints } from "./attention";
+import type { Catalogs } from "./catalog";
 import { lowerFirst } from "./derive";
 import { conditionsSummary, substanceSummary } from "./history";
+import { allergySummary } from "./dossier";
 import { EXAM_LABELS, type ExamCode } from "./exams";
 import { RISK_GRADES } from "./dossier";
 import { COMPLICATION_TYPES, EVENT_TYPES, FLUID_CATEGORIES, type Dossier } from "./dossier";
@@ -27,7 +29,7 @@ export function hhmm(iso: string): string {
 const DESTINATIONS: Record<string, string> = { uspa: "Salle de réveil (USPA)", usi: "Soins intensifs", ward: "Étage" };
 const SEVERITY: Record<string, string> = { mild: "légère", moderate: "modérée", severe: "sévère" };
 
-export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResult): IsbarSection[] {
+export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResult, catalogs?: Catalogs): IsbarSection[] {
   const c = d.consultation;
   const p = c.patient;
   const events = [...d.intraop.events].sort((a, b) => a.at.localeCompare(b.at));
@@ -36,11 +38,12 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
   const I: IsbarSection = { key: "I", title: "Identification", lines: [], missing: [] };
   const who = [d.initials, p.sex === "M" ? "homme" : p.sex === "F" ? "femme" : "", p.age !== undefined ? `${p.age} ans` : "", p.weightKg ? `${p.weightKg} kg` : "", p.heightCm ? `${p.heightCm} cm` : ""].filter(Boolean);
   I.lines.push(who.join(", "));
-  const scores = consultationScores(c, { plan: d.plan });
+  const scores = consultationScores(c, { plan: d.plan, catalogs });
   const summary = consultationSummary(c, scores);
   if (summary.status) I.lines.push(summary.status);
   if (!scores.asa) I.missing.push("Classe ASA");
-  if (p.allergies?.trim()) I.lines.push(`Allergies : ${p.allergies.trim()}`);
+  const allergyText = allergySummary(p);
+  if (allergyText) I.lines.push(`Allergies : ${allergyText}`);
   else I.missing.push("Allergies (même « aucune connue »)");
   if (p.age === undefined || !p.weightKg) I.missing.push("Âge et poids");
 
@@ -63,7 +66,7 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
 
   // B — Background
   const B: IsbarSection = { key: "B", title: "Antécédents", lines: [], missing: [] };
-  const conditions = conditionsSummary(scores.conditions);
+  const conditions = conditionsSummary(scores.conditions, scores.catalogs.conditions);
   if (conditions) B.lines.push(conditions);
   if (p.history?.trim()) B.lines.push(p.history.trim());
   if (!conditions && !p.history?.trim()) B.missing.push("Antécédents pertinents");

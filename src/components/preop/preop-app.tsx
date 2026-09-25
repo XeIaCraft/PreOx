@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { BookMarked, FolderOpen, Loader2, NotebookTabs, Stethoscope } from "lucide-react";
+import { BookMarked, FolderOpen, Loader2, NotebookTabs, Settings2, Stethoscope } from "lucide-react";
 import { ConsultationView } from "@/components/preop/consultation";
 import { DossierList } from "@/components/preop/dossiers";
 import { DOSSIER_TABS, DossierView, type DossierTab } from "@/components/preop/dossier-view";
@@ -14,20 +14,23 @@ import { useDossiers } from "@/components/preop/use-dossiers";
 import { useProtocols } from "@/components/preop/use-protocols";
 import { useRules } from "@/components/preop/use-rules";
 import { useToast } from "@/components/ui/toast";
+import { CatalogsProvider } from "@/components/preop/use-catalogs";
+import { SettingsView } from "@/components/preop/settings";
 import { emptyDossier, withAutoStatus } from "@/lib/preop/dossier";
 import type { QuestionInput } from "@/lib/preop/rules/question";
 import { cn } from "@/lib/utils";
 
-type View = "consultation" | "dossiers" | "dossier" | "protocoles" | "regles" | "nouvelle";
+type View = "consultation" | "dossiers" | "dossier" | "protocoles" | "regles" | "nouvelle" | "parametres";
 
-const TABS: { view: View; label: string; icon: typeof Stethoscope }[] = [
-  { view: "consultation", label: "Consultation", icon: Stethoscope },
-  { view: "dossiers", label: "Dossiers", icon: FolderOpen },
-  { view: "protocoles", label: "Protocoles", icon: NotebookTabs },
-  { view: "regles", label: "Règles", icon: BookMarked },
+const TABS: { view: View; label: string; short: string; icon: typeof Stethoscope }[] = [
+  { view: "consultation", label: "Consultation", short: "Consult.", icon: Stethoscope },
+  { view: "dossiers", label: "Dossiers", short: "Dossiers", icon: FolderOpen },
+  { view: "protocoles", label: "Protocoles", short: "Protocoles", icon: NotebookTabs },
+  { view: "regles", label: "Règles", short: "Règles", icon: BookMarked },
+  { view: "parametres", label: "Paramètres", short: "Réglages", icon: Settings2 },
 ];
 
-const VIEWS: View[] = ["consultation", "dossiers", "dossier", "protocoles", "regles", "nouvelle"];
+const VIEWS: View[] = ["consultation", "dossiers", "dossier", "protocoles", "regles", "nouvelle", "parametres"];
 
 /**
  * The "Préop" module, one client-side app: the consultation (kept only if
@@ -37,6 +40,14 @@ const VIEWS: View[] = ["consultation", "dossiers", "dossier", "protocoles", "reg
  * back button works; switching never reloads.
  */
 export function PreopApp() {
+  return (
+    <CatalogsProvider>
+      <PreopScreens />
+    </CatalogsProvider>
+  );
+}
+
+function PreopScreens() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { userId, carnetEnabled } = usePreopSession();
@@ -79,7 +90,7 @@ export function PreopApp() {
             {error ? <span className="text-danger">{error}</span> : `${rules.filter((r) => r.status === "active").length} règle(s) · ${protocolLib.protocols.length} protocole(s)`}
           </span>
         </div>
-        <nav className="grid grid-cols-4 gap-1 sm:flex" aria-label="Sections">
+        <nav className="grid grid-cols-5 gap-1 sm:flex" aria-label="Sections">
           {TABS.map((t) => (
             <button
               key={t.view}
@@ -93,7 +104,8 @@ export function PreopApp() {
             >
               <t.icon className="h-4 w-4 shrink-0" />
               <span className="max-w-full truncate">
-                {t.label}
+                <span className="sm:hidden">{t.short}</span>
+                <span className="hidden sm:inline">{t.label}</span>
                 {t.view === "dossiers" && dossierStore.dossiers.length > 0 && <span className="ml-1 tabular-nums opacity-80">({dossierStore.dossiers.length})</span>}
               </span>
             </button>
@@ -106,6 +118,7 @@ export function PreopApp() {
       <div hidden={view !== "consultation"}>
         <ConsultationView
           rules={rules}
+          protocols={protocolLib.protocols}
           onAskQuestion={askQuestion}
           onKeep={async (initials, consultation) => {
             const d = emptyDossier(initials, consultation);
@@ -177,6 +190,7 @@ export function PreopApp() {
         />
       )}
       {view === "nouvelle" && <RuleWizard key={wizardKey} initial={pendingQuestion} onSave={save} onDone={() => go("regles")} />}
+      {view === "parametres" && <SettingsView />}
     </div>
   );
 }

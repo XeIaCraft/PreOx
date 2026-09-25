@@ -12,6 +12,7 @@ import { dossierDate, type Dossier, type DossierStatus } from "@/lib/preop/dossi
 import { localDateIso, shiftDateIso } from "@/lib/carnet/logic";
 import { cn } from "@/lib/utils";
 import { consultationScores } from "@/lib/preop/consultation-scores";
+import { useCatalogs } from "@/components/preop/use-catalogs";
 import { attentionPoints } from "@/lib/preop/attention";
 import { pendingExams } from "@/lib/preop/exams";
 
@@ -211,14 +212,15 @@ function BackupPanel({ count, onExport, onImport }: { count: number; onExport: (
 }
 
 function DossierCard({ d, onOpen }: { d: Dossier; onOpen: () => void }) {
+  const { catalogs } = useCatalogs();
   const { asa, alerts, toRequest } = useMemo(() => {
-    const scores = consultationScores(d.consultation, { plan: d.plan });
+    const scores = consultationScores(d.consultation, { plan: d.plan, catalogs });
     return {
       asa: scores.asa,
       alerts: attentionPoints(d.consultation, scores, d.plan).filter((p) => p.level === "high").length,
       toRequest: pendingExams(d.consultation, scores.exams).length,
     };
-  }, [d]);
+  }, [d, catalogs]);
   const chips = [
     asa ? `ASA ${["I", "II", "III", "IV", "V"][asa - 1]}` : "",
     alerts ? `${alerts} alerte${alerts > 1 ? "s" : ""}` : "",

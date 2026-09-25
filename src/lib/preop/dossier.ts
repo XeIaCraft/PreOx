@@ -8,6 +8,7 @@ import type { PatientTreatment, Technique } from "./rules/types";
 import { emptyProtocolContent, type ProtocolContent } from "./protocols";
 import type { Conditions, Substances } from "./history";
 import type { SurgeryGrade } from "./surgeries";
+import type { BleedingRisk } from "./catalog";
 
 type YesNo<K extends string> = Partial<Record<K, boolean>>;
 
@@ -27,11 +28,25 @@ export interface ConsultationPatient {
   sbp?: number;
   dbp?: number;
   hr?: number;
+  /** Free text about allergies (details, reactions). */
   allergies?: string;
+  /** Allergies entered one by one (recognised allergen or free label). */
+  allergyList?: AllergyEntry[];
+  /** "Aucune allergie connue" confirmed. */
+  noKnownAllergy?: boolean;
+  /** Airway examination, feeding El-Ganzouri, Langeron and STOP-BANG. */
+  neckCm?: number;
   /** Other antecedents, free text (the structured ones are in `conditions`). */
   history?: string;
   /** Previous operations and anaesthesias, free text. */
   surgicalHistory?: string;
+}
+
+export interface AllergyEntry {
+  /** Allergen of the catalogue, when recognised. */
+  allergenId?: string;
+  label: string;
+  reaction?: string;
 }
 
 export type ExamStatus = "todo" | "requested" | "available" | "not_needed";
@@ -56,6 +71,8 @@ export interface ConsultationConclusion {
 export interface ConsultationState {
   patient: ConsultationPatient;
   conditions: Conditions;
+  /** Systems reviewed with nothing more to note (« RAS »): their unlisted antecedents count as absent. */
+  historyReviewed?: string[];
   substances: Substances;
   surgery: Surgery;
   /** Chosen ASA class; when absent the suggestion (asa.ts) is shown. */
@@ -125,7 +142,8 @@ export interface Surgery {
   kce?: SurgeryGrade;
   /** Surgical cardiac risk class (ESC 2022). */
   cardiacRisk?: RiskGrade;
-  bleedingRisk?: RiskGrade;
+  /** Minimal, low or high — see BLEEDING_RISKS (surgeries.ts). */
+  bleedingRisk?: BleedingRisk;
   /** Lee index "high-risk surgery": intraperitoneal, intrathoracic or suprainguinal vascular. */
   rcriHighRisk?: boolean;
   incision?: "peripheral" | "upper_abdominal" | "intrathoracic";
@@ -349,4 +367,13 @@ export function withAutoStatus(d: Dossier, previous?: Dossier): Dossier {
   if (roomOut(d) && !(previous && roomOut(previous))) return { ...d, status: "done" };
   if (d.status === "consultation" && (d.plan.drugs.length > 0 || d.plan.techniques.length > 0 || d.protocolId)) return { ...d, status: "prepared" };
   return d;
+}
+
+/** "Latex, pénicilline (urticaire)", "aucune connue", or "" when not asked. */
+export function allergySummary(p: ConsultationPatient): string {
+  const list = (p.allergyList ?? []).map((a) => `${a.label}${a.reaction ? ` (${a.reaction})` : ""}`);
+  const text = p.allergies?.trim();
+  const all = [...list, ...(text ? [text] : [])];
+  if (all.length) return all.join(", ");
+  return p.noKnownAllergy ? "aucune connue" : "";
 }

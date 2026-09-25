@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RiskLevel } from "@/lib/preop/scores";
 import type { SourceLevel } from "@/lib/preop/rules/types";
@@ -197,4 +197,144 @@ export function toLocalInput(iso: string): string {
 
 export function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("fr-BE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+/** Compact number field: small label, unit inside the box — three per row on a phone. */
+export function MiniNumber({ label, value, onChange, unit, placeholder }: { label: string; value: number | undefined; onChange: (v: number | undefined) => void; unit?: string; placeholder?: string }) {
+  return (
+    <label className="block min-w-0">
+      <span className="block truncate text-[11px] font-medium text-foreground-subtle">{label}</span>
+      <span className="relative mt-0.5 block">
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder={placeholder}
+          defaultValue={value === undefined ? "" : String(value).replace(".", ",")}
+          onChange={(e) => {
+            const raw = e.target.value.trim().replace(",", ".");
+            const n = Number(raw);
+            if (raw === "") onChange(undefined);
+            else if (Number.isFinite(n)) onChange(n);
+          }}
+          className={cn(
+            "h-9 w-full min-w-0 rounded-[var(--radius-sm)] border border-border bg-surface pl-2.5 text-sm tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+            unit ? "pr-11" : "pr-2"
+          )}
+        />
+        {unit && <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] text-foreground-subtle">{unit}</span>}
+      </span>
+    </label>
+  );
+}
+
+export interface ComboOption {
+  key: string;
+  label: string;
+  hint?: string;
+}
+
+/**
+ * Type → suggestions → tap to add. `onFree` adds what was typed when
+ * nothing fits. The list stays under the field, above what follows.
+ */
+export function Combobox({
+  placeholder,
+  search,
+  onPick,
+  onFree,
+  freeLabel = (q: string) => `Ajouter « ${q} »`,
+  autoFocus,
+}: {
+  placeholder: string;
+  search: (q: string) => ComboOption[];
+  onPick: (o: ComboOption) => void;
+  onFree?: (q: string) => void;
+  freeLabel?: (q: string) => string;
+  autoFocus?: boolean;
+}) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const results = open && q.trim() ? search(q) : [];
+  const exact = results.some((r) => r.label.toLowerCase() === q.trim().toLowerCase());
+  const pick = (o: ComboOption) => {
+    onPick(o);
+    setQ("");
+  };
+  return (
+    <div className="relative">
+      <input
+        value={q}
+        autoFocus={autoFocus}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          if (results[0]) pick(results[0]);
+          else if (onFree && q.trim()) {
+            onFree(q.trim());
+            setQ("");
+          }
+        }}
+        placeholder={placeholder}
+        autoComplete="off"
+        className="h-10 w-full min-w-0 rounded-[var(--radius-sm)] border border-border bg-surface px-3 text-sm text-foreground placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      />
+      {open && q.trim() && (results.length > 0 || onFree) && (
+        <div className="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-[var(--radius-md)] border border-border bg-surface shadow-lg">
+          {results.map((o) => (
+            <button key={o.key} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => pick(o)} className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-surface-muted">
+              <span className="min-w-0 truncate">{o.label}</span>
+              {o.hint && <span className="shrink-0 text-[11px] text-foreground-subtle">{o.hint}</span>}
+            </button>
+          ))}
+          {onFree && !exact && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onFree(q.trim());
+                setQ("");
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface-muted"
+            >
+              {freeLabel(q.trim())}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A removable tag. */
+export function Tag({ children, onRemove, tone = "default", onClick }: { children: React.ReactNode; onRemove?: () => void; tone?: "default" | "auto" | "danger"; onClick?: () => void }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center gap-1 rounded-full border py-0.5 pl-2.5 text-xs",
+        onRemove ? "pr-1" : "pr-2.5",
+        tone === "default" && "border-primary/40 bg-primary-tint text-primary-strong",
+        tone === "auto" && "border-dashed border-primary/40 bg-surface text-primary-strong",
+        tone === "danger" && "border-danger/40 bg-danger-tint text-danger"
+      )}
+    >
+      {onClick ? (
+        <button type="button" onClick={onClick} className="min-w-0 truncate text-left">
+          {children}
+        </button>
+      ) : (
+        <span className="min-w-0 truncate">{children}</span>
+      )}
+      {onRemove && (
+        <button type="button" onClick={onRemove} className="rounded-full p-0.5 opacity-70 hover:opacity-100" aria-label="Retirer">
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </span>
+  );
 }

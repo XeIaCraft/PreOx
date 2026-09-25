@@ -298,6 +298,28 @@ describe("surgery and antecedent conditions", () => {
     expect(evaluateRule(aspirin, ctx({ conditions: { coronary: { present: true } }, surgery: { bleedingRisk: "high" } }), "2026-10-01T00:00:00Z")).toBeNull();
     const unknown = evaluateRule(aspirin, ctx({}), "2026-10-01T00:00:00Z");
     expect(unknown?.status).toBe("needs_info");
-    expect(unknown!.missing.map((m) => m.label)).toEqual(["Antécédent : Coronaropathie (IDM, stent, angor)", "Risque hémorragique de la chirurgie"]);
+    expect(unknown!.missing.map((m) => m.label)).toEqual(["Antécédent : Coronaropathie", "Risque hémorragique de la chirurgie"]);
+  });
+});
+
+describe("missing rules", () => {
+  it("every treatment and flagged antecedent without a rule is a question to ask", async () => {
+    const { missingRules } = await import("../rule-gaps");
+    const { emptyConsultation } = await import("../dossier");
+    const c = {
+      ...emptyConsultation(),
+      treatments: [
+        { id: "a", atc: "B01AC06", name: "Aspirine" },
+        { id: "p", atc: "N02BE01", name: "Paracétamol" },
+        { id: "r", atc: "B01AF01", name: "Rivaroxaban" },
+      ],
+      surgery: { ...emptyConsultation().surgery, name: "PTG", bleedingRisk: "high" as const },
+    };
+    const gaps = missingRules([rivaroxaban72h], c, { pacemaker: { present: true }, hypertension: { present: true } }, { techniques: ["neuraxial"] });
+    expect(gaps.map((g) => g.key)).toEqual(["t:a", "c:pacemaker"]);
+    expect(gaps[0].question.question).toMatch(/aspirine .* neuraxial procedure/);
+    expect(gaps[0].question.context).toContain("bleeding risk of the procedure: high");
+    expect(gaps[0].question.preset).toEqual([{ kind: "drug", atc: "B01AC06" }]);
+    expect(gaps[1].question.preset?.[0]).toMatchObject({ kind: "history", condition: "pacemaker" });
   });
 });

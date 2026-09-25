@@ -9,6 +9,8 @@ import { atcMatches } from "./medications";
 import { ckdEpi2021 } from "./scores";
 import type { ConditionCode, ConditionEntry, Conditions } from "./history";
 import type { ConsultationState } from "./dossier";
+import type { Catalogs } from "./catalog";
+import { DEFAULT_CATALOGS } from "./catalog-defaults";
 
 export interface Deduction {
   code: ConditionCode;
@@ -16,16 +18,6 @@ export interface Deduction {
   /** Why ("Metformine", "Hb 11,2 g/dL"…). */
   because: string;
 }
-
-/** Treatment classes that imply an antecedent. Only unambiguous ones: an antiepileptic may be for pain, an inhaler for asthma or COPD. */
-const BY_TREATMENT: { atc: string; code: ConditionCode }[] = [
-  { atc: "A10A", code: "diabetes_insulin" },
-  { atc: "A10B", code: "diabetes_oral" },
-  { atc: "C10", code: "dyslipidemia" },
-  { atc: "H03A", code: "thyroid" },
-  { atc: "H03B", code: "thyroid" },
-  { atc: "N04B", code: "neuromuscular" },
-];
 
 /** Antiplatelet / anticoagulant indications that imply an antecedent. */
 const BY_INDICATION: Partial<Record<string, ConditionCode>> = {
@@ -38,7 +30,7 @@ const BY_INDICATION: Partial<Record<string, ConditionCode>> = {
   mechanical_valve: "valve",
 };
 
-export function deduceConditions(c: ConsultationState): Deduction[] {
+export function deduceConditions(c: ConsultationState, catalogs: Pick<Catalogs, "medications" | "drugClasses"> = DEFAULT_CATALOGS): Deduction[] {
   const out: Deduction[] = [];
   const add = (code: ConditionCode, because: string, entry: Partial<ConditionEntry> = {}) => {
     if (out.some((d) => d.code === code)) return;
@@ -46,7 +38,10 @@ export function deduceConditions(c: ConsultationState): Deduction[] {
   };
 
   for (const t of c.treatments) {
-    for (const r of BY_TREATMENT) if (atcMatches(t.atc, r.atc)) add(r.code, t.name);
+    // The treatment itself (Paramètres › Traitements), then its classes.
+    const own = catalogs.medications.find((m) => m.atc === t.atc || m.id === t.atc)?.implies;
+    if (own) add(own, t.name);
+    for (const k of catalogs.drugClasses) if (k.implies && atcMatches(t.atc, k.atc)) add(k.implies, t.name);
     const fromIndication = t.indication ? BY_INDICATION[t.indication] : undefined;
     if (fromIndication) {
       // A stent or an event of less than 3 months counts as recent.
@@ -77,10 +72,10 @@ export function deduceConditions(c: ConsultationState): Deduction[] {
 }
 
 /** The antecedents as used by the scores: explicit answers, completed by the deductions. */
-export function effectiveConditions(c: ConsultationState): { conditions: Conditions; deduced: Map<ConditionCode, string> } {
+export function effectiveConditions(c: ConsultationState, catalogs: Pick<Catalogs, "medications" | "drugClasses" | "conditions"> = DEFAULT_CATALOGS): { conditions: Conditions; deduced: Map<ConditionCode, string> } {
   const conditions: Conditions = { ...c.conditions };
   const deduced = new Map<ConditionCode, string>();
-  for (const d of deduceConditions(c)) {
+  for (const d of deduceConditions(c, catalogs)) {
     const explicit = c.conditions[d.code];
     if (explicit === undefined) {
       conditions[d.code] = d.entry;
@@ -91,6 +86,9 @@ export function effectiveConditions(c: ConsultationState): { conditions: Conditi
       deduced.set(d.code, d.because);
     }
   }
+  // Systems reviewed with nothing else (« RAS »): what isn't listed is absent.
+  const reviewed = new Set(c.historyReviewed ?? []);
+  if (reviewed.size) for (const item of catalogs.conditions) if (reviewed.has(item.system) && conditions[item.id] === undefined) conditions[item.id] = { present: false };
   return { conditions, deduced };
 }
 

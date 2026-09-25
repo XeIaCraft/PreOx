@@ -8,6 +8,7 @@ import { ChipGroup } from "@/components/carnet/ui";
 import { useToast } from "@/components/ui/toast";
 import { FieldLabel, Panel, TextArea } from "@/components/preop/ui";
 import { evaluateConsultation } from "@/components/preop/consultation";
+import { useCatalogs } from "@/components/preop/use-catalogs";
 import { buildIsbar, isbarText } from "@/lib/preop/isbar";
 import type { Dossier, Transmission } from "@/lib/preop/dossier";
 import type { Rule } from "@/lib/preop/rules/types";
@@ -41,10 +42,11 @@ export function HandoverView({ d, onChange, rules }: { d: Dossier; onChange: (d:
   const [busy, setBusy] = useState(false);
   const t = d.transmission;
   const set = (patch: Partial<Transmission>) => onChange({ ...d, transmission: { ...t, ...patch } });
-  const evaluation = useMemo(() => evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }), [rules, d.consultation, d.plan.techniques]);
+  const { catalogs } = useCatalogs();
+  const evaluation = useMemo(() => evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }, catalogs), [rules, d.consultation, d.plan.techniques, catalogs]);
   // Recomputed at each render: the durations run until « Sortie de salle ».
   const now = new Date().toISOString();
-  const sections = buildIsbar(d, now, evaluation);
+  const sections = buildIsbar(d, now, evaluation, catalogs);
   const missing = sections.reduce((n, s) => n + s.missing.length, 0);
   const text = isbarText(d, sections);
 

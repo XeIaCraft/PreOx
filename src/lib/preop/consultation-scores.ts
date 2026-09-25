@@ -34,6 +34,8 @@ import { atcMatches } from "./medications";
 import { effectiveConditions } from "./derive";
 import { drugClassOf } from "@/lib/carnet/pharmaco";
 import type { ProtocolContent } from "./protocols";
+import type { Catalogs } from "./catalog";
+import { DEFAULT_CATALOGS } from "./catalog-defaults";
 
 type YesNo<K extends string> = Partial<Record<K, boolean>>;
 
@@ -64,7 +66,8 @@ function plannedPostopOpioids(plan: ProtocolContent | undefined): boolean | unde
 
 const OPIOID_WORDS = /morphin|oxycodon|piritramid|dipidolor|tramadol|hydromorphon|tapentadol|fentanyl|sufentanil|PCA/i;
 
-export function consultationScores(c: ConsultationState, opts: { plan?: ProtocolContent } = {}) {
+export function consultationScores(c: ConsultationState, opts: { plan?: ProtocolContent; catalogs?: Catalogs } = {}) {
+  const catalogs = opts.catalogs ?? DEFAULT_CATALOGS;
   const p = c.patient;
   const hasBody = !!(p.weightKg && p.heightCm);
   const derived = {
@@ -76,12 +79,13 @@ export function consultationScores(c: ConsultationState, opts: { plan?: Protocol
     egfr: p.age !== undefined && p.sex && p.creatinineMgDl ? ckdEpi2021({ age: p.age, sex: p.sex, creatinineMgDl: p.creatinineMgDl }) : undefined,
   };
 
-  const { conditions: cond, deduced } = effectiveConditions(c);
+  const { conditions: cond, deduced } = effectiveConditions(c, catalogs);
   const sub = c.substances;
   const surgery = c.surgery;
   const merged = {
     stopBang: withDerived(c.stopBang, {
       pressure: has(cond, "hypertension"),
+      neckOver40: p.neckCm !== undefined ? p.neckCm > 40 : undefined,
       bmiOver35: derived.bmi !== undefined ? derived.bmi > 35 : undefined,
       ageOver50: p.age !== undefined ? p.age > 50 : undefined,
       male: p.sex ? p.sex === "M" : undefined,
@@ -132,12 +136,14 @@ export function consultationScores(c: ConsultationState, opts: { plan?: Protocol
     dasi: dasi(c.dasi),
     ariscat: ariscat({
       ...c.ariscat,
+      respiratoryInfectionLastMonth: c.ariscat.respiratoryInfectionLastMonth ?? has(cond, "recent_uri"),
       age: c.ariscat.age ?? p.age,
       spo2: c.ariscat.spo2 ?? p.spo2,
       anemia: c.ariscat.anemia ?? (p.hb !== undefined ? p.hb <= 10 : undefined),
       incision: c.ariscat.incision ?? surgery.incision,
       durationHours: c.ariscat.durationHours ?? surgery.durationHours,
-      emergency: c.ariscat.emergency ?? surgery.emergency,
+      // A surgery not marked urgent is scheduled.
+      emergency: c.ariscat.emergency ?? surgery.emergency ?? (surgery.name ? false : undefined),
     }),
     apfel: apfel(merged.apfel.merged),
     hemstop: hemstop(c.hemstop),
@@ -147,11 +153,11 @@ export function consultationScores(c: ConsultationState, opts: { plan?: Protocol
     mask: maskVentilation(merged.mask.merged),
   };
 
-  const asaSuggestion = suggestAsa(p, cond, sub);
+  const asaSuggestion = suggestAsa(p, cond, sub, catalogs.conditions);
   const asa = c.asa ?? asaSuggestion.asa;
   const exams = recommendExams({ consultation: { ...c, conditions: cond }, asa, mets: results.dasi.missing === 0 && results.dasi.value > 0 ? results.dasi.mets : undefined });
 
-  return { derived, merged, results, asaSuggestion, asa, exams, conditions: cond, deduced };
+  return { derived, merged, results, asaSuggestion, asa, exams, conditions: cond, deduced, catalogs };
 }
 
 export type ConsultationScores = ReturnType<typeof consultationScores>;

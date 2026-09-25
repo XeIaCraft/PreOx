@@ -1187,6 +1187,12 @@ export type Database = {
         Update: Partial<PreopRuleRow>;
         Relationships: [];
       };
+      preop_catalogs: {
+        Row: { user_id: string; kind: string; overrides: unknown; updated_at: string };
+        Insert: { user_id: string; kind: string; overrides: unknown; updated_at?: string };
+        Update: Partial<{ user_id: string; kind: string; overrides: unknown; updated_at: string }>;
+        Relationships: [];
+      };
       preop_protocols: {
         Row: PreopProtocolRow;
         Insert: Partial<PreopProtocolRow> & { id: string; user_id: string; name: string };

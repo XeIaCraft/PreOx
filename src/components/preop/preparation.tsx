@@ -24,12 +24,14 @@ import { attentionPoints } from "@/lib/preop/attention";
 import { patientInstructions } from "@/lib/preop/instructions";
 import { pendingExams } from "@/lib/preop/exams";
 import { AttentionPanel, InstructionsPanel } from "@/components/preop/attention-panel";
+import { useCatalogs } from "@/components/preop/use-catalogs";
 import type { Rule } from "@/lib/preop/rules/types";
 import { cn } from "@/lib/utils";
 
 /** What the rule library says for this patient — the reminders to act on before the day. */
 function RuleReminders({ d, rules }: { d: Dossier; rules: Rule[] }) {
-  const evaluation = useMemo(() => evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }), [rules, d.consultation, d.plan.techniques]);
+  const { catalogs } = useCatalogs();
+  const evaluation = useMemo(() => evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }, catalogs), [rules, d.consultation, d.plan.techniques, catalogs]);
   const outcomes = evaluation.findings.filter((f) => f.status === "applies").flatMap((f) => f.outcomes.map((o) => ({ o, f })));
   if (outcomes.length === 0 && evaluation.gaps.length === 0 && evaluation.missing.length === 0) return null;
   return (
@@ -190,9 +192,10 @@ export function PreparationView({
   const choices = [...protocols].sort((a, b) => Number(!!b.hospital && b.hospital.toLowerCase() === hospital) - Number(!!a.hospital && a.hospital.toLowerCase() === hospital) || a.name.localeCompare(b.name, "fr"));
   const planEmpty = d.plan.drugs.length === 0 && d.plan.techniques.length === 0 && d.plan.risks.length === 0;
 
-  const scores = useMemo(() => consultationScores(d.consultation, { plan: d.plan }), [d.consultation, d.plan]);
+  const { catalogs } = useCatalogs();
+  const scores = useMemo(() => consultationScores(d.consultation, { plan: d.plan, catalogs }), [d.consultation, d.plan, catalogs]);
   const points = useMemo(() => attentionPoints(d.consultation, scores, d.plan), [d.consultation, scores, d.plan]);
-  const evaluation = useMemo(() => evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }), [rules, d.consultation, d.plan.techniques]);
+  const evaluation = useMemo(() => evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }, catalogs), [rules, d.consultation, d.plan.techniques, catalogs]);
   const instructions = useMemo(() => patientInstructions(d.consultation, evaluation), [d.consultation, evaluation]);
   const toRequest = pendingExams(d.consultation, scores.exams);
   const additions = points.filter((p) => p.material?.length || p.risk);

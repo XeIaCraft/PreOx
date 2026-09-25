@@ -14,7 +14,7 @@ import { SEARCH_TOOLS, buildQuestion, type QuestionInput } from "@/lib/preop/rul
 import { suggestStructure } from "@/lib/preop/rules/structure";
 import { samePoint, outranks } from "@/lib/preop/rules/engine";
 import { describeAction } from "@/lib/preop/rules/describe";
-import { SOURCE_LEVELS, TECHNIQUES, type Rule, type SourceLevel } from "@/lib/preop/rules/types";
+import { SOURCE_LEVELS, TECHNIQUES, type Condition, type Rule, type SourceLevel } from "@/lib/preop/rules/types";
 
 type Use = "rule" | "explanation" | "ignore";
 
@@ -31,14 +31,26 @@ function defaultTitle(draft: Pick<RuleDraft, "conditions">): string {
   return [drugs.join(", "), techniques.join(" / ")].filter(Boolean).join(" · ");
 }
 
-function draftFromBlock(b: ParsedBlock, explanations: string[], question: string, tool: string): RuleDraft {
+/** The structure read from the answer, completed by what the question was about (a treatment, an antecedent). */
+function withPreset(conditions: Condition[], preset: Condition[] | undefined): Condition[] {
+  if (!preset?.length) return conditions;
+  const out = [...conditions];
+  for (const p of preset) {
+    if (p.kind === "drug" && out.some((c) => c.kind === "drug")) continue;
+    if (p.kind === "history" && out.some((c) => c.kind === "history" && c.condition === p.condition)) continue;
+    out.unshift(p);
+  }
+  return out;
+}
+
+function draftFromBlock(b: ParsedBlock, explanations: string[], question: string, tool: string, preset?: Condition[]): RuleDraft {
   const s = suggestStructure(b.statement, b.conditions);
   const ref = b.reference;
   const draft: RuleDraft = {
     id: crypto.randomUUID(),
     title: "",
     statement: b.statement,
-    conditions: s.conditions,
+    conditions: withPreset(s.conditions, preset),
     action: s.action,
     source: {
       organisation: b.organisation,
@@ -160,7 +172,7 @@ export function RuleWizard({ initial, onSave, onDone }: { initial: QuestionInput
       .filter((_, i) => uses[i] === "explanation")
       .map((b) => `${b.statement}${b.organisation ? ` (${b.organisation}${b.year ? `, ${b.year}` : ""})` : ""}`);
     const questionText = buildQuestion({ question, context });
-    const next = blocks.filter((_, i) => uses[i] === "rule").map((b) => draftFromBlock(b, explanations, questionText, tool));
+    const next = blocks.filter((_, i) => uses[i] === "rule").map((b) => draftFromBlock(b, explanations, questionText, tool, initial?.preset));
     // Rules of the same answer on the same point: the lower source becomes a divergence of the higher one.
     for (const d of next) {
       d.divergences = next

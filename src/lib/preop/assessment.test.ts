@@ -14,7 +14,7 @@ describe("ASA suggestion", () => {
   it("takes the most severe antecedent and says why", () => {
     const s = suggestAsa({ weightKg: 80, heightCm: 175 }, { hypertension: { present: true }, coronary: { present: true } }, { tobacco: "current" });
     expect(s.asa).toBe(3);
-    expect(s.reasons.map((r) => r.label)).toEqual(["coronaropathie (> 3 mois)", "HTA contrôlée", "tabagisme actif"]);
+    expect(s.reasons.map((r) => r.label)).toEqual(["coronaropathie", "HTA", "tabagisme actif"]);
   });
   it("recent events and severity raise the class; qualifiers matter", () => {
     expect(suggestAsa({}, { coronary: { present: true, recent: true } }, {}).asa).toBe(4);
@@ -41,7 +41,7 @@ describe("scores fed by antecedents, surgery and substance use", () => {
     expect(results.rcri.value).toBe(2);
     expect(merged.stopBang.merged.pressure).toBe(true);
     expect(merged.apfel.merged).toMatchObject({ female: true, nonSmoker: true, history: true });
-    expect(results.ariscat.missing).toBe(4); // SpO₂, Hb, respiratory infection, emergency — incision and duration come from the surgery
+    expect(results.ariscat.missing).toBe(3); // SpO₂, Hb, respiratory infection — incision, duration and "not urgent" come from the surgery
     expect(asa).toBe(2);
   });
 });
@@ -71,7 +71,7 @@ describe("recommended tests", () => {
 
 describe("history", () => {
   it("summaries and catalogue search", () => {
-    expect(conditionsSummary({ hypertension: { present: true, poorlyControlled: true }, copd: { present: false } })).toBe("HTA (mal contrôlé(e))");
+    expect(conditionsSummary({ hypertension: { present: true, poorlyControlled: true }, copd: { present: false } })).toBe("HTA (mal contrôlée)");
     expect(substanceSummary({ tobacco: "current", packYears: 20, alcoholUnitsPerWeek: 10, drugs: ["cannabis"] })).toBe("Tabac actif (20 PA) · Alcool 10 U/sem · Drogues : Cannabis");
     expect(searchSurgeries("ptg")[0].name).toBe("Prothèse totale de genou");
     expect(searchSurgeries("vesicule")[0].name).toBe("Cholécystectomie cœlioscopique");
@@ -117,9 +117,9 @@ describe("points of attention and patient instructions", () => {
     const plan = { ...(await import("./protocols")).emptyProtocolContent(), drugs: [{ id: "c", name: "Céfazoline", route: "bolus_iv", phase: "antibio" as const, doseMode: "fixed" as const, amount: 2, unit: "g" as const, weightBasis: "total" as const, maxAmount: null, redoseEveryMin: null, note: "" }] };
     const points = attentionPoints(c, consultationScores(c, { plan }), plan);
     const ids = points.map((p) => p.id);
-    expect(ids.slice(0, 4)).toEqual(expect.arrayContaining(["mh", "latex", "allergy-c", "pacemaker"]));
-    expect(ids).toEqual(expect.arrayContaining(["osa", "bleeding", "delirium"]));
-    expect(points.find((p) => p.id === "osa")!.material).toEqual(["PPC du patient"]);
+    expect(ids.slice(0, 5)).toEqual(expect.arrayContaining(["cond-malignant_hyperthermia", "allergy-latex", "allergy-cephalosporins", "allergy-plan-cephalosporins-c", "cond-pacemaker"]));
+    expect(ids).toEqual(expect.arrayContaining(["cond-osa", "bleeding", "delirium"]));
+    expect(points.find((p) => p.id === "cond-osa")!.material).toEqual(["PPC du patient"]);
   });
   it("computes fasting times and treatment stops", async () => {
     const { patientInstructions } = await import("./instructions");
@@ -128,5 +128,33 @@ describe("points of attention and patient instructions", () => {
     expect(i.fasting[0]).toMatch(/Repas léger au plus tard le jeudi 8 octobre à 0?2:00 \(6 h avant\)/);
     expect(i.fasting[1]).toMatch(/jeudi 8 octobre à 0?6:00 \(2 h avant\)/);
     expect(i.undecided).toEqual(["Ramipril"]);
+  });
+});
+
+describe("consultation redesign", () => {
+  it("RAS systems count as no, only unknowable questions remain, recap follows the sheet", async () => {
+    const { remainingQuestions } = await import("./remaining-questions");
+    const { consultationRecap } = await import("./recap");
+    const { attentionPoints } = await import("./attention");
+    const c = consult({
+      patient: { age: 70, sex: "M", weightKg: 80, heightCm: 175, neckCm: 42, allergyList: [{ allergenId: "latex", label: "Latex" }] },
+      conditions: { hypertension: { present: true } },
+      historyReviewed: ["cardio", "resp", "endo", "neuro"],
+      substances: { tobacco: "never" },
+      surgery: { ...emptyConsultation().surgery, name: "PTG", kce: "major", cardiacRisk: "intermediate", bleedingRisk: "high", rcriHighRisk: false, incision: "peripheral" },
+    });
+    const scores = consultationScores(c);
+    expect(scores.conditions.coronary?.present).toBe(false);
+    expect(scores.merged.stopBang.merged.neckOver40).toBe(true);
+    const groups = remainingQuestions(c, scores);
+    expect(groups.map((g) => g.id)).toEqual(["sleep", "ponv", "bleeding", "dasi"]); // respiratory RAS answers the recent infection
+    expect(groups.find((g) => g.id === "sleep")!.questions.map((q) => q.key)).toEqual(["sb-snoring", "sb-tired", "sb-observed"]);
+    const answered = groups[0].questions[0].apply(c, true);
+    expect(answered.stopBang.snoring).toBe(true);
+    const points = attentionPoints(c, scores);
+    const recap = consultationRecap(c, scores, { points, instructions: { fasting: [], treatments: [], undecided: [] }, initials: "AB" });
+    expect(recap.map((s) => s.title)).toEqual(expect.arrayContaining(["Patient", "Intervention", "Antécédents médicaux", "Allergies", "Examen clinique", "Scores", "Points d'attention"]));
+    expect(recap.find((s) => s.title === "Antécédents médicaux")!.lines).toEqual(["Cardiovasculaire : HTA", "Respiratoire : RAS", "Endocrinien et métabolique : RAS", "Neurologique : RAS"]);
+    expect(recap.find((s) => s.title === "Allergies")!.lines).toEqual(["Latex"]);
   });
 });

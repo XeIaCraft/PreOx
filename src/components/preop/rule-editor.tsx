@@ -9,7 +9,8 @@ import { NumberField } from "@/components/preop/ui";
 import { ATC_GROUPS, MEDICATIONS, atcLabel } from "@/lib/preop/medications";
 import { describeRule } from "@/lib/preop/rules/describe";
 import { INDICATIONS, PATIENT_VALUES, RULE_TYPES, SOURCE_LEVELS, SURGERY_ATTRIBUTES, TECHNIQUES, type SurgeryAttribute } from "@/lib/preop/rules/types";
-import { SYSTEMS, type ConditionCode } from "@/lib/preop/history";
+import { SYSTEM_LABELS, SYSTEM_ORDER } from "@/lib/preop/catalog";
+import { useCatalogs } from "@/components/preop/use-catalogs";
 import type { Comparator, Condition, Indication, PatientValue, Rule, RuleAction, RuleType, SourceLevel, Technique } from "@/lib/preop/rules/types";
 
 export type RuleDraft = Omit<Rule, "created_at" | "updated_at">;
@@ -59,6 +60,7 @@ function defaultAction(type: RuleType, current: RuleAction): RuleAction {
 }
 
 function ConditionEditor({ c, onChange, onRemove }: { c: Condition; onChange: (c: Condition) => void; onRemove: () => void }) {
+  const conditionItems = useCatalogs().catalogs.conditions;
   return (
     <div className="space-y-2 rounded-[var(--radius-md)] border border-border bg-surface-muted/40 p-2.5">
       <div className="flex items-center justify-between gap-2">
@@ -153,14 +155,20 @@ function ConditionEditor({ c, onChange, onRemove }: { c: Condition; onChange: (c
             <option value="yes">présent</option>
             <option value="no">absent</option>
           </Select>
-          <Select value={c.condition} onChange={(e) => onChange({ ...c, condition: e.target.value as ConditionCode })} className="w-auto min-w-0 flex-1">
-            {SYSTEMS.map((sys) => (
-              <optgroup key={sys.code} label={sys.label}>
-                {sys.conditions.map((d) => (
-                  <option key={d.code} value={d.code}>
-                    {d.label}
-                  </option>
-                ))}
+          <Select
+            value={c.condition}
+            onChange={(e) => onChange({ ...c, condition: e.target.value, label: conditionItems.find((d) => d.id === e.target.value)?.label })}
+            className="w-auto min-w-0 flex-1"
+          >
+            {SYSTEM_ORDER.map((sys) => (
+              <optgroup key={sys} label={SYSTEM_LABELS[sys]}>
+                {conditionItems
+                  .filter((d) => d.system === sys)
+                  .map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.label}
+                    </option>
+                  ))}
               </optgroup>
             ))}
           </Select>

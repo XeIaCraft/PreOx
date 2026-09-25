@@ -101,12 +101,12 @@ export type Condition =
   /** The intervention: bleeding risk, ESC cardiac risk or grade among the listed ones. */
   | { kind: "surgery"; attribute: SurgeryAttribute; in: string[] }
   /** An antecedent of the consultation, present or absent. */
-  | { kind: "history"; condition: ConditionCode; present: boolean };
+  | { kind: "history"; condition: ConditionCode; present: boolean; /** Kept for antecedents added by the user. */ label?: string };
 
 export type SurgeryAttribute = "bleedingRisk" | "cardiacRisk" | "grade";
 
 export const SURGERY_ATTRIBUTES: { code: SurgeryAttribute; label: string; values: { code: string; label: string }[] }[] = [
-  { code: "bleedingRisk", label: "Risque hémorragique de la chirurgie", values: [{ code: "low", label: "faible" }, { code: "high", label: "élevé" }] },
+  { code: "bleedingRisk", label: "Risque hémorragique de la chirurgie", values: [{ code: "minimal", label: "minime" }, { code: "low", label: "faible" }, { code: "high", label: "élevé" }] },
   { code: "cardiacRisk", label: "Risque cardiaque de la chirurgie (ESC)", values: [{ code: "low", label: "faible" }, { code: "intermediate", label: "intermédiaire" }, { code: "high", label: "élevé" }] },
   { code: "grade", label: "Grade de la chirurgie", values: [{ code: "minor", label: "mineure" }, { code: "intermediate", label: "intermédiaire" }, { code: "major", label: "majeure" }] },
 ];

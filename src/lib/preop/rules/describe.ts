@@ -2,7 +2,7 @@
 // ("this is what the app understood") and in the library.
 import { atcLabel } from "../medications";
 import { INDICATIONS, PATIENT_VALUES, SURGERY_ATTRIBUTES, TECHNIQUES } from "./types";
-import { CONDITION_DEFS } from "../history";
+import { defaultConditionLabel } from "../catalog-conditions";
 import type { Comparator, Condition, RuleAction } from "./types";
 
 const OP: Record<Comparator, string> = { "<": "<", "<=": "≤", ">": ">", ">=": "≥" };
@@ -18,7 +18,7 @@ export function describeCondition(c: Condition): string {
     const a = SURGERY_ATTRIBUTES.find((x) => x.code === c.attribute);
     return `${(a?.label ?? c.attribute).toLowerCase()} : ${c.in.map((v) => a?.values.find((x) => x.code === v)?.label ?? v).join(" ou ")}`;
   }
-  if (c.kind === "history") return `antécédent ${c.present ? "" : "absent : "}${(CONDITION_DEFS.get(c.condition)?.label ?? c.condition).toLowerCase()}`;
+  if (c.kind === "history") return `antécédent ${c.present ? "" : "absent : "}${(c.label ?? defaultConditionLabel(c.condition) ?? c.condition).toLowerCase()}`;
   if (c.kind === "value") {
     const v = PATIENT_VALUES.find((x) => x.code === c.value);
     return `${v?.label ?? c.value} ${OP[c.op]} ${c.threshold}${v?.unit ? ` ${v.unit}` : ""}`;

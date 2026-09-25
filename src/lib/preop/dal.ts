@@ -12,6 +12,8 @@ import { ruleSchema } from "./rules/schema";
 import type { Rule } from "./rules/types";
 import { protocolSchema } from "./protocol-schema";
 import { emptyProtocolContent, type Protocol } from "./protocols";
+import { catalogKindSchema, catalogOverridesSchema } from "./catalog-schema";
+import type { AllOverrides } from "./catalog";
 import type { Profile } from "@/lib/supabase/types";
 
 export const PREOP_SLUG = "preop";
@@ -91,4 +93,23 @@ export async function deleteProtocol(userId: string, id: string): Promise<void> 
   const supabase = await createClient();
   const { error } = await supabase.from("preop_protocols").delete().eq("id", id).eq("user_id", userId);
   if (error) throw new Error(error.message);
+}
+
+// -- Catalogues (the user's changes to the default lists) -------------------------
+
+export async function listCatalogOverrides(userId: string): Promise<AllOverrides> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("preop_catalogs").select("kind, overrides").eq("user_id", userId);
+  if (error) throw new Error(error.message);
+  return Object.fromEntries((data ?? []).map((r) => [r.kind, r.overrides])) as AllOverrides;
+}
+
+export async function saveCatalogOverrides(userId: string, kind: unknown, input: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+  const k = catalogKindSchema.safeParse(kind);
+  if (!k.success) return { ok: false, error: "Catalogue inconnu" };
+  const parsed = catalogOverridesSchema[k.data].safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Catalogue invalide" };
+  const supabase = await createClient();
+  const { error } = await supabase.from("preop_catalogs").upsert({ user_id: userId, kind: k.data, overrides: parsed.data } as never, { onConflict: "user_id,kind" });
+  return error ? { ok: false, error: error.message } : { ok: true };
 }
