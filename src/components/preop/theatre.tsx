@@ -370,39 +370,43 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
   );
 }
 
-function FinishWithCarnet({ d, onChange }: { d: Dossier; onChange: (d: Dossier) => void }) {
+/** Confirms the planned carnet case — always an explicit tap, never automatic. */
+function ConfirmCarnet({ d, onChange }: { d: Dossier; onChange: (d: Dossier) => void }) {
   const { plannedCases, commit } = useCarnet();
   const { toast } = useToast();
   const planned = d.carnetCaseId ? plannedCases.find((c) => c.id === d.carnetCaseId) : undefined;
+  if (d.status === "done" && !planned) return null;
   return (
     <Button
       className="w-full"
+      variant={d.status === "done" ? "secondary" : "primary"}
       onClick={() => {
         if (planned) commit([patchRow("cases", planned.id, { planned: false })]);
-        onChange({ ...d, status: "done" });
+        if (d.status !== "done") onChange({ ...d, status: "done" });
         toast(planned ? "Cas fait — ajouté au relevé du carnet." : "Cas marqué fait.", { variant: "success" });
       }}
     >
-      <CheckCircle2 className="h-4 w-4" /> Cas fait{planned ? " · au carnet" : ""}
+      <CheckCircle2 className="h-4 w-4" /> {d.status === "done" ? "Ajouter au relevé du carnet" : `Cas fait${planned ? " · au carnet" : ""}`}
     </Button>
   );
 }
 
 function FinishCase({ d, onChange, carnetEnabled }: { d: Dossier; onChange: (d: Dossier) => void; carnetEnabled: boolean }) {
-  if (d.status === "done")
-    return (
-      <p className="flex items-center gap-1.5 rounded-[var(--radius-md)] bg-success-tint px-3 py-2 text-sm text-success">
-        <CheckCircle2 className="h-4 w-4" /> Cas fait.
-      </p>
-    );
   return (
     <div className="space-y-2">
+      {d.status === "done" && (
+        <p className="flex items-center gap-1.5 rounded-[var(--radius-md)] bg-success-tint px-3 py-2 text-sm text-success">
+          <CheckCircle2 className="h-4 w-4" /> Cas fait.
+        </p>
+      )}
       {carnetEnabled ? (
-        <FinishWithCarnet d={d} onChange={onChange} />
+        <ConfirmCarnet d={d} onChange={onChange} />
       ) : (
-        <Button className="w-full" onClick={() => onChange({ ...d, status: "done" })}>
-          <CheckCircle2 className="h-4 w-4" /> Cas fait
-        </Button>
+        d.status !== "done" && (
+          <Button className="w-full" onClick={() => onChange({ ...d, status: "done" })}>
+            <CheckCircle2 className="h-4 w-4" /> Cas fait
+          </Button>
+        )
       )}
       <p className="flex items-center gap-1 text-xs text-foreground-subtle">
         <Clock className="h-3 w-3" /> Tout est enregistré au fur et à mesure, chiffré sur cet appareil.

@@ -18,23 +18,30 @@ export function ConditionsEditor({
   sex,
   patient,
   onPatient,
+  effective,
+  deduced,
 }: {
   conditions: Conditions;
+  /** Answers completed by what the consultation deduced (treatments, lab values, BP). */
+  effective?: Conditions;
+  deduced?: Map<ConditionCode, string>;
   onChange: (c: Conditions) => void;
   sex?: Sex;
   patient: ConsultationPatient;
   onPatient: (p: ConsultationPatient) => void;
 }) {
-  const setPresent = (code: ConditionCode, present: boolean) => onChange({ ...conditions, [code]: { ...conditions[code], present } });
-  const setQualifier = (code: ConditionCode, q: Qualifier, v: boolean) => onChange({ ...conditions, [code]: { ...conditions[code], present: true, [q]: v } });
+  const shown = effective ?? conditions;
+  const setPresent = (code: ConditionCode, present: boolean) => onChange({ ...conditions, [code]: { ...shown[code], present } });
+  const setQualifier = (code: ConditionCode, q: Qualifier, v: boolean) => onChange({ ...conditions, [code]: { ...shown[code], present: true, [q]: v } });
 
   return (
     <Panel title="Antécédents">
       <div className="space-y-3">
         {SYSTEMS.map((system) => {
           const defs = system.conditions.filter((d) => !d.female || sex !== "M");
-          const unanswered = defs.filter((d) => conditions[d.code] === undefined);
-          const withQualifiers = defs.filter((d) => conditions[d.code]?.present && d.qualifiers?.length);
+          const unanswered = defs.filter((d) => shown[d.code] === undefined);
+          const withQualifiers = defs.filter((d) => shown[d.code]?.present && d.qualifiers?.length);
+          const auto = defs.filter((d) => deduced?.has(d.code));
           return (
             <div key={system.code} className="space-y-1.5">
               <div className="flex items-center justify-between gap-2">
@@ -47,14 +54,19 @@ export function ConditionsEditor({
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {defs.map((d) => (
-                  <YesNoChip key={d.code} label={d.label} value={conditions[d.code]?.present} onChange={(v) => setPresent(d.code, v)} />
+                  <YesNoChip key={d.code} label={d.label} value={shown[d.code]?.present} derived={deduced?.has(d.code)} onChange={(v) => setPresent(d.code, v)} />
                 ))}
               </div>
+              {auto.length > 0 && (
+                <p className="text-[11px] text-foreground-subtle">
+                  Déduit automatiquement : {auto.map((d) => `${d.label.toLowerCase()} (${deduced!.get(d.code)})`).join(" ; ")} — touchez pour corriger.
+                </p>
+              )}
               {withQualifiers.map((d) => (
                 <div key={d.code} className="flex flex-wrap items-center gap-1.5 pl-2">
                   <span className="text-xs text-foreground-muted">{d.label} :</span>
                   {d.qualifiers!.map((q) => (
-                    <ToggleChip key={q.key} pressed={!!conditions[d.code]?.[q.key]} onChange={(v) => setQualifier(d.code, q.key, v)} className="min-h-8 px-2 text-xs">
+                    <ToggleChip key={q.key} pressed={!!shown[d.code]?.[q.key]} onChange={(v) => setQualifier(d.code, q.key, v)} className="min-h-8 px-2 text-xs">
                       {q.label}
                     </ToggleChip>
                   ))}

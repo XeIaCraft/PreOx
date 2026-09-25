@@ -160,3 +160,25 @@ export function recommendExams({ consultation: c, asa, mets }: ExamInput): ExamR
   const order: ExamCode[] = ["ecg", "fbc", "renal", "haemostasis", "hba1c", "troponin", "bnp", "echo", "lung", "pregnancy"];
   return { recommendations: order.filter((k) => recs.has(k)).map((k) => recs.get(k)!), missing };
 }
+
+/** A test whose result is already in the consultation counts as available, with its value. */
+export function autoExamState(code: ExamCode, p: ConsultationState["patient"]): { status: "available"; note: string } | null {
+  const n = (v: number) => String(v).replace(".", ",");
+  switch (code) {
+    case "fbc":
+      return p.hb !== undefined ? { status: "available", note: [`Hb ${n(p.hb)} g/dL`, p.platelets !== undefined ? `plaquettes ${n(p.platelets)} G/L` : ""].filter(Boolean).join(", ") } : null;
+    case "renal":
+      return p.creatinineMgDl !== undefined ? { status: "available", note: `créatinine ${n(p.creatinineMgDl)} mg/dL` } : null;
+    case "haemostasis":
+      return p.inr !== undefined ? { status: "available", note: `INR ${n(p.inr)}` } : null;
+    case "hba1c":
+      return p.hba1c !== undefined ? { status: "available", note: `HbA1c ${n(p.hba1c)} %` } : null;
+    default:
+      return null;
+  }
+}
+
+/** Suggested tests not yet requested, available or set aside. */
+export function pendingExams(c: ConsultationState, result: ExamResult): ExamRecommendation[] {
+  return result.recommendations.filter((r) => (c.exams[r.code]?.status ?? autoExamState(r.code, c.patient)?.status ?? "todo") === "todo");
+}

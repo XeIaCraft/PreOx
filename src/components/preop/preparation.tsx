@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BookmarkPlus, CalendarCheck2, CalendarPlus, CalendarX2, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -18,7 +18,12 @@ import { deleteRow, patchRow, putRow } from "@/lib/carnet/mutations";
 import { plannedCaseFromDossier, suggestedRegionalTypes } from "@/lib/preop/carnet-link";
 import { dossierDate, type Dossier } from "@/lib/preop/dossier";
 import { formatHours } from "@/lib/preop/rules/describe";
-import type { Protocol } from "@/lib/preop/protocols";
+import { matchProtocol, planHasAdditions, withAdditions, type Protocol, type ProtocolContent } from "@/lib/preop/protocols";
+import { consultationScores } from "@/lib/preop/consultation-scores";
+import { attentionPoints } from "@/lib/preop/attention";
+import { patientInstructions } from "@/lib/preop/instructions";
+import { pendingExams } from "@/lib/preop/exams";
+import { AttentionPanel, InstructionsPanel } from "@/components/preop/attention-panel";
 import type { Rule } from "@/lib/preop/rules/types";
 import { cn } from "@/lib/utils";
 
@@ -185,17 +190,42 @@ export function PreparationView({
   const choices = [...protocols].sort((a, b) => Number(!!b.hospital && b.hospital.toLowerCase() === hospital) - Number(!!a.hospital && a.hospital.toLowerCase() === hospital) || a.name.localeCompare(b.name, "fr"));
   const planEmpty = d.plan.drugs.length === 0 && d.plan.techniques.length === 0 && d.plan.risks.length === 0;
 
-  function applyProtocol(p: Protocol) {
-    if (!planEmpty && !confirm(`Remplacer le plan actuel par le protocole « ${p.name} » ?`)) return;
+  const scores = useMemo(() => consultationScores(d.consultation, { plan: d.plan }), [d.consultation, d.plan]);
+  const points = useMemo(() => attentionPoints(d.consultation, scores, d.plan), [d.consultation, scores, d.plan]);
+  const evaluation = useMemo(() => evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }), [rules, d.consultation, d.plan.techniques]);
+  const instructions = useMemo(() => patientInstructions(d.consultation, evaluation), [d.consultation, evaluation]);
+  const toRequest = pendingExams(d.consultation, scores.exams);
+  const additions = points.filter((p) => p.material?.length || p.risk);
+
+  /** A protocol's plan for this patient: techniques from the consultation if the protocol has none, plus the patient's own precautions. */
+  function planFrom(p: Protocol): ProtocolContent {
+    const content = structuredClone(p.content);
+    if (content.techniques.length === 0) content.techniques = [...d.consultation.techniques];
+    return withAdditions(content, additions);
+  }
+
+  function applyProtocol(p: Protocol, auto = false) {
+    if (!auto && !planEmpty && !confirm(`Remplacer le plan actuel par le protocole « ${p.name} » ?`)) return;
     onChange({
       ...d,
       protocolId: p.id,
       protocolName: p.name,
-      plan: structuredClone(p.content),
+      plan: planFrom(p),
       consultation: { ...d.consultation, surgery: { ...d.consultation.surgery, name: d.consultation.surgery.name || p.surgery, category: d.consultation.surgery.category || p.operation_category } },
     });
     setPlanKey((k) => k + 1);
   }
+
+  // Opening an unprepared dossier: the protocol that fits the intervention is applied by itself (once).
+  const autoApplied = useRef(new Set<string>());
+  const match = planEmpty && !d.protocolId ? matchProtocol(protocols, d.consultation.surgery, d.consultation.hospital) : null;
+  useEffect(() => {
+    if (!match || autoApplied.current.has(d.id)) return;
+    autoApplied.current.add(d.id);
+    applyProtocol(match, true);
+    toast(`Plan pré-rempli depuis « ${match.name} »${additions.length ? `, avec ${additions.length} précaution(s) propres au patient` : ""}.`, { variant: "success", durationMs: 5000 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a match appears for this dossier
+  }, [match?.id, d.id]);
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-start">
@@ -225,7 +255,7 @@ export function PreparationView({
           }
         >
           {protocols.length === 0 ? (
-            <p className="text-sm text-foreground-subtle">Aucun protocole dans votre bibliothèque : composez le plan ci-dessous, puis gardez-le comme protocole pour la prochaine fois.</p>
+            <p className="text-sm text-foreground-subtle">Aucun protocole dans votre bibliothèque : composez le plan ci-dessous, puis gardez-le comme protocole ; la prochaine fois, il sera appliqué tout seul pour cette intervention.</p>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               <Select
@@ -252,17 +282,44 @@ export function PreparationView({
               )}
             </div>
           )}
+          {planEmpty && d.consultation.techniques.length > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                onChange({ ...d, plan: withAdditions({ ...d.plan, techniques: [...d.consultation.techniques] }, additions) });
+                setPlanKey((k) => k + 1);
+              }}
+            >
+              Partir de la consultation (technique + précautions du patient)
+            </Button>
+          )}
         </Panel>
         <PlanEditor value={d.plan} onChange={(plan) => onChange({ ...d, plan })} body={d.consultation.patient} formKey={`${d.id}-${planKey}`} />
       </div>
-      <div className="space-y-4 lg:sticky lg:top-4">
+      <div className="space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pb-2">
+        <AttentionPanel
+          title="Pour ce patient"
+          points={points}
+          added={(p) => planHasAdditions(d.plan, p)}
+          onAdd={(p) => {
+            onChange({ ...d, plan: withAdditions(d.plan, [p]) });
+            setPlanKey((k) => k + 1);
+          }}
+        />
         <RuleReminders d={d} rules={rules} />
-        {carnetEnabled && <CarnetPlanner d={d} onChange={onChange} />}
-        {d.status === "consultation" && (
-          <Button className="w-full" onClick={() => onChange({ ...d, status: "prepared" })}>
-            Marquer comme préparé
-          </Button>
+        {toRequest.length > 0 && (
+          <Panel title="Examens encore à demander">
+            <ul className="list-disc pl-4 text-sm text-foreground">
+              {toRequest.map((r) => (
+                <li key={r.code}>{r.label}</li>
+              ))}
+            </ul>
+            <p className="text-xs text-foreground-subtle">Statut à mettre à jour dans l&apos;onglet Consultation.</p>
+          </Panel>
         )}
+        <InstructionsPanel instructions={instructions} />
+        {carnetEnabled && <CarnetPlanner d={d} onChange={onChange} />}
       </div>
     </div>
   );

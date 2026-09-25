@@ -254,8 +254,8 @@ export function PlanEditor({ value: c, onChange, body, formKey = 0 }: { value: P
 
       <Panel title="Cibles et surveillance">
         <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
-          <TextArea label="Cibles (une par ligne)" rows={4} value={c.targets.join("\n")} onChange={(v) => set({ targets: lines(v) })} placeholder={"PAM ≥ 65 mmHg\nVt 6–8 mL/kg poids idéal, PEEP 5\nNormothermie"} />
-          <TextArea label="Monitorage et matériel (un par ligne)" rows={4} value={c.material.join("\n")} onChange={(v) => set({ material: lines(v) })} placeholder={"BIS\nCurarimètre\n2 VVP 18G"} />
+          <TextArea label="Cibles (une par ligne)" rows={Math.max(4, c.targets.length + 1)} value={c.targets.join("\n")} onChange={(v) => set({ targets: lines(v) })} placeholder={"PAM ≥ 65 mmHg\nVt 6–8 mL/kg poids idéal, PEEP 5\nNormothermie"} />
+          <TextArea label="Monitorage et matériel (un par ligne)" rows={Math.max(4, c.material.length + 1)} value={c.material.join("\n")} onChange={(v) => set({ material: lines(v) })} placeholder={"BIS\nCurarimètre\n2 VVP 18G"} />
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <NumberField label="Alerte garrot" unit="min" value={c.tourniquetAlertMin ?? undefined} onChange={(v) => set({ tourniquetAlertMin: v === undefined ? null : Math.round(v) })} />
@@ -287,7 +287,7 @@ export function PlanEditor({ value: c, onChange, body, formKey = 0 }: { value: P
       </Panel>
 
       <Panel title="Post-opératoire">
-        <TextArea label="Consignes (une par ligne)" rows={4} value={c.postop.join("\n")} onChange={(v) => set({ postop: lines(v) })} placeholder={"Analgésie : …\nThromboprophylaxie : …\nReprise alimentaire : …"} />
+        <TextArea label="Consignes (une par ligne)" rows={Math.max(4, c.postop.length + 1)} value={c.postop.join("\n")} onChange={(v) => set({ postop: lines(v) })} placeholder={"Analgésie : …\nThromboprophylaxie : …\nReprise alimentaire : …"} />
         <TextArea label="Notes" value={c.notes} onChange={(notes) => set({ notes })} />
       </Panel>
     </div>

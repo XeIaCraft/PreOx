@@ -14,7 +14,7 @@ import { useDossiers } from "@/components/preop/use-dossiers";
 import { useProtocols } from "@/components/preop/use-protocols";
 import { useRules } from "@/components/preop/use-rules";
 import { useToast } from "@/components/ui/toast";
-import { emptyDossier } from "@/lib/preop/dossier";
+import { emptyDossier, withAutoStatus } from "@/lib/preop/dossier";
 import type { QuestionInput } from "@/lib/preop/rules/question";
 import { cn } from "@/lib/utils";
 
@@ -145,7 +145,7 @@ export function PreopApp() {
               window.history.replaceState(null, "", `${pathname}?${q}`);
             }}
             onBack={() => go("dossiers")}
-            onChange={(d) => void dossierStore.put(d)}
+            onChange={(d) => void dossierStore.put(withAutoStatus(d, dossier))}
             onRemove={async () => {
               await dossierStore.remove(dossier.id);
               go("dossiers");

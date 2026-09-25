@@ -141,3 +141,50 @@ export function doseBasis(drug: Pick<ProtocolDrug, "doseMode" | "amount" | "unit
   if (!d) return `${per} · poids ${basis} inconnu`;
   return `${per} × ${String(d.basisKg).replace(".", ",")} kg (${basis})${d.capped ? ` · plafonné à ${drug.maxAmount} ${drug.unit}` : ""}`;
 }
+
+const foldText = (t: string) =>
+  t
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+
+const words = (t: string) => new Set(foldText(t).split(/[^a-z0-9]+/).filter((w) => w.length >= 3));
+
+/**
+ * The protocol that fits the intervention best: words shared between the
+ * intervention and the protocol's name / intervention field, a protocol of
+ * the patient's hospital before a general one, same carnet category as a
+ * tie-breaker. null when nothing matches the intervention at all.
+ */
+export function matchProtocol(protocols: Protocol[], surgery: { name: string; category: string }, hospital: string): Protocol | null {
+  const target = words(surgery.name);
+  if (target.size === 0) return null;
+  const h = foldText(hospital.trim());
+  let best: { p: Protocol; score: number } | null = null;
+  for (const p of protocols) {
+    if (p.hospital && h && foldText(p.hospital) !== h) continue;
+    const own = new Set([...words(p.name), ...words(p.surgery)]);
+    const shared = [...target].filter((w) => own.has(w)).length;
+    if (shared === 0) continue;
+    const score = shared / target.size + (p.hospital && h ? 0.5 : 0) + (p.operation_category && p.operation_category === surgery.category ? 0.1 : 0);
+    if (!best || score > best.score) best = { p, score };
+  }
+  return best?.p ?? null;
+}
+
+/** Adds equipment and risk/conduct pairs to a plan, without duplicates. */
+export function withAdditions(plan: ProtocolContent, add: { material?: string[]; risk?: ProtocolRisk }[]): ProtocolContent {
+  const material = [...plan.material];
+  const risks = [...plan.risks];
+  for (const a of add) {
+    for (const m of a.material ?? []) if (!material.some((x) => foldText(x) === foldText(m))) material.push(m);
+    if (a.risk && !risks.some((x) => foldText(x.title) === foldText(a.risk!.title))) risks.push(a.risk);
+  }
+  return { ...plan, material, risks };
+}
+
+export function planHasAdditions(plan: ProtocolContent, a: { material?: string[]; risk?: ProtocolRisk }): boolean {
+  const hasMaterial = (a.material ?? []).every((m) => plan.material.some((x) => foldText(x) === foldText(m)));
+  const hasRisk = !a.risk || plan.risks.some((x) => foldText(x.title) === foldText(a.risk!.title));
+  return hasMaterial && hasRisk;
+}

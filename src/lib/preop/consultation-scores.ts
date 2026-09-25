@@ -31,6 +31,9 @@ import { anyOf, has, qualified } from "./history";
 import { suggestAsa } from "./asa";
 import { recommendExams } from "./exams";
 import { atcMatches } from "./medications";
+import { effectiveConditions } from "./derive";
+import { drugClassOf } from "@/lib/carnet/pharmaco";
+import type { ProtocolContent } from "./protocols";
 
 type YesNo<K extends string> = Partial<Record<K, boolean>>;
 
@@ -51,7 +54,17 @@ export function withDerived<K extends string>(answers: YesNo<K>, derived: Partia
   return { merged, derivedKeys };
 }
 
-export function consultationScores(c: ConsultationState) {
+/** Opioids planned after surgery: an opioid in the analgesia part of the plan, or named in its post-op orders. */
+function plannedPostopOpioids(plan: ProtocolContent | undefined): boolean | undefined {
+  if (!plan || (plan.drugs.length === 0 && plan.postop.length === 0)) return undefined;
+  if (plan.drugs.some((d) => d.phase === "analgesia" && drugClassOf(d.name) === "morphinique")) return true;
+  if (plan.postop.some((l) => OPIOID_WORDS.test(l))) return true;
+  return undefined;
+}
+
+const OPIOID_WORDS = /morphin|oxycodon|piritramid|dipidolor|tramadol|hydromorphon|tapentadol|fentanyl|sufentanil|PCA/i;
+
+export function consultationScores(c: ConsultationState, opts: { plan?: ProtocolContent } = {}) {
   const p = c.patient;
   const hasBody = !!(p.weightKg && p.heightCm);
   const derived = {
@@ -63,7 +76,7 @@ export function consultationScores(c: ConsultationState) {
     egfr: p.age !== undefined && p.sex && p.creatinineMgDl ? ckdEpi2021({ age: p.age, sex: p.sex, creatinineMgDl: p.creatinineMgDl }) : undefined,
   };
 
-  const cond = c.conditions;
+  const { conditions: cond, deduced } = effectiveConditions(c);
   const sub = c.substances;
   const surgery = c.surgery;
   const merged = {
@@ -85,6 +98,7 @@ export function consultationScores(c: ConsultationState) {
       female: p.sex ? p.sex === "F" : undefined,
       nonSmoker: sub.tobacco ? sub.tobacco !== "current" : undefined,
       history: has(cond, "ponv"),
+      postopOpioids: plannedPostopOpioids(opts.plan),
     }),
     hasBled: withDerived(c.hasBled, {
       hypertension: has(cond, "hypertension") === false ? false : qualified(cond, "hypertension", "poorlyControlled") || undefined,
@@ -135,9 +149,9 @@ export function consultationScores(c: ConsultationState) {
 
   const asaSuggestion = suggestAsa(p, cond, sub);
   const asa = c.asa ?? asaSuggestion.asa;
-  const exams = recommendExams({ consultation: c, asa, mets: results.dasi.missing === 0 && results.dasi.value > 0 ? results.dasi.mets : undefined });
+  const exams = recommendExams({ consultation: { ...c, conditions: cond }, asa, mets: results.dasi.missing === 0 && results.dasi.value > 0 ? results.dasi.mets : undefined });
 
-  return { derived, merged, results, asaSuggestion, asa, exams };
+  return { derived, merged, results, asaSuggestion, asa, exams, conditions: cond, deduced };
 }
 
 export type ConsultationScores = ReturnType<typeof consultationScores>;

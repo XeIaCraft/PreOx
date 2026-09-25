@@ -20,6 +20,8 @@ export interface ConsultationPatient {
   hb?: number;
   platelets?: number;
   inr?: number;
+  /** %. */
+  hba1c?: number;
   spo2?: number;
   /** Blood pressure and heart rate at the consultation. */
   sbp?: number;
@@ -332,4 +334,19 @@ export function upgradeDossier(d: Dossier): Dossier {
 /** The planned date of a dossier (YYYY-MM-DD), from the consultation's planned date-time. */
 export function dossierDate(d: Dossier): string {
   return d.consultation.plannedAt.slice(0, 10);
+}
+
+/**
+ * Status follows the case by itself: a plan makes the dossier "prepared",
+ * « Sortie de salle » makes it "done". Never the carnet: confirming the
+ * case there stays an explicit « Fait ».
+ */
+export function withAutoStatus(d: Dossier, previous?: Dossier): Dossier {
+  // A status chosen by hand in this change is kept as is.
+  if (previous && previous.status !== d.status) return d;
+  if (d.status === "cancelled" || d.status === "done") return d;
+  const roomOut = (x: Dossier) => x.intraop.events.some((e) => e.type === "room_out");
+  if (roomOut(d) && !(previous && roomOut(previous))) return { ...d, status: "done" };
+  if (d.status === "consultation" && (d.plan.drugs.length > 0 || d.plan.techniques.length > 0 || d.protocolId)) return { ...d, status: "prepared" };
+  return d;
 }

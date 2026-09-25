@@ -1,11 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { CircleHelp } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { FieldLabel, Panel, TextArea } from "@/components/preop/ui";
-import type { ConsultationConclusion, ConsultationDecision, ExamState, ExamStatus } from "@/lib/preop/dossier";
-import type { ExamResult } from "@/lib/preop/exams";
+import type { ConsultationConclusion, ConsultationDecision, ConsultationPatient, ExamState, ExamStatus } from "@/lib/preop/dossier";
+import { autoExamState, type ExamResult } from "@/lib/preop/exams";
 import { cn } from "@/lib/utils";
 
 const STATUSES: { code: ExamStatus; label: string }[] = [
@@ -19,7 +20,17 @@ const STATUSES: { code: ExamStatus; label: string }[] = [
  * Suggested tests, each with why and from which source, and where it
  * stands (to request, requested, available with its result, not kept).
  */
-export function ExamsPanel({ result, exams, onChange }: { result: ExamResult; exams: Partial<Record<string, ExamState>>; onChange: (e: Partial<Record<string, ExamState>>) => void }) {
+export function ExamsPanel({
+  result,
+  exams,
+  onChange,
+  patient,
+}: {
+  result: ExamResult;
+  exams: Partial<Record<string, ExamState>>;
+  onChange: (e: Partial<Record<string, ExamState>>) => void;
+  patient: ConsultationPatient;
+}) {
   const set = (code: string, patch: Partial<ExamState>) => onChange({ ...exams, [code]: { status: "todo", ...exams[code], ...patch } });
   return (
     <Panel title="Examens complémentaires">
@@ -33,7 +44,9 @@ export function ExamsPanel({ result, exams, onChange }: { result: ExamResult; ex
       ) : (
         <ul className="space-y-2">
           {result.recommendations.map((r) => {
-            const state = exams[r.code];
+            // A result typed in the consultation (Hb, créatinine, INR, HbA1c) makes the test available.
+            const auto = exams[r.code] ? null : autoExamState(r.code, patient);
+            const state = exams[r.code] ?? auto ?? undefined;
             return (
               <li key={r.code} className={cn("space-y-1.5 rounded-[var(--radius-md)] border px-3 py-2", state?.status === "not_needed" ? "border-border opacity-60" : "border-border")}>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -53,7 +66,8 @@ export function ExamsPanel({ result, exams, onChange }: { result: ExamResult; ex
                   ))}
                 </ul>
                 <ChipGroup size="sm" options={STATUSES} value={state?.status ?? null} onChange={(v) => set(r.code, { status: v ?? "todo" })} />
-                {(state?.status === "available" || state?.status === "requested") && (
+                {auto && <p className="text-[11px] text-foreground-subtle">Disponible d&apos;après la valeur saisie : {auto.note}</p>}
+                {!auto && (state?.status === "available" || state?.status === "requested") && (
                   <Input defaultValue={state.note} onChange={(e) => set(r.code, { note: e.target.value })} placeholder={state.status === "available" ? "Résultat, date" : "Où, quand"} className="h-9" />
                 )}
               </li>
@@ -74,15 +88,49 @@ const DECISIONS: { code: Exclude<ConsultationDecision, "">; label: string }[] = 
   { code: "postpone", label: "Reporter" },
 ];
 
-export function ConclusionPanel({ value: c, onChange, notes, onNotes }: { value: ConsultationConclusion; onChange: (c: ConsultationConclusion) => void; notes: string; onNotes: (v: string) => void }) {
+export function ConclusionPanel({
+  value: c,
+  onChange,
+  notes,
+  onNotes,
+  suggestedProposal,
+  suggestedDecision,
+}: {
+  value: ConsultationConclusion;
+  onChange: (c: ConsultationConclusion) => void;
+  notes: string;
+  onNotes: (v: string) => void;
+  /** Built from the techniques chosen above. */
+  suggestedProposal?: string;
+  /** "optimise" when a point of attention says to optimise or discuss a delay. */
+  suggestedDecision?: { decision: Exclude<ConsultationDecision, "">; because: string };
+}) {
   const set = (patch: Partial<ConsultationConclusion>) => onChange({ ...c, ...patch });
+  const [proposalKey, setProposalKey] = useState(0);
   return (
     <Panel title="Conclusion">
       <div className="space-y-1.5">
         <FieldLabel>Décision</FieldLabel>
         <ChipGroup size="sm" options={DECISIONS} value={c.decision || null} onChange={(v) => set({ decision: v ?? "" })} allowClear />
+        {!c.decision && suggestedDecision && (
+          <p className="text-xs text-accent">
+            À considérer : « {DECISIONS.find((d) => d.code === suggestedDecision.decision)?.label} » — {suggestedDecision.because}.
+          </p>
+        )}
       </div>
-      <TextArea label="Anesthésie proposée" value={c.proposal} onChange={(proposal) => set({ proposal })} placeholder="ex. rachianesthésie + sédation légère, bloc du canal des adducteurs ; AG en alternative" />
+      {suggestedProposal && suggestedProposal !== c.proposal.trim() && (
+        <button
+          type="button"
+          onClick={() => {
+            set({ proposal: suggestedProposal });
+            setProposalKey((k) => k + 1);
+          }}
+          className="text-left text-xs font-medium text-primary hover:underline"
+        >
+          Reprendre la technique envisagée : « {suggestedProposal} »
+        </button>
+      )}
+      <TextArea key={proposalKey} label="Anesthésie proposée" value={c.proposal} onChange={(proposal) => set({ proposal })} placeholder="ex. rachianesthésie + sédation légère, bloc du canal des adducteurs ; AG en alternative" />
       <div className="flex flex-wrap gap-1.5">
         <ToggleChip pressed={!!c.fastingGiven} onChange={(v) => set({ fastingGiven: v })} className="min-h-9 text-xs">
           Consignes de jeûne données

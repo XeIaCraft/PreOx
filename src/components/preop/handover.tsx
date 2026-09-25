@@ -41,7 +41,7 @@ export function HandoverView({ d, onChange, rules }: { d: Dossier; onChange: (d:
   const [busy, setBusy] = useState(false);
   const t = d.transmission;
   const set = (patch: Partial<Transmission>) => onChange({ ...d, transmission: { ...t, ...patch } });
-  const evaluation = useMemo(() => evaluateConsultation(rules, d.consultation), [rules, d.consultation]);
+  const evaluation = useMemo(() => evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }), [rules, d.consultation, d.plan.techniques]);
   // Recomputed at each render: the durations run until « Sortie de salle ».
   const now = new Date().toISOString();
   const sections = buildIsbar(d, now, evaluation);

@@ -3,6 +3,8 @@
 // nothing is forgotten when handing over to the PACU or the ICU.
 
 import { consultationScores, consultationSummary } from "./consultation-scores";
+import { attentionPoints } from "./attention";
+import { lowerFirst } from "./derive";
 import { conditionsSummary, substanceSummary } from "./history";
 import { EXAM_LABELS, type ExamCode } from "./exams";
 import { RISK_GRADES } from "./dossier";
@@ -34,7 +36,7 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
   const I: IsbarSection = { key: "I", title: "Identification", lines: [], missing: [] };
   const who = [d.initials, p.sex === "M" ? "homme" : p.sex === "F" ? "femme" : "", p.age !== undefined ? `${p.age} ans` : "", p.weightKg ? `${p.weightKg} kg` : "", p.heightCm ? `${p.heightCm} cm` : ""].filter(Boolean);
   I.lines.push(who.join(", "));
-  const scores = consultationScores(c);
+  const scores = consultationScores(c, { plan: d.plan });
   const summary = consultationSummary(c, scores);
   if (summary.status) I.lines.push(summary.status);
   if (!scores.asa) I.missing.push("Classe ASA");
@@ -61,7 +63,7 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
 
   // B — Background
   const B: IsbarSection = { key: "B", title: "Antécédents", lines: [], missing: [] };
-  const conditions = conditionsSummary(c.conditions);
+  const conditions = conditionsSummary(scores.conditions);
   if (conditions) B.lines.push(conditions);
   if (p.history?.trim()) B.lines.push(p.history.trim());
   if (!conditions && !p.history?.trim()) B.missing.push("Antécédents pertinents");
@@ -113,8 +115,11 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
   if (t.destination) R.lines.push(`Destination : ${DESTINATIONS[t.destination]}`);
   else R.missing.push("Destination");
   if (t.prescriptions.trim()) R.lines.push(t.prescriptions.trim());
-  else R.missing.push("Prescriptions post-opératoires (analgésie, NVPO…)");
-  for (const line of d.plan.postop) if (line.trim()) R.lines.push(line.trim());
+  const postop = d.plan.postop.filter((l) => l.trim());
+  for (const line of postop) R.lines.push(line.trim());
+  if (!t.prescriptions.trim() && postop.length === 0) R.missing.push("Prescriptions post-opératoires (analgésie, NVPO…)");
+  const vigilance = attentionPoints(c, scores, d.plan).filter((x) => x.level !== "info");
+  if (vigilance.length) R.lines.push(`Vigilance : ${vigilance.map((x) => lowerFirst(x.title)).join(", ")}`);
   for (const f of evaluation?.findings ?? []) {
     for (const o of f.outcomes) if (o.kind === "resume_after" && o.resumeFrom) R.lines.push(`Reprise ${o.treatment?.name ?? ""} au plus tôt le ${new Date(o.resumeFrom).toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`.replace("  ", " "));
   }

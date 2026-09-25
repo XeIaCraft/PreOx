@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Download, FolderPlus, KeyRound, Lock, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,9 @@ import { MIN_PASSPHRASE_LENGTH, type SealedBackup } from "@/lib/preop/crypto";
 import { dossierDate, type Dossier, type DossierStatus } from "@/lib/preop/dossier";
 import { localDateIso, shiftDateIso } from "@/lib/carnet/logic";
 import { cn } from "@/lib/utils";
+import { consultationScores } from "@/lib/preop/consultation-scores";
+import { attentionPoints } from "@/lib/preop/attention";
+import { pendingExams } from "@/lib/preop/exams";
 
 export const STATUS_LABELS: Record<DossierStatus, string> = {
   consultation: "Consultation",
@@ -208,6 +211,20 @@ function BackupPanel({ count, onExport, onImport }: { count: number; onExport: (
 }
 
 function DossierCard({ d, onOpen }: { d: Dossier; onOpen: () => void }) {
+  const { asa, alerts, toRequest } = useMemo(() => {
+    const scores = consultationScores(d.consultation, { plan: d.plan });
+    return {
+      asa: scores.asa,
+      alerts: attentionPoints(d.consultation, scores, d.plan).filter((p) => p.level === "high").length,
+      toRequest: pendingExams(d.consultation, scores.exams).length,
+    };
+  }, [d]);
+  const chips = [
+    asa ? `ASA ${["I", "II", "III", "IV", "V"][asa - 1]}` : "",
+    alerts ? `${alerts} alerte${alerts > 1 ? "s" : ""}` : "",
+    toRequest ? `${toRequest} examen${toRequest > 1 ? "s" : ""} à demander` : "",
+    d.status !== "done" && d.status !== "cancelled" && d.plan.drugs.length === 0 ? "plan à faire" : "",
+  ].filter(Boolean);
   return (
     <li>
       <button type="button" onClick={onOpen} className="flex w-full items-center gap-3 rounded-[var(--radius-lg)] border border-border bg-surface p-3 text-left transition-colors hover:border-border-strong hover:bg-surface-muted/50">
@@ -218,6 +235,15 @@ function DossierCard({ d, onOpen }: { d: Dossier; onOpen: () => void }) {
             {dossierWhen(d)}
             {d.protocolName ? ` · ${d.protocolName}` : ""}
           </span>
+          {chips.length > 0 && (
+            <span className="mt-1 flex flex-wrap gap-1">
+              {chips.map((c) => (
+                <span key={c} className={cn("rounded px-1.5 py-0.5 text-[11px]", /alerte/.test(c) ? "bg-danger-tint text-danger" : "bg-surface-muted text-foreground-muted")}>
+                  {c}
+                </span>
+              ))}
+            </span>
+          )}
         </span>
         <StatusPill status={d.status} />
       </button>

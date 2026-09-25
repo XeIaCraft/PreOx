@@ -77,3 +77,56 @@ describe("history", () => {
     expect(searchSurgeries("vesicule")[0].name).toBe("Cholécystectomie cœlioscopique");
   });
 });
+
+describe("deductions", () => {
+  it("antecedents from treatments, lab values and BP — never over an explicit answer", async () => {
+    const { effectiveConditions } = await import("./derive");
+    const c = consult({
+      patient: { age: 70, sex: "F", hb: 10.8, sbp: 185, dbp: 95, creatinineMgDl: 1.6 },
+      treatments: [
+        { id: "1", atc: "A10AE04", name: "Insuline glargine" },
+        { id: "2", atc: "A10BA02", name: "Metformine" },
+        { id: "3", atc: "B01AC04", name: "Clopidogrel", indication: "coronary_stent", eventDate: new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10) },
+      ],
+      conditions: { hypertension: { present: true }, anemia: { present: false } },
+    });
+    const { conditions, deduced } = effectiveConditions(c);
+    expect(conditions.diabetes_insulin?.present).toBe(true);
+    expect(conditions.diabetes_oral).toBeUndefined();
+    expect(conditions.coronary).toMatchObject({ present: true, recent: true });
+    expect(conditions.hypertension).toMatchObject({ present: true, poorlyControlled: true });
+    expect(conditions.anemia?.present).toBe(false); // explicit "no" wins
+    expect(deduced.get("ckd")).toMatch(/^DFGe \d+/);
+    expect(consultationScores(c).asa).toBe(4);
+  });
+  it("tests already done are available with their value", async () => {
+    const { autoExamState } = await import("./exams");
+    expect(autoExamState("fbc", { hb: 13.2, platelets: 250 })).toEqual({ status: "available", note: "Hb 13,2 g/dL, plaquettes 250 G/L" });
+    expect(autoExamState("ecg", { hb: 13 })).toBeNull();
+  });
+});
+
+describe("points of attention and patient instructions", () => {
+  it("derives precautions from the consultation and the plan", async () => {
+    const { attentionPoints } = await import("./attention");
+    const c = consult({
+      patient: { age: 80, sex: "M", allergies: "Céfazoline (urticaire), latex" },
+      conditions: { malignant_hyperthermia: { present: true }, pacemaker: { present: true }, osa: { present: true } },
+      surgery: { ...emptyConsultation().surgery, bleedingRisk: "high" },
+    });
+    const plan = { ...(await import("./protocols")).emptyProtocolContent(), drugs: [{ id: "c", name: "Céfazoline", route: "bolus_iv", phase: "antibio" as const, doseMode: "fixed" as const, amount: 2, unit: "g" as const, weightBasis: "total" as const, maxAmount: null, redoseEveryMin: null, note: "" }] };
+    const points = attentionPoints(c, consultationScores(c, { plan }), plan);
+    const ids = points.map((p) => p.id);
+    expect(ids.slice(0, 4)).toEqual(expect.arrayContaining(["mh", "latex", "allergy-c", "pacemaker"]));
+    expect(ids).toEqual(expect.arrayContaining(["osa", "bleeding", "delirium"]));
+    expect(points.find((p) => p.id === "osa")!.material).toEqual(["PPC du patient"]);
+  });
+  it("computes fasting times and treatment stops", async () => {
+    const { patientInstructions } = await import("./instructions");
+    const c = consult({ plannedAt: "2026-10-08T08:00", patient: { age: 40 }, treatments: [{ id: "t", atc: "C09AA05", name: "Ramipril" }] });
+    const i = patientInstructions(c, { findings: [], gaps: [], missing: [] } as never);
+    expect(i.fasting[0]).toMatch(/Repas léger au plus tard le jeudi 8 octobre à 0?2:00 \(6 h avant\)/);
+    expect(i.fasting[1]).toMatch(/jeudi 8 octobre à 0?6:00 \(2 h avant\)/);
+    expect(i.undecided).toEqual(["Ramipril"]);
+  });
+});

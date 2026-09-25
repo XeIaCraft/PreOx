@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { emptyDossier } from "./dossier";
+import { emptyDossier, withAutoStatus } from "./dossier";
 import { plannedCaseFromDossier, suggestedRegionalTypes } from "./carnet-link";
 import { consultationScores, consultationSummary } from "./consultation-scores";
 import { buildIsbar } from "./isbar";
@@ -58,4 +58,27 @@ describe("handover PDF", () => {
     expect(Buffer.from(bytes.slice(0, 5)).toString()).toBe("%PDF-");
     expect(bytes.length).toBeGreaterThan(1000);
   }, 60_000);
+});
+
+describe("preparation automation", () => {
+  it("picks the protocol matching the intervention, local first", async () => {
+    const { matchProtocol, emptyProtocolContent, withAdditions, planHasAdditions } = await import("./protocols");
+    const proto = (id: string, name: string, surgery: string, hospital = "") => ({ id, name, surgery, hospital, operation_category: "K", content: emptyProtocolContent(), source: "", created_at: "", updated_at: "" });
+    const list = [proto("a", "PTG sous rachi", "prothèse totale de genou"), proto("b", "PTG Tivoli", "prothèse totale de genou", "CHU Tivoli"), proto("c", "Cholécystectomie", "vésicule")];
+    expect(matchProtocol(list, { name: "Prothèse totale de genou", category: "K" }, "CHU Tivoli")?.id).toBe("b");
+    expect(matchProtocol(list, { name: "Prothèse totale de genou", category: "K" }, "Autre hôpital")?.id).toBe("a");
+    expect(matchProtocol(list, { name: "Cataracte", category: "I" }, "")).toBeNull();
+    const plan = withAdditions(emptyProtocolContent(), [{ material: ["Aimant"], risk: { title: "X", conduct: "y" } }, { material: ["aimant"] }]);
+    expect(plan.material).toEqual(["Aimant"]);
+    expect(planHasAdditions(plan, { material: ["Aimant"], risk: { title: "x", conduct: "" } })).toBe(true);
+  });
+
+  it("status follows the case, a manual choice wins", () => {
+    const d = prepared();
+    const prev = { ...d, plan: { ...d.plan, drugs: [], techniques: [] } };
+    expect(withAutoStatus(d, prev).status).toBe("prepared");
+    const out = { ...d, status: "prepared" as const, intraop: { ...d.intraop, events: [{ id: "o", type: "room_out" as const, at: "2026-10-08T11:00:00Z", note: "" }] } };
+    expect(withAutoStatus(out, { ...out, intraop: d.intraop }).status).toBe("done");
+    expect(withAutoStatus({ ...out, status: "consultation" }, out).status).toBe("consultation");
+  });
 });

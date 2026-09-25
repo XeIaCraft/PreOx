@@ -9,9 +9,12 @@ import { FieldLabel, NumberField, Panel, RiskPill, ScoreCard, SourceBadge, TextA
 import { SurgeryPanel } from "@/components/preop/surgery-panel";
 import { ConditionsEditor, SubstancesEditor } from "@/components/preop/history-editor";
 import { ConclusionPanel, ExamsPanel } from "@/components/preop/exams-panel";
+import { AttentionPanel, InstructionsPanel } from "@/components/preop/attention-panel";
+import { attentionPoints } from "@/lib/preop/attention";
+import { patientInstructions } from "@/lib/preop/instructions";
 import { ASA_REFERENCE } from "@/lib/preop/asa";
 import { consultationSummary, type ConsultationScores } from "@/lib/preop/consultation-scores";
-import type { ExamResult } from "@/lib/preop/exams";
+import { pendingExams } from "@/lib/preop/exams";
 import {
   APFEL_ITEMS,
   APFEL_REFERENCE,
@@ -37,6 +40,8 @@ import {
   type Sex,
 } from "@/lib/preop/scores";
 import { consultationScores } from "@/lib/preop/consultation-scores";
+import { effectiveConditions, lowerFirst } from "@/lib/preop/derive";
+import type { ProtocolContent } from "@/lib/preop/protocols";
 import { conditionsSummary, substanceSummary } from "@/lib/preop/history";
 import { RISK_GRADES } from "@/lib/preop/dossier";
 import { SURGERY_GRADES } from "@/lib/preop/surgeries";
@@ -62,7 +67,8 @@ export function evaluateConsultation(rules: Rule[], c: ConsultationState): Evalu
     plannedAt: localToIso(c.plannedAt),
     hospital: c.hospital || undefined,
     surgery: { bleedingRisk: c.surgery.bleedingRisk, cardiacRisk: c.surgery.cardiacRisk, grade: c.surgery.kce },
-    conditions: c.conditions,
+    // Deduced antecedents count too (insulin → insulin-treated diabetes…).
+    conditions: effectiveConditions(c).conditions,
   });
 }
 
@@ -179,8 +185,9 @@ function TreatmentsEditor({ treatments, onChange }: { treatments: PatientTreatme
 }
 
 /** At a glance, always in view on a large screen: who, what, the risks, the tests. */
-function Synthesis({ s, asa, results, exams }: { s: ConsultationState; asa: number | null; results: ConsultationScores["results"]; exams: ExamResult }) {
-  const summary = consultationSummary(s);
+function Synthesis({ s, scores }: { s: ConsultationState; scores: ConsultationScores }) {
+  const { asa, results, exams } = scores;
+  const summary = consultationSummary(s, scores);
   const surg = s.surgery;
   const pills: [string, { label: string; level: ConsultationScores["results"]["rcri"]["level"] }][] = [
     ["Lee", results.rcri],
@@ -190,9 +197,9 @@ function Synthesis({ s, asa, results, exams }: { s: ConsultationState; asa: numb
     ["Masque", results.mask],
     ["Laryngoscopie", results.airway],
   ];
-  const conditions = conditionsSummary(s.conditions);
+  const conditions = conditionsSummary(scores.conditions);
   const substances = substanceSummary(s.substances);
-  const toRequest = exams.recommendations.filter((r) => (s.exams[r.code]?.status ?? "todo") === "todo");
+  const toRequest = pendingExams(s, exams);
   return (
     <Panel title="Synthèse">
       <dl className="space-y-1.5 text-sm">
@@ -274,7 +281,10 @@ export function ConsultationForm({
   onAskQuestion,
   formKey = 0,
   patientActions,
+  plan,
 }: {
+  /** The dossier's anaesthesia plan, when there is one (post-op opioids for Apfel…). */
+  plan?: ProtocolContent;
   value: ConsultationState;
   onChange: (next: ConsultationState) => void;
   rules: Rule[];
@@ -286,7 +296,8 @@ export function ConsultationForm({
   const set = (patch: Partial<ConsultationState>) => onChange({ ...s, ...patch });
   const p = s.patient;
 
-  const { derived, merged, results, asaSuggestion, asa, exams } = useMemo(() => consultationScores(s), [s]);
+  const scores = useMemo(() => consultationScores(s, { plan }), [s, plan]);
+  const { derived, merged, results, asaSuggestion, asa, exams } = scores;
   const sb = merged.stopBang;
   const lee = merged.rcri;
   const ap = merged.apfel;
@@ -294,6 +305,10 @@ export function ConsultationForm({
   const mv = merged.mask;
 
   const evaluation = useMemo(() => evaluateConsultation(rules, s), [rules, s]);
+  const points = useMemo(() => attentionPoints(s, scores, plan), [s, scores, plan]);
+  const instructions = useMemo(() => patientInstructions(s, evaluation), [s, evaluation]);
+  const proposal = s.techniques.map((t) => TECHNIQUES.find((x) => x.code === t)?.label.split(" (")[0] ?? t).join(" + ");
+  const blocking = points.find((x) => x.level === "high" && /report|optimis/i.test(x.detail));
 
   const patientFields = (
     <section key={`patient-${resetKey}`} className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-surface p-3 sm:p-4">
@@ -318,6 +333,7 @@ export function ConsultationForm({
         <NumberField label="Hémoglobine" unit="g/dL" value={p.hb} onChange={(v) => set({ patient: { ...p, hb: v } })} />
         <NumberField label="Plaquettes" unit="G/L" value={p.platelets} onChange={(v) => set({ patient: { ...p, platelets: v } })} />
         <NumberField label="INR" value={p.inr} onChange={(v) => set({ patient: { ...p, inr: v } })} />
+        <NumberField label="HbA1c" unit="%" value={p.hba1c} onChange={(v) => set({ patient: { ...p, hba1c: v } })} />
         <NumberField label="SpO₂" unit="%" value={p.spo2} onChange={(v) => set({ patient: { ...p, spo2: v } })} />
         <NumberField label="PA systolique" unit="mmHg" value={p.sbp} onChange={(v) => set({ patient: { ...p, sbp: v } })} />
         <NumberField label="PA diastolique" unit="mmHg" value={p.dbp} onChange={(v) => set({ patient: { ...p, dbp: v } })} />
@@ -491,7 +507,7 @@ export function ConsultationForm({
     </section>
   );
 
-  const scores = (
+  const scoreCards = (
     <div key={`scores-${resetKey}`} className="space-y-2">
       <h2 className="font-serif-display text-lg font-medium text-foreground">Scores</h2>
       <ScoreCard
@@ -665,16 +681,31 @@ export function ConsultationForm({
           sex={p.sex}
           patient={p}
           onPatient={(patient) => set({ patient })}
+          effective={scores.conditions}
+          deduced={scores.deduced}
         />
         <SubstancesEditor key={`substances-${resetKey}`} value={s.substances} onChange={(substances) => set({ substances })} />
         {treatmentFields}
-        <div className="lg:hidden">{findingsPanel}</div>
-        {scores}
-        <ExamsPanel key={`exams-${resetKey}`} result={exams} exams={s.exams} onChange={(e) => set({ exams: e })} />
-        <ConclusionPanel key={`conclusion-${resetKey}`} value={s.conclusion} onChange={(conclusion) => set({ conclusion })} notes={s.notes} onNotes={(notes) => set({ notes })} />
+        <div className="space-y-4 lg:hidden">
+          <AttentionPanel points={points} />
+          {findingsPanel}
+        </div>
+        {scoreCards}
+        <ExamsPanel key={`exams-${resetKey}`} result={exams} exams={s.exams} onChange={(e) => set({ exams: e })} patient={p} />
+        <ConclusionPanel
+          key={`conclusion-${resetKey}`}
+          value={s.conclusion}
+          onChange={(conclusion) => set({ conclusion })}
+          notes={s.notes}
+          onNotes={(notes) => set({ notes })}
+          suggestedProposal={proposal || undefined}
+          suggestedDecision={blocking ? { decision: "optimise", because: lowerFirst(blocking.title) } : undefined}
+        />
+        <InstructionsPanel instructions={instructions} />
       </div>
-      <div className="hidden space-y-3 lg:sticky lg:top-4 lg:block">
-        <Synthesis s={s} asa={asa} results={results} exams={exams} />
+      <div className="hidden space-y-3 lg:sticky lg:top-4 lg:block lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pb-2">
+        <Synthesis s={s} scores={scores} />
+        <AttentionPanel points={points} />
         {findingsPanel}
       </div>
     </div>

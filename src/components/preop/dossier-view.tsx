@@ -100,7 +100,7 @@ export function DossierView({
       </nav>
 
       {tab === "consultation" && (
-        <ConsultationForm value={d.consultation} onChange={(consultation) => onChange({ ...d, consultation })} rules={rules} onAskQuestion={onAskQuestion} formKey={d.id} />
+        <ConsultationForm value={d.consultation} onChange={(consultation) => onChange({ ...d, consultation })} rules={rules} onAskQuestion={onAskQuestion} formKey={d.id} plan={d.plan} />
       )}
       {tab === "preparation" && <PreparationView d={d} onChange={onChange} rules={rules} protocols={protocols} onSaveProtocol={onSaveProtocol} carnetEnabled={carnetEnabled} />}
       {tab === "bloc" && <TheatreView d={d} onChange={onChange} carnetEnabled={carnetEnabled} />}
