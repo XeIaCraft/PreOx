@@ -119,6 +119,7 @@ function PreopScreens() {
         <ConsultationView
           rules={rules}
           protocols={protocolLib.protocols}
+          draft={dossierStore.draft}
           onAskQuestion={askQuestion}
           onKeep={async (initials, consultation) => {
             const d = emptyDossier(initials, consultation);

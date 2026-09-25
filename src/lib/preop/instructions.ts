@@ -58,3 +58,30 @@ export function instructionsText(i: Instructions): string {
   if (i.treatments.length) parts.push(["Traitements", ...i.treatments.map((l) => `• ${l}`)].join("\n"));
   return parts.join("\n\n");
 }
+
+/** The sheet handed to the patient: plain words, no score, no jargon. */
+export function patientSheet(c: ConsultationState, i: Instructions, conditions: Record<string, { present: boolean } | undefined>): { title: string; lines: string[] }[] {
+  const out: { title: string; lines: string[] }[] = [];
+  if (c.surgery.name || c.plannedAt) {
+    out.push({
+      title: "Votre intervention",
+      lines: [c.surgery.name, c.plannedAt ? new Date(c.plannedAt).toLocaleString("fr-BE", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : "", c.hospital].filter(Boolean),
+    });
+  }
+  if (i.fasting.length) out.push({ title: "À jeun", lines: i.fasting });
+  const meds = [...i.treatments];
+  if (i.undecided.length) meds.push(`Autres médicaments (${i.undecided.join(", ")}) : selon ce que l'anesthésiste vous a indiqué.`);
+  if (meds.length) out.push({ title: "Vos médicaments", lines: meds });
+  const bring = ["La liste de vos médicaments (ou les boîtes).", "Vos derniers résultats d'examens et courriers médicaux."];
+  if (conditions.osa?.present) bring.push("Votre appareil de PPC (CPAP) pour les apnées du sommeil.");
+  if (conditions.pacemaker?.present) bring.push("La carte de votre pacemaker / défibrillateur.");
+  if (conditions.diabetes_insulin?.present) bring.push("Votre lecteur de glycémie et vos insulines.");
+  bring.push("Lunettes, appareils auditifs, prothèse dentaire, avec leur boîte.");
+  out.push({ title: "À apporter", lines: bring });
+  const advice: string[] = [];
+  if (c.substances.tobacco === "current") advice.push("Arrêter de fumer dès maintenant diminue les complications : parlez-en à votre médecin (aide au sevrage).");
+  advice.push("Retirez bijoux, piercings et vernis à ongles avant l'intervention.");
+  advice.push("En cas de fièvre, de rhume important ou de changement de traitement avant l'intervention, prévenez le service.");
+  out.push({ title: "Conseils", lines: advice });
+  return out;
+}

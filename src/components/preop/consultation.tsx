@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight, CircleHelp, ClipboardCopy, FolderPlus, MessageSquareQuote, Plus, Printer, RotateCcw, Search, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, CircleHelp, ClipboardCopy, FolderPlus, MessageSquareQuote, Plus, Printer, RotateCcw, Search, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
-import { ChipGroup, MultiChipGroup } from "@/components/carnet/ui";
+import { ChipGroup, MultiChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { useToast } from "@/components/ui/toast";
 import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, ScoreCard, SourceBadge, YesNoChip, formatDateTime, localToIso, toLocalInput } from "@/components/preop/ui";
 import { SurgeryPanel } from "@/components/preop/surgery-panel";
@@ -12,6 +12,9 @@ import { AllergiesEditor, ConditionsEditor, SubstancesEditor } from "@/component
 import { ExamsPanel } from "@/components/preop/exams-panel";
 import { AttentionPanel, InstructionsPanel } from "@/components/preop/attention-panel";
 import { useCatalogs } from "@/components/preop/use-catalogs";
+import { QuickEntryPanel } from "@/components/preop/quick-entry-panel";
+import { printSections } from "@/components/preop/print";
+import { useUsage } from "@/components/preop/use-usage";
 import {
   APFEL_ITEMS,
   APFEL_REFERENCE,
@@ -40,12 +43,13 @@ import { ASA_REFERENCE } from "@/lib/preop/asa";
 import { consultationScores, type ConsultationScores } from "@/lib/preop/consultation-scores";
 import { effectiveConditions } from "@/lib/preop/derive";
 import { attentionPoints } from "@/lib/preop/attention";
-import { patientInstructions } from "@/lib/preop/instructions";
+import { patientInstructions, patientSheet } from "@/lib/preop/instructions";
+import { stepMissing } from "@/lib/preop/completeness";
 import { remainingCount, remainingQuestions } from "@/lib/preop/remaining-questions";
 import { missingRules, type RuleGap } from "@/lib/preop/rule-gaps";
 import { consultationRecap, recapText } from "@/lib/preop/recap";
 import { pendingExams } from "@/lib/preop/exams";
-import { emptyConsultation, type ConsultationState } from "@/lib/preop/dossier";
+import { emptyConsultation, upgradeConsultation, type ConsultationState } from "@/lib/preop/dossier";
 import { DEFAULT_CATALOGS } from "@/lib/preop/catalog-defaults";
 import { searchMedications } from "@/lib/preop/medications";
 import { matchProtocol, type Protocol, type ProtocolContent } from "@/lib/preop/protocols";
@@ -91,13 +95,33 @@ const STEPS: { step: Step; label: string }[] = [
   { step: "recap", label: "Récap" },
 ];
 
-function StepBar({ current, onSelect, badges }: { current: Step; onSelect: (s: Step) => void; badges: Partial<Record<Step, { n: number; tone: "info" | "warn" }>> }) {
+function StepBar({
+  current,
+  onSelect,
+  badges,
+  done,
+  onQuick,
+}: {
+  current: Step;
+  onSelect: (s: Step) => void;
+  badges: Partial<Record<Step, { n: number; tone: "info" | "warn" }>>;
+  done: Set<Step>;
+  onQuick: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>(`[data-step="${current}"]`)?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
   }, [current]);
   return (
     <div ref={ref} className="sticky top-0 z-20 -mx-4 flex gap-1 overflow-x-auto bg-background/95 px-4 py-2 backdrop-blur sm:mx-0 sm:px-0" role="tablist" aria-label="Étapes de la consultation">
+      <button
+        type="button"
+        onClick={onQuick}
+        className="flex shrink-0 items-center gap-1 rounded-full border border-accent/50 bg-accent-tint px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent-tint/70"
+        title="Saisie rapide ou dictée (Alt+S)"
+      >
+        <Zap className="h-3.5 w-3.5" /> Saisie rapide
+      </button>
       {STEPS.map((s, i) => {
         const b = badges[s.step];
         return (
@@ -113,7 +137,7 @@ function StepBar({ current, onSelect, badges }: { current: Step; onSelect: (s: S
               current === s.step ? "border-primary bg-primary text-primary-foreground" : "border-border bg-surface text-foreground-muted hover:bg-surface-muted"
             )}
           >
-            <span className="tabular-nums opacity-60">{i + 1}</span> {s.label}
+            {done.has(s.step) && current !== s.step ? <Check className="h-3.5 w-3.5 text-success" /> : <span className="tabular-nums opacity-60">{i + 1}</span>} {s.label}
             {b && b.n > 0 && (
               <span className={cn("rounded-full px-1.5 text-[10px] tabular-nums", current === s.step ? "bg-white/25" : b.tone === "warn" ? "bg-accent-tint text-accent" : "bg-surface-muted text-foreground-muted")}>{b.n}</span>
             )}
@@ -131,20 +155,33 @@ function StepBar({ current, onSelect, badges }: { current: Step; onSelect: (s: S
 function TreatmentsEditor({ treatments, onChange }: { treatments: PatientTreatment[]; onChange: (t: PatientTreatment[]) => void }) {
   const { catalogs } = useCatalogs();
   const [open, setOpen] = useState<string | null>(null);
+  const usage = useUsage("medications");
+  const frequent = usage.top.map((atc) => catalogs.medications.find((m) => m.atc === atc)).filter((m): m is NonNullable<typeof m> => !!m && !treatments.some((t) => t.atc === m.atc));
+  const addMed = (atc: string, name: string) => {
+    const id = crypto.randomUUID();
+    onChange([...treatments, { id, atc, name }]);
+    usage.bump(atc);
+    setOpen(id);
+  };
   const update = (id: string, patch: Partial<PatientTreatment>) => onChange(treatments.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   return (
     <div className="space-y-2">
       <Combobox
         placeholder="Ajouter un traitement (nom ou marque : Xarelto, Asaflow…)"
         search={(q) => searchMedications(q, 8, catalogs.medications).map((m) => ({ key: m.atc, label: m.name, hint: m.brands?.slice(0, 2).join(", ") }))}
-        onPick={(o) => {
-          const id = crypto.randomUUID();
-          onChange([...treatments, { id, atc: o.key, name: o.label }]);
-          setOpen(id);
-        }}
+        onPick={(o) => addMed(o.key, o.label)}
         onFree={(q) => onChange([...treatments, { id: crypto.randomUUID(), atc: "", name: q }])}
         freeLabel={(q) => `« ${q} » (hors catalogue : ajoutez-le dans Paramètres pour ses implications)`}
       />
+      {frequent.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {frequent.slice(0, 8).map((m) => (
+            <button key={m.atc} type="button" onClick={() => addMed(m.atc, m.name)} className="min-h-8 rounded-full border border-dashed border-border-strong px-2.5 text-xs text-foreground hover:bg-surface-muted">
+              + {m.name}
+            </button>
+          ))}
+        </div>
+      )}
       {treatments.length > 0 && (
         <ul className="divide-y divide-border rounded-[var(--radius-md)] border border-border">
           {treatments.map((t) => {
@@ -514,7 +551,19 @@ function AirwayStep({ s, set, scores }: { s: ConsultationState; set: (p: Partial
 // Recap
 // ---------------------------------------------------------------------------
 
-function RecapStep({ sections, onPrint }: { sections: ReturnType<typeof consultationRecap>; onPrint: () => void }) {
+function RecapStep({
+  sections,
+  onPrint,
+  onPrintPatient,
+  missing,
+  onGo,
+}: {
+  sections: ReturnType<typeof consultationRecap>;
+  onPrint: () => void;
+  onPrintPatient: () => void;
+  missing: [Step, string[]][];
+  onGo: (s: Step) => void;
+}) {
   const { toast } = useToast();
   return (
     <Panel
@@ -535,12 +584,29 @@ function RecapStep({ sections, onPrint }: { sections: ReturnType<typeof consulta
           >
             <ClipboardCopy className="h-3.5 w-3.5" /> Copier
           </Button>
-          <Button size="sm" variant="ghost" onClick={onPrint} className="hidden sm:inline-flex">
+          <Button size="sm" variant="ghost" onClick={onPrint}>
             <Printer className="h-3.5 w-3.5" /> Imprimer
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onPrintPatient}>
+            <Printer className="h-3.5 w-3.5" /> Fiche patient
           </Button>
         </>
       }
     >
+      {missing.length > 0 && (
+        <div className="rounded-[var(--radius-md)] border border-accent/40 bg-accent-tint/50 px-3 py-2 text-xs">
+          <p className="font-medium text-foreground">Encore à compléter</p>
+          <ul className="mt-1 space-y-0.5">
+            {missing.map(([step, items]) => (
+              <li key={step}>
+                <button type="button" onClick={() => onGo(step)} className="text-left text-accent hover:underline">
+                  {STEPS.find((x) => x.step === step)?.label} : {items.join(", ")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <p className="text-xs text-foreground-subtle">Dans l&apos;ordre de la feuille de consultation, pour la recopier.</p>
       <div className="space-y-3" id="preop-recap">
         {sections.map((sec) => (
@@ -604,6 +670,16 @@ export function ConsultationForm({
   const instructions = useMemo(() => patientInstructions(s, evaluation), [s, evaluation]);
   const gaps = useMemo(() => missingRules(rules, s, scores.conditions, { catalogs, crcl: scores.derived.crcl }), [rules, s, scores, catalogs]);
   const groups = useMemo(() => remainingQuestions(s, scores), [s, scores]);
+  const missing = useMemo(() => stepMissing(s, scores, groups), [s, scores, groups]);
+  const done = new Set((Object.entries(missing) as [Step, string[]][]).filter(([k, v]) => v.length === 0 && k !== "recap").map(([k]) => k));
+  const [quick, setQuick] = useState(false);
+  // Uncontrolled fields reload after a change made elsewhere (quick entry).
+  const [version, setVersion] = useState(0);
+  const lastQuick = useRef(quick);
+  useEffect(() => {
+    if (lastQuick.current && !quick) setVersion((v) => v + 1);
+    lastQuick.current = quick;
+  }, [quick]);
   const recap = useMemo(() => consultationRecap(s, scores, { points, instructions, initials }), [s, scores, points, instructions, initials]);
   const toRequest = pendingExams(s, scores.exams);
   const protocol = matchProtocol(protocols, s.surgery, s.hospital);
@@ -624,6 +700,28 @@ export function ConsultationForm({
     setStep(next);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  // On a computer: Alt+← / Alt+→ between steps, Alt+S for the quick entry.
+  const goRef = useRef(go);
+  const stepRef = useRef(step);
+  useEffect(() => {
+    goRef.current = go;
+    stepRef.current = step;
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey) return;
+      const i = STEPS.findIndex((x) => x.step === stepRef.current);
+      if (e.key === "ArrowRight" && i < STEPS.length - 1) goRef.current(STEPS[i + 1].step);
+      else if (e.key === "ArrowLeft" && i > 0) goRef.current(STEPS[i - 1].step);
+      else if (e.key.toLowerCase() === "s") setQuick((q) => !q);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
 
   const protocolSummary = protocol
     ? [
@@ -655,7 +753,7 @@ export function ConsultationForm({
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
               <MiniNumber label="Âge" unit="ans" value={p.age} onChange={(v) => set({ patient: { ...p, age: v } })} />
               <MiniNumber label="Poids" unit="kg" value={p.weightKg} onChange={(v) => set({ patient: { ...p, weightKg: v } })} />
-              <MiniNumber label="Taille" unit="cm" value={p.heightCm} onChange={(v) => set({ patient: { ...p, heightCm: v } })} />
+              <MiniNumber label="Taille" unit="cm" value={p.heightCm} onChange={(v) => set({ patient: { ...p, heightCm: v !== undefined && v < 3 ? Math.round(v * 100) : v } })} />
               <MiniNumber label="PAS" unit="mmHg" value={p.sbp} onChange={(v) => set({ patient: { ...p, sbp: v } })} />
               <MiniNumber label="PAD" unit="mmHg" value={p.dbp} onChange={(v) => set({ patient: { ...p, dbp: v } })} />
               <MiniNumber label="FC" unit="/min" value={p.hr} onChange={(v) => set({ patient: { ...p, hr: v } })} />
@@ -674,11 +772,16 @@ export function ConsultationForm({
             <details className="rounded-[var(--radius-md)] border border-border" open={p.hb !== undefined || p.creatinineMgDl !== undefined}>
               <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-foreground">Biologie</summary>
               <div className="grid grid-cols-3 gap-2 px-3 pb-3 sm:grid-cols-5">
-                <MiniNumber label="Hb" unit="g/dL" value={p.hb} onChange={(v) => set({ patient: { ...p, hb: v } })} />
-                <MiniNumber label="Plaquettes" unit="G/L" value={p.platelets} onChange={(v) => set({ patient: { ...p, platelets: v } })} />
+                <MiniNumber label="Hb" unit="g/dL" value={p.hb} onChange={(v) => set({ patient: { ...p, hb: v !== undefined && v > 25 ? Math.round(v) / 10 : v } })} />
+                <MiniNumber label="Plaquettes" unit="G/L" value={p.platelets} onChange={(v) => set({ patient: { ...p, platelets: v !== undefined && v > 2000 ? Math.round(v / 1000) : v } })} />
                 <MiniNumber label="INR" value={p.inr} onChange={(v) => set({ patient: { ...p, inr: v } })} />
-                <MiniNumber label="Créatinine" unit="mg/dL" value={p.creatinineMgDl} onChange={(v) => set({ patient: { ...p, creatinineMgDl: v } })} />
+                <MiniNumber label="Créatinine" unit="mg/dL" value={p.creatinineMgDl} onChange={(v) => set({ patient: { ...p, creatinineMgDl: v !== undefined && v > 20 ? Math.round((v / 88.4) * 100) / 100 : v } })} />
                 <MiniNumber label="HbA1c" unit="%" value={p.hba1c} onChange={(v) => set({ patient: { ...p, hba1c: v } })} />
+                <p className="col-span-3 text-[11px] text-foreground-subtle sm:col-span-5">
+                  Unités converties d&apos;office : créatinine en µmol/L, Hb en g/L, plaquettes en /µL, taille en m.
+                  {p.creatinineMgDl !== undefined ? ` Créatinine retenue : ${String(p.creatinineMgDl).replace(".", ",")} mg/dL.` : ""}
+                  {p.hb !== undefined ? ` Hb retenue : ${String(p.hb).replace(".", ",")} g/dL.` : ""}
+                </p>
                 {(scores.derived.crcl !== undefined || scores.derived.egfr !== undefined) && (
                   <p className="col-span-3 text-[11px] text-foreground-subtle sm:col-span-5">
                     {[scores.derived.crcl !== undefined && `Clairance (Cockcroft) ${round(scores.derived.crcl)} mL/min`, scores.derived.egfr !== undefined && `DFGe (CKD-EPI) ${round(scores.derived.egfr)}`].filter(Boolean).join(" · ")}
@@ -741,8 +844,17 @@ export function ConsultationForm({
       case "treatments":
         return (
           <div className="space-y-4">
-            <Panel title="Traitements">
-              <TreatmentsEditor treatments={s.treatments} onChange={(treatments) => set({ treatments })} />
+            <Panel
+              title="Traitements"
+              actions={
+                s.treatments.length === 0 && (
+                  <ToggleChip pressed={!!s.noTreatment} onChange={(noTreatment) => set({ noTreatment })} className="min-h-7 px-2 text-xs">
+                    Aucun traitement
+                  </ToggleChip>
+                )
+              }
+            >
+              {!s.noTreatment && <TreatmentsEditor treatments={s.treatments} onChange={(treatments) => set({ treatments, noTreatment: treatments.length ? false : s.noTreatment })} />}
             </Panel>
             <RulesPanel evaluation={evaluation} gaps={gaps} onAskQuestion={onAskQuestion} crcl={scores.derived.crcl} rulesCount={rules.filter((r) => r.status === "active").length} />
           </div>
@@ -763,7 +875,13 @@ export function ConsultationForm({
       case "recap":
         return (
           <div className="space-y-4">
-            <RecapStep sections={recap} onPrint={() => window.print()} />
+            <RecapStep
+              sections={recap}
+              missing={(Object.entries(missing) as [Step, string[]][]).filter(([, v]) => v.length > 0)}
+              onGo={go}
+              onPrint={() => printSections(`Consultation d'anesthésie${initials ? ` — ${initials}` : ""}`, recap, "Récapitulatif PreOx — à reporter sur la feuille officielle.")}
+              onPrintPatient={() => printSections("Préparation à votre anesthésie", patientSheet(s, instructions, scores.conditions), "Gardez cette fiche avec vous le jour de l'intervention.")}
+            />
             <InstructionsPanel instructions={instructions} />
             {ruleGaps > 0 && (
               <p className="rounded-[var(--radius-md)] bg-accent-tint px-3 py-2 text-xs text-accent">
@@ -781,13 +899,16 @@ export function ConsultationForm({
         <StepBar
           current={step}
           onSelect={go}
+          done={done}
+          onQuick={() => setQuick((q) => !q)}
           badges={{
             treatments: { n: ruleGaps, tone: "warn" },
             evaluation: { n: remainingCount(groups), tone: "info" },
             exams: { n: toRequest.length, tone: "info" },
           }}
         />
-        <div key={`${formKey}-${step}`}>{content}</div>
+        {quick && <QuickEntryPanel value={s} onChange={onChange} onClose={() => setQuick(false)} />}
+        <div key={`${formKey}-${step}-${version}`}>{content}</div>
         <div className="flex items-center justify-between gap-2 pb-16 lg:pb-0">
           <Button variant="ghost" size="sm" disabled={idx === 0} onClick={() => go(STEPS[idx - 1].step)}>
             <ChevronLeft className="h-4 w-4" /> {idx > 0 ? STEPS[idx - 1].label : ""}
@@ -875,30 +996,61 @@ export function ConsultationView({
   protocols,
   onAskQuestion,
   onKeep,
+  draft,
 }: {
   rules: Rule[];
   protocols?: Protocol[];
   onAskQuestion: (q: QuestionInput) => void;
   onKeep: (initials: string, consultation: ConsultationState) => Promise<void>;
+  /** Encrypted draft on this device: the consultation survives a reload until kept or restarted. */
+  draft?: { load: <T>() => Promise<T | null>; save: <T>(value: T) => Promise<void>; clear: () => Promise<void> };
 }) {
   const [s, setS] = useState<ConsultationState>(emptyConsultation);
   const [formKey, setFormKey] = useState(0);
   const [keeping, setKeeping] = useState(false);
   const [initials, setInitials] = useState("");
   const [busy, setBusy] = useState(false);
+  const [restored, setRestored] = useState(false);
   const validInitials = /^[a-zA-ZÀ-ÿ]{2}$/.test(initials.trim());
+  const loaded = useRef(false);
+  const [ready, setReady] = useState(false);
+
+  // Back to the consultation in progress after a reload or an accidental close.
+  useEffect(() => {
+    if (!draft || loaded.current) return;
+    loaded.current = true;
+    void draft
+      .load<ConsultationState>()
+      .then((d) => {
+        if (!d) return;
+        setS(upgradeConsultation(d));
+        setFormKey((k) => k + 1);
+        setRestored(true);
+      })
+      .finally(() => setReady(true));
+  }, [draft]);
+  // Saved only once the previous draft is read (never overwritten by the empty form).
+  useEffect(() => {
+    if (!draft || !ready) return;
+    const t = setTimeout(() => void draft.save(s), 500);
+    return () => clearTimeout(t);
+  }, [s, draft, ready]);
 
   function reset() {
     setS(emptyConsultation());
     setFormKey((k) => k + 1);
     setKeeping(false);
     setInitials("");
+    setRestored(false);
+    void draft?.clear();
   }
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] bg-surface-muted px-3 py-2">
-        <p className="min-w-0 flex-1 text-xs text-foreground-muted">Rien n&apos;est enregistré tant que vous ne gardez pas la consultation (initiales seulement, chiffrée sur cet appareil).</p>
+        <p className="min-w-0 flex-1 text-xs text-foreground-muted">
+          {restored ? "Consultation en cours reprise. " : ""}Brouillon chiffré sur cet appareil, jusqu&apos;à « Garder » (initiales seulement) ou « Nouvelle ».
+        </p>
         {keeping ? (
           <form
             className="flex items-center gap-1.5"

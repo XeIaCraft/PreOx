@@ -114,12 +114,12 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
   c({ id: "recent_uri", label: "Infection respiratoire < 1 mois", system: "resp", keywords: ["bronchite", "rhume", "pneumonie récente"], attention: { level: "medium", text: "Hyperréactivité bronchique : discuter le report d'une chirurgie programmée si infection récente symptomatique." } }),
 
   // --- Endocrinien et métabolique ---------------------------------------------------
-  c({ id: "diabetes_oral", label: "Diabète (sans insuline)", system: "endo", keywords: ["DT2", "diabète de type 2"], qualifiers: { poorlyControlled: "mal contrôlé" }, asa: 2, asaIf: { poorlyControlled: 3 }, attention: { level: "info", text: "Glycémies périopératoires ; antidiabétiques gérés selon vos règles." } }),
+  c({ id: "diabetes_oral", label: "Diabète (sans insuline)", system: "endo", keywords: ["DT2", "diabète de type 2", "diabète", "diabétique"], qualifiers: { poorlyControlled: "mal contrôlé" }, asa: 2, asaIf: { poorlyControlled: 3 }, attention: { level: "info", text: "Glycémies périopératoires ; antidiabétiques gérés selon vos règles." } }),
   c({
     id: "diabetes_insulin",
     label: "Diabète insulinotraité",
     system: "endo",
-    keywords: ["DT1", "diabète de type 1", "insuline"],
+    keywords: ["DT1", "diabète de type 1", "insuline", "insulinodépendant", "insulinotraité"],
     qualifiers: { poorlyControlled: "mal contrôlé" },
     asa: 2,
     asaIf: { poorlyControlled: 3 },

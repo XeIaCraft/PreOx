@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, Tag, TextArea, YesNoChip } from "@/components/preop/ui";
 import { PEN_FAST_ITEMS, PEN_FAST_REFERENCE, penFast, type PenFastItem } from "@/lib/preop/scores";
 import { useCatalogs } from "@/components/preop/use-catalogs";
+import { useUsage } from "@/components/preop/use-usage";
 import { DRUGS, QUALIFIER_LABELS, type Conditions, type DrugCode, type Qualifier, type Substances, type TobaccoStatus } from "@/lib/preop/history";
 import { SYSTEM_LABELS, SYSTEM_ORDER, searchItems, type ConditionItem, type SystemCode } from "@/lib/preop/catalog";
 import type { AllergyEntry, ConsultationPatient } from "@/lib/preop/dossier";
@@ -43,6 +44,7 @@ export function ConditionsEditor({
 }) {
   const { catalogs } = useCatalogs();
   const [open, setOpen] = useState<SystemCode | null>(null);
+  const usage = useUsage("conditions");
   const items = catalogs.conditions.filter((d) => !d.female || sex !== "M");
   const setEntry = (id: string, patch: Partial<Conditions[string]> | null) => {
     const next = { ...conditions };
@@ -84,10 +86,32 @@ export function ConditionsEditor({
       <Combobox
         placeholder="Ajouter un antécédent (HTA, stent, SAOS, Parkinson…)"
         search={(q) => searchItems(items, q, (x) => [x.label, ...(x.keywords ?? [])]).map((x) => ({ key: x.id, label: x.label, hint: SYSTEM_LABELS[x.system] }))}
-        onPick={(o) => setEntry(o.key, {})}
+        onPick={(o) => {
+          setEntry(o.key, {});
+          usage.bump(o.key);
+        }}
         onFree={(q) => onPatient({ ...patient, history: [patient.history, q].filter(Boolean).join(" ; ") })}
         freeLabel={(q) => `« ${q} » dans les autres antécédents (texte libre)`}
       />
+      <div className="flex flex-wrap gap-1.5">
+        {usage.top
+          .map((id) => items.find((i) => i.id === id))
+          .filter((i): i is ConditionItem => !!i && !effective[i.id]?.present)
+          .slice(0, 8)
+          .map((i) => (
+            <button
+              key={i.id}
+              type="button"
+              onClick={() => {
+                setEntry(i.id, {});
+                usage.bump(i.id);
+              }}
+              className="min-h-8 rounded-full border border-dashed border-border-strong px-2.5 text-xs text-foreground hover:bg-surface-muted"
+            >
+              + {i.label}
+            </button>
+          ))}
+      </div>
       {withItems.length > 0 && (
         <ul className="divide-y divide-border rounded-[var(--radius-md)] border border-border">
           {withItems.map((sys) => {
@@ -185,7 +209,12 @@ export function ConditionsEditor({
 export function AllergiesEditor({ patient: p, onChange }: { patient: ConsultationPatient; onChange: (p: ConsultationPatient) => void }) {
   const { catalogs } = useCatalogs();
   const list = p.allergyList ?? [];
-  const add = (e: AllergyEntry) => onChange({ ...p, allergyList: [...list, e], noKnownAllergy: false });
+  const usage = useUsage("allergens", 6);
+  const add = (e: AllergyEntry) => {
+    onChange({ ...p, allergyList: [...list, e], noKnownAllergy: false });
+    if (e.allergenId) usage.bump(e.allergenId);
+  };
+  const frequent = usage.top.map((id) => catalogs.allergens.find((a) => a.id === id)).filter((a): a is NonNullable<typeof a> => !!a && !list.some((x) => x.allergenId === a.id));
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
@@ -203,6 +232,15 @@ export function AllergiesEditor({ patient: p, onChange }: { patient: Consultatio
           onPick={(o) => add({ allergenId: o.key, label: o.label })}
           onFree={(q) => add({ label: q })}
         />
+      )}
+      {!p.noKnownAllergy && frequent.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {frequent.map((a) => (
+            <button key={a.id} type="button" onClick={() => add({ allergenId: a.id, label: a.label })} className="min-h-8 rounded-full border border-dashed border-border-strong px-2.5 text-xs text-foreground hover:bg-surface-muted">
+              + {a.label}
+            </button>
+          ))}
+        </div>
       )}
       {list.length > 0 && (
         <div className="flex flex-wrap gap-1.5">

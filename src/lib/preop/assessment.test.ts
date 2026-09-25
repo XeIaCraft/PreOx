@@ -179,3 +179,18 @@ describe("reported penicillin allergy (PEN-FAST)", () => {
     expect(attentionPoints(unscored, consultationScores(unscored)).some((x) => x.id === "penfast-betalactams")).toBe(true);
   });
 });
+
+describe("completeness", () => {
+  it("says what each step still lacks", async () => {
+    const { stepMissing } = await import("./completeness");
+    const { remainingQuestions } = await import("./remaining-questions");
+    const c = consult({ patient: { sex: "F", age: 50, weightKg: 60, heightCm: 165, noKnownAllergy: true }, noTreatment: true, historyReviewed: ["cardio", "resp", "endo", "renal", "digest", "neuro", "psy", "hemato", "other", "anaes"], substances: { tobacco: "never" } });
+    const scores = consultationScores(c);
+    const m = stepMissing(c, scores, remainingQuestions(c, scores));
+    expect(m.patient).toEqual([]);
+    expect(m.history).toEqual([]);
+    expect(m.treatments).toEqual([]);
+    expect(m.surgery).toEqual(["intervention", "grade", "risque cardiaque", "risque hémorragique", "technique envisagée", "date prévue"]);
+    expect(m.airway).toEqual(["Mallampati", "ouverture de bouche", "distance thyro-mentonnière"]);
+  });
+});

@@ -93,6 +93,8 @@ export interface ConsultationState {
   cha: { heartFailure?: boolean; hypertension?: boolean; diabetes?: boolean; strokeTiaThromboembolism?: boolean; vascularDisease?: boolean };
   hasBled: YesNo<keyof typeof HAS_BLED_ITEMS>;
   treatments: PatientTreatment[];
+  /** « Aucun traitement » confirmed. */
+  noTreatment?: boolean;
   techniques: Technique[];
   exams: Partial<Record<string, ExamState>>;
   conclusion: ConsultationConclusion;

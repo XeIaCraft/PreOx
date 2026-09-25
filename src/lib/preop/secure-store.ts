@@ -96,6 +96,35 @@ export class SecureStore {
     await run(db, DOSSIERS, "readwrite", (s) => s.delete(`${this.userId}:${id}`));
   }
 
+  // The consultation in progress (not kept as a dossier yet): one sealed
+  // record per user, under a separate index value so it never shows in
+  // the dossier list — survives a reload, never leaves the device.
+  private draftKey(): string {
+    return `${this.userId}:__draft`;
+  }
+
+  async saveDraft<T>(value: T): Promise<void> {
+    const db = await this.db();
+    const sealed = await seal(await this.key(), value);
+    await run(db, DOSSIERS, "readwrite", (s) => s.put({ key: this.draftKey(), userId: `${this.userId}#draft`, sealed }));
+  }
+
+  async loadDraft<T>(): Promise<T | null> {
+    const db = await this.db();
+    const row = await run<StoredDossier | undefined>(db, DOSSIERS, "readonly", (s) => s.get(this.draftKey()) as IDBRequest<StoredDossier | undefined>);
+    if (!row) return null;
+    try {
+      return await unseal<T>(await this.key(), row.sealed);
+    } catch {
+      return null;
+    }
+  }
+
+  async clearDraft(): Promise<void> {
+    const db = await this.db();
+    await run(db, DOSSIERS, "readwrite", (s) => s.delete(this.draftKey()));
+  }
+
   /** Every dossier, re-encrypted with a passphrase — to keep a copy or move to another device. */
   async exportBackup(passphrase: string): Promise<SealedBackup> {
     return sealBackup(passphrase, await this.list());

@@ -110,5 +110,15 @@ export function useDossiers(userId: string) {
     [store, reload]
   );
 
-  return { dossiers, status, error, put, remove, exportBackup, importBackup };
+  // The consultation in progress, encrypted too (see SecureStore.saveDraft).
+  const draft = useMemo(
+    () => ({
+      load: <T,>() => store.loadDraft<T>().catch(() => null),
+      save: <T,>(value: T) => store.saveDraft(value).catch(() => undefined),
+      clear: () => store.clearDraft().catch(() => undefined),
+    }),
+    [store]
+  );
+
+  return { dossiers, status, error, put, remove, exportBackup, importBackup, draft };
 }
