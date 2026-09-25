@@ -14,7 +14,7 @@ import { AttentionPanel, InstructionsPanel } from "@/components/preop/attention-
 import { TimelinePanel } from "@/components/preop/timeline-panel";
 import { consultationTimeline, reminderSuggestions } from "@/lib/preop/timeline";
 import { implausibleValues, valueFindings, type PatientValues } from "@/lib/preop/value-checks";
-import { EXAM_LABELS as CLINICAL_EXAM_LABELS, examSummary, type ClinicalExam } from "@/lib/preop/dossier";
+import { ECG_FINDINGS, ECG_RHYTHMS, EXAM_LABELS as CLINICAL_EXAM_LABELS, ecgSummary, examSummary, type ClinicalExam, type EcgFinding, type EcgFindings, type EcgRhythm } from "@/lib/preop/dossier";
 import type { WatchedValue } from "@/lib/preop/catalog";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { QuickEntryPanel } from "@/components/preop/quick-entry-panel";
@@ -91,6 +91,30 @@ export function evaluateConsultation(rules: Rule[], c: ConsultationState, catalo
   });
 }
 
+/** The resting ECG as read: rhythm, intervals, abnormalities (manual, chap. 51). */
+function EcgEditor({ value: g, onChange }: { value: EcgFindings; onChange: (g: EcgFindings) => void }) {
+  const set = (patch: Partial<EcgFindings>) => onChange({ ...g, ...patch });
+  const filled = ecgSummary(g);
+  return (
+    <Disclosure
+      className="rounded-[var(--radius-sm)] border border-border"
+      initialOpen={!!filled}
+      summaryClassName="cursor-pointer px-2.5 py-1.5 text-xs font-medium text-foreground"
+      summary={<>ECG{filled ? <span className="font-normal text-foreground-subtle"> — {filled}</span> : null}</>}
+    >
+      <div className="space-y-2 px-2.5 pb-2.5">
+        <ChipGroup size="sm" options={(Object.entries(ECG_RHYTHMS) as [EcgRhythm, string][]).map(([code, label]) => ({ code, label }))} value={g.rhythm ?? null} onChange={(v) => set({ rhythm: (v ?? undefined) as EcgRhythm | undefined })} allowClear />
+        <div className="grid grid-cols-3 gap-2">
+          <MiniNumber label="PR" unit="ms" placeholder="160" value={g.prMs} onChange={(prMs) => set({ prMs })} />
+          <MiniNumber label="QRS" unit="ms" placeholder="90" value={g.qrsMs} onChange={(qrsMs) => set({ qrsMs })} />
+          <MiniNumber label="QTc" unit="ms" placeholder="420" value={g.qtcMs} onChange={(qtcMs) => set({ qtcMs })} />
+        </div>
+        <MultiChipGroup options={(Object.entries(ECG_FINDINGS) as [EcgFinding, string][]).map(([code, label]) => ({ code, label }))} value={g.findings ?? []} onChange={(v) => set({ findings: v.length ? (v as EcgFinding[]) : undefined })} />
+      </div>
+    </Disclosure>
+  );
+}
+
 /** Basic clinical examination: one tap per finding; normal answers count too (for the official sheet). */
 function ExamEditor({ value: e, onChange }: { value: ClinicalExam; onChange: (e: ClinicalExam) => void }) {
   const set = (patch: Partial<ClinicalExam>) => onChange({ ...e, ...patch });
@@ -140,6 +164,7 @@ function ExamEditor({ value: e, onChange }: { value: ClinicalExam; onChange: (e:
             <ChipGroup size="sm" options={opts("spine")} value={e.spine ?? null} onChange={(v) => set({ spine: (v ?? undefined) as ClinicalExam["spine"] })} allowClear />
           </div>
         </div>
+        <EcgEditor value={e.ecg ?? {}} onChange={(ecg) => set({ ecg: ecgSummary(ecg) ? ecg : undefined })} />
         <Input className="h-9" defaultValue={e.notes} onChange={(ev) => set({ notes: ev.target.value || undefined })} placeholder="Autre (abdomen, cicatrices, état cutané, dentition…)" aria-label="Autres éléments de l'examen" />
       </div>
     </Disclosure>

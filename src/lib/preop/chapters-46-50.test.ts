@@ -43,6 +43,6 @@ describe("Manuel pratique d'anesthésie 2020, chapitres 46–50", () => {
   it("adds the draft rules at the end", () => {
     const rule = MANUAL_RULES.find((r) => r.title.startsWith("Choc septique : remplissage"))! as Rule;
     expect(evaluateRule(rule, { treatments: [], techniques: [], conditions: { septic_shock: { present: true } } } as unknown as PatientContext)).not.toBeNull();
-    expect(MANUAL_RULES.at(-1)!.source.title).toMatch(/Chapitre 47/);
+    expect(MANUAL_RULES.at(-1)!.source.title).toMatch(/Chapitre 51/);
   });
 });

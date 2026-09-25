@@ -71,6 +71,6 @@ describe("Manuel pratique d'anesthésie 2020, chapitres 41–45", () => {
     const tx = MANUAL_RULES.find((r) => r.title.startsWith("Polytraumatisé"))! as Rule;
     const ctx = { treatments: [], techniques: [], conditions: { major_trauma: { present: true } } } as unknown as PatientContext;
     expect(evaluateRule(tx, ctx)).not.toBeNull();
-    expect(MANUAL_RULES.at(-1)!.source.title).toMatch(/Chapitre 47/);
+    expect(MANUAL_RULES.at(-1)!.source.title).toMatch(/Chapitre 51/);
   });
 });

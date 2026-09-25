@@ -8,7 +8,7 @@ import { useCatalogs } from "@/components/preop/use-catalogs";
 import { surgeryFromItem } from "@/components/preop/surgery-panel";
 import { applyQuickEntry, isEmptyQuickEntry, parseQuickEntry, selectAll, type QuickSelection } from "@/lib/preop/quick-entry";
 import { DRUGS, QUALIFIER_LABELS } from "@/lib/preop/history";
-import { EXAM_LABELS, type ConsultationState } from "@/lib/preop/dossier";
+import { EXAM_LABELS, ecgSummary, type ConsultationState } from "@/lib/preop/dossier";
 import { cn } from "@/lib/utils";
 
 function Pick({ on, onToggle, children, tone = "default" }: { on: boolean; onToggle: () => void; children: React.ReactNode; tone?: "default" | "danger" | "muted" | "absent" }) {
@@ -80,7 +80,7 @@ export function QuickEntryPanel({ value, onChange, onClose }: { value: Consultat
   ]
     .filter(Boolean)
     .join(" · ");
-  const examText = [r.exam.heart && EXAM_LABELS.heart[r.exam.heart], r.exam.lungs && EXAM_LABELS.lungs[r.exam.lungs], r.exam.edema && "OMI", r.exam.jvd && "turgescence jugulaire", r.exam.veins && EXAM_LABELS.veins[r.exam.veins]]
+  const examText = [r.exam.heart && EXAM_LABELS.heart[r.exam.heart], r.exam.lungs && EXAM_LABELS.lungs[r.exam.lungs], r.exam.edema && "OMI", r.exam.jvd && "turgescence jugulaire", r.exam.veins && EXAM_LABELS.veins[r.exam.veins], r.exam.ecg && `ECG : ${ecgSummary(r.exam.ecg)}`]
     .filter(Boolean)
     .join(" · ");
   const detailText = (id: string, details?: Record<string, string>) => {

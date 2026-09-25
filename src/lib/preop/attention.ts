@@ -12,7 +12,7 @@ import { computeDose, type ProtocolDrug } from "./protocols";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 import { classesOf, fold, medicationOf, type AllergenItem, type AttentionSpec } from "./catalog";
 import type { ConsultationScores } from "./consultation-scores";
-import { examSummary, urgencyOf, type AllergyEntry, type ConsultationState } from "./dossier";
+import { ecgSummary, examSummary, urgencyOf, type AllergyEntry, type ConsultationState } from "./dossier";
 import { ARISCAT_REFERENCE, MASK_VENTILATION_ITEMS, MASK_VENTILATION_REFERENCE, PEN_FAST_REFERENCE, penFast, type MaskVentilationItem } from "./scores";
 import { implausibleValues, valueFindings } from "./value-checks";
 import type { ProtocolContent, ProtocolRisk } from "./protocols";
@@ -1657,6 +1657,79 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         source: CH(49, "chocs, sepsis et choc septique"),
         material: ["Cathéter artériel", "Noradrénaline prête", "Voie veineuse centrale"],
       });
+    }
+  }
+
+  // --- ECG read at the consultation (manual, chapter 51) ---------------------------------------
+  {
+    const ecg = c.patient.exam?.ecg;
+    if (ecg) {
+      const f = new Set(ecg.findings ?? []);
+      const lines: string[] = [];
+      let level: AttentionLevel = "info";
+      const raise = (l: AttentionLevel) => {
+        if (LEVEL_ORDER[l] < LEVEL_ORDER[level]) level = l;
+      };
+      const qtLimit = p.sex === "F" ? 460 : p.sex === "M" ? 440 : 450;
+      if (ecg.qtcMs !== undefined && ecg.qtcMs > qtLimit) {
+        const QT_DRUGS = ["C01BD", "C07AA07", "N06AA", "N06AB04", "N06AB10", "N05AD01", "N05AH", "J01FA", "N07BC02", "A03FA03", "P01BA02", "A04AA"];
+        const onQt = c.treatments.filter((t) => QT_DRUGS.some((x) => t.atc.startsWith(x))).map((t) => t.name);
+        raise(ecg.qtcMs >= 500 ? "high" : "medium");
+        lines.push(`QTc ${ecg.qtcMs} ms (normale < ${qtLimit}) : risque de torsades de pointes — kaliémie et magnésémie à corriger, éviter les médicaments qui allongent le QT (ondansétron, dropéridol, amiodarone, sotalol, antidépresseurs, macrolides, méthadone)${onQt.length ? ` ; en cours : ${onQt.join(", ")}` : ""}. Torsades : magnésium 2 g IV, isoprénaline si QT long acquis.`);
+      }
+      if (f.has("delta")) {
+        raise("medium");
+        lines.push("Pré-excitation (Wolff-Parkinson-White) : si FA à QRS larges, ni digoxine, ni anticalcique, ni bêtabloquant, ni adénosine (fibrillation ventriculaire) — cardioversion électrique.");
+      }
+      if (f.has("mobitz2") || f.has("avb3")) {
+        raise("high");
+        lines.push(`${f.has("avb3") ? "BAV complet" : "BAV 2 Mobitz 2"} (infranodal) : avis cardiologique avant une chirurgie programmée (stimulateur) ; électrodes de stimulation externe posées ; l'atropine peut aggraver un bloc infranodal — isoprénaline ou adrénaline 2–10 µg/min.`);
+      } else if (f.has("mobitz1")) {
+        raise("info");
+        lines.push("BAV 2 Mobitz 1 (nodal, vagal) : en général bénin, corrigé par l'atropine.");
+      }
+      const bifascicular = f.has("lbbb") || (f.has("rbbb") && (f.has("lafb") || f.has("lpfb")));
+      if (bifascicular) {
+        raise(f.has("avb1") ? "medium" : "info");
+        lines.push(`Bloc bifasciculaire${f.has("avb1") ? " avec BAV 1 (bloc trifasciculaire possible)" : ""} : électrodes de stimulation externe à portée ; ${f.has("lbbb") ? "BBG : signes d'ischémie ininterprétables ; " : ""}comparer avec un ECG antérieur.`);
+      } else if (f.has("rbbb") || f.has("lbbb")) lines.push("Bloc de branche : signes d'ischémie difficiles à interpréter ; comparer avec un ECG antérieur.");
+      if (ecg.rhythm === "af" || ecg.rhythm === "flutter") {
+        raise("medium");
+        lines.push(`${ecg.rhythm === "af" ? "Fibrillation auriculaire" : "Flutter"} : fréquence contrôlée ? anticoagulation (gestion selon vos règles) ; instable : cardioversion ${ecg.rhythm === "af" ? "100–150 J biphasique" : "25–50 J biphasique"} après sédation.`);
+      }
+      if (f.has("st_elevation")) {
+        raise("high");
+        lines.push("Sus-décalage du ST : syndrome coronarien aigu possible (occlusion) — avis cardiologique urgent, chirurgie programmée reportée ; infarctus inférieur : dérivations droites et postérieures.");
+      }
+      if (f.has("q_waves") || f.has("st_depression")) {
+        raise("medium");
+        lines.push(`${f.has("q_waves") ? "Ondes Q (séquelle d'infarctus)" : "Sous-décalage du ST (ischémie, HVG, surcharge)"} : cardiopathie ischémique à préciser (RCRI) ; comparer avec un ECG antérieur.`);
+      }
+      if (f.has("brugada")) {
+        raise("high");
+        lines.push("Aspect de Brugada : risque de mort subite — avis cardiologique ; éviter la fièvre et les bloqueurs sodiques à forte dose.");
+      }
+      if (f.has("lvh")) lines.push("HVG (S V1 + R V5 > 35 mm) : HTA, sténose aortique ou cardiomyopathie hypertrophique à rechercher ; ventricule rigide, précharge-dépendant.");
+      if (f.has("rvh")) lines.push("HVD : hypertension pulmonaire, embolie, pathologie respiratoire à rechercher.");
+      if (f.has("low_voltage")) lines.push("Microvoltage : épanchement péricardique ou pleural, emphysème, myxœdème, amylose.");
+      if (f.has("peaked_t")) {
+        raise("medium");
+        lines.push(`T pointues : hyperkaliémie à exclure${p.potassium !== undefined ? ` (K⁺ ${n(p.potassium)})` : ""}.`);
+      }
+      if (f.has("u_wave")) lines.push(`Onde U : hypokaliémie à exclure${p.potassium !== undefined ? ` (K⁺ ${n(p.potassium)})` : ""}.`);
+      if (f.has("avb1") && !bifascicular) lines.push(`BAV 1er degré${ecg.prMs ? ` (PR ${ecg.prMs} ms)` : ""} : isolé, sans conséquence.`);
+      if (ecg.qrsMs !== undefined && ecg.qrsMs >= 120 && !f.has("rbbb") && !f.has("lbbb") && ecg.rhythm !== "paced") lines.push(`QRS ${ecg.qrsMs} ms : bloc de branche, pré-excitation ou trouble ventriculaire à préciser.`);
+      if (ecg.prMs !== undefined && ecg.prMs < 120 && !f.has("delta")) lines.push(`PR court (${ecg.prMs} ms) : rechercher une onde delta (pré-excitation).`);
+      if (lines.length)
+        add({
+          id: "ecg-reading",
+          level,
+          title: "ECG : lecture et conduite",
+          detail: lines.join(" "),
+          why: `ECG : ${ecgSummary(ecg)}`,
+          source: `${MANUAL}, chap. 51 (ECG et arythmies)`,
+          material: f.has("mobitz2") || f.has("avb3") || (bifascicular && f.has("avb1")) ? ["Électrodes de stimulation externe", "Isoprénaline"] : undefined,
+        });
     }
   }
 

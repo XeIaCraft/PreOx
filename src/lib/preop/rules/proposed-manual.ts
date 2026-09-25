@@ -1246,4 +1246,41 @@ const CRITICAL_CARE: Proposed[] = [
   }),
 ];
 
-export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS, ...SPECIALITIES, ...LABS, ...OBSTETRICS_PAEDIATRICS, ...EMERGENCY_ONCOLOGY, ...CRITICAL_CARE];
+// ---------------------------------------------------------------------------
+// Chapitre 51 — ECG et arythmies
+// ---------------------------------------------------------------------------
+
+const CH51 = "Chapitre 51, ECG et arythmies, 4e édition (Elsevier Masson)";
+
+const ECG_RULES: Proposed[] = [
+  m({
+    title: "QT long : éviter les médicaments qui allongent le QT",
+    statement: "Le syndrome du QT long favorise les torsades de pointes ; le traitement comprend l'arrêt des médicaments en cause et la correction de la kaliémie et de la magnésémie.",
+    conditions: [history("long_qt", "QT long / Brugada")],
+    action: { type: "info", text: "Kaliémie et magnésémie normales ; éviter ondansétron, dropéridol, amiodarone, sotalol, antidépresseurs tricycliques, macrolides ; magnésium 2 g prêt (torsades).", target: "anaesthesia" },
+    quote: "Le traitement comprend : l'arrêt de tous les médicaments pouvant être à l'origine du QT long ; la perfusion de catécholamines (par exemple isoprotérénol) […] valable pour les QT longs acquis, mais pas pour certains types de QT longs congénitaux ; l'administration de magnésium, de potassium ; la pose d'un pacemaker.",
+    question: "What perioperative precautions are recommended for patients with congenital or acquired long QT syndrome (drugs to avoid, electrolyte targets, defibrillator readiness), according to current guidance (ESC 2022 ventricular arrhythmias, crediblemeds)?",
+    chapterTitle: CH51,
+  }),
+  m({
+    title: "Pré-excitation : pas de ralentisseur nodal en cas de FA",
+    statement: "En cas de fibrillation auriculaire chez un patient porteur d'un faisceau accessoire, éviter digoxine, anticalciques, bêtabloquants et adénosine, qui favorisent la conduction par la voie accessoire ; le traitement de choix est la cardioversion électrique.",
+    conditions: [history("wpw", "Wolff-Parkinson-White")],
+    action: { type: "info", text: "FA pré-excitée (QRS larges) : ni digoxine, ni anticalcique, ni bêtabloquant, ni adénosine — cardioversion électrique ; défibrillateur disponible.", target: "anaesthesia" },
+    quote: "Attention, en cas de FA chez un patient présentant un faisceau accessoire, il faut éviter l'administration des médicaments qui ralentissent la conduction dans le nœud AV (digoxine, anticalcique, bêta-bloquant, adénosine), car ils favorisent la conduction par la voie accessoire, plus rapide que la conduction par le nœud AV, et peuvent entraîner une FV. Le traitement de choix de ces FA est alors la cardioversion électrique.",
+    question: "How should pre-excited atrial fibrillation be managed perioperatively in Wolff-Parkinson-White syndrome, and which drugs are contraindicated, according to the ESC 2019 SVT guidelines?",
+    chapterTitle: CH51,
+  }),
+  m({
+    title: "BAV de haut degré : avis cardiologique et stimulation",
+    statement: "Le BAV 2e degré Mobitz 2 et le BAV complet sont en principe infranodaux ; ils sont aggravés par l'atropine et les catécholamines d'après le manuel ; un stimulateur cardiaque externe est posé en cas de BAV complet.",
+    conditions: [history("av_block", "Bradycardie / bloc auriculo-ventriculaire"), ELECTIVE],
+    action: { type: "requirement", text: "BAV 2 Mobitz 2, BAV complet ou bloc trifasciculaire symptomatique : avis cardiologique (stimulateur) avant la chirurgie programmée ; électrodes de stimulation externe posées.", blocking: false, target: "both" },
+    quote: "Le bloc du faisceau de His (infranodal ou hissien) est en principe un bloc anatomique, peu réversible […] Il est aggravé par l'atropine, les catécholamines et l'exercice. […] mettre un stimulateur cardiaque externe, en cas de BAV complet.",
+    question: "Which conduction disorders (Mobitz II, complete heart block, bifascicular block with first-degree AV block) require cardiology assessment or pacing before elective non-cardiac surgery, according to the ESC 2021 pacing and ESC 2022 non-cardiac surgery guidelines?",
+    chapterTitle: CH51,
+    explanations: ["L'aggravation par l'atropine concerne le bloc infranodal ; l'isoprénaline reste utilisée en attendant la stimulation."],
+  }),
+];
+
+export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS, ...SPECIALITIES, ...LABS, ...OBSTETRICS_PAEDIATRICS, ...EMERGENCY_ONCOLOGY, ...CRITICAL_CARE, ...ECG_RULES];

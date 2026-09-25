@@ -138,6 +138,8 @@ function keywordAt(segment: string, segWords: string[], keyword: string): number
   if (kw.join("").length <= 3) {
     if (keyword !== keyword.toUpperCase()) return -1;
     const m = new RegExp(`(^|[^A-Za-z])${keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^A-Za-z]|$)`).exec(segment);
+    // « PR 210 ms », « QRS 120 » : a measurement, not the abbreviation of a disease.
+    if (m && /^\s*[:=]?\s*\d/.test(segment.slice(m.index + m[0].length - m[2].length))) return -1;
     return m ? words(segment.slice(0, m.index + m[1].length)).length : -1;
   }
   return phraseAt(segWords, kw);
@@ -267,6 +269,42 @@ function readExam(text: string): ClinicalExam {
   if (neg(/oedemes? (des membres inferieurs|des mi|periph|malleolaires?)|\bomi\b/) === false) exam.edema = true;
   if (neg(/turgescence jugulaire|\btj\b/) === false) exam.jvd = true;
   if (/capital veineux (pauvre|mediocre|difficile)|abord veineux difficile|veines? difficiles?/.test(f)) exam.veins = "difficult";
+  // ECG (manual, chap. 51).
+  const ecg: NonNullable<ClinicalExam["ecg"]> = {};
+  const ms = (re: RegExp) => {
+    const m = re.exec(f);
+    if (!m) return undefined;
+    const v = Number(m[1].replace(",", "."));
+    return v < 1 ? Math.round(v * 1000) : Math.round(v);
+  };
+  ecg.qtcMs = ms(/\bqtc\s*(?:=|:|de|a)?\s*(\d{3}|0[.,]\d{2,3})\s*(?:ms)?/);
+  ecg.prMs = ms(/\bpr\s*(?:=|:|de|a)?\s*(\d{2,3}|0[.,]\d{2,3})\s*ms/);
+  ecg.qrsMs = ms(/\bqrs\s*(?:=|:|de|a)?\s*(\d{2,3}|0[.,]\d{2,3})\s*ms/);
+  // The rhythm only when the sentence is about the ECG (« FA paroxystique » in the history is not today's rhythm).
+  const ecgText = (f.match(/\becg\b[^.\n]*/g) ?? []).join(" ");
+  if (/\b(rs|rythme sinusal|sinusal)\b/.test(ecgText)) ecg.rhythm = "sinus";
+  if (/fibrillation (auriculaire|atriale)|\bfa\b|\bacfa\b/.test(ecgText)) ecg.rhythm = "af";
+  else if (/\bflutter\b/.test(ecgText)) ecg.rhythm = "flutter";
+  else if (/electro-?entraine|entraine par (le |un )?pace/.test(ecgText)) ecg.rhythm = "paced";
+  const findings: NonNullable<typeof ecg.findings> = [];
+  const push = (code: (typeof findings)[number], re: RegExp) => {
+    if (neg(re) === false) findings.push(code);
+  };
+  push("lbbb", /\bbbg\b|bloc de branche gauche/);
+  push("rbbb", /\bbbd\b|bloc de branche droit/);
+  push("lafb", /\bhbag\b|hemibloc anterieur/);
+  push("lpfb", /\bhbpg\b|hemibloc posterieur/);
+  push("avb1", /\bbav (1|i|du 1er|de 1er|1er degre)\b|bav du premier degre/);
+  push("mobitz2", /mobitz (2|ii)\b/);
+  push("mobitz1", /mobitz (1|i)\b|wenckebach/);
+  push("avb3", /\bbav (3|iii|complet)\b|bav du 3e degre|bloc (auriculo-ventriculaire|av) complet/);
+  push("lvh", /\bhvg\b|hypertrophie ventriculaire gauche/);
+  push("q_waves", /ondes? q\b/);
+  push("delta", /onde delta|pre-?excitation/);
+  push("brugada", /brugada/);
+  if (findings.length) ecg.findings = findings;
+  for (const k of Object.keys(ecg) as (keyof typeof ecg)[]) if (ecg[k] === undefined) delete ecg[k];
+  if (Object.keys(ecg).length) exam.ecg = ecg;
   return exam;
 }
 

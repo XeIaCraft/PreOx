@@ -379,6 +379,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     chapter: "chap. 10",
     doses: [pk("Bolus", 0.5, 1), rt("Perfusion", 10, 50, "µg", "/kg/min", { note: "Le chapitre 10 cite jusqu'à 500 µg/kg/min." })],
     cautions: [
+      { conditions: ["wpw"], level: "relative", text: "pré-excitation (WPW) : en cas de FA à QRS larges, proscrit (conduction par la voie accessoire, FV) — cardioversion (chap. 51)" },
       { conditions: ["asthma", "copd"], level: "relative", text: "bronchospasme" },
       { conditions: ["av_block"], level: "contraindicated", text: "bradycardie, bloc auriculo-ventriculaire" },
       { conditions: ["heart_failure"], level: "relative", text: "insuffisance cardiaque décompensée" },
@@ -390,6 +391,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     chapter: "chap. 10",
     doses: [fx("Bolus toutes les 2–5 min", 2, 5)],
     cautions: [
+      { conditions: ["wpw"], level: "relative", text: "pré-excitation (WPW) : en cas de FA à QRS larges, proscrit (conduction par la voie accessoire, FV) — cardioversion (chap. 51)" },
       { conditions: ["asthma"], level: "relative", text: "bronchospasme" },
       { conditions: ["av_block"], level: "contraindicated", text: "bradycardie, bloc auriculo-ventriculaire" },
     ],
@@ -510,8 +512,8 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Diltiazem",
     words: ["diltiazem", "tildiem"],
     chapter: "chap. 11",
-    doses: [rt("Perfusion", 5, 15, "mg", "/h")],
-    cautions: [{ conditions: ["av_block"], level: "relative", text: "bloc auriculo-ventriculaire" }],
+    doses: [pk("Tachycardie à QRS fins, stable : bolus en 2 min (chap. 51)", 0.25, 0.35), rt("Perfusion", 5, 15, "mg", "/h")],
+    cautions: [{ conditions: ["av_block"], level: "relative", text: "bloc auriculo-ventriculaire" }, { conditions: ["wpw"], level: "relative", text: "pré-excitation (WPW) : en cas de FA à QRS larges, proscrit (conduction par la voie accessoire, FV) — cardioversion (chap. 51)" }],
   },
 
   // --- Chapitres 12 et 13 : anesthésiques locaux ----------------------------------------------------------
@@ -573,9 +575,14 @@ export const DRUG_REFERENCES: DrugReference[] = [
   },
 
   // --- Chapitre 41 : urgences et réanimation ------------------------------------------------------
-  { name: "Amiodarone", onlyInPlan: true, words: ["amiodarone", "cordarone"], chapter: "chap. 41", doses: [fx("FV ou TV sans pouls, après le 3e choc", 300, 300, "mg", { note: "Puis 150 mg après le 5e choc." }), pk("Enfant (IV ou IO, jusqu'à 2 fois)", 5, 5)], cautions: [{ conditions: ["long_qt"], level: "relative", text: "allongement du QT (hors arrêt cardiaque)" }] },
+  { name: "Amiodarone", onlyInPlan: true, words: ["amiodarone", "cordarone"], chapter: "chap. 41 et 51", doses: [fx("FV ou TV sans pouls, après le 3e choc", 300, 300, "mg", { note: "Puis 150 mg après le 5e choc." }), fx("Tachycardie stable, QRS fins ou larges : en 20–30 min (chap. 51)", 150, 300, "mg", { note: "À répéter une fois." }), pk("Enfant (IV ou IO, jusqu'à 2 fois)", 5, 5)], cautions: [{ conditions: ["long_qt"], level: "relative", text: "allongement du QT (hors arrêt cardiaque)" }] },
   { name: "Hydroxocobalamine", onlyInPlan: true, words: ["hydroxocobalamine", "cyanokit"], chapter: "chap. 41", doses: [pk("Intoxication aux cyanures (fumées d'incendie), en 15 min", 70, 70, "mg", { note: "Adulte : 5 g, à répéter une fois. Le manuel indique 100 mg : dose insuffisante (RCP : 5 g)." })], cautions: [] },
   { name: "Thiamine", onlyInPlan: true, words: ["thiamine", "vitamine b1", "benerva"], chapter: "chap. 41", doses: [fx("Coma, alcoolisme, dénutrition (avant le glucose)", 100, 100)], cautions: [] },
+  // --- Chapitre 51 : arythmies -------------------------------------------------------------------
+  { name: "Adénosine", onlyInPlan: true, words: ["adenosine", "krenosin", "adenocor"], chapter: "chap. 51", doses: [fx("Tachycardie à QRS fins, stable : bolus rapide suivi de 20 ml de NaCl", 6, 18, "mg", { note: "6 mg, puis 12 mg, voire 18 mg." })], cautions: [{ conditions: ["asthma", "copd"], level: "contraindicated", text: "asthme : bronchospasme" }, { conditions: ["wpw"], level: "relative", text: "pré-excitation (WPW) : en cas de FA à QRS larges, proscrit (conduction par la voie accessoire, FV) — cardioversion (chap. 51)" }] },
+  { name: "Vérapamil", onlyInPlan: true, words: ["verapamil", "isoptine", "isoptin", "lodixal"], chapter: "chap. 51", doses: [fx("Tachycardie à QRS fins, stable (IV lent)", 5, 10, "mg", { note: "Maximum 20 mg." })], cautions: [{ conditions: ["wpw"], level: "relative", text: "pré-excitation (WPW) : en cas de FA à QRS larges, proscrit (conduction par la voie accessoire, FV) — cardioversion (chap. 51)" }, { atc: ["C07"], level: "relative", text: "bêtabloquant : bradycardie, asystolie" }, { conditions: ["heart_failure"], level: "relative", text: "insuffisance cardiaque : inotrope négatif" }] },
+  { name: "Isoprénaline", onlyInPlan: true, words: ["isoprenaline", "isoproterenol", "isuprel"], chapter: "chap. 51", doses: [rt("Bradycardie, BAV de haut degré, torsades (QT long acquis)", 2, 10, "µg", "/min")], cautions: [{ conditions: ["coronary", "recent_mi"], level: "relative", text: "ischémie myocardique (tachycardie)" }] },
+  { name: "Dopamine", onlyInPlan: true, words: ["dopamine"], chapter: "chap. 51", doses: [rt("Bradycardie symptomatique, à titrer", 5, 10, "µg", "/kg/min")], cautions: [{ atc: MAOI, level: "contraindicated", text: "IMAO : crise hypertensive" }] },
   // --- Chapitres 46 à 49 : prélèvement d'organes, réanimation, antidotes ---------------------------
   { name: "Vasopressine", onlyInPlan: true, words: ["vasopressine", "argipressine", "empressin", "reverpleg"], chapter: "chap. 46 et 49", doses: [rt("Choc septique (épargne de noradrénaline)", 0.03, 0.04, "UI", "/min"), rt("Diabète insipide du donneur d'organes", 0.5, 2, "UI", "/h")], cautions: [{ conditions: ["coronary", "recent_mi", "pad"], level: "relative", text: "vasoconstriction coronaire et périphérique" }] },
   { name: "Dobutamine", onlyInPlan: true, words: ["dobutamine", "dobutrex"], chapter: "chap. 49", doses: [rt("Bas débit après correction de la précharge", 1, 10, "µg", "/kg/min")], cautions: [{ conditions: ["hcm"], level: "contraindicated", text: "cardiomyopathie obstructive" }, { conditions: ["aortic_stenosis"], level: "relative", text: "sténose aortique serrée" }] },

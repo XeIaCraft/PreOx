@@ -71,6 +71,16 @@ export function deduceConditions(c: ConsultationState, catalogs: Pick<Catalogs, 
   if (exam?.veins === "difficult") add("difficult_iv", "examen : abord veineux difficile");
   if (exam?.spine === "difficult") add("scoliosis", "examen : repères rachidiens difficiles");
   if (exam?.neuroDeficit) add("neuropathy", "examen : déficit neurologique préexistant");
+  // The ECG (manual, chap. 51).
+  const ecg = exam?.ecg;
+  const has = (f: string) => ecg?.findings?.includes(f as never) ?? false;
+  if (ecg?.rhythm === "af" || ecg?.rhythm === "flutter") add("arrhythmia", `ECG : ${ecg.rhythm === "af" ? "fibrillation auriculaire" : "flutter"}`);
+  if (ecg?.rhythm === "paced") add("pacemaker", "ECG : rythme électroentraîné");
+  if (has("delta")) add("wpw", "ECG : onde delta (pré-excitation)");
+  const qtcLimit = c.patient.sex === "F" ? 460 : 440;
+  if ((ecg?.qtcMs !== undefined && ecg.qtcMs > qtcLimit) || has("brugada")) add("long_qt", ecg?.qtcMs !== undefined && ecg.qtcMs > qtcLimit ? `ECG : QTc ${ecg.qtcMs} ms` : "ECG : aspect de Brugada");
+  if (has("mobitz2") || has("avb3") || (has("avb1") && (has("lbbb") || (has("rbbb") && (has("lafb") || has("lpfb")))))) add("av_block", "ECG : bloc de conduction de haut degré ou trifasciculaire");
+  if (has("q_waves")) add("coronary", "ECG : ondes Q (séquelle d'infarctus ?)");
 
   // Values past a threshold of Paramètres › Valeurs à signaler (Hb below the WHO
   // anaemia threshold, eGFR < 60, BP ≥ 180/110…): suggested, to confirm.

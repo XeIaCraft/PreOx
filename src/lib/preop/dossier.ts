@@ -73,7 +73,57 @@ export interface ClinicalExam {
   neuroDeficit?: boolean;
   /** Skin infection or lesion at a planned puncture site. */
   punctureSite?: boolean;
+  /** Resting ECG read at the consultation. */
+  ecg?: EcgFindings;
   notes?: string;
+}
+
+export type EcgRhythm = "sinus" | "af" | "flutter" | "junctional" | "paced";
+export type EcgFinding = "avb1" | "mobitz1" | "mobitz2" | "avb3" | "lafb" | "lpfb" | "rbbb" | "lbbb" | "delta" | "lvh" | "rvh" | "q_waves" | "st_depression" | "st_elevation" | "brugada" | "low_voltage" | "peaked_t" | "u_wave";
+
+/** The ECG as read (manual, chap. 51): rhythm, intervals in ms, abnormalities. */
+export interface EcgFindings {
+  rhythm?: EcgRhythm;
+  prMs?: number;
+  qrsMs?: number;
+  qtcMs?: number;
+  findings?: EcgFinding[];
+}
+
+export const ECG_RHYTHMS: Record<EcgRhythm, string> = { sinus: "Sinusal", af: "Fibrillation auriculaire", flutter: "Flutter", junctional: "Jonctionnel", paced: "Électroentraîné" };
+export const ECG_FINDINGS: Record<EcgFinding, string> = {
+  avb1: "BAV 1er degré",
+  mobitz1: "BAV 2 Mobitz 1",
+  mobitz2: "BAV 2 Mobitz 2",
+  avb3: "BAV 3e degré",
+  lafb: "Hémibloc antérieur G",
+  lpfb: "Hémibloc postérieur G",
+  rbbb: "Bloc de branche D",
+  lbbb: "Bloc de branche G",
+  delta: "Onde delta (pré-excitation)",
+  lvh: "HVG",
+  rvh: "HVD",
+  q_waves: "Ondes Q",
+  st_depression: "Sous-décalage ST",
+  st_elevation: "Sus-décalage ST",
+  brugada: "Aspect de Brugada",
+  low_voltage: "Microvoltage",
+  peaked_t: "T pointues",
+  u_wave: "Onde U",
+};
+
+/** « FA, QTc 480 ms, BBG » — the ECG in a few words. */
+export function ecgSummary(e: EcgFindings | undefined): string {
+  if (!e) return "";
+  return [
+    e.rhythm && e.rhythm !== "sinus" ? ECG_RHYTHMS[e.rhythm] : e.rhythm ? "rythme sinusal" : "",
+    e.prMs ? `PR ${e.prMs} ms` : "",
+    e.qrsMs ? `QRS ${e.qrsMs} ms` : "",
+    e.qtcMs ? `QTc ${e.qtcMs} ms` : "",
+    ...(e.findings ?? []).map((f) => ECG_FINDINGS[f]),
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 export const EXAM_LABELS = {
@@ -95,6 +145,7 @@ export function examSummary(e: ClinicalExam | undefined): string {
     e.spine ? EXAM_LABELS.spine[e.spine] : "",
     e.neuroDeficit ? "déficit neurologique préexistant" : "",
     e.punctureSite ? "lésion ou infection au site de ponction" : "",
+    ecgSummary(e.ecg) ? `ECG : ${ecgSummary(e.ecg)}` : "",
     e.notes?.trim() ?? "",
   ].filter(Boolean);
   return parts.join(", ");
