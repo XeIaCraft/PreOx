@@ -30,7 +30,7 @@ const condition = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("technique"), in: z.array(technique).min(1).max(5) }),
   z.object({
     kind: z.literal("value"),
-    value: z.enum(["age", "weight", "bmi", "crcl", "egfr", "hb", "platelets", "inr"]),
+    value: z.enum(["age", "weight", "bmi", "crcl", "egfr", "hb", "platelets", "inr", "potassium", "sodium", "glucose", "hba1c"]),
     op: comparator,
     threshold: z.number().min(0).max(100_000),
   }),

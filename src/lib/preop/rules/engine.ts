@@ -92,6 +92,14 @@ export function patientValue(ctx: PatientContext, value: PatientValue): number |
       return ctx.platelets;
     case "inr":
       return ctx.inr;
+    case "potassium":
+      return ctx.potassium;
+    case "sodium":
+      return ctx.sodium;
+    case "glucose":
+      return ctx.glucose;
+    case "hba1c":
+      return ctx.hba1c;
   }
 }
 

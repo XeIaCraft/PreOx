@@ -71,7 +71,7 @@ export const INDICATIONS: { code: Indication; label: string }[] = [
 export type Comparator = "<" | "<=" | ">" | ">=";
 
 /** Numeric patient values a rule can test. Derived ones (CrCl, BMI) are computed from the patient data. */
-export type PatientValue = "age" | "weight" | "bmi" | "crcl" | "egfr" | "hb" | "platelets" | "inr";
+export type PatientValue = "age" | "weight" | "bmi" | "crcl" | "egfr" | "hb" | "platelets" | "inr" | "potassium" | "sodium" | "glucose" | "hba1c";
 
 export const PATIENT_VALUES: { code: PatientValue; label: string; unit: string }[] = [
   { code: "age", label: "Âge", unit: "ans" },
@@ -82,6 +82,10 @@ export const PATIENT_VALUES: { code: PatientValue; label: string; unit: string }
   { code: "hb", label: "Hémoglobine", unit: "g/dL" },
   { code: "platelets", label: "Plaquettes", unit: "G/L" },
   { code: "inr", label: "INR", unit: "" },
+  { code: "potassium", label: "Kaliémie", unit: "mmol/L" },
+  { code: "sodium", label: "Natrémie", unit: "mmol/L" },
+  { code: "glucose", label: "Glycémie", unit: "mg/dL" },
+  { code: "hba1c", label: "HbA1c", unit: "%" },
 ];
 
 /** All conditions of a rule must hold (AND). */
@@ -228,6 +232,11 @@ export interface PatientContext {
   hb?: number;
   platelets?: number;
   inr?: number;
+  potassium?: number;
+  sodium?: number;
+  /** mg/dL. */
+  glucose?: number;
+  hba1c?: number;
   treatments: PatientTreatment[];
   techniques: Technique[];
   /** ISO date-time of the planned gesture. */

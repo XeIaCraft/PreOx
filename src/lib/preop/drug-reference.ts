@@ -88,6 +88,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
       { conditions: ["malnutrition", "nephrotic"], level: "adapt", text: "hypoalbuminémie : fraction libre augmentée, réduire la dose" },
       { conditions: ["coronary", "stable_angina", "recent_mi"], level: "contraindicated", text: "cardiopathie ischémique : augmente la consommation d'O₂ du myocarde (chap. 27)" },
       { conditions: ["heart_failure", "dilated_cardiomyopathy"], level: "relative", text: "insuffisance cardiaque : cardiomyodépression importante (chap. 27)" },
+      { conditions: ["carcinoid"], level: "relative", text: "tumeur carcinoïde : histaminolibération (chap. 34)" },
     ],
   },
   {
@@ -99,6 +100,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
       { conditions: ["porphyria"], level: "contraindicated", text: "porphyrie" },
       { conditions: ["adrenal_insufficiency"], level: "relative", text: "insuffisance surrénalienne : inhibe la synthèse du cortisol pendant 24 h" },
       { conditions: ["myotonic_dystrophy"], level: "contraindicated", text: "dystrophie myotonique : les myoclonies précipitent des contractures (chap. 29)" },
+      { atc: ["H02AB"], level: "relative", text: "corticothérapie au long cours : aggrave l'inhibition surrénalienne (chap. 34)" },
     ],
   },
   {
@@ -121,6 +123,8 @@ export const DRUG_REFERENCES: DrugReference[] = [
       { conditions: ["psychosis", "bipolar"], level: "contraindicated", text: "maladie psychiatrique" },
       { atc: ["C07"], level: "adapt", text: "sous bêtabloquant, les effets sympathomimétiques disparaissent (cardiomyodépression)" },
       { conditions: ["pulmonary_hypertension"], level: "contraindicated", text: "hypertension pulmonaire : élève les résistances vasculaires pulmonaires (chap. 27)" },
+      { conditions: ["pheochromocytoma"], level: "contraindicated", text: "phéochromocytome : sympathomimétique (chap. 34)" },
+      { conditions: ["hyperthyroidism"], level: "relative", text: "hyperthyroïdie : stimulation sympathique (chap. 34)" },
     ],
   },
   {
@@ -178,7 +182,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     words: ["morphine"],
     chapter: "chap. 7",
     doses: [fx("PCA : bolus toutes les 5–10 min", 1, 2, "mg", { note: "Maximum 30 mg / 4 h." }), fx("Intrathécale (tableau 13.5)", 0.1, 0.3, "mg", { note: "Analgésie jusqu'à 24 h ; dépression respiratoire retardée possible : surveillance." })],
-    cautions: [{ conditions: ["ckd", "dialysis"], level: "adapt", text: "insuffisance rénale : la morphine-6-glucuronide (active) s'accumule — dépression respiratoire retardée ; préférer un autre opioïde ou réduire" }],
+    cautions: [{ conditions: ["ckd", "dialysis"], level: "adapt", text: "insuffisance rénale : la morphine-6-glucuronide (active) s'accumule — dépression respiratoire retardée ; préférer un autre opioïde ou réduire" }, { conditions: ["pheochromocytoma", "carcinoid"], level: "relative", text: "phéochromocytome ou carcinoïde : histaminolibération (chap. 34)" }],
   },
   {
     name: "Péthidine",
@@ -199,6 +203,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
       { atc: MAOI, level: "contraindicated", text: "IMAO non sélectif : syndrome sérotoninergique" },
       { atc: ["N06AB", "N06AX", "N06AA", "N05A"], level: "relative", text: "ISRS, tricyclique ou neuroleptique : syndrome sérotoninergique, seuil épileptogène abaissé" },
       { conditions: ["epilepsy"], level: "relative", text: "épilepsie : abaisse le seuil épileptogène" },
+      { conditions: ["porphyria"], level: "relative", text: "porphyrie : médicament porphyrinogène (chap. 35)" },
     ],
   },
   {
@@ -238,6 +243,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
       { conditions: ["pregnancy", "cirrhosis", "malnutrition"], level: "adapt", text: "grossesse, cachexie, insuffisance hépatique : bloc prolongé" },
       { conditions: ["myasthenia"], level: "adapt", text: "myasthénie : résistance relative (chap. 29)" },
       { conditions: ["lambert_eaton"], level: "relative", text: "Lambert-Eaton : sensibilité augmentée (chap. 29)" },
+      { conditions: ["pheochromocytoma"], level: "relative", text: "phéochromocytome : les fasciculations libèrent des catécholamines (chap. 34)" },
     ],
   },
   {
@@ -270,14 +276,14 @@ export const DRUG_REFERENCES: DrugReference[] = [
     words: ["atracurium", "tracrium"],
     chapter: "chap. 8",
     doses: [pk("Intubation", 0.5, 0.6)],
-    cautions: [{ conditions: ["mastocytosis", "asthma"], level: "relative", text: "histaminolibération" }],
+    cautions: [{ conditions: ["mastocytosis", "asthma"], level: "relative", text: "histaminolibération" }, { conditions: ["pheochromocytoma", "carcinoid"], level: "relative", text: "phéochromocytome ou carcinoïde : histaminolibération (chap. 34)" }],
   },
   {
     name: "Mivacurium",
     words: ["mivacurium", "mivacron"],
     chapter: "chap. 8",
     doses: [pk("Intubation", 0.2, 0.25)],
-    cautions: [{ conditions: ["pseudocholinesterase"], level: "contraindicated", text: "déficit en pseudocholinestérases" }],
+    cautions: [{ conditions: ["pseudocholinesterase"], level: "contraindicated", text: "déficit en pseudocholinestérases" }, { conditions: ["pheochromocytoma", "carcinoid"], level: "relative", text: "phéochromocytome ou carcinoïde : histaminolibération (chap. 34)" }],
   },
 
   // --- Chapitre 9 : décurarisation ------------------------------------------------------------
@@ -312,6 +318,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     cautions: [
       { atc: ["C07"], level: "adapt", text: "bêtabloquant au long cours : effet indirect diminué" },
       { atc: MAOI, level: "contraindicated", text: "IMAO : sympathomimétique indirect, crise hypertensive" },
+      { conditions: ["pheochromocytoma"], level: "contraindicated", text: "phéochromocytome : sympathomimétique (chap. 34)" },
     ],
   },
   {
@@ -345,6 +352,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
       { conditions: ["urinary_retention"], level: "relative", text: "hypertrophie prostatique, obstacle du col vésical" },
       { conditions: ["heart_transplant"], level: "adapt", text: "cœur dénervé : sans effet" },
       { conditions: ["parkinson", "cognitive"], level: "relative", text: "Parkinson ou démence : confusion — préférer le glycopyrrolate (chap. 29)" },
+      { conditions: ["pheochromocytoma", "hyperthyroidism"], level: "relative", text: "phéochromocytome ou hyperthyroïdie : tachycardie (chap. 34)" },
     ],
   },
   {
@@ -352,7 +360,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     words: ["clonidine", "catapressan"],
     chapter: "chap. 10 et 12",
     doses: [pk("Épargne anesthésique ou frissons (IV lent)", 2, 3, "µg"), fx("Bloc périphérique (chap. 12)", 150, 150, "µg", { note: "Prolonge le bloc d'environ 2 h." }), pk("Bloc central (chap. 12)", 0.5, 1, "µg"), rt("Agitation", 0.5, 2, "µg", "/kg/h")],
-    cautions: [{ conditions: ["av_block"], level: "relative", text: "bradycardie, bloc auriculo-ventriculaire" }],
+    cautions: [{ conditions: ["av_block"], level: "relative", text: "bradycardie, bloc auriculo-ventriculaire" }, { conditions: ["porphyria"], level: "relative", text: "porphyrie : médicament porphyrinogène (chap. 35)" }],
   },
   {
     name: "Dexmédétomidine",
@@ -385,7 +393,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
 
   // --- Adjuvants d'épargne morphinique (tableau 7.5) ------------------------------------------------
   { name: "Dexaméthasone", words: ["dexamethasone"], chapter: "chap. 7, 12 et 23", doses: [pk("Début d'intervention (IV lent)", 0.1, 0.2, "mg", { note: "Prolonge aussi un bloc périphérique d'environ 8 h (chap. 12)." }), fx("Prévention des NVPO, à l'induction", 4, 8), fx("Périnerveuse (dose plafond)", 4, 4)], cautions: [{ conditions: ["diabetes_insulin", "diabetes_oral"], level: "adapt", text: "diabète : élévation de la glycémie" }] },
-  { name: "Kétorolac", words: ["ketorolac", "taradyl"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention", 30, 60)], cautions: [{ conditions: ["ckd", "dialysis", "peptic_ulcer", "gi_bleeding"], level: "contraindicated", text: "insuffisance rénale, ulcère ou hémorragie digestive" }] },
+  { name: "Kétorolac", words: ["ketorolac", "taradyl"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention", 30, 60)], cautions: [{ conditions: ["ckd", "dialysis", "peptic_ulcer", "gi_bleeding"], level: "contraindicated", text: "insuffisance rénale, ulcère ou hémorragie digestive" }, { conditions: ["porphyria"], level: "relative", text: "porphyrie : médicament porphyrinogène (chap. 35)" }] },
   { name: "Magnésium", words: ["magnesium"], chapter: "chap. 7 et 28", doses: [pk("Sur 15 min en fin d'intervention", 40, 50), fx("Crise d'asthme (en 15–20 min)", 2, 2, "g")], cautions: [{ conditions: ["myasthenia", "neuromuscular"], level: "relative", text: "potentialise les curares" }] },
   { name: "Lidocaïne IV", words: ["lidocaine iv", "xylocaine iv", "lidocaine intraveineuse"], chapter: "chap. 7, tableau 7.5", doses: [pk("Bolus", 1.5, 1.5), rt("Perfusion", 2, 2, "mg", "/kg/h")], cautions: [{ conditions: ["av_block"], level: "relative", text: "troubles conductifs" }] },
   { name: "Paracétamol", words: ["paracetamol", "perfusalgan", "dafalgan"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention, sur 15 min", 1, 1, "g")], cautions: [{ conditions: ["cirrhosis"], level: "adapt", text: "insuffisance hépatique : réduire (contre-indiqué si sévère, chap. 25)" }] },
@@ -403,6 +411,17 @@ export const DRUG_REFERENCES: DrugReference[] = [
   { name: "Protamine", onlyInPlan: true, words: ["protamine"], chapter: "chap. 27", doses: [fx("Neutralisation : 1 mg pour 100 UI d'héparine, lentement", 1, 1, "mg", { note: "Puis 25–50 mg si le saignement persiste (ACT)." })], cautions: [{ conditions: ["pulmonary_hypertension"], level: "relative", text: "hypertension pulmonaire aiguë possible : injection lente" }] },
   { name: "Milrinone", onlyInPlan: true, words: ["milrinone", "corotrope"], chapter: "chap. 27", doses: [rt("Perfusion", 0.5, 0.5, "µg", "/kg/min")], cautions: [{ conditions: ["ckd", "dialysis"], level: "adapt", text: "insuffisance rénale : réduire" }] },
   { name: "Mannitol", onlyInPlan: true, words: ["mannitol"], chapter: "chap. 29", doses: [pk("Osmothérapie 20 % (en 10–20 min, après l'ouverture de la dure-mère)", 0.25, 1, "g", { note: "Osmolarité plasmatique < 320 mOsm/l." })], cautions: [{ conditions: ["heart_failure"], level: "relative", text: "insuffisance cardiaque : expansion volémique" }] },
+
+  // --- Chapitres 34 et 35 : endocrinologie, hémostase ----------------------------------------------
+  { name: "Hydrocortisone", words: ["hydrocortisone", "solucortef", "solu-cortef"], chapter: "chap. 34", doses: [fx("Couverture périopératoire (corticothérapie ≥ 5 mg/j de prednisone)", 100, 100, "mg", { note: "Manuel : 100 mg/j pendant une semaine (toutes les 8 h en cas d'insuffisance surrénale). Équivalences : hydrocortisone 20 = prednisolone 5 = méthylprednisolone 4 = dexaméthasone 0,75 mg." })], cautions: [] },
+  { name: "Octréotide", words: ["octreotide", "sandostatine"], chapter: "chap. 34", doses: [fx("Tumeur carcinoïde : avant l'intervention (SC, 2×/j)", 50, 500, "µg", { note: "Crise peropératoire : somatostatine 150–200 µg/h." })], cautions: [] },
+  { name: "Desmopressine", onlyInPlan: true, words: ["desmopressine", "minirin", "octostim"], chapter: "chap. 35", doses: [pk("Willebrand type I, hémophilie A légère (dans 250 ml NaCl en 20 min, 1 h avant)", 0.3, 0.3, "µg")], cautions: [{ conditions: ["hyponatremia"], level: "relative", text: "hyponatrémie (effet antidiurétique)" }] },
+  { name: "Complexe prothrombinique", onlyInPlan: true, words: ["ppsb", "prothromplex", "octaplex", "confidex", "kanokad", "beriplex", "complexe prothrombinique"], chapter: "chap. 35", doses: [pk("Antagonisation d'un AVK en urgence", 20, 20, "UI", { note: "Objectif TP ≥ 50 % ; AOD en hémorragie : 25–50 UI/kg." })], cautions: [{ conditions: ["hit_history"], level: "relative", text: "certaines préparations contiennent de l'héparine" }] },
+  { name: "Fibrinogène", onlyInPlan: true, words: ["fibrinogene", "riastap", "clottafact", "haemocomplettan"], chapter: "chap. 27 et 35", doses: [fx("Saignement avec fibrinogène < 1–1,5 g/l", 2, 2, "g")], cautions: [] },
+  { name: "Vitamine K", onlyInPlan: true, words: ["vitamine k", "phytomenadione", "konakion"], chapter: "chap. 35", doses: [fx("Chirurgie différée sous AVK (PO, INR 8–12 h après)", 1, 10, "mg", { note: "Voie IV réservée à l'urgence (réactions allergiques)." })], cautions: [] },
+  { name: "Idarucizumab", onlyInPlan: true, words: ["idarucizumab", "praxbind"], chapter: "chap. 35", doses: [fx("Antidote du dabigatran (2 × 2,5 g)", 5, 5, "g", { note: "Seconde dose possible après 24 h si récidive." })], cautions: [] },
+  { name: "Bleu de méthylène", onlyInPlan: true, words: ["bleu de methylene", "methylthioninium", "proveblue"], chapter: "chap. 35", doses: [pk("Méthémoglobinémie (solution 1 %, en 3–5 min)", 1, 2, "mg", { note: "Total ≤ 5–7 mg/kg ; fait baisser transitoirement la SpO₂." })], cautions: [{ conditions: ["g6pd"], level: "contraindicated", text: "déficit en G6PD : hémolyse" }, { atc: ["N06AB", "N06AX"], level: "relative", text: "antidépresseur sérotoninergique : syndrome sérotoninergique" }] },
+  { name: "Calcium", onlyInPlan: true, words: ["chlorure de calcium", "gluconate de calcium"], chapter: "chap. 32", doses: [fx("Hyperkaliémie, hypocalcémie, hypermagnésémie (10 %, en 3–5 min)", 10, 20, "mL", { note: "Chlorure 10 % = 27 mg/ml de Ca²⁺ ; gluconate 10 % = 9 mg/ml. Jamais sous digoxine." })], cautions: [{ atc: ["C01AA"], level: "contraindicated", text: "digoxine : arythmie maligne" }] },
 
   // --- Chapitres 23 et 25 : NVPO, analgésie, hyperthermie maligne -------------------------------
   { name: "Ondansétron", words: ["ondansetron", "zofran", "zophren"], chapter: "chap. 23", doses: [fx("Prévention des NVPO, 30 min avant la fin", 4, 4, "mg", { note: "50–150 µg/kg, maximum 8 mg ; traitement : 4 mg 3×/j." })], cautions: [{ conditions: ["long_qt"], level: "relative", text: "allongement du QT" }] },
@@ -469,7 +488,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     words: ["urapidil", "uradipil", "eupressyl", "ebrantil"],
     chapter: "chap. 11",
     doses: [fx("Bolus en 30 s", 10, 50), rt("Entretien", 5, 20, "mg", "/h")],
-    cautions: [],
+    cautions: [{ conditions: ["porphyria"], level: "relative", text: "porphyrie : médicament porphyrinogène (chap. 35)" }],
   },
   {
     name: "Dihydralazine",
@@ -500,7 +519,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     words: ["mepivacaine", "carbocaine", "scandicaine"],
     chapter: "chap. 12",
     doses: [pk("Dose maximale sans adrénaline", 4, 4, "mg", { note: "Total 400 mg ; avec adrénaline 7 mg/kg (500 mg)." })],
-    cautions: [],
+    cautions: [{ conditions: ["porphyria"], level: "relative", text: "porphyrie : médicament porphyrinogène (chap. 35)" }],
     maxDose: { perKg: 4, totalMg: 400, withAdrenalinePerKg: 7, withAdrenalineTotalMg: 500 },
   },
   {
@@ -532,7 +551,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     words: ["prilocaine", "citanest", "baritekal"],
     chapter: "chap. 12 et 13",
     doses: [pk("Dose maximale", 8, 8, "mg", { note: "Total 400 mg (600 mg avec adrénaline) ; au-delà de 600 mg : méthémoglobinémie (bleu de méthylène 1–2 mg/kg)." }), fx("Rachianesthésie (Baritekal, tableau 13.3)", 40, 80)],
-    cautions: [{ conditions: ["g6pd"], level: "contraindicated", text: "déficit en G6PD : méthémoglobinémie, bleu de méthylène contre-indiqué" }],
+    cautions: [{ conditions: ["g6pd"], level: "contraindicated", text: "déficit en G6PD : méthémoglobinémie, bleu de méthylène contre-indiqué" }, { conditions: ["porphyria"], level: "relative", text: "porphyrie : médicament porphyrinogène (chap. 35)" }],
     maxDose: { perKg: 8, totalMg: 400, withAdrenalineTotalMg: 600 },
   },
   {

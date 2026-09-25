@@ -978,4 +978,71 @@ const SPECIALITIES: Proposed[] = [
   }),
 ];
 
-export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS, ...SPECIALITIES];
+// ---------------------------------------------------------------------------
+// Chapitres 31 à 35 — électrolytes et hémostase (valeurs biologiques)
+// ---------------------------------------------------------------------------
+
+const CH32 = "Chapitre 32, Troubles électrolytiques, 4e édition (Elsevier Masson)";
+const CH35 = "Chapitre 35, Hématologie, produits sanguins et anesthésie, 4e édition (Elsevier Masson)";
+const ELECTIVE: Condition = { kind: "surgery", attribute: "urgency", in: ["elective"] };
+
+const LABS: Proposed[] = [
+  m({
+    title: "Hyperkaliémie > 5,5 mmol/l : chirurgie programmée ajournée",
+    statement: "Toute chirurgie élective doit être ajournée si la kaliémie dépasse 5,5 à 6,0 mmol/l.",
+    conditions: [{ kind: "value", value: "potassium", op: ">", threshold: 5.5 }, ELECTIVE],
+    action: { type: "requirement", text: "Kaliémie > 5,5 mmol/l : ajourner la chirurgie programmée et corriger (arrêt des hyperkaliémiants, résines, dialyse si besoin) ; pas de succinylcholine.", blocking: true, target: "both" },
+    quote: "Toute chirurgie élective doit être ajournée si le patient présente une kaliémie > 5,5–6,0 mmol/l.",
+    question: "Above which serum potassium level should elective surgery be postponed (including in chronic kidney disease or dialysis patients), according to current guidance?",
+    chapterTitle: "Chapitre 31, Système urinaire et anesthésie, 4e édition (Elsevier Masson)",
+    explanations: ["Seuil à nuancer chez le dialysé chronique, qui tolère souvent une kaliémie un peu plus haute : dialyse la veille recommandée."],
+  }),
+  m({
+    title: "Hypokaliémie < 3 mmol/l : corriger avant la chirurgie programmée",
+    statement: "Une kaliémie au-dessus de 3 mmol/l sans trouble électrolytique associé suffit pour procéder à une chirurgie élective.",
+    conditions: [{ kind: "value", value: "potassium", op: "<", threshold: 3 }, ELECTIVE],
+    action: { type: "requirement", text: "Kaliémie < 3 mmol/l : corriger (et le magnésium) avant la chirurgie programmée ; curares réduits de 20 à 25 %, pas de soluté glucosé ni d'hyperventilation.", blocking: false, target: "both" },
+    quote: "Une kaliémie au-dessus de 3 mmol/l sans trouble électrolytique associé est suffisante pour procéder à une chirurgie élective.",
+    question: "What minimum serum potassium is acceptable for elective surgery, and when should hypokalaemia be corrected first, according to current guidance?",
+    chapterTitle: CH32,
+  }),
+  m({
+    title: "Hypernatrémie > 150 mmol/l : chirurgie programmée différée",
+    statement: "La chirurgie élective doit être différée chez les patients présentant une hypernatrémie importante (> 150 mmol/l).",
+    conditions: [{ kind: "value", value: "sodium", op: ">", threshold: 150 }, ELECTIVE],
+    action: { type: "requirement", text: "Natrémie > 150 mmol/l : différer la chirurgie programmée ; rechercher une hypovolémie et corriger lentement.", blocking: true, target: "both" },
+    quote: "La chirurgie élective doit être différée chez les patients présentant une hypernatrémie importante (>150 mEq/l).",
+    question: "Should elective surgery be postponed for hypernatraemia above 150 mmol/l, and how fast should it be corrected, according to current guidance?",
+    chapterTitle: CH32,
+  }),
+  m({
+    title: "Hyponatrémie < 130 mmol/l : bilan avant la chirurgie programmée",
+    statement: "Une hyponatrémie modérée (120–129 mmol/l) ou sévère (< 120 mmol/l) demande une étiologie et une correction prudente avant une chirurgie programmée.",
+    conditions: [{ kind: "value", value: "sodium", op: "<", threshold: 130 }, ELECTIVE],
+    action: { type: "requirement", text: "Natrémie < 130 mmol/l : étiologie et correction prudente avant la chirurgie programmée (pas plus de 8 à 10 mmol/l par 24 h si chronique).", blocking: false, target: "both" },
+    quote: "Les manifestations cliniques dépendent de la vitesse d'installation de l'hyponatrémie […] et de sa sévérité (légère si natrémie 130–134 mmol/l, modérée si natrémie 120–129 mmol/l ; sévère si natrémie <120 mmol/l).",
+    question: "Below which serum sodium should elective surgery be postponed, and what correction rate is safe for chronic hyponatraemia, according to the European hyponatraemia guideline (ESE/ESICM/ERA-EDTA)?",
+    chapterTitle: CH32,
+    explanations: ["Le manuel ne donne pas de seuil de report : 130 mmol/l est une proposition à valider."],
+  }),
+  m({
+    title: "Plaquettes < 50 G/l : seuil pour un acte chirurgical",
+    statement: "Les valeurs habituellement recommandées pour un acte chirurgical en toute sécurité comprennent des thrombocytes ≥ 50 G/l (50 à 100 G/l selon l'intervention).",
+    conditions: [{ kind: "value", value: "platelets", op: "<", threshold: 50 }],
+    action: { type: "requirement", text: "Plaquettes < 50 G/l : étiologie, transfusion plaquettaire ou report selon l'intervention (≥ 100 G/l en neurochirurgie ou chirurgie de l'œil postérieur).", blocking: false, target: "surgery" },
+    quote: "Les valeurs de laboratoire habituellement recommandées pour réaliser un acte chirurgical en toute sécurité sont les suivantes : • INR <1,5 ; • TP >75 % ; • TCA ou aPTT <norme limite supérieure du laboratoire ; • ACT <120 s ; ■ Thrombocytes ≥ 50 g/l.",
+    question: "What platelet count thresholds are recommended before surgery and neuraxial anaesthesia (general surgery, neurosurgery, spinal, epidural), according to current European guidance (ESAIC bleeding guideline, BSH, ESAIC/ESRA)?",
+    chapterTitle: CH35,
+  }),
+  m({
+    title: "INR ≥ 1,5 : seuil pour un acte chirurgical",
+    statement: "Les valeurs habituellement recommandées pour un acte chirurgical en toute sécurité comprennent un INR < 1,5.",
+    conditions: [{ kind: "value", value: "inr", op: ">=", threshold: 1.5 }],
+    action: { type: "requirement", text: "INR ≥ 1,5 : cause (AVK, hépatopathie, carence en vitamine K) et correction avant l'acte (vitamine K, ou complexe prothrombinique en urgence).", blocking: false, target: "surgery" },
+    quote: "Les valeurs de laboratoire habituellement recommandées pour réaliser un acte chirurgical en toute sécurité sont les suivantes : • INR <1,5 ; • TP >75 %.",
+    question: "What INR threshold is acceptable before surgery and before neuraxial anaesthesia, and how should an elevated INR be reversed, according to current European guidance?",
+    chapterTitle: CH35,
+  }),
+];
+
+export const MANUAL_RULES: Proposed[] = [...ANTICOAGULANTS, ...ANTIPLATELETS, ...OTHERS, ...EXAMS, ...ANTECEDENTS, ...ALR_TABLE, ...INFECTIONS, ...COMPLICATIONS, ...SPECIALITIES, ...LABS];

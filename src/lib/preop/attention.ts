@@ -1008,6 +1008,94 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
     }
   }
 
+  // --- Kidney, electrolytes, endocrine, blood (manual, chapters 31–35) ------------------------------
+  {
+    const name = fold(c.surgery.name);
+    const CH = (k: number, what: string) => `${MANUAL}, chap. ${k} (${what})`;
+    const crcl = scores.derived.crcl;
+
+    // Renal failure (chap. 31).
+    if (has(cond, "dialysis") || has(cond, "ckd") || (crcl !== undefined && crcl < 30))
+      add({
+        id: "renal-plan",
+        level: has(cond, "dialysis") ? "medium" : "info",
+        title: has(cond, "dialysis") ? "Dialyse : conduite" : "Insuffisance rénale : conduite",
+        detail: `${has(cond, "dialysis") ? "Date de la dernière séance, poids sec, kaliémie après la dialyse ; bras de la fistule : ni perfusion ni brassard. " : ""}Chirurgie programmée reportée si K⁺ > 5,5–6 mmol/l. Pas de succinylcholine si hyperkaliémie (rocuronium) ; atracurium et cisatracurium sans ajustement, vécuronium réduit ; morphine et oxycodone s'accumulent (préférer fentanyl, sufentanil, rémifentanil) ; NaCl 0,9 % plutôt que Ringer-lactate ; pression de perfusion rénale maintenue ; pas d'hypoventilation au réveil (hyperkaliémie). Transfusion : allo-immunisation chez un candidat à la greffe.`,
+        why: [has(cond, "dialysis") ? "dialyse" : "", has(cond, "ckd") ? "insuffisance rénale chronique" : "", crcl !== undefined && crcl < 30 ? `clairance ${Math.round(crcl)} ml/min` : ""].filter(Boolean).join(" ; "),
+        source: CH(31, "implications anesthésiques de l'insuffisance rénale"),
+      });
+    if (/angio|emboli|coronarograph|evar|tevar|endoprothese|tavi|stent/.test(name) && (anyOf(cond, ["ckd", "diabetes_oral", "diabetes_insulin", "heart_failure"]) === true || (crcl !== undefined && crcl < 60)))
+      add({ id: "contrast-kidney", level: "info", title: "Néphropathie aux produits de contraste : prévention", detail: "Dose de contraste réduite (produit iso-osmolaire), hydratation (500 ml de NaCl 0,9 % avant), suspension des néphrotoxiques (IEC, diurétiques, AINS) ; créatinine à 24–48 h.", why: `${surgeryName} ; ${[anyOf(cond, ["ckd"]) ? "insuffisance rénale" : "", anyOf(cond, ["diabetes_oral", "diabetes_insulin"]) ? "diabète" : "", has(cond, "heart_failure") ? "insuffisance cardiaque" : "", crcl !== undefined && crcl < 60 ? `clairance ${Math.round(crcl)} ml/min` : ""].filter(Boolean).join(", ")}`, source: CH(31, "néphropathie aux produits de contraste") });
+
+    // Urological surgery (chap. 31).
+    const uro = /resection.*prostat|rtup|turp|resection endoscopique de (la )?prostate/.test(name)
+      ? { title: "Résection endoscopique de la prostate", text: "Rachianesthésie de choix (détecte perforation, SCA, syndrome de résection). Poche d'irrigation ≤ 60 cm au-dessus de la vessie, durée idéalement < 60 min ; natrémie si > 60 min ou signes (céphalées, agitation, confusion). Syndrome de résection : arrêter, restriction hydrique, furosémide, NaCl hypertonique si Na < 120 mmol/l. ECBU négatif avant." }
+      : /resection.*vessie|rtuv|turb/.test(name)
+        ? { title: "Résection endoscopique de vessie", text: "Rachianesthésie au-dessus de T10 ; bloc obturateur si la tumeur est sur la paroi latérale (adduction brutale de la cuisse)." }
+        : /prostatectomie/.test(name) && /robot|coelio|cœlio|laparoscop/.test(name)
+          ? { title: "Prostatectomie robotique", text: "Trendelenburg à 30° prolongé : œdème des voies aériennes (test de fuite), plexus brachial, yeux (neuropathie optique) ; cœlioscopie longue." }
+          : /cystectomie/.test(name)
+            ? { title: "Cystectomie", text: "4–6 h, pertes sanguines importantes : cathéter artériel, voie centrale ; péridurale démarrée après la dérivation urinaire (le bloc sympathique contracte l'intestin) ; acidose hyperchlorémique possible." }
+            : /transplantation renale|greffe renale/.test(name)
+              ? { title: "Transplantation rénale", text: "Kaliémie < 5,5 mmol/l ; cisatracurium ou rocuronium ; voie centrale ; mannitol après les anastomoses ; pas de ponction ni de brassard sur une fistule." }
+              : /nephrectomie/.test(name) && /thrombus|cave/.test(name)
+                ? { title: "Néphrectomie avec thrombus cave", text: "Pertes sanguines importantes, hypotension au clampage ou à la rétraction de la veine cave ; CEC si le thrombus atteint l'oreillette ; cathéter artériel, voie centrale, péridurale." }
+                : null;
+    if (uro) add({ id: "urology", level: "info", title: uro.title, detail: uro.text, why: surgeryName, source: CH(31, "chirurgie urologique") });
+
+    // Electrolytes (chap. 32).
+    const lytes: string[] = [];
+    if (p.potassium !== undefined && p.potassium > 5.5) lytes.push(`K⁺ ${n(p.potassium)} : pas de succinylcholine ni de soluté potassique (Ringer-lactate), corriger l'acidose, légère hyperventilation, curares potentialisés${p.potassium > 6 ? " ; > 6 mmol/l : traiter (calcium, insuline-glucose) et reporter une chirurgie programmée" : ""}`);
+    if (p.potassium !== undefined && p.potassium < 3.5) lytes.push(`K⁺ ${n(p.potassium)} : pas de soluté glucosé ni d'hyperventilation, curares −20 à 25 %${p.potassium < 3 ? " ; < 3 mmol/l : corriger avant une chirurgie programmée" : ""}`);
+    if (p.sodium !== undefined && p.sodium < 130) lytes.push(`Na⁺ ${p.sodium} : < 130 mmol/l, chirurgie programmée à différer ; correction ≤ 8 mmol/l par 24 h (démyélinisation osmotique)`);
+    if (p.sodium !== undefined && p.sodium > 150) lytes.push(`Na⁺ ${p.sodium} : > 150 mmol/l, chirurgie programmée à différer ; hypovolémie probable (doses réduites)`);
+    if (lytes.length)
+      add({ id: "electrolytes", level: lytes.some((x) => /reporter|différer|corriger avant/.test(x)) ? "high" : "medium", title: "Trouble électrolytique : conduite", detail: lytes.map((x) => x.charAt(0).toUpperCase() + x.slice(1)).join(". ") + ".", why: lytes.map((x) => x.split(" : ")[0]).join(" ; "), source: CH(32, "implications anesthésiques") });
+
+    // Endocrine (chap. 34).
+    if (/thyroid/.test(name))
+      add({ id: "thyroid-surgery", level: "info", title: "Chirurgie thyroïdienne", detail: "Euthyroïdie obligatoire avant une chirurgie programmée. Intubation difficile si la trachée est déviée ou comprimée ; sonde armée (trachéomalacie) ou sonde avec électrodes de monitorage du récurrent. Éviter anticholinergiques et kétamine ; phényléphrine plutôt qu'éphédrine ; protéger les yeux (exophtalmie). Après : hématome compressif, paralysie récurrentielle, hypocalcémie (laryngospasme), crise thyréotoxique.", why: surgeryName, source: CH(34, "chirurgie de la thyroïde") });
+    if (has(cond, "pheochromocytoma"))
+      add({ id: "pheo-plan", level: "high", title: "Phéochromocytome : préparation", detail: "Alphabloquant d'abord (prazosine, progressivement, apports hydriques suffisants), puis bêtabloquant (labétalol 2 à 10 jours avant) — jamais l'inverse. Cathéter artériel avant l'induction. Proscrits : kétamine, éphédrine, succinylcholine, anticholinergiques, histaminolibérateurs (atracurium, morphine). Poussée hypertensive : nitroprussiate, nicardipine, urapidil, phentolamine ; hypotension après l'exérèse : catécholamines. 50 % restent hypertendus quelques jours.", why: "Antécédent : phéochromocytome", source: CH(34, "phéochromocytome"), material: ["Cathéter artériel", "Nicardipine ou nitroprussiate prêts", "Noradrénaline prête"] });
+    if (has(cond, "carcinoid"))
+      add({ id: "carcinoid-plan", level: "medium", title: "Tumeur carcinoïde : préparation", detail: "Normovolémie (diarrhées), octréotide 50 µg SC 2×/j avant, jusqu'à 500 µg 3×/j ; crise : somatostatine 150–200 µg/h. Aérosol de β2-mimétique ; propofol, pas d'histaminolibérateurs (morphine, thiopental, mivacurium, atracurium) ; anticholinergiques avec prudence. Rechercher une atteinte tricuspide ou pulmonaire.", why: "Antécédent : tumeur carcinoïde", source: CH(34, "syndrome carcinoïde"), material: ["Octréotide prêt"] });
+    {
+      const EQ: Record<string, number> = { H02AB07: 1, H02AB06: 1, H02AB04: 1.25, H02AB02: 6.67, H02AB09: 0.25, H02AB01: 6.67 };
+      const steroids = c.treatments.filter((t) => t.atc.startsWith("H02AB"));
+      if (steroids.length) {
+        const known = steroids.filter((t) => t.dailyDoseMg !== undefined && EQ[t.atc.slice(0, 7)] !== undefined);
+        const pred = Math.round(known.reduce((sum, t) => sum + t.dailyDoseMg! * EQ[t.atc.slice(0, 7)], 0) * 10) / 10;
+        const enough = pred >= 5;
+        if (enough || known.length < steroids.length)
+          add({
+            id: "steroid-cover",
+            level: enough ? "medium" : "info",
+            title: enough ? `Corticothérapie ≈ ${n(pred)} mg/j d'équivalent prednisone : couverture` : "Corticothérapie : dose à préciser",
+            detail: "À partir de 5 mg/j de prednisone (dans les 12 mois) : hydrocortisone 100 mg à l'induction puis couverture selon l'importance de la chirurgie (manuel : 100 mg toutes les 8 h pendant une semaine si insuffisance surrénale ; recommandations plus récentes : 100 mg à l'induction puis 200 mg/24 h). Éviter l'étomidate. Hypotension postopératoire inexpliquée : penser à l'insuffisance surrénale. Équivalences : hydrocortisone 20 = prednisolone 5 = méthylprednisolone 4 = dexaméthasone 0,75 mg.",
+            why: steroids.map((t) => `${t.name}${t.dailyDoseMg !== undefined ? ` ${t.dailyDoseMg} mg/j` : " (dose ?)"}`).join(", "),
+            source: `${CH(34, "tableau 34.1")} ; Association of Anaesthetists 2020 (glucocorticoïdes périopératoires)`,
+            material: enough ? ["Hydrocortisone 100 mg"] : undefined,
+          });
+      }
+    }
+    if (has(cond, "diabetes_insulin"))
+      add({ id: "diabetes-plan", level: "info", title: "Diabète insulinotraité : le jour de l'intervention", detail: "Premier du programme ; moitié de la dose d'insuline basale, glycémie capillaire le matin puis au bloc ; objectif < 10 mmol/l (180 mg/dl) sans hypoglycémie ; insuline IV (ex. glucose 10 % 500 ml + KCl 10 mmol + 15 UI d'insuline rapide en 6 h) si chirurgie modérée ou majeure. Gastroparésie : métoclopramide ou érythromycine 200 mg IV, séquence rapide ; rechercher une dysautonomie (hypotension à l'induction).", why: "Diabète insulinotraité", source: CH(34, "diabète, implications anesthésiques") });
+
+    // Blood (chap. 35).
+    if (plan && c.surgery.bleedingRisk === "high" && p.weightKg)
+      add({ id: "blood-products", level: "info", title: "Produits sanguins : repères", detail: `1 CGR ≈ +1 g/dl d'Hb ; plaquettes : 1 unité standard par 7–10 kg (≈ ${Math.ceil(p.weightKg / 10)}–${Math.ceil(p.weightKg / 7)} unités, +20 G/l) ou 1 aphérèse ; PFC 10–15 ml/kg (≈ ${Math.round(p.weightKg * 10)}–${Math.round(p.weightKg * 15)} ml) ; transfusion massive : 1 PFC pour 1 CGR au-delà de 4–5 CGR, calcium ionisé, réchauffeur. Récupération de sang peropératoire si pas d'infection ni de cancer.`, why: `${surgeryName} (risque hémorragique élevé), ${p.weightKg} kg`, source: CH(35, "produits sanguins") });
+    if (has(cond, "sickle_cell"))
+      add({ id: "sickle-plan", level: "high", title: "Drépanocytose : préparation", detail: "Avis hématologique : transfusion préopératoire au cas par cas (Hb ≥ 10 g/dl et HbS < 30 % pour une chirurgie majeure), phénotype étendu. Perfusion pendant le jeûne ; éviter hypothermie, acidose, hypovolémie et hypoxémie ; pas de garrot si possible ; cathéter artériel et température centrale pour une chirurgie importante ; ALR sans adrénaline ; thromboprophylaxie.", why: "Antécédent : drépanocytose", source: CH(35, "drépanocytose") });
+    if (has(cond, "thalassemia"))
+      add({ id: "thalassemia-plan", level: "info", title: "Thalassémie : préparation", detail: "Besoin transfusionnel, fonction cardiaque (hémochromatose) et hémostase ; intubation difficile possible (hypertrophie des maxillaires) ; fragilité osseuse à l'installation.", why: "Antécédent : thalassémie", source: CH(35, "thalassémies") });
+    if (has(cond, "porphyria"))
+      add({ id: "porphyria-plan", level: "high", title: "Porphyrie hépatique : médicaments", detail: "Autorisés : propofol, sévoflurane, desflurane, tous les curares, morphine, fentanyl et dérivés, lidocaïne, bupivacaïne, néostigmine, atropine, naloxone. À éviter : thiopental, étomidate, kétamine, prilocaïne, mépivacaïne, diclofénac, ibuprofène, kétorolac, tramadol, diazépam, clonidine, urapidil, amiodarone, phénytoïne… Vérifier chaque produit (listes discordantes : orpha.net) ; hydratation et glucose 10 % ; hémine en cas de crise.", why: "Antécédent : porphyrie", source: CH(35, "porphyries") });
+    if (anyOf(cond, ["von_willebrand", "hemophilia"]) === true)
+      add({ id: "haemostasis-disorder", level: "high", title: has(cond, "hemophilia") ? "Hémophilie : préparation" : "Maladie de Willebrand : préparation", detail: has(cond, "hemophilia") ? `Avis hématologique ; facteur VIII ou IX à 40–70 % avant l'intervention (1 UI/kg élève le taux de 1 %${p.weightKg ? ` : ≈ ${Math.round(p.weightKg * 40)}–${Math.round(p.weightKg * 70)} UI depuis un taux nul` : ""}) ; desmopressine pour l'hémophilie A légère ; inhibiteur : facteur VIIa recombinant ou FEIBA ; le PFC n'est pas indiqué. ALR à peser soigneusement.` : "Avis hématologique ; type I : desmopressine 0,3 µg/kg en 20 min, 1 h avant (contre-indiquée dans le sous-type IIB) ; sinon facteur Willebrand ± facteur VIII. ALR : au moindre doute, s'abstenir.", why: has(cond, "hemophilia") ? "Antécédent : hémophilie" : "Antécédent : maladie de Willebrand", source: CH(35, "pathologies de l'hémostase") });
+    if (has(cond, "hit_history"))
+      add({ id: "hit-plan", level: "high", title: "Antécédent de TIH : pas d'héparine", detail: "Aucune héparine (HNF, HBPM, rinçages, circuits héparinés, certains complexes prothrombiniques). Alternatives : fondaparinux ou AOD si stable ; argatroban ou bivalirudine si instable ou à risque hémorragique (argatroban seul si clairance < 30). TIH aiguë : seulement les urgences, sous AG ; pas de transfusion de plaquettes.", why: "Antécédent : thrombopénie induite par l'héparine", source: CH(35, "TIH") });
+  }
+
   // --- Substance use ------------------------------------------------------------------
   const sub = c.substances;
   if (sub.alcoholDependence) add({ id: "alcohol", level: "high", title: "Dépendance à l'alcool", detail: "Prévenir et surveiller le sevrage (échelle adaptée), vitamine B1.", why: "Assuétudes : dépendance à l'alcool" });
