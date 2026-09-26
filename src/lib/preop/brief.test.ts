@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyConsultation, emptyDossier } from "./dossier";
-import { buildBrief, isbarText } from "./isbar";
+import { buildBrief, buildIsbar, isbarText } from "./isbar";
 
 describe("short handover", () => {
   it("says who, why (with the history), how it went, what is planned, then the antecedents", () => {
@@ -33,5 +33,17 @@ describe("short handover", () => {
     expect(s[3].lines).toEqual(expect.arrayContaining(["Salle de réveil (USPA)", "Paracétamol 1 g × 4"]));
     expect(s[4].lines.join(" ")).toMatch(/HTA/i);
     expect(isbarText(d, s)).toContain("3 — Comment ça s'est passé");
+  });
+
+  it("gives the gases of the plan, at the patient's age", () => {
+    const c = emptyConsultation();
+    c.patient = { ...c.patient, age: 80 };
+    const d = emptyDossier("CD", c);
+    d.plan = { ...d.plan, techniques: ["general"], gases: { agent: "sevoflurane", carrier: "air", fio2: [0.4, 0.5], mac: [0.7, 1], freshGasLMin: 1 } };
+    // MAC sevoflurane at 80 years: 1.8 × 10^(−0.00269 × 40) ≈ 1.40 %.
+    expect(buildBrief(d, "2026-10-01T11:05:00Z")[2].lines).toContain("Gaz : Sévoflurane CAM 0,7–1 (Fet 1,0–1,4 %), air/O₂ FiO₂ 40–50 %, 1 L/min");
+    expect(buildIsbar(d, "2026-10-01T11:05:00Z")[1].lines.join(" ")).toContain("Gaz : Sévoflurane");
+    d.plan = { ...d.plan, techniques: ["neuraxial"] };
+    expect(buildBrief(d, "2026-10-01T11:05:00Z")[2].lines.join(" ")).not.toContain("Gaz");
   });
 });

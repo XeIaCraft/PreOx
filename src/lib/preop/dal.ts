@@ -14,6 +14,7 @@ import { protocolSchema } from "./protocol-schema";
 import { emptyProtocolContent, type Protocol } from "./protocols";
 import { catalogKindSchema, catalogOverridesSchema } from "./catalog-schema";
 import type { AllOverrides } from "./catalog";
+import { DEFAULT_SERVICE_PREFS, servicePrefsSchema, type ServicePrefs } from "./service-prefs";
 import type { Profile } from "@/lib/supabase/types";
 
 export const PREOP_SLUG = "preop";
@@ -101,7 +102,26 @@ export async function listCatalogOverrides(userId: string): Promise<AllOverrides
   const supabase = await createClient();
   const { data, error } = await supabase.from("preop_catalogs").select("kind, overrides").eq("user_id", userId);
   if (error) throw new Error(error.message);
-  return Object.fromEntries((data ?? []).map((r) => [r.kind, r.overrides])) as AllOverrides;
+  return Object.fromEntries((data ?? []).filter((r) => r.kind !== SERVICE_KIND).map((r) => [r.kind, r.overrides])) as AllOverrides;
+}
+
+// The service's preferences live in the same table, as kind « service ».
+const SERVICE_KIND = "service";
+
+export async function getServicePrefs(userId: string): Promise<ServicePrefs> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("preop_catalogs").select("overrides").eq("user_id", userId).eq("kind", SERVICE_KIND).maybeSingle();
+  if (error) throw new Error(error.message);
+  const parsed = servicePrefsSchema.safeParse({ ...DEFAULT_SERVICE_PREFS, ...((data?.overrides as object | undefined) ?? {}) });
+  return parsed.success ? parsed.data : DEFAULT_SERVICE_PREFS;
+}
+
+export async function saveServicePrefs(userId: string, input: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = servicePrefsSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Préférences invalides" };
+  const supabase = await createClient();
+  const { error } = await supabase.from("preop_catalogs").upsert({ user_id: userId, kind: SERVICE_KIND, overrides: parsed.data } as never, { onConflict: "user_id,kind" });
+  return error ? { ok: false, error: error.message } : { ok: true };
 }
 
 export async function saveCatalogOverrides(userId: string, kind: unknown, input: unknown): Promise<{ ok: true } | { ok: false; error: string }> {

@@ -85,3 +85,16 @@ export const DEFAULT_GASES: GasPlan = { agent: "sevoflurane", carrier: "air", fi
 export const TIVA_GASES: GasPlan = { agent: "tiva", carrier: "air", fio2: [0.4, 0.5], freshGasLMin: 1 };
 
 export const GASES_SOURCE = "CAM selon l'âge : Mapleson, Br J Anaesth 1996 ; nourrisson : Lerman, Anesthesiology 1994 ; bas débit, pas de desflurane ni de N₂O en routine : ESAIC 2023 (déclaration de Glasgow)";
+
+/** One short line for the handover: « Sévoflurane CAM 0,7–1 (Fet 1,2–1,7 %), air/O₂ FiO₂ 40–50 %, 1 L/min ». */
+export function gasesShort(plan: GasPlan, ageYears: number | undefined): string {
+  const carrier = plan.carrier === "n2o" ? "N₂O/O₂" : "air/O₂";
+  const fio2 = plan.fio2[0] === plan.fio2[1] ? pct(plan.fio2[0]) : `${Math.round(plan.fio2[0] * 100)}–${pct(plan.fio2[1])}`;
+  let agent = "AIVOC, pas d'halogéné";
+  if (plan.agent !== "tiva") {
+    const label = GAS_AGENTS.find((a) => a.code === plan.agent)?.label ?? plan.agent;
+    const t = gasTarget(plan, ageYears);
+    agent = `${label}${plan.mac ? ` CAM ${dec(plan.mac[0]).replace(",0", "")}–${dec(plan.mac[1]).replace(",0", "")}` : ""}${t ? ` (Fet ${dec(t.fet[0])}–${dec(t.fet[1])} %)` : ""}`;
+  }
+  return [agent, `${carrier} FiO₂ ${fio2}`, plan.freshGasLMin !== undefined ? `${String(plan.freshGasLMin).replace(".", ",")} L/min` : ""].filter(Boolean).join(", ");
+}

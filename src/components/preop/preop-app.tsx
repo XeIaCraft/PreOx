@@ -17,6 +17,7 @@ import { useRules } from "@/components/preop/use-rules";
 import { useToast } from "@/components/ui/toast";
 import { CatalogsProvider } from "@/components/preop/use-catalogs";
 import { SettingsView } from "@/components/preop/settings";
+import { ServicePrefsPanel } from "@/components/preop/service-prefs-panel";
 import { emptyDossier, withAutoStatus } from "@/lib/preop/dossier";
 import type { QuestionInput } from "@/lib/preop/rules/question";
 import { cn } from "@/lib/utils";
@@ -214,7 +215,12 @@ function PreopScreens() {
         </nav>
       )}
 
-      {view === "protocoles" && <ProtocolLibrary protocols={protocolLib.protocols} onSave={protocolLib.save} onRemove={protocolLib.remove} />}
+      {view === "protocoles" && (
+        <div className="space-y-4">
+          <ServicePrefsPanel />
+          <ProtocolLibrary protocols={protocolLib.protocols} onSave={protocolLib.save} onRemove={protocolLib.remove} />
+        </div>
+      )}
 
       {view === "regles" && (
         <RuleLibrary

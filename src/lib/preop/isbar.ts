@@ -2,6 +2,7 @@
 // log) in the ISBAR structure. Each section lists what's missing so
 // nothing is forgotten when handing over to the PACU or the ICU.
 
+import { gasesShort } from "./gases";
 import { consultationScores, consultationSummary } from "./consultation-scores";
 import { attentionPoints } from "./attention";
 import type { Catalogs } from "./catalog";
@@ -90,6 +91,7 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
   const techniques = d.plan.techniques.length ? d.plan.techniques : c.techniques;
   if (techniques.length) S.lines.push(`Anesthésie : ${techniques.map((t) => TECHNIQUES.find((x) => x.code === t)?.label.split(" (")[0] ?? t).join(" + ")}`);
   else S.missing.push("Technique anesthésique");
+  if (d.plan.gases && techniques.includes("general")) S.lines.push(`Gaz : ${gasesShort(d.plan.gases, p.age)}`);
   const keyTimes = events.filter((e) => e.type !== "note").map((e) => `${EVENT_TYPES.find((t) => t.code === e.type)?.short ?? e.type} ${hhmm(e.at)}`);
   if (keyTimes.length) S.lines.push(`Horaires : ${keyTimes.join(" · ")}`);
   const durations = durationTimers(d, now);
@@ -220,6 +222,7 @@ export function buildBrief(d: Dossier, now: string, evaluation?: EvaluationResul
   const techniques = d.plan.techniques.length ? d.plan.techniques : c.techniques;
   const airway = [d.intraop.airwayDevice, d.intraop.cormack ? `Cormack ${d.intraop.cormack}` : "", d.intraop.airwayNote].filter(Boolean).join(", ");
   if (techniques.length) how.lines.push(`${techniques.map((t) => TECHNIQUES.find((x) => x.code === t)?.label.split(" (")[0] ?? t).join(" + ")}${airway ? ` — ${airway}` : ""}`);
+  if (d.plan.gases && techniques.includes("general")) how.lines.push(`Gaz : ${gasesShort(d.plan.gases, p.age)}`);
   if (d.intraop.alrAssessment.trim()) how.lines.push(`ALR : ${d.intraop.alrAssessment.trim()}`);
   const durations = durationTimers(d, now).filter((t) => t.key !== "tourniquet" || t.minutes > 0);
   if (durations.length) how.lines.push(durations.map((t) => `${t.label.toLowerCase()} ${formatMinutes(t.minutes)}`).join(", "));

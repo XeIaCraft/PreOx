@@ -30,6 +30,7 @@ import { ErasPanel, ProspectPanel } from "@/components/preop/plan-parts";
 import { prospectFor } from "@/lib/preop/prospect";
 import { erasFor } from "@/lib/preop/eras";
 import type { Rule } from "@/lib/preop/rules/types";
+import { applyServicePrefs } from "@/lib/preop/service-prefs";
 import { cn } from "@/lib/utils";
 
 /** What the rule library says for this patient — the reminders to act on before the day. */
@@ -205,7 +206,7 @@ export function PreparationView({
   const choices = [...protocols].sort((a, b) => Number(!!b.hospital && b.hospital.toLowerCase() === hospital) - Number(!!a.hospital && a.hospital.toLowerCase() === hospital) || a.name.localeCompare(b.name, "fr"));
   const planEmpty = d.plan.drugs.length === 0 && d.plan.techniques.length === 0 && d.plan.risks.length === 0;
 
-  const { catalogs } = useCatalogs();
+  const { catalogs, service } = useCatalogs();
   const scores = useMemo(() => consultationScores(d.consultation, { plan: d.plan, catalogs }), [d.consultation, d.plan, catalogs]);
   const points = useMemo(() => attentionPoints(d.consultation, scores, d.plan), [d.consultation, scores, d.plan]);
   const evaluation = useMemo(() => evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }, catalogs), [rules, d.consultation, d.plan.techniques, catalogs]);
@@ -233,7 +234,7 @@ export function PreparationView({
   function planFrom(p: Protocol): ProtocolContent {
     const content = structuredClone(p.content);
     if (content.techniques.length === 0) content.techniques = [...d.consultation.techniques];
-    return withAdditions(content, additions);
+    return withAdditions(applyServicePrefs(content, service, d.consultation.patient.age).plan, additions);
   }
 
   function applyProtocol(p: Protocol, auto = false) {
@@ -255,7 +256,8 @@ export function PreparationView({
     if (!match || autoApplied.current.has(d.id)) return;
     autoApplied.current.add(d.id);
     applyProtocol(match, true);
-    toast(`Plan pré-rempli depuis « ${match.name} »${additions.length ? `, avec ${additions.length} précaution(s) propres au patient` : ""}.`, { variant: "success", durationMs: 5000 });
+    const habits = applyServicePrefs(match.content, service, d.consultation.patient.age).changed;
+    toast(`Plan pré-rempli depuis « ${match.name} »${additions.length ? `, avec ${additions.length} précaution(s) propres au patient` : ""}${habits.length ? ` ; habitudes du service : ${habits.join(", ")}` : ""}.`, { variant: "success", durationMs: 5000 });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a match appears for this dossier
   }, [match?.id, d.id]);
 
