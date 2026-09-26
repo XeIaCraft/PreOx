@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { ChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { Input } from "@/components/ui/input";
-import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, Tag, TextArea, YesNoChip, Disclosure } from "@/components/preop/ui";
+import { Combobox, DefaultChips, FieldLabel, MiniNumber, Panel, RiskPill, Tag, TextArea, YesNoChip, Disclosure } from "@/components/preop/ui";
 import { PEN_FAST_ITEMS, PEN_FAST_REFERENCE, penFast, type PenFastItem } from "@/lib/preop/scores";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { useUsage } from "@/components/preop/use-usage";
@@ -441,10 +441,10 @@ export function SubstancesEditor({ value: s, onChange }: { value: Substances; on
   const set = (patch: Partial<Substances>) => onChange({ ...s, ...patch });
   const drugs = s.drugs;
   return (
-    <Panel title="Assuétudes">
+    <Panel title="Assuétudes" actions={<span className="text-[11px] text-foreground-subtle">aucune par défaut</span>}>
       <div className="space-y-1">
         <FieldLabel>Tabac</FieldLabel>
-        <ChipGroup size="sm" options={TOBACCO} value={s.tobacco ?? null} onChange={(v) => set({ tobacco: v ?? undefined })} allowClear />
+        <DefaultChips options={TOBACCO} fallback="never" value={s.tobacco} onChange={(v) => set({ tobacco: v })} />
         {(s.tobacco === "current" || s.tobacco === "former") && (
           <div className="grid grid-cols-3 gap-2">
             <MiniNumber label="Paquets-années" unit="PA" value={s.packYears} onChange={(v) => set({ packYears: v })} />
@@ -466,8 +466,8 @@ export function SubstancesEditor({ value: s, onChange }: { value: Substances; on
       <div className="space-y-1">
         <FieldLabel>Drogues</FieldLabel>
         <div className="flex flex-wrap gap-1.5">
-          <ToggleChip pressed={drugs !== undefined && drugs.length === 0} onChange={(v) => set({ drugs: v ? [] : undefined })} className="min-h-8 px-2 text-xs">
-            Aucune
+          <ToggleChip pressed={!drugs?.length} onChange={() => set({ drugs: [] })} className="min-h-8 px-2 text-xs">
+            Aucune{drugs === undefined ? " (par défaut)" : ""}
           </ToggleChip>
           {DRUGS.map((d) => (
             <ToggleChip

@@ -1,8 +1,11 @@
 // Preoperative tests suggested from the patient and the procedure — a
 // built-in starting point, displayed with its source so it can be checked:
-// - NICE NG45 (2016) "Routine preoperative tests for elective surgery",
-//   by surgery grade × ASA class (the grid the Belgian KCE report on
-//   preoperative tests built on);
+// - KCE Report 280 (2016), the Belgian guideline on routine preoperative
+//   tests for planned non-cardiothoracic surgery in adults (≥ 18 years), by
+//   surgery grade × ASA class and the risk factors of the revised cardiac
+//   risk index; it adapts NICE NG45 to Belgium;
+// - NICE NG45 (2016) for what the KCE does not cover (under 18, cardiac or
+//   thoracic surgery, emergencies);
 // - ESC 2022 guidelines on non-cardiac surgery (ECG, biomarkers,
 //   echocardiography, haemoglobin).
 // Your own rules (action "exam") are shown next to these, and a rule of a
@@ -41,7 +44,8 @@ export type ExamCode =
   | "sleep"
   | "albumin"
   | "micronutrients"
-  | "larynx";
+  | "larynx"
+  | "urine";
 export type ExamStrength = "recommended" | "consider";
 
 export const EXAM_LABELS: Record<ExamCode, string> = {
@@ -72,14 +76,17 @@ export const EXAM_LABELS: Record<ExamCode, string> = {
   albumin: "Albumine et évaluation nutritionnelle",
   micronutrients: "Fer, B12, folates, vitamine D (bilan bariatrique)",
   larynx: "Laryngoscopie (mobilité des cordes vocales)",
+  urine: "Culture urinaire",
 };
 
 export interface ExamSource {
   label: string;
   /** Short reference shown on the badge. */
   short: string;
-  level: "eu" | "int" | "book";
+  level: "be" | "eu" | "int" | "book";
 }
+
+export const KCE_280: ExamSource = { label: "KCE Report 280 (2016), examens préopératoires de routine avant chirurgie non cardio-thoracique planifiée (adulte)", short: "KCE 2016", level: "be" };
 
 export const NICE_NG45: ExamSource = { label: "NICE NG45 (2016), tests préopératoires en chirurgie programmée", short: "NICE 2016", level: "int" };
 export const ESC_2022: ExamSource = { label: "ESC 2022, évaluation cardiovasculaire en chirurgie non cardiaque", short: "ESC 2022", level: "eu" };
@@ -200,7 +207,7 @@ export const SURGERY_EXAM_PROFILES: Record<SurgeryExamProfile, { label: string; 
     items: [
       { code: "micronutrients", strength: "recommended", text: "bilan nutritionnel et vitaminique avant chirurgie bariatrique", source: ASMBS_2019 },
       { code: "hba1c", strength: "recommended", text: "glycémie et HbA1c avant chirurgie bariatrique", source: ASMBS_2019 },
-      { code: "sleep", strength: "consider", text: "dépistage du SAOS avant chirurgie bariatrique ; examen du sommeil si dépistage positif", source: ASMBS_2019 },
+      // KCE 280: no routine polysomnography, even before bariatric surgery — screening (STOP-BANG) is enough.
     ],
   },
   major_digestive: {
@@ -231,6 +238,7 @@ export const SURGERY_EXAM_PROFILES: Record<SurgeryExamProfile, { label: string; 
       { code: "fbc", strength: "recommended", text: "perte sanguine attendue > 500 mL : hémoglobine au moins 3–4 semaines avant pour corriger une anémie", source: MUNOZ_2017 },
       { code: "iron", strength: "consider", text: "si anémie ou perte sanguine attendue importante : rechercher une carence martiale et la traiter avant", source: MUNOZ_2017 },
       { code: "staph", strength: "consider", text: "chirurgie orthopédique : décolonisation des porteurs nasaux de S. aureus", source: WHO_SSI_2016 },
+      { code: "urine", strength: "consider", text: "pose d'une prothèse articulaire : culture urinaire à envisager (pas d'analyse d'urine en routine)", source: KCE_280 },
       GROUP_BLEEDING,
     ],
   },
@@ -270,6 +278,10 @@ export interface ExamInput {
   surgeryProfile?: SurgeryExamProfile;
   /** STOP-BANG score when complete. */
   stopBang?: number;
+  /** Creatinine clearance (Cockcroft), mL/min: < 60 is a risk factor of the KCE grid. */
+  crcl?: number;
+  /** A positive bleeding history (HEMSTOP answered « yes »). */
+  bleedingHistory?: boolean;
 }
 
 const isAnticoagulated = (t: PatientTreatment[]) => t.some((x) => treatmentMatches(x, "B01AA") || treatmentMatches(x, "B01AF") || treatmentMatches(x, "B01AE"));
@@ -285,7 +297,7 @@ function riskFactors(c: Conditions, s: Substances): boolean | undefined {
   return anyOf(c, ["hypertension", "dyslipidemia", "diabetes_oral", "diabetes_insulin", "ckd", "dialysis"]);
 }
 
-export function recommendExams({ consultation: c, asa, mets, surgeryProfile, stopBang }: ExamInput): ExamResult {
+export function recommendExams({ consultation: c, asa, mets, surgeryProfile, stopBang, crcl, bleedingHistory }: ExamInput): ExamResult {
   const recs = new Map<ExamCode, ExamRecommendation>();
   const missing: string[] = [];
   const add = (code: ExamCode, strength: ExamStrength, text: string, source: ExamSource) => {
@@ -309,15 +321,51 @@ export function recommendExams({ consultation: c, asa, mets, surgeryProfile, sto
   const renalDisease = anyOf(cond, ["ckd", "dialysis"]);
   const respiratory = anyOf(cond, ["copd", "asthma", "home_o2", "osa"]);
   // "At risk of acute kidney injury" (NICE): CKD, diabetes, heart failure, age ≥ 65, nephrotoxic drugs…
-  const akiRisk = renalDisease === true || diabetic === true || has(cond, "heart_failure") === true || (age !== undefined && age >= 65);
+  const akiRisk =
+    renalDisease === true || diabetic === true || has(cond, "heart_failure") === true || (age !== undefined && age >= 65) || c.treatments.some((t) => treatmentMatches(t, "C09") || treatmentMatches(t, "C03"));
   const high = asa !== null && asa >= 3;
 
   if (!grade) missing.push("Grade de la chirurgie (mineure, intermédiaire, majeure)");
   if (!risk) missing.push("Risque cardiaque de la chirurgie (ESC)");
   if (asa === null) missing.push("Classe ASA");
 
-  // --- NICE NG45: surgery grade × ASA -----------------------------------------
-  if (grade && asa !== null) {
+  // --- KCE 280 (Belgium): adult, planned, non-cardiothoracic surgery ----------------
+  const kceScope = (age === undefined || age >= 18) && !c.surgery.emergency && c.surgery.category !== "F" && c.surgery.category !== "G";
+  // Risk factors of the revised cardiac risk index, as the KCE defines them.
+  const kceRiskFactors = [
+    has(cond, "coronary") && "cardiopathie ischémique",
+    has(cond, "heart_failure") && "insuffisance cardiaque",
+    has(cond, "stroke") && "AVC ou AIT",
+    (renalDisease || (c.patient.creatinineMgDl !== undefined && c.patient.creatinineMgDl > 2) || (crcl !== undefined && crcl < 60)) && "insuffisance rénale",
+    has(cond, "diabetes_insulin") && "diabète sous insuline",
+  ].filter((x): x is string => !!x);
+  if (kceScope && grade && asa !== null) {
+    const g = grade === "minor" ? "mineure" : grade === "intermediate" ? "intermédiaire" : "majeure";
+    const cls = ["I", "II", "III", "IV", "V"][asa - 1] ?? String(asa);
+    const ctx = `chirurgie ${g}, ASA ${cls}`;
+    const rfText = kceRiskFactors.join(", ");
+    // ECG
+    if (kceRiskFactors.length) add("ecg", grade === "minor" ? "consider" : "recommended", `${ctx}, facteur(s) de risque : ${rfText}`, KCE_280);
+    else if (grade !== "minor" && age !== undefined && age >= 65) add("ecg", "consider", `${ctx}, 65 ans ou plus sans facteur de risque`, KCE_280);
+    // Full blood count
+    if (grade === "major") add("fbc", "recommended", ctx, KCE_280);
+    else if (grade === "intermediate" && asa >= 3) add("fbc", "consider", ctx, KCE_280);
+    // Renal function: creatinine, eGFR, Na⁺, K⁺
+    if (grade === "major" || (grade === "intermediate" && asa >= 3)) add("renal", "recommended", `${ctx} : créatinine, DFG, Na⁺, K⁺`, KCE_280);
+    else if (asa >= 3 && grade === "minor") add("renal", "consider", `${ctx} : si suspicion d'insuffisance rénale`, KCE_280);
+    else if (asa === 2 && (renalDisease || akiRisk)) add("renal", "consider", `${ctx}, suspicion d'insuffisance rénale (âge, diabète, IEC/ARA II, diurétique…)`, KCE_280);
+    // Haemostasis: never routine; bleeding history or chronic liver disease before intermediate/major surgery.
+    if (grade !== "minor" && (bleedingHistory || has(cond, "bleeding_disorder") || has(cond, "cirrhosis")))
+      add("haemostasis", "consider", `${ctx}, ${bleedingHistory || has(cond, "bleeding_disorder") ? "anamnèse hémorragique positive" : "hépatopathie chronique"}`, KCE_280);
+    // Urine culture: urogenital surgery (joint prosthesis: in the procedure's profile).
+    if (c.surgery.category === "J2") add("urine", "consider", "chirurgie du système urogénital : culture urinaire à envisager (pas d'analyse d'urine en routine)", KCE_280);
+    // Stress imaging: risk factor and poor functional capacity, if the result would change the strategy — never before minor surgery.
+    if (grade !== "minor" && kceRiskFactors.length && mets !== undefined && mets < 4)
+      add("stress", "consider", `facteur(s) de risque (${rfText}) et capacité fonctionnelle < 4 METs : seulement si le résultat change la stratégie`, KCE_280);
+  }
+
+  // --- NICE NG45: what the KCE grid does not cover (under 18, cardiothoracic, emergency) ---
+  if (!kceScope && grade && asa !== null) {
     const g = grade === "minor" ? "mineure" : grade === "intermediate" ? "intermédiaire" : "majeure";
     const ctx = `chirurgie ${g}, ASA ${["I", "II", "III", "IV", "V"][asa - 1] ?? asa}`;
     if (grade === "minor") {
@@ -348,9 +396,9 @@ export function recommendExams({ consultation: c, asa, mets, surgeryProfile, sto
     }
     if (grade !== "minor" && high && (has(cond, "cirrhosis") || has(cond, "bleeding_disorder"))) add("haemostasis", "consider", `${ctx}, hépatopathie ou trouble de l'hémostase`, NICE_NG45);
   }
-  if (has(cond, "bleeding_disorder")) add("haemostasis", "consider", "trouble de l'hémostase connu", NICE_NG45);
-  if (isAnticoagulated(c.treatments)) add("haemostasis", "consider", "patient anticoagulé : selon la molécule et la gestion prévue", NICE_NG45);
-  if (diabetic) add("hba1c", "recommended", "diabète, si pas d'HbA1c dans les 3 derniers mois", NICE_NG45);
+  if (has(cond, "bleeding_disorder")) add("haemostasis", "consider", "trouble de l'hémostase connu", KCE_280);
+  if (isAnticoagulated(c.treatments)) add("haemostasis", "consider", "patient anticoagulé : vérifier l'effet du traitement selon la molécule et la gestion prévue", KCE_280);
+  if (diabetic) add("hba1c", "recommended", "diabète, si pas d'HbA1c dans les 3 derniers mois (jamais chez le non-diabétique)", KCE_280);
   if (c.patient.sex === "F" && age !== undefined && age >= 12 && age <= 55 && has(cond, "pregnancy") !== true) add("pregnancy", "consider", "femme en âge de procréer : proposer, avec son accord", NICE_NG45);
 
   // --- ESC 2022 (non-cardiac surgery only: cardiac surgery has its own work-up, below) ---
@@ -452,7 +500,7 @@ export function recommendExams({ consultation: c, asa, mets, surgeryProfile, sto
     add("abg", "recommended", "gazométrie : lactates, pH" + (has(cond, "burns") ? ", HbCO si inhalation" : ""), MANUAL_2020_SPECIALTIES);
   }
   if (has(cond, "osa") !== true && stopBang !== undefined && stopBang >= 5)
-    add("sleep", "consider", `STOP-BANG ${stopBang} : SAOS probable non diagnostiqué — examen du sommeil si la chirurgie peut attendre, sinon précautions comme pour un SAOS`, SASM_2016);
+    add("sleep", "consider", `STOP-BANG ${stopBang} : SAOS probable non diagnostiqué — précautions comme pour un SAOS ; examen du sommeil à organiser, pas forcément avant l'intervention (KCE 280 : pas de polysomnographie en routine, même en bariatrique)`, SASM_2016);
 
   const order: ExamCode[] = [
     "ecg",
@@ -481,6 +529,7 @@ export function recommendExams({ consultation: c, asa, mets, surgeryProfile, sto
     "larynx",
     "dental",
     "staph",
+    "urine",
     "pregnancy",
   ];
   return { recommendations: order.filter((k) => recs.has(k)).map((k) => recs.get(k)!), missing };

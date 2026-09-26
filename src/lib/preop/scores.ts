@@ -171,7 +171,7 @@ export const STOP_BANG_ITEMS = {
   pressure: "Hypertension artérielle (traitée ou non)",
   bmiOver35: "IMC > 35",
   ageOver50: "Âge > 50 ans",
-  neckOver40: "Tour de cou > 40 cm",
+  neckOver40: "Cou large (> 40 cm, col de chemise ≥ 41)",
   male: "Sexe masculin",
 } as const;
 export type StopBangItem = keyof typeof STOP_BANG_ITEMS;
@@ -377,8 +377,12 @@ export function hemstop(answers: Answers<HemstopItem>): ScoreResult {
 export interface ElGanzouriInput {
   mouthOpeningUnder4cm?: boolean;
   thyromentalCm?: number;
+  /** Consultation shortcut: thyromental distance < 6 cm (2 points), instead of a measure. */
+  shortThyromental?: boolean;
   mallampati?: 1 | 2 | 3 | 4;
   neckMovementDeg?: number;
+  /** Consultation shortcut: poor neck mobility (< 80°, 2 points), instead of a measure. */
+  poorNeckMobility?: boolean;
   /** Able to advance the lower incisors beyond the upper ones. */
   canProtrudeMandible?: boolean;
   weightKg?: number;
@@ -392,9 +396,11 @@ export function elGanzouri(p: ElGanzouriInput): ScoreResult {
   let missing = 0;
   const add = (defined: boolean, points: () => number) => (defined ? (value += points()) : missing++);
   add(p.mouthOpeningUnder4cm !== undefined, () => (p.mouthOpeningUnder4cm ? 1 : 0));
-  add(p.thyromentalCm !== undefined, () => (p.thyromentalCm! < 6 ? 2 : p.thyromentalCm! <= 6.5 ? 1 : 0));
+  if (p.thyromentalCm === undefined && p.shortThyromental !== undefined) value += p.shortThyromental ? 2 : 0;
+  else add(p.thyromentalCm !== undefined, () => (p.thyromentalCm! < 6 ? 2 : p.thyromentalCm! <= 6.5 ? 1 : 0));
   add(p.mallampati !== undefined, () => (p.mallampati! >= 3 ? 2 : p.mallampati === 2 ? 1 : 0));
-  add(p.neckMovementDeg !== undefined, () => (p.neckMovementDeg! < 80 ? 2 : p.neckMovementDeg! <= 90 ? 1 : 0));
+  if (p.neckMovementDeg === undefined && p.poorNeckMobility !== undefined) value += p.poorNeckMobility ? 2 : 0;
+  else add(p.neckMovementDeg !== undefined, () => (p.neckMovementDeg! < 80 ? 2 : p.neckMovementDeg! <= 90 ? 1 : 0));
   add(p.canProtrudeMandible !== undefined, () => (p.canProtrudeMandible ? 0 : 1));
   add(p.weightKg !== undefined, () => (p.weightKg! > 110 ? 2 : p.weightKg! >= 90 ? 1 : 0));
   add(p.difficultIntubationHistory !== undefined, () => (p.difficultIntubationHistory === "definite" ? 2 : p.difficultIntubationHistory === "questionable" ? 1 : 0));

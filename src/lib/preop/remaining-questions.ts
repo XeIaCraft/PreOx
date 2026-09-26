@@ -15,6 +15,8 @@ export interface Question {
   key: string;
   label: string;
   value: boolean | undefined;
+  /** What counts until answered: « no problem » (DASI: the patient can do it, except running and sports). */
+  byDefault?: boolean;
   apply: (c: ConsultationState, v: boolean) => ConsultationState;
 }
 
@@ -103,13 +105,13 @@ export function remainingQuestions(c: ConsultationState, scores: ConsultationSco
   }
 
   // Functional capacity (DASI): before an intermediate/high cardiac-risk surgery.
-  if ((c.surgery.cardiacRisk === "intermediate" || c.surgery.cardiacRisk === "high") && scores.results.dasi.missing > 0) {
-    const dasi = (Object.keys(DASI_ITEMS) as (keyof typeof DASI_ITEMS)[]).filter((k) => c.dasi[k] === undefined);
+  const dasi = (Object.keys(DASI_ITEMS) as (keyof typeof DASI_ITEMS)[]).filter((k) => c.dasi[k] === undefined);
+  if ((c.surgery.cardiacRisk === "intermediate" || c.surgery.cardiacRisk === "high") && dasi.length) {
     groups.push({
       id: "dasi",
       title: "Capacité fonctionnelle — le patient peut-il…",
       feeds: "DASI (METs)",
-      questions: dasi.map((k) => ({ key: `dasi-${k}`, label: DASI_ITEMS[k].label, value: undefined, apply: (x, v) => ({ ...x, dasi: { ...x.dasi, [k]: v } }) })),
+      questions: dasi.map((k) => ({ key: `dasi-${k}`, label: DASI_ITEMS[k].label, value: undefined, byDefault: scores.answers.dasi.merged[k], apply: (x, v) => ({ ...x, dasi: { ...x.dasi, [k]: v } }) })),
     });
   }
   return groups;

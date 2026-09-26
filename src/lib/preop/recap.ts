@@ -4,7 +4,7 @@
 import { ASA_CLASSES, CLINICAL_FRAILTY_SCALE, MALLAMPATI_CLASSES } from "./scores";
 import { SYSTEM_LABELS, SYSTEM_ORDER } from "./catalog";
 import { QUALIFIER_LABELS, substanceSummary, type Qualifier } from "./history";
-import { allergySummary, examSummary, RISK_GRADES, type ConsultationState } from "./dossier";
+import { allergySummary, examSummary, RISK_GRADES, withNormalDefaults, type ConsultationState } from "./dossier";
 import { conditionDetailsShort } from "./attention";
 import { BLEEDING_RISKS, SURGERY_GRADES } from "./surgeries";
 import { EXAM_LABELS, autoExamState, type ExamCode } from "./exams";
@@ -21,7 +21,9 @@ export interface RecapSection {
 const n = (v: number | undefined, unit = "") => (v === undefined ? "" : `${String(Math.round(v * 10) / 10).replace(".", ",")}${unit}`);
 const ROMAN = ["I", "II", "III", "IV", "V"];
 
-export function consultationRecap(c: ConsultationState, scores: ConsultationScores, extras: { points: AttentionPoint[]; instructions: Instructions; initials?: string }): RecapSection[] {
+export function consultationRecap(input: ConsultationState, scores: ConsultationScores, extras: { points: AttentionPoint[]; instructions: Instructions; initials?: string }): RecapSection[] {
+  // What was not reported is normal (the sheet says so).
+  const c = withNormalDefaults(input);
   const p = c.patient;
   const r = scores.results;
   const sections: RecapSection[] = [];
@@ -81,10 +83,10 @@ export function consultationRecap(c: ConsultationState, scores: ConsultationScor
   const airway = [
     c.mallampati && `Mallampati ${MALLAMPATI_CLASSES[c.mallampati - 1].label}`,
     c.airway.mouthOpeningUnder4cm !== undefined && `ouverture de bouche ${c.airway.mouthOpeningUnder4cm ? "< 4 cm" : "≥ 4 cm"}`,
-    c.airway.thyromentalCm !== undefined && `DTM ${n(c.airway.thyromentalCm, " cm")}`,
-    c.airway.neckMovementDeg !== undefined && `mobilité cervicale ${c.airway.neckMovementDeg}°`,
+    c.airway.thyromentalCm !== undefined ? `DTM ${n(c.airway.thyromentalCm, " cm")}` : c.airway.shortThyromental !== undefined && `DTM ${c.airway.shortThyromental ? "< 6 cm" : "≥ 6 cm"}`,
+    c.airway.neckMovementDeg !== undefined ? `mobilité cervicale ${c.airway.neckMovementDeg}°` : c.airway.poorNeckMobility !== undefined && `mobilité cervicale ${c.airway.poorNeckMobility ? "mauvaise" : "bonne"}`,
     c.airway.canProtrudeMandible !== undefined && `propulsion mandibulaire ${c.airway.canProtrudeMandible ? "possible" : "impossible"}`,
-    p.neckCm !== undefined && `tour de cou ${n(p.neckCm, " cm")}`,
+    p.neckCm !== undefined ? `tour de cou ${n(p.neckCm, " cm")}` : c.stopBang.neckOver40 && "cou large (> 40 cm)",
     c.maskVentilation.edentulous && "édenté",
     c.maskVentilation.beard && "barbe",
   ].filter(Boolean);

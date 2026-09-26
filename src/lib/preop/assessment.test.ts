@@ -41,16 +41,16 @@ describe("scores fed by antecedents, surgery and substance use", () => {
     expect(results.rcri.value).toBe(2);
     expect(merged.stopBang.merged.pressure).toBe(true);
     expect(merged.apfel.merged).toMatchObject({ female: true, nonSmoker: true, history: true });
-    expect(results.ariscat.missing).toBe(3); // SpO₂, Hb, respiratory infection — incision, duration and "not urgent" come from the surgery
+    expect(results.ariscat.missing).toBe(2); // SpO₂, Hb (a recent respiratory infection counts as « no » until said) — incision, duration and "not urgent" come from the surgery
     expect(asa).toBe(2);
   });
 });
 
 describe("recommended tests", () => {
-  it("NICE grid: major surgery, ASA III → FBC, renal, ECG; diabetes → HbA1c", () => {
+  it("KCE 280 grid: major surgery, ASA III → FBC, renal; ECG only with a cardiac risk factor; diabetes → HbA1c", () => {
     const c = consult({ patient: { age: 60, sex: "M" }, conditions: { diabetes_oral: { present: true, poorlyControlled: true } }, surgery: { ...emptyConsultation().surgery, kce: "major", cardiacRisk: "low" } });
     const r = recommendExams({ consultation: c, asa: 3 });
-    expect(r.recommendations.map((x) => `${x.code}:${x.strength}`)).toEqual(["ecg:recommended", "fbc:recommended", "renal:recommended", "hba1c:recommended"]);
+    expect(r.recommendations.map((x) => `${x.code}:${x.strength}`)).toEqual(["fbc:recommended", "renal:recommended", "hba1c:recommended"]);
     expect(r.missing).toEqual([]);
   });
   it("minor surgery, healthy patient → nothing systematic", () => {
@@ -62,7 +62,22 @@ describe("recommended tests", () => {
     const r = recommendExams({ consultation: c, asa: 2, mets: 3 });
     const codes = r.recommendations.map((x) => x.code);
     expect(codes).toEqual(expect.arrayContaining(["ecg", "troponin", "bnp", "fbc", "echo"]));
-    expect(r.recommendations.find((x) => x.code === "ecg")!.reasons.map((x) => x.source.short)).toEqual(["NICE 2016", "ESC 2022"]);
+    expect(r.recommendations.find((x) => x.code === "ecg")!.reasons.map((x) => x.source.short)).toEqual(["KCE 2016", "ESC 2022"]);
+  });
+  it("KCE 280: ECG with an RCRI risk factor, considered from 65; never routine haemostasis; NICE outside its scope", () => {
+    const surgery = (kce: "minor" | "intermediate" | "major") => ({ ...emptyConsultation().surgery, kce, cardiacRisk: "low" as const });
+    const insulin = consult({ patient: { age: 61, sex: "M" }, conditions: { diabetes_insulin: { present: true } }, surgery: surgery("intermediate") });
+    const ecg = recommendExams({ consultation: insulin, asa: 2 }).recommendations.find((x) => x.code === "ecg")!;
+    expect(ecg.strength).toBe("recommended");
+    expect(ecg.reasons[0].text).toContain("diabète sous insuline");
+    const old = consult({ patient: { age: 70, sex: "F" }, conditions: {}, surgery: surgery("intermediate") });
+    expect(recommendExams({ consultation: old, asa: 1 }).recommendations.map((x) => `${x.code}:${x.strength}`)).toEqual(["ecg:consider"]);
+    const minor = consult({ patient: { age: 72, sex: "F" }, conditions: { hypertension: { present: true }, diabetes_oral: { present: true } }, surgery: surgery("minor") });
+    expect(recommendExams({ consultation: minor, asa: 2 }).recommendations.map((x) => `${x.code}:${x.strength}`)).toEqual(["renal:consider", "hba1c:recommended"]); // ASA II with a suspicion of renal failure (age, diabetes)
+    const bleeding = consult({ patient: { age: 43, sex: "F" }, conditions: {}, surgery: surgery("intermediate") });
+    expect(recommendExams({ consultation: bleeding, asa: 1, bleedingHistory: true }).recommendations.map((x) => x.code)).toEqual(["haemostasis", "pregnancy"]);
+    const child = consult({ patient: { age: 12, sex: "M" }, conditions: {}, surgery: surgery("major") });
+    expect(recommendExams({ consultation: child, asa: 1 }).recommendations[0].reasons[0].source.short).toBe("NICE 2016");
   });
   it("says what's missing to decide", () => {
     expect(recommendExams({ consultation: consult({}), asa: null }).missing).toHaveLength(3);
@@ -183,14 +198,15 @@ describe("reported penicillin allergy (PEN-FAST)", () => {
 describe("completeness", () => {
   it("says what each step still lacks", async () => {
     const { stepMissing } = await import("./completeness");
-    const { remainingQuestions } = await import("./remaining-questions");
     const c = consult({ patient: { sex: "F", age: 50, weightKg: 60, heightCm: 165, noKnownAllergy: true }, noTreatment: true, historyReviewed: ["cardio", "resp", "endo", "renal", "digest", "neuro", "psy", "hemato", "other", "surgical", "anaes"], substances: { tobacco: "never" } });
     const scores = consultationScores(c);
-    const m = stepMissing(c, scores, remainingQuestions(c, scores));
+    const m = stepMissing(c, scores);
     expect(m.patient).toEqual([]);
     expect(m.history).toEqual([]);
     expect(m.treatments).toEqual([]);
     expect(m.surgery).toEqual(["intervention", "grade", "risque cardiaque", "risque hémorragique", "technique envisagée", "date prévue"]);
-    expect(m.airway).toEqual(["Mallampati", "ouverture de bouche", "distance thyro-mentonnière"]);
+    expect(m.airway).toEqual([]); // normal until a problem is tapped
+    expect(scores.results.airway.missing).toBe(0);
+    expect(scores.results.airway.label).toBe("Pas de prédiction de difficulté");
   });
 });

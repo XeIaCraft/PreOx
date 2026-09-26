@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, Info, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RiskLevel } from "@/lib/preop/scores";
 import { RULE_TARGETS, type Condition, type RuleAction, type RuleTarget, type SourceLevel } from "@/lib/preop/rules/types";
@@ -12,23 +12,180 @@ import { sourceLevelShort } from "@/lib/preop/rules/engine";
  * A yes/no item that can also be unanswered: a score stays "incomplete"
  * rather than counting an unasked question as "no". Tap: → oui → non → oui.
  */
-export function YesNoChip({ label, value, onChange, derived }: { label: string; value: boolean | undefined; onChange: (v: boolean) => void; derived?: boolean }) {
+export function YesNoChip({
+  label,
+  value,
+  onChange,
+  derived,
+  byDefault,
+}: {
+  label: string;
+  value: boolean | undefined;
+  onChange: (v: boolean) => void;
+  derived?: boolean;
+  /** What counts while unanswered (« normal by default »): shown plain, one tap to change it. */
+  byDefault?: boolean;
+}) {
+  const shown = value ?? byDefault;
+  const isDefault = value === undefined && byDefault !== undefined;
   return (
     <button
       type="button"
-      aria-pressed={value === true}
-      title={derived ? "Déduit des données du patient" : undefined}
-      onClick={() => onChange(value !== true)}
+      aria-pressed={shown === true}
+      title={derived ? "Déduit des données du patient" : isDefault ? `${byDefault ? "Oui" : "Non"} par défaut — touchez pour changer` : undefined}
+      onClick={() => onChange(shown !== true)}
       className={cn(
         "min-h-9 rounded-[var(--radius-md)] border px-2.5 py-1 text-left text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-        value === true && "border-primary bg-primary text-primary-foreground",
-        value === false && "border-border bg-surface-muted text-foreground-subtle line-through decoration-foreground-subtle/60",
-        value === undefined && "border-dashed border-border-strong bg-surface text-foreground hover:bg-surface-muted"
+        shown === true && !isDefault && "border-primary bg-primary text-primary-foreground",
+        shown === true && isDefault && "border-primary/50 bg-primary-tint text-foreground",
+        shown === false && !isDefault && "border-border bg-surface-muted text-foreground-subtle line-through decoration-foreground-subtle/60",
+        shown === false && isDefault && "border-border bg-surface text-foreground-muted hover:bg-surface-muted",
+        shown === undefined && "border-dashed border-border-strong bg-surface text-foreground hover:bg-surface-muted"
       )}
     >
       {label}
       {derived && <span className="ml-1 opacity-70">·auto</span>}
     </button>
+  );
+}
+
+/**
+ * A small « i » that opens an explanation (legend of a score, what a choice
+ * means) without taking room on the screen: on hover with a mouse, on tap
+ * on a phone. The bubble stays inside the window.
+ */
+export function InfoTip({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const bubble = useRef<HTMLDivElement>(null);
+  const hover = useRef(false);
+  const place = () => {
+    const r = btn.current?.getBoundingClientRect();
+    if (!r) return;
+    const width = Math.min(320, window.innerWidth - 16);
+    const left = Math.min(Math.max(8, r.left + r.width / 2 - width / 2), window.innerWidth - width - 8);
+    const below = r.bottom + 6;
+    setPos({ top: below + 260 > window.innerHeight && r.top > 280 ? Math.max(8, r.top - 6 - 260) : below, left, width });
+  };
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: Event) => {
+      if (e.type === "keydown" && (e as KeyboardEvent).key !== "Escape") return;
+      if (e.type === "pointerdown" && (btn.current?.contains(e.target as Node) || bubble.current?.contains(e.target as Node))) return;
+      setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+      window.removeEventListener("scroll", onScroll, { capture: true });
+    };
+  }, [open]);
+  return (
+    <>
+      <button
+        ref={btn}
+        type="button"
+        aria-label={`Explication : ${label}`}
+        aria-expanded={open}
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          if (!open) place();
+          setOpen((o) => !o);
+        }}
+        onPointerEnter={(e) => {
+          if (e.pointerType !== "mouse") return;
+          hover.current = true;
+          place();
+          setOpen(true);
+        }}
+        onPointerLeave={(e) => {
+          if (e.pointerType !== "mouse" || !hover.current) return;
+          hover.current = false;
+          setOpen(false);
+        }}
+        className={cn("inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-foreground-subtle hover:bg-surface-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40", className)}
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+      {open && pos && (
+        <div
+          ref={bubble}
+          role="tooltip"
+          style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width }}
+          className="z-50 max-h-[260px] overflow-y-auto rounded-[var(--radius-md)] border border-border bg-surface p-2.5 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-foreground shadow-lg"
+        >
+          <p className="mb-1 font-semibold">{label}</p>
+          {children}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** A legend as a short list: « I — palais mou, luette, piliers visibles ». */
+export function Legend({ rows, source }: { rows: { code: React.ReactNode; text: React.ReactNode }[]; source?: string }) {
+  return (
+    <div className="space-y-1">
+      <ul className="space-y-0.5">
+        {rows.map((r, i) => (
+          <li key={i} className="flex gap-2">
+            <span className="w-10 shrink-0 font-mono font-semibold tabular-nums">{r.code}</span>
+            <span className="min-w-0 text-foreground-muted">{r.text}</span>
+          </li>
+        ))}
+      </ul>
+      {source && <p className="text-[10px] text-foreground-subtle">{source}</p>}
+    </div>
+  );
+}
+
+/**
+ * One choice among a few, with a « normal » value that counts until another
+ * is picked: shown selected in a lighter tone, so a tap is needed only to
+ * report a problem.
+ */
+export function DefaultChips<T extends string | number>({
+  options,
+  value,
+  fallback,
+  onChange,
+}: {
+  options: { code: T; label: string; title?: string }[];
+  value: T | undefined;
+  fallback: T;
+  onChange: (v: T | undefined) => void;
+}) {
+  const shown = value ?? fallback;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => {
+        const selected = o.code === shown;
+        const isDefault = selected && value === undefined;
+        return (
+          <button
+            key={String(o.code)}
+            type="button"
+            title={isDefault ? "Par défaut — touchez une autre valeur pour signaler un problème" : o.title}
+            aria-pressed={selected}
+            onClick={() => onChange(o.code === fallback && value !== undefined && selected ? undefined : o.code)}
+            className={cn(
+              "min-h-9 rounded-[var(--radius-md)] border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+              selected && !isDefault && "border-primary bg-primary text-primary-foreground",
+              isDefault && "border-primary/50 bg-primary-tint text-foreground",
+              !selected && "border-border bg-surface text-foreground hover:bg-surface-muted"
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

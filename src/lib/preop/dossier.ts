@@ -261,6 +261,31 @@ export function emptyConsultation(): ConsultationState {
   };
 }
 
+/**
+ * The consultation as the scores read it: what was not examined or asked is
+ * taken as normal — you tap only to report a problem. The saved state keeps
+ * the difference (undefined = not confirmed), so the screen can show which
+ * answers are defaults.
+ */
+export function withNormalDefaults(c: ConsultationState): ConsultationState {
+  const e = c.patient.exam ?? {};
+  return {
+    ...c,
+    patient: { ...c.patient, exam: { ...e, heart: e.heart ?? "normal", lungs: e.lungs ?? "normal", veins: e.veins ?? "good", spine: e.spine ?? "normal" } },
+    substances: { ...c.substances, tobacco: c.substances.tobacco ?? "never", drugs: c.substances.drugs ?? [] },
+    mallampati: c.mallampati ?? 1,
+    nyha: c.nyha ?? 1,
+    airway: {
+      ...c.airway,
+      mouthOpeningUnder4cm: c.airway.mouthOpeningUnder4cm ?? false,
+      canProtrudeMandible: c.airway.canProtrudeMandible ?? true,
+      shortThyromental: c.airway.thyromentalCm === undefined ? (c.airway.shortThyromental ?? false) : c.airway.shortThyromental,
+      poorNeckMobility: c.airway.neckMovementDeg === undefined ? (c.airway.poorNeckMobility ?? false) : c.airway.poorNeckMobility,
+    },
+    maskVentilation: { ...c.maskVentilation, beard: c.maskVentilation.beard ?? false, edentulous: c.maskVentilation.edentulous ?? false },
+  };
+}
+
 export type RiskGrade = "low" | "intermediate" | "high";
 
 export interface Surgery {

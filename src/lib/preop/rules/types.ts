@@ -36,13 +36,25 @@ export interface RuleSource {
 /** Planned anaesthetic gestures, grouped by bleeding risk of the puncture. */
 export type Technique = "neuraxial" | "deep_block" | "superficial_block" | "general" | "sedation";
 
-export const TECHNIQUES: { code: Technique; label: string }[] = [
-  { code: "neuraxial", label: "Ponction neuraxiale (rachi, péridurale, cathéter)" },
-  { code: "deep_block", label: "Bloc profond ou non compressible" },
-  { code: "superficial_block", label: "Bloc superficiel ou compressible" },
-  { code: "general", label: "Anesthésie générale" },
-  { code: "sedation", label: "Sédation" },
+export const TECHNIQUES: { code: Technique; label: string; detail: string }[] = [
+  { code: "neuraxial", label: "Ponction neuraxiale (rachi, péridurale, cathéter)", detail: "Rachianesthésie, péridurale, rachi-péridurale combinée, cathéter : délais d'arrêt des antithrombotiques les plus stricts." },
+  {
+    code: "deep_block",
+    label: "ALR périphérique profonde (non compressible)",
+    detail:
+      "Bloc dont un saignement ne peut pas être comprimé ni surveillé (p. ex. plexus lombaire, paravertébral, infraclaviculaire, bloc profond du cou) : mêmes délais d'arrêt des antithrombotiques qu'une ponction neuraxiale.",
+  },
+  {
+    code: "superficial_block",
+    label: "ALR périphérique superficielle (compressible)",
+    detail: "Bloc superficiel, où un saignement se voit et se comprime (p. ex. fémoral, axillaire, poplité, TAP, gaine des droits) : les délais d'arrêt des antithrombotiques ne s'appliquent pas.",
+  },
+  { code: "general", label: "Anesthésie générale", detail: "Intubation, masque laryngé ou masque facial." },
+  { code: "sedation", label: "Sédation", detail: "Sédation intraveineuse, ventilation spontanée." },
 ];
+
+/** Why « compressible » matters: the source of the distinction. */
+export const TECHNIQUE_SOURCE = "ESAIC/ESRA 2022 (Kietaibl et al., PMID 34980845) : les blocs profonds suivent les délais neuraxiaux, pas les blocs superficiels compressibles.";
 
 /** Why a patient takes a treatment — changes what to do with it (primary vs secondary prevention, recent stent…). */
 export type Indication =

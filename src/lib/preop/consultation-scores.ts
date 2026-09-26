@@ -6,6 +6,7 @@
 
 import {
   ASA_CLASSES,
+  DASI_ITEMS,
   CLINICAL_FRAILTY_SCALE,
   MALLAMPATI_CLASSES,
   adjustedBodyWeight,
@@ -26,7 +27,7 @@ import {
   stopBang,
   type ScoreResult,
 } from "./scores";
-import type { ConsultationState } from "./dossier";
+import { withNormalDefaults, type ConsultationState } from "./dossier";
 import { anyOf, has, qualified } from "./history";
 import { suggestAsa } from "./asa";
 import { recommendExams } from "./exams";
@@ -66,8 +67,25 @@ function plannedPostopOpioids(plan: ProtocolContent | undefined): boolean | unde
 
 const OPIOID_WORDS = /morphin|oxycodon|piritramid|dipidolor|tramadol|hydromorphon|tapentadol|fentanyl|sufentanil|PCA/i;
 
-export function consultationScores(c: ConsultationState, opts: { plan?: ProtocolContent; catalogs?: Catalogs } = {}) {
+/** Unanswered yes/no items taken as « no problem » (DASI: « can do », up to the ordinary activities). */
+function fillDefaults<K extends string>(answers: YesNo<K>, keys: readonly K[], value: (k: K) => boolean): Merged<K> {
+  const merged = { ...answers };
+  const derivedKeys = new Set<K>();
+  for (const k of keys)
+    if (merged[k] === undefined) {
+      merged[k] = value(k);
+      derivedKeys.add(k);
+    }
+  return { merged, derivedKeys };
+}
+
+/** DASI items a patient without limitation does (> 34 points, ≥ 4 METs): not running nor intense sports. */
+const DASI_DEFAULT_NO = new Set(["runShort", "moderateRecreation", "strenuousSports"]);
+
+export function consultationScores(input: ConsultationState, opts: { plan?: ProtocolContent; catalogs?: Catalogs } = {}) {
   const catalogs = opts.catalogs ?? DEFAULT_CATALOGS;
+  // What was not examined or asked is normal: only problems are tapped.
+  const c = withNormalDefaults(input);
   const p = c.patient;
   const hasBody = !!(p.weightKg && p.heightCm);
   const derived = {
@@ -129,14 +147,29 @@ export function consultationScores(c: ConsultationState, opts: { plan?: Protocol
     }),
   };
 
-  const airwayHistory = c.airway.difficultIntubationHistory ?? (has(cond, "difficult_airway") === true ? "definite" : has(cond, "difficult_airway") === false ? "none" : undefined);
+  // The questions nobody answered, as « no » — listed on screen as defaults (defaulted), never hidden.
+  const no = () => false;
+  const answers = {
+    stopBang: fillDefaults(merged.stopBang.merged, ["snoring", "tired", "observed", "pressure", "neckOver40"] as const, no),
+    rcri: fillDefaults(merged.rcri.merged, ["highRiskSurgery", "ischemicHeartDisease", "heartFailure", "cerebrovascularDisease", "insulin"] as const, no),
+    apfel: fillDefaults(merged.apfel.merged, ["history", "postopOpioids"] as const, no),
+    hemstop: fillDefaults(c.hemstop, ["hematoma", "hemorrhage", "menorrhagia", "surgery", "tooth", "obstetrics", "parents"] as const, no),
+    hasBled: fillDefaults(merged.hasBled.merged, ["hypertension", "renal", "liver", "stroke", "bleeding", "labileInr", "drugs", "alcohol"] as const, no),
+    cha: fillDefaults(merged.cha.merged, ["heartFailure", "hypertension", "diabetes", "strokeTiaThromboembolism", "vascularDisease"] as const, no),
+    mask: fillDefaults(merged.mask.merged, ["beard", "edentulous", "snoring"] as const, no),
+    dasi: fillDefaults(c.dasi, Object.keys(DASI_ITEMS) as (keyof typeof DASI_ITEMS)[], (k) => !DASI_DEFAULT_NO.has(k)),
+  };
+  const respiratoryInfection = c.ariscat.respiratoryInfectionLastMonth ?? has(cond, "recent_uri");
+
+  // No known difficult intubation unless the antecedent says so (normal by default).
+  const airwayHistory = c.airway.difficultIntubationHistory ?? (has(cond, "difficult_airway") === true ? "definite" : "none");
   const results = {
-    stopBang: stopBang(merged.stopBang.merged),
-    rcri: rcri(merged.rcri.merged),
-    dasi: dasi(c.dasi),
+    stopBang: stopBang(answers.stopBang.merged),
+    rcri: rcri(answers.rcri.merged),
+    dasi: dasi(answers.dasi.merged),
     ariscat: ariscat({
       ...c.ariscat,
-      respiratoryInfectionLastMonth: c.ariscat.respiratoryInfectionLastMonth ?? has(cond, "recent_uri"),
+      respiratoryInfectionLastMonth: respiratoryInfection ?? false,
       age: c.ariscat.age ?? p.age,
       spo2: c.ariscat.spo2 ?? p.spo2,
       anemia: c.ariscat.anemia ?? (p.hb !== undefined ? p.hb <= 10 : undefined),
@@ -145,12 +178,12 @@ export function consultationScores(c: ConsultationState, opts: { plan?: Protocol
       // A surgery not marked urgent is scheduled.
       emergency: c.ariscat.emergency ?? surgery.emergency ?? (surgery.name ? false : undefined),
     }),
-    apfel: apfel(merged.apfel.merged),
-    hemstop: hemstop(c.hemstop),
-    cha: cha2ds2vasc({ ...merged.cha.merged, age: p.age, sex: p.sex }),
-    hasBled: hasBled(merged.hasBled.merged),
+    apfel: apfel(answers.apfel.merged),
+    hemstop: hemstop(answers.hemstop.merged),
+    cha: cha2ds2vasc({ ...answers.cha.merged, age: p.age, sex: p.sex }),
+    hasBled: hasBled(answers.hasBled.merged),
     airway: elGanzouri({ ...c.airway, difficultIntubationHistory: airwayHistory, mallampati: c.airway.mallampati ?? c.mallampati, weightKg: c.airway.weightKg ?? p.weightKg }),
-    mask: maskVentilation(merged.mask.merged),
+    mask: maskVentilation(answers.mask.merged),
   };
 
   const asaSuggestion = suggestAsa(p, cond, sub, catalogs.conditions);
@@ -162,9 +195,11 @@ export function consultationScores(c: ConsultationState, opts: { plan?: Protocol
     mets: results.dasi.missing === 0 && results.dasi.value > 0 ? results.dasi.mets : undefined,
     surgeryProfile: surgeryItem?.examProfile,
     stopBang: results.stopBang.missing === 0 || results.stopBang.value >= 5 ? results.stopBang.value : undefined,
+    crcl: derived.crcl,
+    bleedingHistory: Object.values(c.hemstop).some((v) => v === true),
   });
 
-  return { derived, merged, results, asaSuggestion, asa, exams, conditions: cond, deduced, catalogs };
+  return { derived, merged, answers, respiratoryInfectionDefaulted: respiratoryInfection === undefined, results, asaSuggestion, asa, exams, conditions: cond, deduced, catalogs };
 }
 
 export type ConsultationScores = ReturnType<typeof consultationScores>;

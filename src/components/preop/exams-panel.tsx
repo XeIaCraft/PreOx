@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CircleHelp } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ChipGroup, ToggleChip } from "@/components/carnet/ui";
-import { FieldLabel, Panel, TextArea } from "@/components/preop/ui";
+import { FieldLabel, InfoTip, Legend, Panel, TextArea } from "@/components/preop/ui";
 import type { ConsultationConclusion, ConsultationDecision, ConsultationPatient, ExamState, ExamStatus } from "@/lib/preop/dossier";
 import { autoExamState, type ExamResult } from "@/lib/preop/exams";
 import { cn } from "@/lib/utils";
@@ -46,7 +46,29 @@ export function ExamsPanel({
 }) {
   const set = (code: string, patch: Partial<ExamState>) => onChange({ ...exams, [code]: { status: "todo", ...exams[code], ...patch } });
   return (
-    <Panel title="Examens complémentaires">
+    <Panel
+      title={
+        <span className="flex items-center gap-1">
+          Examens complémentaires
+          <InfoTip label="Pas en routine (KCE 280, 2016)">
+            <Legend
+              rows={[
+                { code: "RX", text: "radiographie du thorax sans indication clinique" },
+                { code: "Écho", text: "échocardiographie de repos (seulement pour un diagnostic : dyspnée, souffle, œdèmes…)" },
+                { code: "EFR", text: "épreuves fonctionnelles respiratoires, gazométrie, épreuve d'effort" },
+                { code: "PSG", text: "polysomnographie, même avant chirurgie bariatrique" },
+                { code: "Hémo.", text: "bilan d'hémostase (sauf anamnèse hémorragique, hépatopathie, anticoagulant)" },
+                { code: "Foie", text: "tests hépatiques sans indication clinique" },
+                { code: "HbA1c", text: "chez le non-diabétique" },
+                { code: "Urine", text: "analyse d'urine (culture : chirurgie urogénitale ou prothèse articulaire)" },
+                { code: "CT", text: "angioscanner coronaire" },
+              ]}
+              source="KCE Report 280 (2016) : chirurgie non cardio-thoracique planifiée de l'adulte. Un examen de routine est fait chez tous ; un examen sur indication, seulement sur signe clinique ou antécédent."
+            />
+          </InfoTip>
+        </span>
+      }
+    >
       {result.missing.length > 0 && (
         <p className="flex items-start gap-1.5 text-xs text-foreground-muted">
           <CircleHelp className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" /> Pour compléter la proposition : {result.missing.join(", ").toLowerCase()}.

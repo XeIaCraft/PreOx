@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, MultiChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { useToast } from "@/components/ui/toast";
-import { Combobox, FieldLabel, MiniNumber, Panel, RiskPill, ScoreCard, SourceBadge, TargetTag, DraftPill, YesNoChip, formatDateTime, localToIso, toLocalInput, Disclosure } from "@/components/preop/ui";
+import { Combobox, DefaultChips, FieldLabel, InfoTip, Legend, MiniNumber, Panel, RiskPill, ScoreCard, SourceBadge, TargetTag, DraftPill, YesNoChip, formatDateTime, localToIso, toLocalInput, Disclosure } from "@/components/preop/ui";
 import { SurgeryPanel } from "@/components/preop/surgery-panel";
 import { AllergiesEditor, ConditionsEditor, SubstancesEditor } from "@/components/preop/history-editor";
 import { ExamsPanel } from "@/components/preop/exams-panel";
+import { APFEL_LEGEND, ARISCAT_LEGEND, ASA_LEGEND, CFS_LEGEND, CHA2DS2VASC_LEGEND, DASI_LEGEND, HEMSTOP_LEGEND, NYHA_LEGEND, RCRI_LEGEND, STOP_BANG_LEGEND } from "@/components/preop/legends";
 import { AttentionPanel, InstructionsPanel } from "@/components/preop/attention-panel";
 import { TimelinePanel } from "@/components/preop/timeline-panel";
 import { consultationTimeline, reminderSuggestions } from "@/lib/preop/timeline";
@@ -62,7 +63,7 @@ import { evaluate, indicationLabel, type EvaluationResult } from "@/lib/preop/ru
 import { describeRule, formatHours } from "@/lib/preop/rules/describe";
 import { beforeWhat, conflictText } from "@/lib/preop/rules/target";
 import { combineQuestions, questionForMissingStop, type QuestionInput } from "@/lib/preop/rules/question";
-import { INDICATIONS, TECHNIQUES, type Indication, type PatientTreatment, type Rule, type Technique } from "@/lib/preop/rules/types";
+import { INDICATIONS, TECHNIQUES, TECHNIQUE_SOURCE, type Indication, type PatientTreatment, type Rule, type Technique } from "@/lib/preop/rules/types";
 import { classesOf, fold, medicationOf, type Catalogs, type MedicationItem } from "@/lib/preop/catalog";
 import { cbipChapterPath, cbipLink } from "@/lib/preop/cbip";
 import { nutritionGrade, thromboticRisk } from "@/lib/preop/periop-risks";
@@ -116,53 +117,56 @@ function EcgEditor({ value: g, onChange }: { value: EcgFindings; onChange: (g: E
   );
 }
 
-/** Basic clinical examination: one tap per finding; normal answers count too (for the official sheet). */
+/** Basic clinical examination: normal until a finding is tapped. */
 function ExamEditor({ value: e, onChange }: { value: ClinicalExam; onChange: (e: ClinicalExam) => void }) {
   const set = (patch: Partial<ClinicalExam>) => onChange({ ...e, ...patch });
   const opts = <K extends keyof typeof CLINICAL_EXAM_LABELS>(k: K) => (Object.entries(CLINICAL_EXAM_LABELS[k]) as [string, string][]).map(([code, label]) => ({ code, label }));
-  const filled = examSummary(e);
+  const abnormal = examSummary({ ...e, heart: e.heart === "normal" ? undefined : e.heart, lungs: e.lungs === "normal" ? undefined : e.lungs, veins: e.veins === "good" ? undefined : e.veins, spine: e.spine === "normal" ? undefined : e.spine });
   return (
     <Disclosure
       className="rounded-[var(--radius-md)] border border-border"
-      initialOpen={!!filled}
+      initialOpen={!!abnormal}
       summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground"
       summary={
         <>
-          Examen clinique{filled ? <span className="font-normal text-foreground-subtle"> — {filled}</span> : null}
+          Examen clinique <span className={cn("font-normal", abnormal ? "text-accent" : "text-foreground-subtle")}>— {abnormal || "normal (par défaut, ouvrez pour signaler une anomalie)"}</span>
         </>
       }
     >
       <div className="space-y-2 px-3 pb-3">
         <div className="space-y-1">
           <FieldLabel>Auscultation cardiaque</FieldLabel>
-          <ChipGroup size="sm" options={opts("heart")} value={e.heart ?? null} onChange={(v) => set({ heart: (v ?? undefined) as ClinicalExam["heart"] })} allowClear />
+          <DefaultChips options={opts("heart")} fallback="normal" value={e.heart} onChange={(v) => set({ heart: v as ClinicalExam["heart"] })} />
         </div>
         <div className="space-y-1">
           <FieldLabel>Auscultation pulmonaire</FieldLabel>
-          <ChipGroup size="sm" options={opts("lungs")} value={e.lungs ?? null} onChange={(v) => set({ lungs: (v ?? undefined) as ClinicalExam["lungs"] })} allowClear />
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          <ToggleChip pressed={!!e.edema} onChange={(edema) => set({ edema: edema || undefined })} className="min-h-8 text-xs">
-            Œdèmes des membres inférieurs
-          </ToggleChip>
-          <ToggleChip pressed={!!e.jvd} onChange={(jvd) => set({ jvd: jvd || undefined })} className="min-h-8 text-xs">
-            Turgescence jugulaire
-          </ToggleChip>
-          <ToggleChip pressed={!!e.neuroDeficit} onChange={(neuroDeficit) => set({ neuroDeficit: neuroDeficit || undefined })} className="min-h-8 text-xs">
-            Déficit neurologique préexistant
-          </ToggleChip>
-          <ToggleChip pressed={!!e.punctureSite} onChange={(punctureSite) => set({ punctureSite: punctureSite || undefined })} className="min-h-8 text-xs">
-            Lésion / infection au site de ponction
-          </ToggleChip>
+          <DefaultChips options={opts("lungs")} fallback="normal" value={e.lungs} onChange={(v) => set({ lungs: v as ClinicalExam["lungs"] })} />
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
           <div className="space-y-1">
             <FieldLabel>Abord veineux</FieldLabel>
-            <ChipGroup size="sm" options={opts("veins")} value={e.veins ?? null} onChange={(v) => set({ veins: (v ?? undefined) as ClinicalExam["veins"] })} allowClear />
+            <DefaultChips options={opts("veins")} fallback="good" value={e.veins} onChange={(v) => set({ veins: v as ClinicalExam["veins"] })} />
           </div>
           <div className="space-y-1">
             <FieldLabel>Rachis (ponction)</FieldLabel>
-            <ChipGroup size="sm" options={opts("spine")} value={e.spine ?? null} onChange={(v) => set({ spine: (v ?? undefined) as ClinicalExam["spine"] })} allowClear />
+            <DefaultChips options={opts("spine")} fallback="normal" value={e.spine} onChange={(v) => set({ spine: v as ClinicalExam["spine"] })} />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <FieldLabel>Anomalies (touchez seulement ce qui est présent)</FieldLabel>
+          <div className="flex flex-wrap gap-1.5">
+            <ToggleChip pressed={!!e.edema} onChange={(edema) => set({ edema: edema || undefined })} className="min-h-8 text-xs">
+              Œdèmes des membres inférieurs
+            </ToggleChip>
+            <ToggleChip pressed={!!e.jvd} onChange={(jvd) => set({ jvd: jvd || undefined })} className="min-h-8 text-xs">
+              Turgescence jugulaire
+            </ToggleChip>
+            <ToggleChip pressed={!!e.neuroDeficit} onChange={(neuroDeficit) => set({ neuroDeficit: neuroDeficit || undefined })} className="min-h-8 text-xs">
+              Déficit neurologique préexistant
+            </ToggleChip>
+            <ToggleChip pressed={!!e.punctureSite} onChange={(punctureSite) => set({ punctureSite: punctureSite || undefined })} className="min-h-8 text-xs">
+              Lésion / infection au site de ponction
+            </ToggleChip>
           </div>
         </div>
         <EcgEditor value={e.ecg ?? {}} onChange={(ecg) => set({ ecg: ecgSummary(ecg) ? ecg : undefined })} />
@@ -530,25 +534,28 @@ function RulesPanel({ evaluation, gaps, onAskQuestion, crcl, rulesCount }: { eva
 // Evaluation
 // ---------------------------------------------------------------------------
 
-function ItemsGrid<K extends string>({ items, answers, derivedKeys, onChange }: { items: Record<K, string | { label: string }>; answers: YesNo<K>; derivedKeys?: Set<K>; onChange: (next: YesNo<K>) => void }) {
+function ItemsGrid<K extends string>({ items, answers, derivedKeys, defaults, onChange }: { items: Record<K, string | { label: string }>; answers: YesNo<K>; derivedKeys?: Set<K>; defaults?: YesNo<K>; onChange: (next: YesNo<K>) => void }) {
   const keys = Object.keys(items) as K[];
   return (
     <div className="flex flex-wrap gap-1.5">
       {keys.map((k) => {
         const item = items[k];
-        return <YesNoChip key={k} label={typeof item === "string" ? item : item.label} value={answers[k]} derived={derivedKeys?.has(k)} onChange={(v) => onChange({ ...answers, [k]: v })} />;
+        return <YesNoChip key={k} label={typeof item === "string" ? item : item.label} value={answers[k]} byDefault={answers[k] === undefined ? defaults?.[k] : undefined} derived={derivedKeys?.has(k)} onChange={(v) => onChange({ ...answers, [k]: v })} />;
       })}
     </div>
   );
 }
 
-function ScoreTile({ name, value, label, level, missing }: { name: string; value: string; label: string; level: RiskLevel; missing: number }) {
+function ScoreTile({ name, value, label, level, missing, info, infoLabel }: { name: string; value: string; label: string; level: RiskLevel; missing: number; info?: React.ReactNode; infoLabel?: string }) {
   const tone = level === "high" ? "border-danger/40 bg-danger-tint/50" : level === "intermediate" ? "border-accent/40 bg-accent-tint/50" : "border-border bg-surface";
   return (
     <div className={cn("min-w-0 rounded-[var(--radius-md)] border px-2.5 py-2", tone)}>
-      <p className="truncate text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">{name}</p>
+      <p className="flex items-center justify-between gap-1 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">
+        <span className="truncate">{name}</span>
+        {info && <InfoTip label={infoLabel ?? name}>{info}</InfoTip>}
+      </p>
       <p className="font-mono text-lg font-semibold tabular-nums text-foreground">{value}</p>
-      <p className="truncate text-[11px] text-foreground-muted">{label || (missing ? `${missing} réponse(s) manquante(s)` : "—")}</p>
+      <p className="truncate text-[11px] text-foreground-muted">{label || (missing ? `${missing} donnée(s) manquante(s)` : "—")}</p>
     </div>
   );
 }
@@ -561,7 +568,7 @@ function EvaluationStep({ s, set, onChange, scores }: { s: ConsultationState; se
   const nutrition = nutritionGrade(s, scores.conditions);
   return (
     <div className="space-y-4">
-      <Panel title="ASA" actions={asa ? <RiskPill level={asa >= 3 ? "intermediate" : "info"}>{`${ASA_CLASSES[asa - 1].label}${s.surgery.emergency ? "E" : ""}${s.asa ? "" : " · suggéré"}`}</RiskPill> : null}>
+      <Panel title={<span className="flex items-center gap-1">ASA <InfoTip label="Classification ASA">{ASA_LEGEND}</InfoTip></span>} actions={asa ? <RiskPill level={asa >= 3 ? "intermediate" : "info"}>{`${ASA_CLASSES[asa - 1].label}${s.surgery.emergency ? "E" : ""}${s.asa ? "" : " · suggéré"}`}</RiskPill> : null}>
         <ChipGroup size="sm" options={ASA_CLASSES.slice(0, 5).map((c) => ({ code: c.code, label: c.label, title: c.detail }))} value={s.asa ?? null} onChange={(v) => set({ asa: v ?? undefined })} allowClear />
         {asaSuggestion.asa ? (
           <div className="rounded-[var(--radius-md)] bg-surface-muted/60 px-3 py-2 text-xs text-foreground-muted">
@@ -583,22 +590,32 @@ function EvaluationStep({ s, set, onChange, scores }: { s: ConsultationState; se
         <p className="text-[11px] text-foreground-subtle">Référence : {ASA_REFERENCE}</p>
         <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <FieldLabel>Dyspnée (NYHA)</FieldLabel>
-            <ChipGroup size="sm" options={NYHA_CLASSES.map((c) => ({ code: c.code as number, label: ROMAN[c.code - 1], title: c.detail }))} value={s.nyha ?? null} onChange={(v) => set({ nyha: v ?? undefined })} allowClear />
+            <span className="flex items-center gap-1">
+              <FieldLabel>Dyspnée (NYHA)</FieldLabel>
+              <InfoTip label="Classes NYHA">{NYHA_LEGEND}</InfoTip>
+            </span>
+            <DefaultChips options={NYHA_CLASSES.map((c) => ({ code: c.code as number, label: ROMAN[c.code - 1], title: c.detail }))} fallback={1} value={s.nyha} onChange={(v) => set({ nyha: v })} />
           </div>
           <div className="space-y-1">
-            <FieldLabel>Fragilité (CFS 1–9)</FieldLabel>
+            <span className="flex items-center gap-1">
+              <FieldLabel>Fragilité (CFS 1–9, à signaler)</FieldLabel>
+              <InfoTip label="Clinical Frailty Scale">{CFS_LEGEND}</InfoTip>
+            </span>
             <ChipGroup size="sm" options={CLINICAL_FRAILTY_SCALE.map((c) => ({ code: c.code as number, label: String(c.code), title: c.detail }))} value={s.frailty ?? null} onChange={(v) => set({ frailty: v ?? undefined })} allowClear />
             {s.frailty && <p className="text-[11px] text-foreground-muted">{CLINICAL_FRAILTY_SCALE[s.frailty - 1].detail}</p>}
           </div>
         </div>
       </Panel>
 
-      <Panel title="Questions restantes" actions={<span className="text-xs text-foreground-subtle">{remainingCount(groups) || "aucune"}</span>}>
+      <Panel
+        title="À vérifier avec le patient"
+        actions={<span className="text-xs text-foreground-subtle">{remainingCount(groups) ? `${remainingCount(groups)} · « non » par défaut` : "tout est renseigné"}</span>}
+      >
         {groups.length === 0 ? (
           <p className="text-sm text-foreground-subtle">Tout ce que les scores demandent est déjà connu ou déduit.</p>
         ) : (
           <div className="space-y-3">
+            <p className="text-[11px] text-foreground-subtle">Tant que rien n&apos;est touché, la réponse est « non » (ou « oui, il peut le faire » pour la capacité fonctionnelle) : touchez seulement ce qui pose problème.</p>
             {groups.map((g) => (
               <div key={g.id} className="space-y-1.5">
                 <div className="flex items-baseline justify-between gap-2">
@@ -606,22 +623,14 @@ function EvaluationStep({ s, set, onChange, scores }: { s: ConsultationState; se
                     {g.title} <span className="text-[11px] font-normal text-foreground-subtle">· {g.feeds}</span>
                   </p>
                   {g.questions.length > 1 && (
-                    <button type="button" onClick={() => onChange(g.questions.reduce((acc, q) => q.apply(acc, false), s))} className="shrink-0 text-xs font-medium text-primary hover:underline">
-                      Tout non
+                    <button type="button" onClick={() => onChange(g.questions.reduce((acc, q) => q.apply(acc, q.byDefault ?? false), s))} className="shrink-0 text-xs font-medium text-primary hover:underline">
+                      Confirmer
                     </button>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {g.questions.map((q) => (
-                    <span key={q.key} className="inline-flex overflow-hidden rounded-[var(--radius-md)] border border-border">
-                      <span className="flex items-center px-2 text-xs text-foreground">{q.label}</span>
-                      <button type="button" onClick={() => onChange(q.apply(s, true))} className="border-l border-border px-2 py-1.5 text-xs font-medium text-primary hover:bg-primary-tint">
-                        Oui
-                      </button>
-                      <button type="button" onClick={() => onChange(q.apply(s, false))} className="border-l border-border px-2 py-1.5 text-xs font-medium text-foreground-muted hover:bg-surface-muted">
-                        Non
-                      </button>
-                    </span>
+                    <YesNoChip key={q.key} label={q.label} value={q.value} byDefault={q.byDefault ?? false} onChange={(v) => onChange(q.apply(s, v))} />
                   ))}
                 </div>
               </div>
@@ -631,52 +640,53 @@ function EvaluationStep({ s, set, onChange, scores }: { s: ConsultationState; se
       </Panel>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <ScoreTile name="Lee (RCRI)" value={`${r.rcri.value}`} label={r.rcri.label} level={r.rcri.level} missing={r.rcri.missing} />
-        <ScoreTile name="STOP-BANG" value={`${r.stopBang.value}/8`} label={r.stopBang.label} level={r.stopBang.level} missing={r.stopBang.missing} />
-        <ScoreTile name="Apfel" value={`${r.apfel.value}/4`} label={r.apfel.label} level={r.apfel.level} missing={r.apfel.missing} />
-        <ScoreTile name="ARISCAT" value={`${r.ariscat.value}`} label={r.ariscat.label} level={r.ariscat.level} missing={r.ariscat.missing} />
-        <ScoreTile name="Langeron" value={`${r.mask.value}/5`} label={r.mask.label} level={r.mask.level} missing={r.mask.missing} />
-        <ScoreTile name="HEMSTOP" value={`${r.hemstop.value}/7`} label={r.hemstop.label} level={r.hemstop.level} missing={r.hemstop.missing} />
-        {(s.surgery.cardiacRisk === "intermediate" || s.surgery.cardiacRisk === "high" || r.dasi.missing < 12) && <ScoreTile name="DASI" value={r.dasi.missing === 0 ? `${r.dasi.mets} METs` : `${r.dasi.value}`} label={r.dasi.label} level={r.dasi.level} missing={r.dasi.missing} />}
-        {anticoag && <ScoreTile name="CHA₂DS₂-VASc" value={`${r.cha.value}`} label={r.cha.label} level={r.cha.level} missing={r.cha.missing} />}
+        <ScoreTile name="Lee (RCRI)" value={`${r.rcri.value}`} label={r.rcri.label} level={r.rcri.level} missing={r.rcri.missing} info={RCRI_LEGEND} infoLabel="Indice de Lee (RCRI)" />
+        <ScoreTile name="STOP-BANG" value={`${r.stopBang.value}/8`} label={r.stopBang.label} level={r.stopBang.level} missing={r.stopBang.missing} info={STOP_BANG_LEGEND} infoLabel="STOP-BANG (apnée du sommeil)" />
+        <ScoreTile name="Apfel" value={`${r.apfel.value}/4`} label={r.apfel.label} level={r.apfel.level} missing={r.apfel.missing} info={APFEL_LEGEND} infoLabel="Score d'Apfel (NVPO)" />
+        <ScoreTile name="ARISCAT" value={`${r.ariscat.value}`} label={r.ariscat.label} level={r.ariscat.level} missing={r.ariscat.missing} info={ARISCAT_LEGEND} infoLabel="ARISCAT (complications pulmonaires)" />
+        <ScoreTile name="Langeron" value={`${r.mask.value}/5`} label={r.mask.label} level={r.mask.level} missing={r.mask.missing} info={<Legend rows={[{ code: "1 pt", text: "barbe, IMC > 26, édentation, âge > 55 ans, ronflement" }, { code: "≥ 2", text: "ventilation au masque difficile prévisible" }]} source={MASK_VENTILATION_REFERENCE.label} />} infoLabel="Critères de Langeron" />
+        <ScoreTile name="HEMSTOP" value={`${r.hemstop.value}/7`} label={r.hemstop.label} level={r.hemstop.level} missing={r.hemstop.missing} info={HEMSTOP_LEGEND} infoLabel="Questionnaire HEMSTOP" />
+        {(s.surgery.cardiacRisk === "intermediate" || s.surgery.cardiacRisk === "high" || r.dasi.missing < 12) && <ScoreTile name="DASI" value={r.dasi.missing === 0 ? `${r.dasi.mets} METs` : `${r.dasi.value}`} label={r.dasi.label} level={r.dasi.level} missing={r.dasi.missing} info={DASI_LEGEND} infoLabel="DASI (capacité fonctionnelle)" />}
+        {anticoag && <ScoreTile name="CHA₂DS₂-VASc" value={`${r.cha.value}`} label={r.cha.label} level={r.cha.level} missing={r.cha.missing} info={CHA2DS2VASC_LEGEND} infoLabel="CHA₂DS₂-VASc" />}
         {thrombo && <ScoreTile name="Risque thrombotique" value={thrombo.level === "high" ? "Élevé" : thrombo.level === "low_moderate" ? "Faible–mod." : "?"} label={thrombo.level === "high" ? "relais à discuter" : thrombo.level === "low_moderate" ? "pas de relais (ESC)" : "indication à préciser"} level={thrombo.level === "high" ? "high" : "low"} missing={0} />}
         {nutrition && <ScoreTile name="Grade nutritionnel" value={`GN ${nutrition.grade}`} label={nutrition.malnourished ? "dénutrition" : nutrition.grade === 1 ? "pas de risque" : "à risque"} level={nutrition.grade >= 3 ? "high" : nutrition.grade === 2 ? "intermediate" : "low"} missing={0} />}
       </div>
 
       <details className="rounded-[var(--radius-lg)] border border-border bg-surface">
-        <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium text-foreground">Revoir ou corriger les réponses des scores</summary>
+        <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium text-foreground">Revoir ou corriger les réponses des scores (« non » par défaut en clair)</summary>
         <div className="space-y-2 border-t border-border p-2">
           <ScoreCard title="STOP-BANG" summary={r.stopBang.label} level={r.stopBang.level} missing={r.stopBang.missing} reference={STOP_BANG_REFERENCE.label}>
-            <ItemsGrid items={STOP_BANG_ITEMS} answers={merged.stopBang.merged} derivedKeys={merged.stopBang.derivedKeys} onChange={(v) => set({ stopBang: v })} />
+            <ItemsGrid items={STOP_BANG_ITEMS} answers={merged.stopBang.merged} defaults={scores.answers.stopBang.merged} derivedKeys={merged.stopBang.derivedKeys} onChange={(v) => set({ stopBang: v })} />
           </ScoreCard>
           <ScoreCard title="Lee (RCRI)" summary={r.rcri.label} level={r.rcri.level} missing={r.rcri.missing} reference={RCRI_REFERENCE.label}>
-            <ItemsGrid items={RCRI_ITEMS} answers={merged.rcri.merged} derivedKeys={merged.rcri.derivedKeys} onChange={(v) => set({ rcri: v })} />
+            <ItemsGrid items={RCRI_ITEMS} answers={merged.rcri.merged} defaults={scores.answers.rcri.merged} derivedKeys={merged.rcri.derivedKeys} onChange={(v) => set({ rcri: v })} />
           </ScoreCard>
           <ScoreCard title="Apfel" summary={r.apfel.label} level={r.apfel.level} missing={r.apfel.missing} reference={APFEL_REFERENCE.label}>
-            <ItemsGrid items={APFEL_ITEMS} answers={merged.apfel.merged} derivedKeys={merged.apfel.derivedKeys} onChange={(v) => set({ apfel: v })} />
+            <ItemsGrid items={APFEL_ITEMS} answers={merged.apfel.merged} defaults={scores.answers.apfel.merged} derivedKeys={merged.apfel.derivedKeys} onChange={(v) => set({ apfel: v })} />
           </ScoreCard>
           <ScoreCard title="ARISCAT" summary={r.ariscat.label} level={r.ariscat.level} missing={r.ariscat.missing} reference={ARISCAT_REFERENCE.label}>
             <p className="text-xs text-foreground-muted">Âge, SpO₂, Hb, incision, durée et urgence viennent du patient et de l&apos;intervention.</p>
             <div className="flex flex-wrap gap-1.5">
-              <YesNoChip label="Infection respiratoire le mois précédent" value={s.ariscat.respiratoryInfectionLastMonth ?? scores.conditions.recent_uri?.present} onChange={(v) => set({ ariscat: { ...s.ariscat, respiratoryInfectionLastMonth: v } })} />
+              <YesNoChip label="Infection respiratoire le mois précédent" value={s.ariscat.respiratoryInfectionLastMonth ?? scores.conditions.recent_uri?.present} byDefault={false} onChange={(v) => set({ ariscat: { ...s.ariscat, respiratoryInfectionLastMonth: v } })} />
             </div>
           </ScoreCard>
           <ScoreCard title="DASI · capacité fonctionnelle" summary={r.dasi.label} level={r.dasi.level} missing={r.dasi.missing} reference={DASI_REFERENCE.label}>
-            <ItemsGrid items={DASI_ITEMS} answers={s.dasi} onChange={(v) => set({ dasi: v })} />
+            <ItemsGrid items={DASI_ITEMS} answers={s.dasi} defaults={scores.answers.dasi.merged} onChange={(v) => set({ dasi: v })} />
           </ScoreCard>
           <ScoreCard title="HEMSTOP" summary={r.hemstop.label} level={r.hemstop.level} missing={r.hemstop.missing} reference={HEMSTOP_REFERENCE.label}>
-            <ItemsGrid items={HEMSTOP_ITEMS} answers={s.hemstop} onChange={(v) => set({ hemstop: v })} />
+            <ItemsGrid items={HEMSTOP_ITEMS} answers={s.hemstop} defaults={scores.answers.hemstop.merged} onChange={(v) => set({ hemstop: v })} />
           </ScoreCard>
           <ScoreCard title="CHA₂DS₂-VASc" summary={r.cha.label} level={r.cha.level} missing={r.cha.missing} reference={CHA2DS2VASC_REFERENCE.label}>
             <ItemsGrid
               items={{ heartFailure: "Insuffisance cardiaque", hypertension: "HTA", diabetes: "Diabète", strokeTiaThromboembolism: "AVC, AIT ou embolie", vascularDisease: "Maladie vasculaire" }}
               answers={merged.cha.merged}
+              defaults={scores.answers.cha.merged}
               derivedKeys={merged.cha.derivedKeys}
               onChange={(v) => set({ cha: v })}
             />
           </ScoreCard>
           <ScoreCard title="HAS-BLED (optionnel)" summary={r.hasBled.label} level={r.hasBled.level} missing={r.hasBled.missing} reference={HAS_BLED_REFERENCE.label}>
-            <ItemsGrid items={HAS_BLED_ITEMS} answers={merged.hasBled.merged} derivedKeys={merged.hasBled.derivedKeys} onChange={(v) => set({ hasBled: v })} />
+            <ItemsGrid items={HAS_BLED_ITEMS} answers={merged.hasBled.merged} defaults={scores.answers.hasBled.merged} derivedKeys={merged.hasBled.derivedKeys} onChange={(v) => set({ hasBled: v })} />
           </ScoreCard>
         </div>
       </details>
@@ -692,38 +702,97 @@ function AirwayStep({ s, set, scores }: { s: ConsultationState; set: (p: Partial
   const r = scores.results;
   const aw = s.airway;
   const setAw = (patch: Partial<ConsultationState["airway"]>) => set({ airway: { ...aw, ...patch } });
+  // An older measure still counts until a choice replaces it.
+  const shortTm = aw.shortThyromental ?? (aw.thyromentalCm !== undefined ? aw.thyromentalCm < 6 : undefined);
+  const poorNeck = aw.poorNeckMobility ?? (aw.neckMovementDeg !== undefined ? aw.neckMovementDeg < 80 : undefined);
+  const largeNeck = s.stopBang.neckOver40 ?? (s.patient.neckCm !== undefined ? s.patient.neckCm > 40 : undefined);
+  const pair = (value: boolean | undefined, labels: [string, string], onPick: (v: boolean | undefined) => void) => (
+    <DefaultChips
+      options={[
+        { code: "no", label: labels[0] },
+        { code: "yes", label: labels[1] },
+      ]}
+      fallback="no"
+      value={value === undefined ? undefined : value ? "yes" : "no"}
+      onChange={(v) => onPick(v === undefined ? undefined : v === "yes")}
+    />
+  );
   return (
-    <Panel title="Voies aériennes">
+    <Panel title="Voies aériennes" actions={<span className="text-[11px] text-foreground-subtle">normales par défaut : touchez seulement ce qui pose problème</span>}>
       <div className="space-y-1">
-        <FieldLabel>Mallampati</FieldLabel>
-        <ChipGroup
-          size="sm"
-          options={MALLAMPATI_CLASSES.map((c) => ({ code: c.code, label: c.label, title: c.detail }))}
-          value={s.mallampati ?? null}
-          onChange={(v) => set({ mallampati: (v ?? undefined) as 1 | 2 | 3 | 4 | undefined })}
-          allowClear
+        <span className="flex items-center gap-1">
+          <FieldLabel>Mallampati</FieldLabel>
+          <InfoTip label="Classe de Mallampati (modifiée par Samsoon et Young)">
+            <Legend
+              rows={MALLAMPATI_CLASSES.map((c) => ({ code: c.label, text: c.detail }))}
+              source="Patient assis, bouche grande ouverte, langue tirée, sans phonation. III–IV : laryngoscopie potentiellement difficile (2 points El-Ganzouri ; II : 1 point)."
+            />
+          </InfoTip>
+        </span>
+        <DefaultChips options={MALLAMPATI_CLASSES.map((c) => ({ code: c.code as number, label: c.label, title: c.detail }))} fallback={1} value={s.mallampati} onChange={(v) => set({ mallampati: v as 1 | 2 | 3 | 4 | undefined })} />
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <FieldLabel>Distance thyro-mentonnière</FieldLabel>
+          {pair(shortTm, ["≥ 6 cm", "< 6 cm"], (v) => setAw({ shortThyromental: v, thyromentalCm: undefined }))}
+          <p className="text-[11px] text-foreground-subtle">Repère : 3 travers de doigt ≈ 6 cm, tête en extension.</p>
+        </div>
+        <div className="space-y-1">
+          <FieldLabel>Mobilité cervicale</FieldLabel>
+          {pair(poorNeck, ["Bonne", "Mauvaise"], (v) => setAw({ poorNeckMobility: v, neckMovementDeg: undefined }))}
+          <p className="text-[11px] text-foreground-subtle">Mauvaise : flexion-extension nettement limitée (&lt; 80°).</p>
+        </div>
+        <div className="space-y-1">
+          <FieldLabel>Ouverture de bouche</FieldLabel>
+          {pair(aw.mouthOpeningUnder4cm, ["≥ 4 cm", "< 4 cm"], (v) => setAw({ mouthOpeningUnder4cm: v }))}
+          <p className="text-[11px] text-foreground-subtle">Repère : 2 travers de doigt ≈ 3–4 cm entre les incisives.</p>
+        </div>
+        <div className="space-y-1">
+          <FieldLabel>Propulsion mandibulaire</FieldLabel>
+          {pair(aw.canProtrudeMandible === undefined ? undefined : !aw.canProtrudeMandible, ["Possible", "Impossible"], (v) => setAw({ canProtrudeMandible: v === undefined ? undefined : !v }))}
+          <p className="text-[11px] text-foreground-subtle">Incisives inférieures devant les supérieures.</p>
+        </div>
+      </div>
+      <div className="space-y-1">
+        <FieldLabel>À signaler</FieldLabel>
+        <div className="flex flex-wrap gap-1.5">
+          <YesNoChip label="Cou large (> 40 cm · col de chemise ≥ 41)" value={largeNeck} byDefault={false} onChange={(v) => set({ stopBang: { ...s.stopBang, neckOver40: v }, patient: { ...s.patient, neckCm: undefined } })} />
+          <YesNoChip label="Barbe" value={s.maskVentilation.beard} byDefault={false} onChange={(v) => set({ maskVentilation: { ...s.maskVentilation, beard: v } })} />
+          <YesNoChip label="Édentation" value={s.maskVentilation.edentulous} byDefault={false} onChange={(v) => set({ maskVentilation: { ...s.maskVentilation, edentulous: v } })} />
+          <YesNoChip label="Ronflement" value={s.stopBang.snoring} byDefault={false} onChange={(v) => set({ stopBang: { ...s.stopBang, snoring: v } })} />
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <ScoreTile
+          name="Laryngoscopie"
+          value={`${r.airway.value}`}
+          label={r.airway.label}
+          level={r.airway.level}
+          missing={r.airway.missing}
+          info={
+            <Legend
+              rows={[
+                { code: "0–1", text: "ouverture de bouche < 4 cm ; propulsion impossible ; antécédent douteux" },
+                { code: "0–2", text: "DTM (< 6 cm : 2) ; Mallampati (II : 1, III–IV : 2) ; mobilité (< 80° : 2) ; poids (90–110 kg : 1, > 110 : 2) ; intubation difficile connue (2)" },
+                { code: "≥ 4", text: "laryngoscopie difficile prévisible" },
+              ]}
+              source={EL_GANZOURI_REFERENCE.label}
+            />
+          }
+          infoLabel="Score d'El-Ganzouri (0–12)"
         />
+        <ScoreTile
+          name="Masque"
+          value={`${r.mask.value}/5`}
+          label={r.mask.label}
+          level={r.mask.level}
+          missing={r.mask.missing}
+          info={<Legend rows={[{ code: "1 pt", text: "barbe, IMC > 26, édentation, âge > 55 ans, ronflement" }, { code: "≥ 2", text: "ventilation au masque difficile prévisible" }]} source={MASK_VENTILATION_REFERENCE.label} />}
+          infoLabel="Critères de Langeron"
+        />
+        <ScoreTile name="STOP-BANG" value={`${r.stopBang.value}/8`} label={r.stopBang.label} level={r.stopBang.level} missing={r.stopBang.missing} info={STOP_BANG_LEGEND} infoLabel="STOP-BANG (apnée du sommeil)" />
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        <MiniNumber label="Thyro-mentonnière" unit="cm" value={aw.thyromentalCm} onChange={(v) => setAw({ thyromentalCm: v })} />
-        <MiniNumber label="Mobilité cervicale" unit="°" value={aw.neckMovementDeg} onChange={(v) => setAw({ neckMovementDeg: v })} />
-        <MiniNumber label="Tour de cou" unit="cm" value={s.patient.neckCm} onChange={(v) => set({ patient: { ...s.patient, neckCm: v } })} />
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        <YesNoChip label="Ouverture de bouche < 4 cm" value={aw.mouthOpeningUnder4cm} onChange={(v) => setAw({ mouthOpeningUnder4cm: v })} />
-        <YesNoChip label="Propulsion mandibulaire possible" value={aw.canProtrudeMandible} onChange={(v) => setAw({ canProtrudeMandible: v })} />
-        <YesNoChip label="Barbe" value={s.maskVentilation.beard} onChange={(v) => set({ maskVentilation: { ...s.maskVentilation, beard: v } })} />
-        <YesNoChip label="Édentation" value={s.maskVentilation.edentulous} onChange={(v) => set({ maskVentilation: { ...s.maskVentilation, edentulous: v } })} />
-        <YesNoChip label="Ronflement" value={s.stopBang.snoring} onChange={(v) => set({ stopBang: { ...s.stopBang, snoring: v } })} />
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        <ScoreTile name="Laryngoscopie" value={`${r.airway.value}`} label={r.airway.label} level={r.airway.level} missing={r.airway.missing} />
-        <ScoreTile name="Masque" value={`${r.mask.value}/5`} label={r.mask.label} level={r.mask.level} missing={r.mask.missing} />
-        <ScoreTile name="STOP-BANG" value={`${r.stopBang.value}/8`} label={r.stopBang.label} level={r.stopBang.level} missing={r.stopBang.missing} />
-      </div>
-      <p className="text-[11px] text-foreground-subtle">
-        {EL_GANZOURI_REFERENCE.label} · {MASK_VENTILATION_REFERENCE.label}. Poids, IMC, âge, antécédent d&apos;intubation difficile viennent des autres étapes ; le Cormack se note au bloc.
-      </p>
+      <p className="text-[11px] text-foreground-subtle">Poids, IMC, âge et antécédent d&apos;intubation difficile viennent des autres étapes ; le Cormack se note au bloc.</p>
     </Panel>
   );
 }
@@ -851,7 +920,7 @@ export function ConsultationForm({
   const instructions = useMemo(() => patientInstructions(s, evaluation), [s, evaluation]);
   const gaps = useMemo(() => missingRules(rules, s, scores.conditions, { catalogs, crcl: scores.derived.crcl }), [rules, s, scores, catalogs]);
   const groups = useMemo(() => remainingQuestions(s, scores), [s, scores]);
-  const missing = useMemo(() => stepMissing(s, scores, groups), [s, scores, groups]);
+  const missing = useMemo(() => stepMissing(s, scores), [s, scores]);
   const done = new Set((Object.entries(missing) as [Step, string[]][]).filter(([k, v]) => v.length === 0 && k !== "recap").map(([k]) => k));
   const [quick, setQuick] = useState(false);
   // Uncontrolled fields reload after a change made elsewhere (quick entry).
@@ -1014,8 +1083,13 @@ export function ConsultationForm({
                   </p>
                 )}
                 <div className="space-y-1">
-                  <FieldLabel>Technique envisagée</FieldLabel>
-                  <MultiChipGroup options={TECHNIQUES.map((t) => ({ code: t.code, label: t.label.split(" (")[0] }))} value={s.techniques} onChange={(v) => set({ techniques: v as Technique[] })} />
+                  <span className="flex items-center gap-1">
+                    <FieldLabel>Technique envisagée</FieldLabel>
+                    <InfoTip label="Techniques et saignement">
+                      <Legend rows={TECHNIQUES.map((t) => ({ code: t.code === "neuraxial" ? "Neur." : t.code === "deep_block" ? "Prof." : t.code === "superficial_block" ? "Sup." : t.code === "general" ? "AG" : "Séd.", text: t.detail }))} source={TECHNIQUE_SOURCE} />
+                    </InfoTip>
+                  </span>
+                  <MultiChipGroup options={TECHNIQUES.map((t) => ({ code: t.code, label: t.label.replace(" (rachi, péridurale, cathéter)", ""), title: t.detail }))} value={s.techniques} onChange={(v) => set({ techniques: v as Technique[] })} />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block min-w-0">
