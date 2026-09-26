@@ -6,6 +6,7 @@
 // (its "source" field): the user's, or those of the reference protocols
 // (reference-protocols.ts), imported only on request.
 
+import { protocolCovers } from "./protocol-coverage";
 import { adjustedBodyWeight, idealBodyWeight, leanBodyWeight, type Sex } from "./scores";
 import type { Technique } from "./rules/types";
 import type { PostopPlan } from "./postop";
@@ -156,33 +157,89 @@ export function doseBasis(drug: Pick<ProtocolDrug, "doseMode" | "amount" | "unit
 
 const foldText = (t: string) =>
   t
+    .replace(/œ/g, "oe")
+    .replace(/Œ/g, "OE")
+    .replace(/æ/g, "ae")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase();
 
 const words = (t: string) => new Set(foldText(t).split(/[^a-z0-9]+/).filter((w) => w.length >= 3));
 
+/** What the catalogue knows of an intervention, to rank the protocols. */
+export interface ProtocolMatchItem {
+  id: string;
+  protocolId?: string;
+  name?: string;
+  category?: string;
+  family?: string;
+  approach?: string;
+  population?: string;
+}
+
+// Words that name an approach or a population in a protocol's name.
+const APPROACH_TERMS: Record<string, RegExp> = {
+  open: /laparotomie|thoracotomie|lombotomie|sternotomie|voie ouverte/,
+  laparoscopic: /coelioscop|laparoscop/,
+  robotic: /robot/,
+  thoracoscopic: /thoracoscop|vats/,
+  endoscopic: /endoscop|hysteroscop|transuretral/,
+  arthroscopic: /arthroscop/,
+  vaginal: /vaginale/,
+};
+const CHILD_TERMS = /enfant|nourrisson|nouveau-ne|pediatri|premature/;
+// Words that say how or where, not what: they don't make two interventions the same.
+const GENERIC = new Set("par pour avec sous sans dans chirurgie chirurgical chirurgicale totale total partielle robot assistee robotique coelioscopie coelioscopique laparoscopie laparotomie thoracoscopie thoracotomie voie ouverte endoscopique percutanee cure pose reprise programmee urgence ambulatoire enfant nourrisson adulte premature nouveau les des une anesthesie generale rachianesthesie sedation ras rac resection exerese ablation fracture prothese arthroscopie osteosynthese".split(" "));
+const content = (t: string) => new Set([...words(t)].filter((w) => !GENERIC.has(w)));
+
 /**
- * The protocol that fits the intervention best: words shared between the
- * intervention and the protocol's name / intervention field, a protocol of
- * the patient's hospital before a general one, same carnet category as a
- * tie-breaker. null when nothing matches the intervention at all.
+ * The protocol that fits the intervention best:
+ * - the protocol linked to the intervention in Paramètres, first;
+ * - then the protocol written for this very intervention, then the reference
+ *   protocol that covers it (protocol-coverage.ts), or one written for another
+ *   variant of the same operation (same family), the same approach first;
+ * - then words shared between the intervention and the protocol's name or
+ *   intervention field;
+ * - a protocol for children before the others for a child, after them for an adult;
+ * - a protocol of the patient's hospital before a general one, same carnet
+ *   category as a tie-breaker. null when nothing fits at all.
  */
-export function matchProtocol(protocols: Protocol[], surgery: { name: string; category: string; catalogId?: string }, hospital: string, linked?: { id: string; protocolId?: string }[]): Protocol | null {
-  // The protocol linked to the intervention in Paramètres wins over name matching.
-  const linkedId = surgery.catalogId ? linked?.find((x) => x.id === surgery.catalogId)?.protocolId : undefined;
-  const explicit = linkedId ? protocols.find((p) => p.id === linkedId) : undefined;
+export function matchProtocol(protocols: Protocol[], surgery: { name: string; category: string; catalogId?: string }, hospital: string, catalogue?: ProtocolMatchItem[]): Protocol | null {
+  const item = surgery.catalogId ? catalogue?.find((x) => x.id === surgery.catalogId) : undefined;
+  // The protocol linked to the intervention in Paramètres wins over everything.
+  const explicit = item?.protocolId ? protocols.find((p) => p.id === item.protocolId) : undefined;
   if (explicit) return explicit;
-  const target = words(surgery.name);
+  const target = content(surgery.name);
   if (target.size === 0) return null;
   const h = foldText(hospital.trim());
+  const child = item?.population === "child" || item?.population === "neonate";
+  const byName = new Map((catalogue ?? []).filter((x) => x.name).map((x) => [foldText(x.name!), x]));
   let best: { p: Protocol; score: number } | null = null;
   for (const p of protocols) {
     if (p.hospital && h && foldText(p.hospital) !== h) continue;
-    const own = new Set([...words(p.name), ...words(p.surgery)]);
+    const text = foldText(`${p.name} ${p.surgery}`);
+    const own = new Set([...content(p.name), ...content(p.surgery)]);
     const shared = [...target].filter((w) => own.has(w)).length;
-    if (shared === 0) continue;
-    const score = shared / target.size + (p.hospital && h ? 0.5 : 0) + (p.operation_category && p.operation_category === surgery.category ? 0.1 : 0);
+    const written = byName.get(foldText(p.surgery));
+    const sameItem = !!item && written?.id === item.id;
+    const sameFamily = !!item?.family && written?.family === item.family;
+    const covered = protocolCovers(p.id, item);
+    // Most of what the intervention is must be in the protocol, unless it is written for a variant of it.
+    if (!sameItem && !sameFamily && !covered && shared / target.size <= 0.5) continue;
+    const forChild = CHILD_TERMS.test(text) || written?.population === "child" || written?.population === "neonate";
+    let score = shared / target.size;
+    if (sameItem) score += 2;
+    else if (covered) score += 1.5;
+    else if (sameFamily) score += 1;
+    if (item?.approach) {
+      const approach = written?.approach;
+      const named = Object.entries(APPROACH_TERMS).filter(([, re]) => re.test(text)).map(([a]) => a);
+      if (approach === item.approach || named.includes(item.approach)) score += 0.3;
+      else if (named.length > 0 || (approach && sameFamily)) score -= 0.3;
+    }
+    if (item && forChild) score += child ? 0.5 : -1;
+    else if (child && !forChild) score -= 0.6;
+    score += (p.hospital && h ? 0.5 : 0) + (p.operation_category && p.operation_category === surgery.category ? 0.1 : 0);
     if (!best || score > best.score) best = { p, score };
   }
   return best?.p ?? null;

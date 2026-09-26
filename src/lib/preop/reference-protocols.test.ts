@@ -68,3 +68,13 @@ describe("reference protocols and the intervention catalogue", () => {
     }
   });
 });
+
+describe("reference protocols pass the server validation (import)", () => {
+  it("each one is accepted by protocolSchema", async () => {
+    const { protocolSchema } = await import("./protocol-schema");
+    const refused = REFERENCE_PROTOCOLS.map((p) => ({ p, r: protocolSchema.safeParse(p) }))
+      .filter((x) => !x.r.success)
+      .map((x) => `${x.p.name}: ${x.r.error!.issues.map((i) => i.path.join(".")).join(", ")}`);
+    expect(refused).toEqual([]);
+  });
+});

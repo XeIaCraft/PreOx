@@ -73,3 +73,46 @@ describe("PROSPECT links", () => {
     expect(erasFor(get("cataracte"))).toEqual([]);
   });
 });
+
+describe("protocol for the intervention: family, approach, child", () => {
+  it("picks the protocol of the same operation and approach", async () => {
+    const { matchProtocol } = await import("./protocols");
+    const { REFERENCE_PROTOCOLS } = await import("./reference-protocols");
+    const protocols = REFERENCE_PROTOCOLS.map((p) => ({ ...p, created_at: "", updated_at: "" }));
+    const pick = (id: string) => {
+      const s = items.find((x) => x.id === id)!;
+      return matchProtocol(protocols, { name: s.name, category: s.category, catalogId: s.id }, "", items)?.name;
+    };
+    expect(pick("sigmoidectomie-par-c-lioscopie")).toBe("Colectomie par cœlioscopie (RAC)");
+    expect(pick("colectomie-par-laparotomie")).toBe("Colectomie par laparotomie avec péridurale");
+    expect(pick("prostatectomie-radicale-robot-assistee")).toBe("Prostatectomie radicale robot-assistée");
+    expect(pick("appendicectomie-par-c-lioscopie")).toBe("Appendicectomie par cœlioscopie");
+    expect(pick("amygdalectomie-de-l-enfant")).toBe("Amygdalectomie de l'enfant");
+    expect(pick("lobectomie-par-thoracotomie")).toBe("Thoracotomie avec péridurale thoracique");
+    expect(pick("lobectomie-robot-assistee")).toBe("Lobectomie par thoracoscopie (VATS)");
+  });
+});
+
+describe("every intervention has a reference protocol, dosed for its population", () => {
+  it("covers the whole catalogue, children with children's protocols", async () => {
+    const { matchProtocol } = await import("./protocols");
+    const { REFERENCE_PROTOCOLS } = await import("./reference-protocols");
+    const { coveredProtocolIds } = await import("./protocol-coverage");
+    const protocols = REFERENCE_PROTOCOLS.map((p) => ({ ...p, created_at: "", updated_at: "" }));
+    const n = (id: string) => Number(id.slice(-12));
+    // Doses per kilo with a ceiling, written for children.
+    const CHILD_DOSED = new Set([9, 32, 70, 74, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103]);
+    const CHILD_ONLY = new Set([9, 32, 70, 94, 95, 96, 97, 98, 100, 101, 103]);
+    const refIds = new Set(REFERENCE_PROTOCOLS.map((p) => p.id));
+    expect(coveredProtocolIds().filter((id) => !refIds.has(id))).toEqual([]);
+    const missing: string[] = [];
+    const wrongPopulation: string[] = [];
+    for (const s of items) {
+      const p = matchProtocol(protocols, { name: s.name, category: s.category, catalogId: s.id }, "", items);
+      if (!p) missing.push(s.name);
+      else if ((s.population === "child" || s.population === "neonate") !== CHILD_DOSED.has(n(p.id)) && (s.population !== undefined || CHILD_ONLY.has(n(p.id)))) wrongPopulation.push(`${s.name} → ${p.name}`);
+    }
+    expect(missing).toEqual([]);
+    expect(wrongPopulation).toEqual([]);
+  });
+});

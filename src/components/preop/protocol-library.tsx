@@ -175,10 +175,10 @@ export function ProtocolLibrary({
     <div className="space-y-4">
       {missing.length > 0 && (
         <div className="space-y-2 rounded-[var(--radius-md)] border border-accent/40 bg-accent-tint/50 p-3">
-          <p className="text-sm font-medium text-foreground">Protocoles de référence : {missing.length} intervention(s) courante(s)</p>
+          <p className="text-sm font-medium text-foreground">Protocoles de référence : {missing.length} à ajouter</p>
           <p className="text-xs text-foreground-muted">
-            Orthopédie, obstétrique, chirurgie générale et ambulatoire, ORL, urologie, gynécologie, ophtalmologie, endoscopie. Doses tirées des cours belges (EIUA : Dubois, Roelants, Hardy) et du
-            manuel, source notée sur chaque protocole : un point de départ à adapter au protocole de votre service.
+            Toutes les spécialités, adulte et enfant : chaque intervention du catalogue trouve le sien. Doses tirées des cours belges (EIUA : Dubois, Roelants, Hardy), du manuel et des recommandations
+            (PROSPECT, ERAS, ESC), source notée sur chaque protocole : un point de départ à adapter au protocole de votre service.
           </p>
           <details className="text-xs text-foreground-muted">
             <summary className="cursor-pointer text-primary">Voir la liste</summary>
