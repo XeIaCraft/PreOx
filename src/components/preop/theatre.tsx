@@ -16,7 +16,8 @@ import { durationTimers, fluidBalance, formatMinutes, redoseTimers } from "@/lib
 import { hhmm } from "@/lib/preop/isbar";
 import { DRUG_PHASES, computeDose, formatDose } from "@/lib/preop/protocols";
 import { cn } from "@/lib/utils";
-import { SinceLastDoses, SyringeCalculator, WakeLockToggle } from "@/components/preop/theatre-tools";
+import { SinceLastDoses, SyringeCalculator, TciPanel, WakeLockToggle } from "@/components/preop/theatre-tools";
+import { tciDrugOf, tciSummary } from "@/lib/preop/tci";
 import { CrisisPanel, CustomTimers, FluidStatus, Fold, PlanCard, minutesBetween } from "@/components/preop/theatre-parts";
 
 const nowIso = () => new Date().toISOString();
@@ -222,6 +223,9 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
                               ? `ou ${others.map((x) => x.name).join(", ")}`
                               : DRUG_PHASES.find((p) => p.code === drug.phase)?.label}
                       </span>
+                      {(drug.route === "aivoc" || (drug.phase === "maintenance" && drug.route === "pse")) && tciDrugOf(drug.name) && (
+                        <span className="block truncate text-xs text-primary-strong">{tciSummary(tciDrugOf(drug.name)!, d.consultation.patient) ?? "AIVOC : âge, sexe, poids et taille nécessaires"}</span>
+                      )}
                     </span>
                     {dose && <span className="shrink-0 font-mono text-sm font-semibold tabular-nums text-primary-strong">{formatDose(dose)}</span>}
                     <Button
@@ -403,6 +407,14 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
             </Button>
           </div>
         </Panel>
+
+        <Fold title="AIVOC : réglages de la pompe" icon={<Calculator className="h-4 w-4 text-primary" />} defaultOpen={d.plan.drugs.some((x) => x.route === "aivoc")}>
+          <TciPanel
+            patient={d.consultation.patient}
+            initialDrug={tciDrugOf(d.plan.drugs.find((x) => x.route === "aivoc")?.name ?? "") ?? "propofol"}
+            frail={(d.consultation.asa ?? 1) >= 3}
+          />
+        </Fold>
 
         <Fold title="Calculatrice de pousse-seringue" icon={<Calculator className="h-4 w-4 text-primary" />}>
           <SyringeCalculator weightKg={d.consultation.patient.weightKg} />

@@ -9,6 +9,7 @@ import { drugReferenceFor, formatReferenceDose } from "@/lib/preop/drug-referenc
 import { fluidPlan } from "@/lib/preop/fluids";
 import { formatMinutes } from "@/lib/preop/intraop";
 import { hhmm } from "@/lib/preop/isbar";
+import { TCI_DRUGS, TCI_SOURCE, tciPlan, type TciDrug, type TciPatient } from "@/lib/preop/tci";
 import { cn } from "@/lib/utils";
 
 const n1 = (v: number) => String(Math.round(v * 10) / 10).replace(".", ",");
@@ -257,5 +258,84 @@ export function FluidPlanPanel({ d }: { d: Dossier }) {
         </div>
       )}
     </Panel>
+  );
+}
+
+/**
+ * Target-controlled infusion: what to enter in the pump for this patient
+ * (model, weight, mode), the usual targets by phase, and the equivalent
+ * manual rates (mL/h) at the middle maintenance target.
+ */
+export function TciPanel({ patient, initialDrug = "propofol", frail }: { patient: TciPatient; initialDrug?: TciDrug; frail?: boolean }) {
+  const [drug, setDrug] = useState<TciDrug>(initialDrug);
+  const info = TCI_DRUGS.find((x) => x.code === drug)!;
+  const [syringe, setSyringe] = useState(String(info.syringe));
+  const conc = Number(syringe.replace(",", ".")) || info.syringe;
+  const plans = tciPlan(drug, patient, { frail, syringe: conc });
+  const n = (v: number) => String(v).replace(".", ",");
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <label className="col-span-2 block space-y-1">
+          <FieldLabel>Produit</FieldLabel>
+          <Select
+            value={drug}
+            onChange={(e) => {
+              const next = e.target.value as TciDrug;
+              setDrug(next);
+              setSyringe(String(TCI_DRUGS.find((x) => x.code === next)!.syringe));
+            }}
+          >
+            {TCI_DRUGS.map((x) => (
+              <option key={x.code} value={x.code}>
+                {x.label}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="col-span-2 block space-y-1">
+          <FieldLabel>Seringue ({info.amountUnit}/mL)</FieldLabel>
+          <Input inputMode="decimal" value={syringe} onChange={(e) => setSyringe(e.target.value)} />
+        </label>
+      </div>
+      {!plans ? (
+        <p className="text-sm text-accent">Âge, sexe, poids et taille sont nécessaires (onglet Consultation).</p>
+      ) : (
+        <ul className="space-y-2">
+          {plans.map((p) => (
+            <li key={p.model} className={cn("space-y-1.5 rounded-[var(--radius-md)] border px-3 py-2", p.valid ? "border-border" : "border-border opacity-60")}>
+              <p className="text-sm font-medium text-foreground">
+                {p.label} <span className="font-normal text-foreground-subtle">· {p.mode === "Ce" ? "site effet" : "plasma"}</span>
+                {!p.valid && <span className="ml-1.5 rounded bg-accent-tint px-1 text-[11px] text-accent">non adapté à ce patient</span>}
+              </p>
+              <p className="text-xs text-foreground-muted">À entrer : {p.inputs.join(" · ")}</p>
+              {p.warnings.map((w) => (
+                <p key={w} className="text-xs text-accent">
+                  {w}
+                </p>
+              ))}
+              {p.valid && (
+                <>
+                  <ul className="flex flex-wrap gap-1">
+                    {p.targets.map((t) => (
+                      <li key={t.phase} className="rounded-full bg-primary-tint px-2 py-0.5 text-xs text-primary-strong">
+                        {t.phase} : {n(t.range[0])}–{n(t.range[1])} {info.unit}
+                      </li>
+                    ))}
+                  </ul>
+                  {p.rates.length > 0 && (
+                    <p className="text-xs text-foreground-muted">
+                      Équivalent manuel ({p.mode === "Ce" ? "Ce" : "Cp"} d&apos;entretien moyenne) :{" "}
+                      {p.rates.map((r) => `${r.minutes} min ${n(r.mlPerHour)} mL/h (${n(r.perHour)} ${info.amountUnit}/h)`).join(" · ")}
+                    </p>
+                  )}
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-[11px] text-foreground-subtle">{TCI_SOURCE}</p>
+    </div>
   );
 }
