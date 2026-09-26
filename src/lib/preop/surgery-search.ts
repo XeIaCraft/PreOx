@@ -46,6 +46,8 @@ export function searchSurgeries(items: SurgeryItem[], query: string, patient: Su
       if (tokens.includes(w)) score += 3;
       else if (tokens.some((t) => t.startsWith(w))) score += 2;
       else if (w.length >= 3 && hay.includes(w)) score += 1;
+      // Same root: « amygdales » finds « amygdalectomie », « ménisque » « méniscectomie ».
+      else if (w.length >= 6 && tokens.some((t) => t.length >= 6 && t.slice(0, 5) === w.slice(0, 5))) score += 1;
       else {
         all = false;
         break;
@@ -53,6 +55,12 @@ export function searchSurgeries(items: SurgeryItem[], query: string, patient: Su
     }
     if (!all) continue;
     const name = fold(s.name);
+    const nameTokens = name.split(/[^a-z0-9]+/).filter(Boolean);
+    // What the intervention is called beats what it is also called.
+    const q = words.join(" ");
+    if (name === q) score += 3;
+    else if ((s.aka ?? []).some((a) => fold(a) === q)) score += 1;
+    score += words.filter((w) => nameTokens.some((t) => t.startsWith(w))).length;
     if (name.startsWith(words[0])) score += 2;
     // Shorter names first when equal (the general entry before its variants).
     score -= name.length / 200;

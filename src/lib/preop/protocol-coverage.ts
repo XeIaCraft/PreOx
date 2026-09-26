@@ -73,7 +73,7 @@ const COVERAGE: Record<number, Rule[]> = {
   41: [{ re: /resection du rectum|exenteration pelvienne/ }],
   42: [{ re: /cytoreduction/ }],
   43: [{ re: /^surrenalectomie$|surrenalectomie ou chirurgie retroperitoneale/ }],
-  44: [{ re: /exerese cutanee|lipome|adenectomie|debridement|abces ou collection de paroi|melanome|chambre implantable|catheter de dialyse|greffe de peau|curage inguinal|ablation de materiel|verneuil|malformations vasculaires/ }],
+  44: [{ re: /exerese cutanee|lipome|adenectomie|debridement|abces ou collection de paroi|abces du sein|melanome|chambre implantable|catheter de dialyse|greffe de peau|curage inguinal|ablation de materiel|verneuil|malformations vasculaires/ }],
   45: [{ re: /transplantation (hepatique|pancreatique)/ }],
   46: [{ re: /aortique ouverte|anevrisme aortique rompu|pontage aorto|artere renale ou digestive/ }],
   47: [{ re: /endoprothese/ }],

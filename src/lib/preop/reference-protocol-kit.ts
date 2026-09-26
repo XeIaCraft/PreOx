@@ -4,7 +4,7 @@
 
 import type { DoseUnit, DrugPhase, Protocol, ProtocolContent, ProtocolDrug, ProtocolRisk, WeightBasis } from "./protocols";
 import { RISK_LIBRARY } from "./plan-catalog";
-import type { PostopPlan } from "./postop";
+import { DEFAULT_PERINEURAL, type PostopPlan } from "./postop";
 
 export type ReferenceProtocol = Omit<Protocol, "created_at" | "updated_at">;
 
@@ -43,17 +43,34 @@ export function drug(
   };
 }
 
-export const content = (c: Partial<ProtocolContent>): ProtocolContent => ({
-  techniques: [],
-  drugs: [],
-  targets: [],
-  material: [],
-  risks: [],
-  postop: [],
-  tourniquetAlertMin: null,
-  notes: "",
-  ...c,
-});
+/**
+ * A protocol's content, kept consistent by construction: a peripheral block
+ * adds the block to the post-op watch list, an opioid by PCA, PCEA or
+ * intrathecal route adds sedation, a perineural catheter in hospital gets the
+ * default settings.
+ */
+export const content = (c: Partial<ProtocolContent>): ProtocolContent => {
+  const out: ProtocolContent = {
+    techniques: [],
+    drugs: [],
+    targets: [],
+    material: [],
+    risks: [],
+    postop: [],
+    tourniquetAlertMin: null,
+    notes: "",
+    ...c,
+  };
+  const pp = out.postopPlan;
+  if (pp) {
+    const watch = new Set(pp.watch);
+    if (out.drugs.some((d) => d.route === "perinerveux") && pp.destination !== "icu") watch.add("block");
+    if (pp.analgesia.some((a) => a === "pcea" || a === "pca_morphine" || a === "pca_fentanyl" || a === "intrathecal_morphine")) watch.add("sedation");
+    const perineural = pp.analgesia.includes("perineural") && !pp.perineural && pp.destination !== "ambulatory" ? DEFAULT_PERINEURAL : pp.perineural;
+    out.postopPlan = { ...pp, watch: [...watch], ...(perineural ? { perineural } : {}) };
+  }
+  return out;
+};
 
 // Shared pieces --------------------------------------------------------------
 
@@ -82,3 +99,6 @@ export const risk = (id: string): ProtocolRisk => {
 export const postop = (p: Partial<PostopPlan>): PostopPlan => ({ analgesia: [], watch: ["pain"], ...p });
 export const PROSPECT_REF = (what: string, year: number, pmid: string) => `PROSPECT ${what} ${year} (PMID ${pmid})`;
 
+/** Thoracic epidural started before induction, then PCEA (DEFAULT_PCEA). */
+export const thoracicEpidural = (level: string, note = "") =>
+  drug("Ropivacaïne 0,2 % (péridurale thoracique)", "alr", "peridural", { fixed: 10 }, "mg", `${level} ; dose test (lidocaïne adrénalinée 3 mL) puis 5–10 mL ; PCEA ensuite (manuel, chap. 13).${note ? ` ${note}` : ""}`);

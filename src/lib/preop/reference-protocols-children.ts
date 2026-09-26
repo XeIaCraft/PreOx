@@ -185,7 +185,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${MANUAL}, chap. 12 et 39 (ophtalmologie).`,
     content: content({
       techniques: ["superficial_block", "sedation", "general"],
-      drugs: [drug("Lidocaïne 2 % (bloc sous-ténonien ou péribulbaire)", "alr", "infiltration", { fixed: 100 }, "mg", "3–5 mL sous-ténonien, 6–10 mL péribulbaire ; ± ropivacaïne 0,75 %."), sedationPropofol(), sedationRemi(), paracetamol()],
+      drugs: [propofolInduction(), drug("Lidocaïne 2 % (bloc sous-ténonien ou péribulbaire)", "alr", "infiltration", { fixed: 100 }, "mg", "3–5 mL sous-ténonien, 6–10 mL péribulbaire ; ± ropivacaïne 0,75 %."), sedationPropofol(), sedationRemi(), paracetamol()],
       targets: ["Immobilité, patient coopérant", "Sédation légère au moment du bloc seulement", "Antithrombotiques poursuivis (bloc sous-ténonien)"],
       material: ["ECG", "PNI", "SpO₂", "EtCO₂ (capnographie sous les champs)", "O₂ sous les champs"],
       risks: [{ title: "Réflexe oculocardiaque", why: "Traction ou pression sur le globe.", prevention: "Bloc efficace.", conduct: "Arrêt de la stimulation, atropine 0,5 mg." }, { title: "Complications du bloc (hématome rétrobulbaire, injection intradurale)", why: "Aiguille dans l'orbite.", prevention: "Sous-ténonien plutôt qu'aiguille si anticoagulé ; échoguidage.", conduct: "Exophtalmie tendue : prévenir l'ophtalmologue (canthotomie) ; apnée, convulsions : ventilation, fiche intoxication aux AL." }],
@@ -272,7 +272,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${MANUAL}, chap. 29 ; ${PROSPECT_REF("craniotomie", 2023, "37417808")}.`,
     content: content({
       techniques: ["sedation", "general"],
-      drugs: [drug("Ropivacaïne 0,5 % (bloc du scalp)", "alr", "infiltration", { fixed: 150 }, "mg", "Nerfs supra-orbitaire, supratrochléaire, auriculotemporal, grand et petit occipitaux, bilatéraux selon la têtière."), drug("Dexmédétomidine", "maintenance", "pse", { perKg: 1 }, "µg", "Charge 1 µg/kg en 10 min puis 0,2–0,7 µg/kg/h ; arrêtée ou réduite pour le temps éveillé."), sedationRemi(), sedationPropofol(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol()],
+      drugs: [propofolInduction(1.5), drug("Ropivacaïne 0,5 % (bloc du scalp)", "alr", "infiltration", { fixed: 150 }, "mg", "Nerfs supra-orbitaire, supratrochléaire, auriculotemporal, grand et petit occipitaux, bilatéraux selon la têtière."), drug("Dexmédétomidine", "maintenance", "pse", { perKg: 1 }, "µg", "Charge 1 µg/kg en 10 min puis 0,2–0,7 µg/kg/h ; arrêtée ou réduite pour le temps éveillé."), sedationRemi(), sedationPropofol(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol()],
       targets: ["Patient confortable, calme, capable de parler et bouger pendant la cartographie", "Voies aériennes accessibles (masque laryngé prêt)", "Crise convulsive : sérum froid sur le cortex par le chirurgien, propofol 20–30 mg"],
       material: ["ECG", "PNI", "SpO₂", "EtCO₂ (capnographie nasale)", "Cathéter artériel", "Masque laryngé", "Accès au visage sous les champs"],
       risks: [risk("delayed_awakening"), { title: "Crise convulsive peropératoire", why: "Stimulation corticale.", prevention: "Antiépileptique poursuivi, sérum glacé prêt.", conduct: "Sérum froid sur le cortex, propofol, benzodiazépine ; AG si généralisation." }, { title: "Obstruction des voies aériennes", why: "Sédation, position.", prevention: "Sédation titrée, capnographie.", conduct: "Subluxation, canule, masque laryngé." }],
@@ -325,7 +325,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${MANUAL}, chap. 27 ; ESC/EACTS 2021 valvulopathies.`,
     content: content({
       techniques: ["sedation", "general"],
-      drugs: [sedationPropofol(), sedationRemi(), drug("Lidocaïne 1 % (infiltration fémorale)", "alr", "infiltration", { fixed: 200 }, "mg", "Voie fémorale percutanée."), cefazolin(), noradrenaline("Rétrécissement aortique : éviter hypotension et tachycardie ; noradrénaline titrée."), drug("Héparine non fractionnée", "haemodynamic", "bolus_iv", { fixed: 5000 }, "UI", "Selon le cardiologue (70–100 UI/kg), ACT ≥ 250 s ; protamine en fin de procédure.")],
+      drugs: [propofolInduction(1.5), sedationPropofol(), sedationRemi(), drug("Lidocaïne 1 % (infiltration fémorale)", "alr", "infiltration", { fixed: 200 }, "mg", "Voie fémorale percutanée."), cefazolin(), noradrenaline("Rétrécissement aortique : éviter hypotension et tachycardie ; noradrénaline titrée."), drug("Héparine non fractionnée", "haemodynamic", "bolus_iv", { fixed: 5000 }, "UI", "Selon le cardiologue (70–100 UI/kg), ACT ≥ 250 s ; protamine en fin de procédure.")],
       targets: ["Rétrécissement aortique : rythme sinusal, fréquence basse, précharge et résistances maintenues", "Stimulation rapide (valvuloplastie, déploiement) : récupération de la pression attendue", "MitraClip et auricule : AG avec ETO"],
       material: [...MONITORING, "Cathéter artériel", "Électrodes de défibrillation", "Stimulateur temporaire", "ETO (MitraClip, auricule)"],
       risks: [risk("induction_hypotension"), { title: "Complications vasculaires ou tamponnade", why: "Gros introducteurs, perforation ventriculaire.", prevention: "Salle hybride, chirurgien cardiaque disponible.", conduct: "Hypotension brutale : échographie (tamponnade, hémorragie rétropéritonéale), drainage, transfusion, conversion." }],
@@ -378,7 +378,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${DUBOIS} ; ${MANUAL}, chap. 12.`,
     content: content({
       techniques: ["superficial_block", "sedation", "general"],
-      drugs: [ropivacaineBlock(150, "bloc axillaire ou supraclaviculaire"), drug("Dexaméthasone (périnerveuse ou IV)", "alr", "bolus_iv", { fixed: 4 }, "mg", "Prolonge le bloc d'environ 8 h (manuel, chap. 12)."), sedationPropofol(), paracetamol(), ketorolac(), cefazolin("Ostéosynthèse ou prothèse : céfazoline ; pas pour la chirurgie des parties molles de moins de 2 h.")],
+      drugs: [propofolInduction(), ropivacaineBlock(150, "bloc axillaire ou supraclaviculaire"), drug("Dexaméthasone (périnerveuse ou IV)", "alr", "bolus_iv", { fixed: 4 }, "mg", "Prolonge le bloc d'environ 8 h (manuel, chap. 12)."), sedationPropofol(), paracetamol(), ketorolac(), cefazolin("Ostéosynthèse ou prothèse : céfazoline ; pas pour la chirurgie des parties molles de moins de 2 h.")],
       targets: ["Bloc complet avant le garrot", "Garrot ≤ 2 h, pression notée", "Sortie avec le bras en écharpe, analgésie orale prescrite avant la levée du bloc"],
       material: ["ECG", "PNI (autre bras)", "SpO₂", "Échographe", "Garrot"],
       risks: [risk("last"), { title: "Levée du bloc la nuit", why: "Douleur de rebond 12–24 h après.", prevention: "Analgésiques pris avant la levée, dexaméthasone.", conduct: "Paracétamol, AINS, opioïde oral de secours prescrit." }],
@@ -431,7 +431,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${DUBOIS} ; ${PROSPECT_REF("hallux valgus", 2025, "41122054")} (extrapolé) ; ${MANUAL}, chap. 12.`,
     content: content({
       techniques: ["superficial_block", "neuraxial", "general"],
-      drugs: [ropivacaineBlock(150, "sciatique poplité + saphène"), drug("Dexaméthasone (IV)", "analgesia", "bolus_iv", { fixed: 8 }, "mg", "Prolonge le bloc."), drug("Bupivacaïne hyperbare 0,5 %", "alr", "intrathecal", { fixed: 10 }, "mg", "Rachianesthésie, si pas de bloc."), sedationPropofol(), cefazolin(), paracetamol(), ketorolac()],
+      drugs: [propofolInduction(), ropivacaineBlock(150, "sciatique poplité + saphène"), drug("Dexaméthasone (IV)", "analgesia", "bolus_iv", { fixed: 8 }, "mg", "Prolonge le bloc."), drug("Bupivacaïne hyperbare 0,5 %", "alr", "intrathecal", { fixed: 10 }, "mg", "Rachianesthésie, si pas de bloc."), sedationPropofol(), cefazolin(), paracetamol(), ketorolac()],
       targets: ["Garrot de cuisse : bloc sciatique ou rachianesthésie", "Sortie avec analgésie orale avant la levée du bloc"],
       material: ["ECG", "PNI", "SpO₂", "Échographe", "Garrot"],
       risks: [risk("last"), { title: "Douleur de rebond à la levée du bloc", why: "Levée du bloc sciatique 12–24 h après.", prevention: "Analgésie orale programmée, cathéter poplité pour les gestes lourds.", conduct: "Paracétamol, AINS, opioïde oral de secours." }],
@@ -466,7 +466,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${MANUAL}, chap. 39 (estomac plein) et 12.`,
     content: content({
       techniques: ["general", "sedation", "superficial_block"],
-      drugs: [propofolInduction(1.5), drug("Kétamine", "induction", "bolus_iv", { perKg: 0.5 }, "mg", "0,5–1 mg/kg : analgésie pour une réduction brève."), drug("Rocuronium (séquence rapide)", "induction", "bolus_iv", { perKg: 1.2 }, "mg", "Estomac plein (traumatisme récent)."), cefazolin("Fracture ouverte : céfazoline sans attendre ; lavage septique : après les prélèvements."), paracetamol()],
+      drugs: [propofolInduction(1.5), drug("Kétamine", "induction", "bolus_iv", { perKg: 0.5 }, "mg", "0,5–1 mg/kg : analgésie pour une réduction brève."), drug("Rocuronium (séquence rapide)", "induction", "bolus_iv", { perKg: 1.2 }, "mg", "Estomac plein (traumatisme récent)."), ropivacaineBlock(100, "interscalénique, PENG ou fascia iliaca selon la luxation"), cefazolin("Fracture ouverte : céfazoline sans attendre ; lavage septique : après les prélèvements."), paracetamol()],
       targets: ["Traumatisme récent : estomac plein, séquence rapide si AG", "Syndrome des loges : pas de bloc prolongé masquant la douleur"],
       material: [...MONITORING, "Échographe"],
       risks: [risk("aspiration"), { title: "Syndrome des loges", why: "Fracture, reperfusion, plâtre serré.", prevention: "Surveillance clinique, analgésie sans bloc profond prolongé.", conduct: "Douleur disproportionnée : avis chirurgical, mesure des pressions, fasciotomie." }],
@@ -589,7 +589,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${ERAS_NEONATE} ; ${CHILD}.`,
     content: content({
       techniques: ["general", "neuraxial"],
-      drugs: [childAtropine(), drug("Fentanyl", "induction", "bolus_iv", { perKg: 1 }, "µg", "1–2 µg/kg titré (manuel, chap. 37)."), drug("Rocuronium", "induction", "bolus_iv", { perKg: 0.6 }, "mg", "0,6 mg/kg."), childCefazolin(), drug("Paracétamol", "analgesia", "perfusion", { perKg: 10 }, "mg", "Nouveau-né : 7,5–10 mg/kg selon l'âge (manuel, chap. 37)."), drug("Glucose 10 %", "haemodynamic", "perfusion", { fixed: 10 }, "mL", "Entretien glucosé (3–5 mL/kg/h selon le poids) : glycémie contrôlée (ERAS nouveau-né 2024).")],
+      drugs: [childAtropine(), drug("Ropivacaïne 0,2 % (péridurale caudale ou lombaire)", "alr", "peridural", { perKg: 0.5 }, "mg", "Nouveau-né : 0,5 mL/kg de 0,2 % au plus en dose initiale, perfusion ≤ 0,2 mg/kg/h (manuel, chap. 37)."), drug("Fentanyl", "induction", "bolus_iv", { perKg: 1 }, "µg", "1–2 µg/kg titré (manuel, chap. 37)."), drug("Rocuronium", "induction", "bolus_iv", { perKg: 0.6 }, "mg", "0,6 mg/kg."), childCefazolin(), drug("Paracétamol", "analgesia", "perfusion", { perKg: 10 }, "mg", "Nouveau-né : 7,5–10 mg/kg selon l'âge (manuel, chap. 37)."), drug("Glucose 10 %", "haemodynamic", "perfusion", { fixed: 10 }, "mL", "Entretien glucosé (3–5 mL/kg/h selon le poids) : glycémie contrôlée (ERAS nouveau-né 2024).")],
       targets: ["Normothermie (salle chauffée, air pulsé, liquides réchauffés)", "Glycémie 2,5–8 mmol/L", "SpO₂ préductale 90–95 % (prématuré), pas d'hyperoxie", "Seuils transfusionnels ERAS 2024"],
       material: ["ECG", "PNI", "SpO₂ pré- et postductale", "EtCO₂", "Température", "Réchauffement", "Cathéter artériel (ombilical ou radial)", "Matériel au poids"],
       risks: [risk("hypothermia"), { title: "Hypoglycémie", why: "Réserves faibles, jeûne.", prevention: "Glucose en continu.", conduct: "Glycémie < 2,5 mmol/L : glucose 10 % 2 mL/kg." }, { title: "Ventilation difficile (fistule œso-trachéale, hernie diaphragmatique)", why: "Fuite par la fistule, hypoplasie pulmonaire.", prevention: "Ventilation douce, sonde placée sous la fistule, pas de ventilation au masque vigoureuse.", conduct: "Distension gastrique : gastrostomie de décharge ; hypoxémie : HTAP, NO inhalé selon l'équipe." }],
@@ -623,7 +623,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: CHILD,
     content: content({
       techniques: ["general", "superficial_block"],
-      drugs: [childPropofol(), childSufentanil(), drug("Rocuronium (séquence rapide)", "induction", "bolus_iv", { perKg: 1 }, "mg", "Estomac plein après un traumatisme récent."), childCefazolin(), childParacetamol(), childIbuprofen(), childDexa()],
+      drugs: [childPropofol(), drug("Ropivacaïne 0,2 % (bloc périphérique)", "alr", "perinerveux", { perKg: 0.5, max: 150 }, "mg", "0,5 mL/kg selon le bloc (axillaire, fémoral, poplité) ; maximum 2,5 mg/kg au total (manuel, chap. 37)."), childSufentanil(), drug("Rocuronium (séquence rapide)", "induction", "bolus_iv", { perKg: 1 }, "mg", "Estomac plein après un traumatisme récent."), childCefazolin(), childParacetamol(), childIbuprofen(), childDexa()],
       targets: ["Traumatisme : estomac plein (vidange ralentie)", "Syndrome des loges : pas de bloc profond masquant sans accord du chirurgien", "Épiphysiolyse : adolescent souvent obèse"],
       material: CHILD_MONITORING,
       risks: [risk("aspiration"), { title: "Syndrome des loges", why: "Fracture, œdème, plâtre.", prevention: "Surveillance, analgésie adaptée.", conduct: "Douleur croissante : fendre le plâtre, avis chirurgical." }],
@@ -639,12 +639,12 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     hospital: "",
     source: `${ERAS_SPINE} (extrapolé) ; ${MANUAL}, chap. 29 et 37.`,
     content: content({
-      techniques: ["general"],
+      techniques: ["general", "neuraxial"],
       drugs: [propofolInduction(), remifentanil(), rocuronium(), childCefazolin(), drug("Acide tranexamique", "haemodynamic", "perfusion", { perKg: 15 }, "mg", "10–15 mg/kg puis perfusion selon l'équipe (manuel, chap. 40)."), drug("Morphine intrathécale", "analgesia", "intrathecal", { fixed: 0.3 }, "mg", "Par le chirurgien ou avant l'incision, 5–10 µg/kg selon l'équipe ; surveillance respiratoire."), ketamineSparing(), childParacetamol(), noradrenaline("PAM ≥ 65–70 mmHg pendant la correction (perfusion médullaire).")],
       targets: ["Potentiels évoqués : TIVA, pas de curare après l'intubation", "PAM maintenue pendant la correction, Hb ≥ 8 g/dL", "Épargne sanguine : acide tranexamique, récupérateur"],
       material: [...MONITORING, "Cathéter artériel", "Deux voies veineuses", "Récupérateur de sang", "Coussins de décubitus ventral", "Protection oculaire"],
       risks: [risk("bleeding"), risk("hypothermia"), { title: "Alerte des potentiels évoqués", why: "Ischémie ou traction médullaire.", prevention: "PAM, Hb, profondeur d'anesthésie stables.", conduct: "Augmenter la PAM, vérifier Hb et température, relâcher la correction, test du réveil." }, { title: "Décubitus ventral : yeux et appuis", why: "Cécité postopératoire, compressions.", prevention: "Têtière adaptée, yeux libres vérifiés, abdomen libre.", conduct: "Vérifier toutes les 30 min." }],
-      postopPlan: postop({ destination: "icu", analgesia: ["paracetamol", "intrathecal_morphine", "pca_morphine"], thrombo: "mechanical", watch: ["pain", "neuro", "hb", "sedation"] }),
+      postopPlan: postop({ destination: "icu", analgesia: ["paracetamol", "nsaid", "ketamine", "intrathecal_morphine", "pca_morphine"], thrombo: "mechanical", watch: ["pain", "neuro", "hb", "sedation"] }),
       notes: "Scoliose neuromusculaire (Duchenne) : pas de succinylcholine ni d'halogénés, fonction cardiaque et respiratoire, saignement plus important.",
     }),
   },
@@ -657,7 +657,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${CHILD} ; ${MANUAL}, chap. 22.`,
     content: content({
       techniques: ["sedation", "general"],
-      drugs: [childPremed(), drug("Propofol (sédation)", "maintenance", "pse", { perKg: 1 }, "mg", "Bolus 1 mg/kg puis 6–10 mg/kg/h titré (manuel, chap. 37)."), drug("Dexmédétomidine intranasale", "premed", "intranasal", { perKg: 2 }, "µg", "1–2 µg/kg, 30–45 min avant (imagerie sans douleur) (manuel, chap. 37)."), drug("Kétamine", "analgesia", "bolus_iv", { perKg: 0.5 }, "mg", "0,5–1 mg/kg pour un geste douloureux (ponction, myélogramme).")],
+      drugs: [childPremed(), childPropofol(), drug("Propofol (sédation)", "maintenance", "pse", { perKg: 1 }, "mg", "Bolus 1 mg/kg puis 6–10 mg/kg/h titré (manuel, chap. 37)."), drug("Dexmédétomidine intranasale", "premed", "intranasal", { perKg: 2 }, "µg", "1–2 µg/kg, 30–45 min avant (imagerie sans douleur) (manuel, chap. 37)."), drug("Kétamine", "analgesia", "bolus_iv", { perKg: 0.5 }, "mg", "0,5–1 mg/kg pour un geste douloureux (ponction, myélogramme).")],
       targets: ["Ventilation spontanée, capnographie", "IRM : matériel compatible, monitorage à distance, accès à l'enfant préparé", "Sortie selon les critères pédiatriques"],
       material: ["ECG compatible IRM", "PNI", "SpO₂", "EtCO₂", "Masque laryngé prêt", "Aspiration"],
       risks: [risk("laryngospasm"), { title: "Dépression respiratoire loin du bloc", why: "Sédation profonde, accès limité (IRM).", prevention: "Capnographie, équipe et matériel complets sur place.", conduct: "Stimuler, subluxation, masque, masque laryngé." }],
@@ -761,7 +761,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${MANUAL}, chap. 22.`,
     content: content({
       techniques: ["sedation", "general"],
-      drugs: [sedationPropofol(), sedationRemi(), drug("Lidocaïne 1 % (infiltration)", "alr", "infiltration", { fixed: 200 }, "mg", "Par le radiologue ; maximum 4,5 mg/kg."), drug("Kétamine", "analgesia", "bolus_iv", { perKg: 0.5 }, "mg", "Radiofréquence ou embolisation douloureuse : 0,25–0,5 mg/kg."), paracetamol(), ondansetron()],
+      drugs: [propofolInduction(), sedationPropofol(), sedationRemi(), drug("Lidocaïne 1 % (infiltration)", "alr", "infiltration", { fixed: 200 }, "mg", "Par le radiologue ; maximum 4,5 mg/kg."), drug("Kétamine", "analgesia", "bolus_iv", { perKg: 0.5 }, "mg", "Radiofréquence ou embolisation douloureuse : 0,25–0,5 mg/kg."), paracetamol(), ondansetron()],
       targets: ["Sédation adaptée à la douleur du geste ; AG pour les radiofréquences hépatiques ou pulmonaires longues", "Produit de contraste : fonction rénale, allergie", "Protection contre les rayons X de l'équipe"],
       material: ["ECG", "PNI", "SpO₂", "EtCO₂", "Masque laryngé prêt", "Tablier plombé"],
       risks: [risk("anaphylaxis"), { title: "Syndrome post-embolisation", why: "Nécrose tissulaire (utérus, foie).", prevention: "Analgésie multimodale anticipée.", conduct: "Douleur, fièvre, nausées : antalgiques, antiémétiques." }],
@@ -815,7 +815,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
       drugs: [drug("Sang autologue (blood patch)", "other", "peridural", { fixed: 20 }, "mL", "15–20 mL prélevés stérilement, injectés jusqu'à la douleur lombaire ; décubitus 1–2 h."), drug("Lidocaïne 1 % (infiltration cutanée)", "alr", "infiltration", { fixed: 50 }, "mg", "Point de ponction."), paracetamol()],
       targets: ["Asepsie stricte (bilan infectieux négatif)", "Pas d'anticoagulant, coagulation normale"],
       material: ["PNI", "SpO₂", "Kit de péridurale"],
-      risks: [{ title: "Céphalée persistante", why: "Échec du premier patch.", prevention: "Diagnostic confirmé (céphalée posturale).", conduct: "Second patch après 24–48 h ; imagerie si atypique (thrombose veineuse, hématome)." }],
+      risks: [{ title: "Complications de la ponction péridurale", why: "Nouvelle brèche, hématome ou infection.", prevention: "Coagulation normale, pas d'anticoagulant, asepsie stricte, opérateur expérimenté.", conduct: "Douleur radiculaire, fièvre, déficit : imagerie en urgence." }, { title: "Céphalée persistante", why: "Échec du premier patch.", prevention: "Diagnostic confirmé (céphalée posturale).", conduct: "Second patch après 24–48 h ; imagerie si atypique (thrombose veineuse, hématome)." }],
       postopPlan: postop({ destination: "ambulatory", analgesia: ["paracetamol"], thrombo: "none", watch: ["pain"] }),
       notes: "Pas d'antibioprophylaxie. Infiltrations radioguidées : AL, sédation légère si besoin.",
     }),
@@ -828,8 +828,8 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     hospital: "",
     source: `${MANUAL}, chap. 26 et 41 ; protocole du centre.`,
     content: content({
-      techniques: ["general"],
-      drugs: [propofolInduction(1.5), remifentanil(), rocuronium(), cefazolin(), dexamethasone(8), noradrenaline(), paracetamol()],
+      techniques: ["general", "neuraxial"],
+      drugs: [propofolInduction(1.5), remifentanil(), rocuronium(), cefazolin(), dexamethasone(8), noradrenaline(), paracetamol(), drug("Ropivacaïne 0,2 % (péridurale thoracique)", "alr", "peridural", { fixed: 10 }, "mg", "Si coagulation compatible (pas pour la transplantation sous ECMO ou CEC héparinée : ESP ou paravertébral).")],
       targets: ["Résection trachéale : ventilation croisée par le champ opératoire, jet-ventilation, ECMO en secours", "Transplantation pulmonaire : ECMO ou CEC selon l'équipe, ventilation protectrice", "Extubation précoce si possible (anastomose trachéale : flexion du cou)"],
       material: [...MONITORING, "Cathéter artériel", "Voie veineuse centrale", "Sondes stériles pour le champ", "Jet-ventilateur", "ETO (transplantation)"],
       risks: [risk("difficult_airway"), risk("bleeding"), { title: "Perte du contrôle des voies aériennes", why: "Ouverture de la trachée.", prevention: "Plan partagé avec le chirurgien, sondes prêtes, ECMO disponible.", conduct: "Intubation par le champ, jet-ventilation, ECMO." }],

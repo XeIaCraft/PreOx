@@ -447,6 +447,7 @@ export const VARIANT_SURGERIES: CatalogSurgery[] = [
   v("Pose de PICC line ou de chambre implantable (enfant)", "X", "minor", "low", "low", false, P, { approach: "percutaneous", family: "acces-vasculaire", population: "child", aka: ["Broviac", "cathéter central enfant", "PAC enfant"], h: 0.75, t: G, pos: DORSAL }),
   v("Cathétérisme cardiaque de l'enfant", "X", "intermediate", "high", "low", false, P, { approach: "endovascular", family: "cardiopathie-congenitale", population: "child", aka: ["Rashkind", "dilatation valvulaire percutanée", "fermeture de canal artériel"], h: 2, t: G, pos: DORSAL, specifics: ["Cardiopathie : shunt et équilibre des résistances (FiO₂, CO₂) selon la lésion, sur avis du cardiopédiatre"] }),
   v("Biopsie hépatique transjugulaire", "X", "minor", "low", "low", false, P, { approach: "endovascular", family: "biopsie-hepatique", h: 0.75, t: SED, pos: DORSAL }),
+  v("Drainage d'abcès du sein", "A", "minor", "low", "low", false, P, { family: "sein", aka: ["abcès mammaire", "mastite abcédée"], h: 0.33, t: G, pos: DORSAL }),
   // Enfant (compléments)
   v("Ponction lombaire ou myélogramme (enfant)", "X", "minor", "low", "minimal", false, P, { approach: "percutaneous", family: "sedation-enfant", population: "child", aka: ["sédation hémato-oncologie", "chimiothérapie intrathécale"], h: 0.25, t: SED, pos: "Décubitus latéral" }),
   v("Pied bot : ténotomie d'Achille (nourrisson)", "K", "minor", "low", "minimal", false, P, { family: "pied-bot", population: "neonate", aka: ["Ponseti"], h: 0.25, t: G, pos: DORSAL }),

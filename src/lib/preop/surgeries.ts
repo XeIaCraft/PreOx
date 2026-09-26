@@ -104,7 +104,7 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Cure de hernie inguinale", "A", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal", ["hernie", "TEP", "Lichtenstein"]),
   s("Appendicectomie", "A", "intermediate", "intermediate", "low", true, "peripheral", "Décubitus dorsal", ["appendicite"]),
   s("Colectomie", "A", "major", "intermediate", "high", true, "upper_abdominal", "Décubitus dorsal ou position de Lloyd-Davies", ["hémicolectomie", "sigmoïdectomie", "résection colique"]),
-  s("Chirurgie bariatrique", "A", "major", "intermediate", "high", true, "upper_abdominal", "Décubitus dorsal, proclive", ["bypass gastrique", "sleeve"]),
+  s("Chirurgie bariatrique", "A", "major", "intermediate", "high", true, "upper_abdominal", "Décubitus dorsal, proclive", ["obésité", "chirurgie de l'obésité"]),
   s("Gastrectomie", "A", "major", "intermediate", "high", true, "upper_abdominal", "Décubitus dorsal"),
   s("Duodénopancréatectomie céphalique", "A", "major", "high", "high", true, "upper_abdominal", "Décubitus dorsal", ["Whipple", "DPC"]),
   s("Hépatectomie", "A", "major", "high", "high", true, "upper_abdominal", "Décubitus dorsal", ["résection hépatique"]),
@@ -112,7 +112,7 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Réparation de perforation digestive", "A", "major", "high", "high", true, "upper_abdominal", "Décubitus dorsal", ["péritonite", "perforation"]),
   s("Thyroïdectomie", "A", "major", "low", "high", false, "peripheral", "Décubitus dorsal, cou en extension", ["thyroïde", "parathyroïdectomie"]),
   s("Chirurgie du sein", "A", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal", ["tumorectomie", "mastectomie", "ganglion sentinelle"]),
-  s("Proctologie", "A", "minor", "low", "low", false, "peripheral", "Lithotomie ou génupectorale", ["hémorroïdes", "fistule anale", "fissure"]),
+  s("Proctologie", "A", "minor", "low", "low", false, "peripheral", "Lithotomie ou génupectorale", ["anus", "marisques", "polype anal"]),
   s("Exérèse cutanée", "A", "minor", "low", "minimal", false, "peripheral", "Selon la localisation", ["kyste", "lipome", "naevus"]),
   // Vasculaire
   s("Chirurgie aortique ouverte", "A", "major", "high", "high", true, "upper_abdominal", "Décubitus dorsal", ["anévrisme aorte", "pontage aorto-bifémoral"]),
@@ -131,7 +131,7 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   // Gynécologie, obstétrique
   s("Hystérectomie", "J1", "major", "intermediate", "high", true, "peripheral", "Décubitus dorsal ou lithotomie, Trendelenburg", ["hystérectomie"]),
   s("Cœlioscopie gynécologique", "J1", "intermediate", "intermediate", "low", true, "peripheral", "Lithotomie, Trendelenburg", ["kystectomie ovarienne", "annexectomie", "endométriose"]),
-  s("Hystéroscopie", "J1", "minor", "low", "minimal", false, "peripheral", "Lithotomie", ["curetage", "conisation"]),
+  s("Hystéroscopie", "J1", "minor", "low", "minimal", false, "peripheral", "Lithotomie", ["résection endométriale", "polype utérin", "myome sous-muqueux"]),
   s("Césarienne", "B", "major", "low", "high", true, "peripheral", "Décubitus dorsal, inclinaison latérale gauche"),
   // ORL, ophtalmo, stomato
   s("Amygdalectomie", "C", "intermediate", "low", "high", false, "peripheral", "Décubitus dorsal, tête en extension", ["adénoïdectomie"]),
@@ -155,7 +155,7 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Arthroscopie de hanche", "K", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal, table de traction"),
   s("Ostéotomie", "K", "intermediate", "low", "high", false, "peripheral", "Décubitus dorsal", ["ostéotomie tibiale", "ostéotomie de valgisation"]),
   s("Ostéosynthèse du poignet", "K", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal, bras sur table", ["fracture du radius", "Pouteau-Colles"]),
-  s("Ostéosynthèse de la cheville", "K", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal", ["fracture de cheville", "malléole"]),
+  s("Ostéosynthèse de la cheville", "K", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal", ["fracture de cheville", "malléole", "ORIF cheville"]),
   s("Vertébroplastie / cyphoplastie", "K", "minor", "low", "low", false, "peripheral", "Décubitus ventral", ["tassement vertébral"]),
   // Chirurgie générale et digestive
   s("Cure d'éventration", "A", "intermediate", "intermediate", "low", true, "upper_abdominal", "Décubitus dorsal", ["éventration", "hernie ventrale", "hernie incisionnelle"]),
@@ -173,9 +173,9 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Chirurgie des varices", "A", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal", ["stripping", "crossectomie", "phlébectomie"]),
   s("Angioplastie périphérique", "A", "intermediate", "intermediate", "low", false, "peripheral", "Décubitus dorsal", ["angioplastie", "stent périphérique"]),
   // Urologie
-  s("Néphrolithotomie percutanée", "J2", "intermediate", "low", "high", false, "peripheral", "Décubitus ventral ou dorsal", ["NLPC"]),
+  s("Néphrolithotomie percutanée", "J2", "intermediate", "low", "high", false, "peripheral", "Décubitus ventral ou dorsal", ["NLPC", "calcul du rein", "calcul rénal", "calcul coralliforme"]),
   s("Énucléation de prostate au laser", "J2", "major", "low", "high", false, "peripheral", "Lithotomie", ["HoLEP", "vaporisation laser"]),
-  s("Transplantation rénale", "J2", "major", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["greffe rénale"]),
+  s("Transplantation rénale", "J2", "major", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["greffe rénale", "greffe de rein", "greffe rein"]),
   s("Chirurgie scrotale", "J2", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["hydrocèle", "orchidectomie", "orchidopexie", "varicocèle"]),
   s("Circoncision", "J2", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["posthectomie", "phimosis"]),
   s("Cystoscopie / sonde JJ", "J2", "minor", "low", "minimal", false, "peripheral", "Lithotomie", ["cystoscopie", "sonde double J", "JJ"]),
@@ -184,7 +184,7 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Myomectomie", "J1", "intermediate", "intermediate", "high", true, "peripheral", "Décubitus dorsal ou lithotomie", ["fibrome", "myome"]),
   s("Cure de prolapsus", "J1", "intermediate", "intermediate", "low", true, "peripheral", "Lithotomie, Trendelenburg", ["promontofixation", "prolapsus"]),
   s("Ponction ovocytaire", "J1", "minor", "low", "minimal", false, "peripheral", "Lithotomie", ["FIV", "PMA"]),
-  s("Aspiration endo-utérine", "J1", "minor", "low", "low", false, "peripheral", "Lithotomie", ["IVG", "fausse couche", "aspiration"]),
+  s("Aspiration endo-utérine", "J1", "minor", "low", "low", false, "peripheral", "Lithotomie", ["fausse couche", "aspiration", "rétention"]),
   s("Cerclage du col", "B", "minor", "low", "low", false, "peripheral", "Lithotomie", ["cerclage"]),
   s("Révision utérine / délivrance artificielle", "B", "minor", "low", "high", false, "peripheral", "Lithotomie", ["délivrance", "rétention placentaire", "hémorragie du post-partum"]),
   // ORL, ophtalmologie
@@ -215,7 +215,7 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Bronchoscopie souple / EBUS", "X", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["fibroscopie bronchique", "EBUS", "LBA"]),
   s("Radiologie interventionnelle", "X", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal", ["embolisation", "TIPS", "chimioembolisation", "drainage percutané"]),
   s("Thrombectomie cérébrale", "X", "intermediate", "intermediate", "low", false, "peripheral", "Décubitus dorsal", ["AVC", "thrombectomie mécanique"]),
-  s("Imagerie sous anesthésie", "X", "minor", "low", "minimal", false, "peripheral", "Décubitus dorsal", ["IRM", "scanner"]),
+  s("Imagerie sous anesthésie", "X", "minor", "low", "minimal", false, "peripheral", "Décubitus dorsal", ["IRM", "scanner", "IRM enfant", "IRM sous sédation"]),
 ];
 
 // More procedures, by specialty (surgeries-extra.ts) — the first entries keep their place (and ids).
