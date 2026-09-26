@@ -26,8 +26,9 @@ import { pendingExams } from "@/lib/preop/exams";
 import { AttentionPanel, InstructionsPanel } from "@/components/preop/attention-panel";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { FluidPlanPanel } from "@/components/preop/theatre-tools";
-import { ProspectPanel } from "@/components/preop/plan-parts";
+import { ErasPanel, ProspectPanel } from "@/components/preop/plan-parts";
 import { prospectFor } from "@/lib/preop/prospect";
+import { erasFor } from "@/lib/preop/eras";
 import type { Rule } from "@/lib/preop/rules/types";
 import { cn } from "@/lib/utils";
 
@@ -213,6 +214,7 @@ export function PreparationView({
   const additions = points.filter((p) => p.material?.length || p.risk);
   const surgeryItem = d.consultation.surgery.catalogId ? catalogs.surgeries.find((x) => x.id === d.consultation.surgery.catalogId) : undefined;
   const prospect = prospectFor(surgeryItem);
+  const eras = erasFor(surgeryItem);
   // Words of the patient and the surgery that bring the matching risks of the library forward.
   const riskContext = [
     d.consultation.surgery.name,
@@ -337,6 +339,7 @@ export function PreparationView({
             }}
           />
         )}
+        {eras.length > 0 && <ErasPanel guidelines={eras} />}
         <PlanEditor
           value={d.plan}
           onChange={(plan) => onChange({ ...d, plan })}

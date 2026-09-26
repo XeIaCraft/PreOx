@@ -100,9 +100,9 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Ostéosynthèse de membre", "K", "intermediate", "low", "high", false, "peripheral", "Selon le segment", ["fracture", "plaque", "clou"]),
   s("Ablation de matériel", "K", "minor", "low", "minimal", false, "peripheral", "Selon le segment", ["AMO"]),
   // Chirurgie générale et digestive
-  s("Cholécystectomie cœlioscopique", "A", "intermediate", "intermediate", "high", true, "upper_abdominal", "Décubitus dorsal", ["vésicule", "cholécystectomie"]),
+  s("Cholécystectomie cœlioscopique", "A", "major", "intermediate", "high", true, "upper_abdominal", "Décubitus dorsal", ["vésicule", "cholécystectomie"]),
   s("Cure de hernie inguinale", "A", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal", ["hernie", "TEP", "Lichtenstein"]),
-  s("Appendicectomie", "A", "intermediate", "intermediate", "high", true, "peripheral", "Décubitus dorsal", ["appendicite"]),
+  s("Appendicectomie", "A", "intermediate", "intermediate", "low", true, "peripheral", "Décubitus dorsal", ["appendicite"]),
   s("Colectomie", "A", "major", "intermediate", "high", true, "upper_abdominal", "Décubitus dorsal ou position de Lloyd-Davies", ["hémicolectomie", "sigmoïdectomie", "résection colique"]),
   s("Chirurgie bariatrique", "A", "major", "intermediate", "high", true, "upper_abdominal", "Décubitus dorsal, proclive", ["bypass gastrique", "sleeve"]),
   s("Gastrectomie", "A", "major", "intermediate", "high", true, "upper_abdominal", "Décubitus dorsal"),
@@ -110,7 +110,7 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Hépatectomie", "A", "major", "high", "high", true, "upper_abdominal", "Décubitus dorsal", ["résection hépatique"]),
   s("Œsophagectomie", "A", "major", "high", "high", true, "intrathoracic", "Décubitus dorsal puis latéral"),
   s("Réparation de perforation digestive", "A", "major", "high", "high", true, "upper_abdominal", "Décubitus dorsal", ["péritonite", "perforation"]),
-  s("Thyroïdectomie", "A", "intermediate", "low", "high", false, "peripheral", "Décubitus dorsal, cou en extension", ["thyroïde", "parathyroïdectomie"]),
+  s("Thyroïdectomie", "A", "major", "low", "high", false, "peripheral", "Décubitus dorsal, cou en extension", ["thyroïde", "parathyroïdectomie"]),
   s("Chirurgie du sein", "A", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal", ["tumorectomie", "mastectomie", "ganglion sentinelle"]),
   s("Proctologie", "A", "minor", "low", "low", false, "peripheral", "Lithotomie ou génupectorale", ["hémorroïdes", "fistule anale", "fissure"]),
   s("Exérèse cutanée", "A", "minor", "low", "minimal", false, "peripheral", "Selon la localisation", ["kyste", "lipome", "naevus"]),
@@ -119,11 +119,11 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Endoprothèse aortique", "A", "intermediate", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["EVAR"]),
   s("Endartériectomie carotidienne", "A", "intermediate", "intermediate", "high", false, "peripheral", "Décubitus dorsal, tête tournée", ["carotide"]),
   s("Revascularisation ouverte du membre inférieur", "A", "major", "high", "high", false, "peripheral", "Décubitus dorsal", ["pontage fémoro-poplité"]),
-  s("Amputation de membre inférieur", "A", "intermediate", "high", "high", false, "peripheral", "Décubitus dorsal", ["amputation"]),
+  s("Amputation de membre inférieur", "A", "major", "high", "high", false, "peripheral", "Décubitus dorsal", ["amputation"]),
   s("Fistule artério-veineuse", "A", "minor", "low", "low", false, "peripheral", "Décubitus dorsal, bras sur table", ["FAV"]),
   // Urologie
-  s("Résection transurétrale de prostate", "J2", "intermediate", "low", "high", false, "peripheral", "Lithotomie", ["RTUP"]),
-  s("Résection transurétrale de vessie", "J2", "intermediate", "low", "high", false, "peripheral", "Lithotomie", ["RTUV"]),
+  s("Résection transurétrale de prostate", "J2", "major", "low", "high", false, "peripheral", "Lithotomie", ["RTUP"]),
+  s("Résection transurétrale de vessie", "J2", "major", "low", "high", false, "peripheral", "Lithotomie", ["RTUV"]),
   s("Prostatectomie radicale", "J2", "major", "intermediate", "high", true, "peripheral", "Décubitus dorsal, Trendelenburg marqué (robot)", ["prostatectomie"]),
   s("Cystectomie totale", "J2", "major", "high", "high", true, "peripheral", "Décubitus dorsal", ["cystectomie"]),
   s("Néphrectomie", "J2", "major", "intermediate", "high", false, "upper_abdominal", "Décubitus latéral"),
@@ -132,7 +132,7 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Hystérectomie", "J1", "major", "intermediate", "high", true, "peripheral", "Décubitus dorsal ou lithotomie, Trendelenburg", ["hystérectomie"]),
   s("Cœlioscopie gynécologique", "J1", "intermediate", "intermediate", "low", true, "peripheral", "Lithotomie, Trendelenburg", ["kystectomie ovarienne", "annexectomie", "endométriose"]),
   s("Hystéroscopie", "J1", "minor", "low", "minimal", false, "peripheral", "Lithotomie", ["curetage", "conisation"]),
-  s("Césarienne", "B", "intermediate", "low", "high", true, "peripheral", "Décubitus dorsal, inclinaison latérale gauche"),
+  s("Césarienne", "B", "major", "low", "high", true, "peripheral", "Décubitus dorsal, inclinaison latérale gauche"),
   // ORL, ophtalmo, stomato
   s("Amygdalectomie", "C", "intermediate", "low", "high", false, "peripheral", "Décubitus dorsal, tête en extension", ["adénoïdectomie"]),
   s("Chirurgie endonasale", "C", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal, proclive", ["septoplastie", "FESS", "méatotomie"]),
@@ -143,7 +143,7 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Chirurgie maxillo-faciale majeure", "E", "major", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["ostéotomie", "fracture mandibulaire"]),
   // Neuro, thorax, plastique, hors bloc
   s("Craniotomie", "D", "major", "intermediate", "high", false, "peripheral", "Selon l'abord (dorsal, latéral, ventral, assis)", ["neurochirurgie", "tumeur cérébrale"]),
-  s("Cure de hernie discale", "D", "intermediate", "intermediate", "high", false, "peripheral", "Décubitus ventral", ["discectomie"]),
+  s("Cure de hernie discale", "D", "major", "intermediate", "high", false, "peripheral", "Décubitus ventral", ["discectomie"]),
   s("Lobectomie pulmonaire", "G", "major", "intermediate", "high", true, "intrathoracic", "Décubitus latéral", ["segmentectomie", "VATS"]),
   s("Pneumonectomie", "G", "major", "high", "high", true, "intrathoracic", "Décubitus latéral"),
   s("Chirurgie plastique ou reconstructrice", "L", "intermediate", "low", "low", false, "peripheral", "Selon la localisation", ["lambeau", "abdominoplastie", "plastie mammaire"]),
@@ -170,11 +170,11 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Pose de chambre implantable", "A", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["PAC", "port-a-cath", "chambre implantable"]),
   s("Sinus pilonidal", "A", "minor", "low", "low", false, "peripheral", "Décubitus ventral", ["kyste pilonidal"]),
   // Vasculaire
-  s("Chirurgie des varices", "A", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["stripping", "crossectomie", "phlébectomie"]),
+  s("Chirurgie des varices", "A", "intermediate", "low", "low", false, "peripheral", "Décubitus dorsal", ["stripping", "crossectomie", "phlébectomie"]),
   s("Angioplastie périphérique", "A", "intermediate", "intermediate", "low", false, "peripheral", "Décubitus dorsal", ["angioplastie", "stent périphérique"]),
   // Urologie
   s("Néphrolithotomie percutanée", "J2", "intermediate", "low", "high", false, "peripheral", "Décubitus ventral ou dorsal", ["NLPC"]),
-  s("Énucléation de prostate au laser", "J2", "intermediate", "low", "high", false, "peripheral", "Lithotomie", ["HoLEP", "vaporisation laser"]),
+  s("Énucléation de prostate au laser", "J2", "major", "low", "high", false, "peripheral", "Lithotomie", ["HoLEP", "vaporisation laser"]),
   s("Transplantation rénale", "J2", "major", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["greffe rénale"]),
   s("Chirurgie scrotale", "J2", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["hydrocèle", "orchidectomie", "orchidopexie", "varicocèle"]),
   s("Circoncision", "J2", "minor", "low", "low", false, "peripheral", "Décubitus dorsal", ["posthectomie", "phimosis"]),
@@ -197,8 +197,8 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Chirurgie du glaucome", "I", "minor", "low", "minimal", false, "peripheral", "Décubitus dorsal", ["trabéculectomie"]),
   s("Chirurgie des paupières", "I", "minor", "low", "minimal", false, "peripheral", "Décubitus dorsal", ["blépharoplastie", "ptosis", "ectropion"]),
   // Neurochirurgie, thorax, cardiaque
-  s("Décompression lombaire", "D", "intermediate", "intermediate", "high", false, "peripheral", "Décubitus ventral", ["canal lombaire étroit", "laminectomie lombaire"]),
-  s("Arthrodèse cervicale antérieure", "D", "intermediate", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["ACDF", "hernie discale cervicale"]),
+  s("Décompression lombaire", "D", "major", "intermediate", "high", false, "peripheral", "Décubitus ventral", ["canal lombaire étroit", "laminectomie lombaire"]),
+  s("Arthrodèse cervicale antérieure", "D", "major", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["ACDF", "hernie discale cervicale"]),
   s("Dérivation ventriculo-péritonéale", "D", "intermediate", "intermediate", "high", false, "peripheral", "Décubitus dorsal, tête tournée", ["DVP", "valve de dérivation"]),
   s("Médiastinoscopie", "G", "intermediate", "low", "high", false, "peripheral", "Décubitus dorsal, cou en extension", ["EBUS chirurgical"]),
   s("Thoracoscopie / talcage", "G", "intermediate", "low", "low", false, "intrathoracic", "Décubitus latéral", ["pleuroscopie", "talcage", "décortication"]),
@@ -260,7 +260,7 @@ const USUAL_TECHNIQUES: Record<string, Technique[]> = {
   "prothese-totale-de-genou": ["neuraxial", "superficial_block"],
   "fracture-du-col-du-femur": ["neuraxial", "superficial_block"],
   "arthrodese-rachidienne": ["general"],
-  "arthroscopie-du-genou": ["general"],
+  "arthroscopie-du-genou": ["general", "neuraxial", "superficial_block"],
   "arthroscopie-de-l-epaule": ["general", "superficial_block"],
   "chirurgie-du-pied": ["superficial_block", "general"],
   "chirurgie-de-la-main": ["superficial_block"],
@@ -310,8 +310,8 @@ const USUAL_TECHNIQUES: Record<string, Technique[]> = {
   "chirurgie-plastique-ou-reconstructrice": ["general"],
   "endoscopie-digestive": ["sedation"],
   "prothese-d-epaule": ["general", "superficial_block"],
-  "reprise-de-prothese-de-hanche-ou-de-genou": ["general"],
-  "arthroscopie-de-hanche": ["general"],
+  "reprise-de-prothese-de-hanche-ou-de-genou": ["general", "neuraxial", "superficial_block"],
+  "arthroscopie-de-hanche": ["general", "superficial_block"],
   "osteotomie": ["general"],
   "osteosynthese-du-poignet": ["superficial_block"],
   "osteosynthese-de-la-cheville": ["superficial_block", "general"],
@@ -404,7 +404,7 @@ const EXAM_PROFILE: Record<string, SurgeryExamProfile> = {
 for (const x of SURGERY_CATALOG) if (EXAM_PROFILE[x.id] && !x.examProfile) x.examProfile = EXAM_PROFILE[x.id];
 
 export const SURGERY_CATALOG_SOURCE =
-  "Classes proposées : grade selon les exemples de NICE NG45 (2016), risque cardiaque selon ESC 2022 (chirurgie non cardiaque), risque hémorragique d'après le guide EHRA 2021 — à confirmer pour chaque patient.";
+  "Classes proposées : grade selon les exemples du KCE Report 280 (2016, tableau 2, d'après NICE), risque cardiaque selon ESC 2022 (chirurgie non cardiaque), risque hémorragique d'après le guide EHRA 2021 — à confirmer pour chaque patient.";
 
 const fold = (t: string) =>
   t

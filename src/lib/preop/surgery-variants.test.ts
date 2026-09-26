@@ -4,6 +4,7 @@ import { EXISTING_FAMILIES, EXISTING_SPECIFICS } from "./surgeries-variants";
 import { fold } from "./catalog";
 import { searchSurgeries, surgeryVariants } from "./surgery-search";
 import { prospectFor, prospectLinkedIds } from "./prospect";
+import { erasFor, erasLinkedIds } from "./eras";
 import type { SurgeryItem } from "./catalog";
 
 const items = SURGERY_CATALOG as SurgeryItem[];
@@ -59,5 +60,16 @@ describe("PROSPECT links", () => {
     expect(prospectFor(items.find((s) => s.id === "prothese-totale-de-hanche"))!.year).toBe(2026);
     expect(prospectFor(items.find((s) => s.id === "prostatectomie-radicale-robot-assistee"))!.id).toBe("prostatectomy");
     expect(prospectFor(items.find((s) => s.id === "amygdalectomie-de-l-enfant"))!.id).toBe("tonsillectomy");
+  });
+  it("ERAS guidelines point at real entries and follow the family", () => {
+    const ids = new Set(items.map((s) => s.id));
+    expect(erasLinkedIds().filter((id) => !ids.has(id))).toEqual([]);
+    const get = (id: string) => items.find((s) => s.id === id)!;
+    expect(erasFor(get("sigmoidectomie-par-c-lioscopie")).map((g) => g.id)).toEqual(["colorectal"]);
+    expect(erasFor(get("hepatectomie-robot-assistee")).map((g) => g.id)).toEqual(["liver"]);
+    expect(erasFor(get("cesarienne-programmee")).map((g) => g.id)).toEqual(["caesarean"]);
+    expect(erasFor(get("atresie-de-l-sophage")).map((g) => g.id)).toEqual(["neonatal"]);
+    expect(erasFor(get("prothese-totale-de-genou-robot-assistee")).map((g) => g.id)).toEqual(["hip_knee"]);
+    expect(erasFor(get("cataracte"))).toEqual([]);
   });
 });

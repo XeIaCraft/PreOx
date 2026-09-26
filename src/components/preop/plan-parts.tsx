@@ -23,6 +23,7 @@ import {
 } from "@/lib/preop/postop";
 import type { ProtocolRisk } from "@/lib/preop/protocols";
 import type { ProspectRecommendation } from "@/lib/preop/prospect";
+import { ERAS_COMMON, type ErasGuideline } from "@/lib/preop/eras";
 import { cn } from "@/lib/utils";
 
 /**
@@ -326,5 +327,44 @@ export function ProspectPanel({ rec, onApply, applied }: { rec: ProspectRecommen
         {rec.note ? ` — ${rec.note}` : ""}.
       </p>
     </Panel>
+  );
+}
+
+/** ERAS® Society guidelines of the intervention, folded: the specific points, then the common items. */
+export function ErasPanel({ guidelines }: { guidelines: ErasGuideline[] }) {
+  return (
+    <details className="group rounded-[var(--radius-lg)] border border-border bg-surface px-4 py-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium text-foreground">
+        <span>Réhabilitation améliorée (ERAS) · {guidelines.map((g) => g.title).join(", ")}</span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-foreground-subtle transition-transform group-open:rotate-180" aria-hidden />
+      </summary>
+      <div className="mt-3 space-y-3">
+        {guidelines.map((g) => (
+          <div key={g.id}>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">
+              {g.title} · ERAS {g.year}
+            </p>
+            <ul className="list-disc space-y-0.5 pl-4 text-sm text-foreground">
+              {g.points.map((x) => (
+                <li key={x}>{x}</li>
+              ))}
+            </ul>
+            <p className="text-[11px] text-foreground-subtle">
+              PMID {g.pmid}
+              {g.note ? ` — ${g.note}` : ""}
+            </p>
+          </div>
+        ))}
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">Éléments communs à tous les programmes</p>
+          <ul className="list-disc space-y-0.5 pl-4 text-sm text-foreground-muted">
+            {ERAS_COMMON.map((x) => (
+              <li key={x}>{x}</li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-[11px] text-foreground-subtle">Résumé des publications de l&apos;ERAS® Society : la version intégrale et le chemin clinique de votre service font foi.</p>
+      </div>
+    </details>
   );
 }
