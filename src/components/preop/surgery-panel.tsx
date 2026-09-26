@@ -9,8 +9,10 @@ import { POSITIONS } from "@/lib/preop/plan-catalog";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { OPERATION_CATEGORIES } from "@/lib/carnet/referentiel";
 import { RISK_GRADES, URGENCIES, urgencyOf, type RiskGrade, type Surgery } from "@/lib/preop/dossier";
-import { searchItems, type BleedingRisk, type SurgeryItem } from "@/lib/preop/catalog";
-import { BLEEDING_RISKS, SURGERY_CATALOG_SOURCE, SURGERY_GRADES } from "@/lib/preop/surgeries";
+import { fold, type BleedingRisk, type SurgeryItem } from "@/lib/preop/catalog";
+import { searchSurgeries, surgeryVariants, type SurgeryPatient } from "@/lib/preop/surgery-search";
+import { APPROACH_SOURCE, APPROACH_SPECIFICS } from "@/lib/preop/surgeries-variants";
+import { APPROACHES, BLEEDING_RISKS, SURGERY_CATALOG_SOURCE, SURGERY_GRADES } from "@/lib/preop/surgeries";
 
 const INCISIONS = [
   { code: "peripheral" as const, label: "Périphérique" },
@@ -108,11 +110,13 @@ export function surgeryFromItem(s: Surgery, c: SurgeryItem): Surgery {
  * stays editable. Text fields are uncontrolled: give the panel a `key`
  * that changes when the intervention is replaced from outside.
  */
-export function SurgeryPanel({ s, onChange, extra, title = "Intervention" }: { s: Surgery; onChange: (s: Surgery) => void; extra?: React.ReactNode; title?: string }) {
+export function SurgeryPanel({ s, onChange, extra, title = "Intervention", patient }: { s: Surgery; onChange: (s: Surgery) => void; extra?: React.ReactNode; title?: string; patient?: SurgeryPatient }) {
   const { catalogs } = useCatalogs();
   const set = (patch: Partial<Surgery>) => onChange({ ...s, ...patch });
   const [formKey, setFormKey] = useState(0);
   const bleeding = BLEEDING_RISKS.find((b) => b.code === s.bleedingRisk);
+  const current = s.catalogId ? catalogs.surgeries.find((x) => x.id === s.catalogId) : undefined;
+  const variants = surgeryVariants(catalogs.surgeries, s, patient);
 
   return (
     <Panel title={title}>
@@ -130,8 +134,14 @@ export function SurgeryPanel({ s, onChange, extra, title = "Intervention" }: { s
         </div>
       ) : (
         <Combobox
-          placeholder="Intervention (PTG, vésicule, RTUP…)"
-          search={(q) => searchItems(catalogs.surgeries, q, (x) => [x.name, ...(x.aka ?? [])]).map((x) => ({ key: x.id, label: x.name, hint: `${x.category} · ${SURGERY_GRADES.find((g) => g.code === x.grade)?.label.toLowerCase()}` }))}
+          placeholder="Intervention (PTG, colectomie cœlio, néphrectomie partielle robot…)"
+          search={(q) =>
+            searchSurgeries(catalogs.surgeries, q, patient).map((x) => ({
+              key: x.id,
+              label: x.name,
+              hint: [x.approach && !fold(x.name).includes(fold(APPROACHES.find((a) => a.code === x.approach)!.short)) ? APPROACHES.find((a) => a.code === x.approach)!.short : "", x.population === "child" ? "enfant" : x.population === "neonate" ? "nouveau-né" : "", x.category, SURGERY_GRADES.find((g) => g.code === x.grade)?.label.toLowerCase()].filter(Boolean).join(" · "),
+            }))
+          }
           onPick={(o) => {
             const item = catalogs.surgeries.find((x) => x.id === o.key);
             if (item) onChange(surgeryFromItem(s, item));
@@ -142,6 +152,39 @@ export function SurgeryPanel({ s, onChange, extra, title = "Intervention" }: { s
         />
       )}
 
+      {variants.length > 0 && (
+        <div className="space-y-1">
+          <FieldLabel>Autres voies ou variantes</FieldLabel>
+          <div className="flex flex-wrap gap-1.5">
+            {variants.map((x) => (
+              <button
+                key={x.id}
+                type="button"
+                onClick={() => {
+                  onChange(surgeryFromItem(s, x));
+                  setFormKey((k) => k + 1);
+                }}
+                className="min-h-8 rounded-full border border-border px-2.5 text-xs text-foreground hover:bg-surface-muted"
+              >
+                {x.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {current && (current.specifics?.length || (current.approach && APPROACH_SPECIFICS[current.approach])) && (
+        <details className="rounded-[var(--radius-md)] bg-surface-muted/60 px-3 py-2 text-xs text-foreground-muted">
+          <summary className="cursor-pointer font-medium text-foreground">
+            Ce que l&apos;intervention change pour l&apos;anesthésie{current.approach ? ` (${APPROACHES.find((a) => a.code === current.approach)?.label.toLowerCase()})` : ""}
+          </summary>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            {[...(current.specifics ?? []), ...(current.approach ? (APPROACH_SPECIFICS[current.approach] ?? []) : [])].map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+          {current.approach && APPROACH_SPECIFICS[current.approach] && <p className="mt-1 text-[10px] text-foreground-subtle">{APPROACH_SOURCE}.</p>}
+        </details>
+      )}
       <div key={formKey} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <label className="block min-w-0">
           <span className="block text-[11px] font-medium text-foreground-subtle">Chirurgien</span>

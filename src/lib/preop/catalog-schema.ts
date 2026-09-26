@@ -60,6 +60,11 @@ const surgery = z.object({
   examProfile: z
     .enum(["cardiac_cpb", "cardiac_valve", "tavi", "lung_resection", "pneumonectomy", "major_vascular", "bariatric", "major_digestive", "hepatobiliary", "neurosurgery", "arthroplasty", "thyroid", "obstetric"])
     .optional(),
+  approach: z.enum(["open", "laparoscopic", "robotic", "thoracoscopic", "endoscopic", "arthroscopic", "percutaneous", "endovascular", "vaginal", "transoral", "microsurgical"]).optional(),
+  family: text(80).optional(),
+  population: z.enum(["adult", "child", "neonate"]).optional(),
+  sex: z.enum(["M", "F"]).optional(),
+  specifics: z.array(text(300)).max(20).optional(),
   notes: text(2000).optional(),
   ...verifiable,
 });

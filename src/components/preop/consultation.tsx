@@ -1073,6 +1073,7 @@ export function ConsultationForm({
           <SurgeryPanel
             title="Intervention prévue"
             s={s.surgery}
+            patient={{ age: p.age, sex: p.sex }}
             onChange={(surgery) => set({ surgery })}
             extra={
               <>

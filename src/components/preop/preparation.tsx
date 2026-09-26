@@ -26,6 +26,8 @@ import { pendingExams } from "@/lib/preop/exams";
 import { AttentionPanel, InstructionsPanel } from "@/components/preop/attention-panel";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { FluidPlanPanel } from "@/components/preop/theatre-tools";
+import { ProspectPanel } from "@/components/preop/plan-parts";
+import { prospectFor } from "@/lib/preop/prospect";
 import type { Rule } from "@/lib/preop/rules/types";
 import { cn } from "@/lib/utils";
 
@@ -209,6 +211,8 @@ export function PreparationView({
   const instructions = useMemo(() => patientInstructions(d.consultation, evaluation), [d.consultation, evaluation]);
   const toRequest = pendingExams(d.consultation, scores.exams);
   const additions = points.filter((p) => p.material?.length || p.risk);
+  const surgeryItem = d.consultation.surgery.catalogId ? catalogs.surgeries.find((x) => x.id === d.consultation.surgery.catalogId) : undefined;
+  const prospect = prospectFor(surgeryItem);
   // Words of the patient and the surgery that bring the matching risks of the library forward.
   const riskContext = [
     d.consultation.surgery.name,
@@ -256,7 +260,7 @@ export function PreparationView({
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-start">
       <div className="space-y-4">
-        <SurgeryPanel key={`surgery-${d.id}-${planKey}`} title="Intervention" s={d.consultation.surgery} onChange={(surgery) => onChange({ ...d, consultation: { ...d.consultation, surgery } })} />
+        <SurgeryPanel key={`surgery-${d.id}-${planKey}`} title="Intervention" s={d.consultation.surgery} patient={{ age: d.consultation.patient.age, sex: d.consultation.patient.sex }} onChange={(surgery) => onChange({ ...d, consultation: { ...d.consultation, surgery } })} />
         <Panel
           title="Protocole"
           actions={
@@ -322,6 +326,17 @@ export function PreparationView({
             </Button>
           )}
         </Panel>
+        {prospect && (
+          <ProspectPanel
+            rec={prospect}
+            applied={prospect.postop.every((a) => d.plan.postopPlan?.analgesia.includes(a))}
+            onApply={() => {
+              const pp = d.plan.postopPlan ?? { analgesia: [], watch: [] };
+              onChange({ ...d, plan: { ...d.plan, postopPlan: { ...pp, analgesia: [...new Set([...pp.analgesia, ...prospect.postop])] } } });
+              setPlanKey((k) => k + 1);
+            }}
+          />
+        )}
         <PlanEditor
           value={d.plan}
           onChange={(plan) => onChange({ ...d, plan })}

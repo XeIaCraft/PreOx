@@ -174,7 +174,7 @@ export const EXTRA_SURGERIES = [
   x("Néphro-urétérectomie", "J2", "major", "intermediate", "high", true, UA, { aka: ["tumeur de la voie excrétrice"], h: 4, t: G, pos: LATERAL }),
   x("Cystoprostatectomie avec dérivation urinaire", "J2", "major", "high", "high", true, UA, { aka: ["Bricker", "néovessie"], h: 6, t: G, profile: "major_digestive", pos: DORSAL }),
   x("Urétérorénoscopie souple et laser", "J2", "minor", "low", "low", false, P, { aka: ["URS souple", "lithotritie laser"], h: 1, t: G, pos: LITHO }),
-  x("Lithotritie extracorporelle", "J2", "minor", "low", "low", false, P, { aka: ["LEC"], h: 0.75, t: SED, pos: DORSAL }),
+  x("Lithotritie extracorporelle", "J2", "minor", "low", "low", false, P, { aka: ["LEC", "lithotripsie", "ESWL", "calcul rénal"], h: 0.75, t: SED, pos: DORSAL }),
   x("Pyéloplastie", "J2", "intermediate", "intermediate", "low", true, UA, { aka: ["syndrome de la jonction"], h: 2.5, t: G, pos: LATERAL }),
   x("Adénomectomie prostatique", "J2", "major", "intermediate", "high", true, P, { aka: ["adénomectomie voie haute", "Millin"], h: 2, t: SP, pos: DORSAL }),
   x("Vaporisation prostatique au laser", "J2", "minor", "low", "low", false, P, { aka: ["PVP", "GreenLight"], h: 1, t: SP, pos: LITHO }),
@@ -188,7 +188,6 @@ export const EXTRA_SURGERIES = [
   x("Curiethérapie prostatique", "J2", "minor", "low", "low", false, P, { aka: ["grains d'iode"], h: 1.5, t: SP, pos: LITHO }),
   x("Injection intravésicale de toxine botulique", "J2", "minor", "low", "minimal", false, P, { aka: ["Botox vésical"], h: 0.5, t: SED, pos: LITHO }),
   x("Surrénalectomie ou chirurgie rétropéritonéale", "J2", "major", "high", "high", true, UA, { aka: ["curage rétropéritonéal", "masse rétropéritonéale"], h: 4, t: G, pos: DORSAL }),
-  x("Lithotripsie extracorporelle", "J2", "minor", "low", "low", false, P, { aka: ["LEC", "lithotripsie", "ESWL", "calcul rénal"], h: 1, t: SED, pos: DORSAL }),
   x("Circoncision de l'enfant ou cure de phimosis", "J2", "minor", "low", "minimal", false, P, { aka: ["phimosis", "posthectomie"], h: 0.5, t: G, pos: DORSAL }),
 
   // --- Gynécologie (J1) et obstétrique (B) --------------------------------------------------

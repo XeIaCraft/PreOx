@@ -22,6 +22,7 @@ import {
   type PostopPlan,
 } from "@/lib/preop/postop";
 import type { ProtocolRisk } from "@/lib/preop/protocols";
+import type { ProspectRecommendation } from "@/lib/preop/prospect";
 import { cn } from "@/lib/utils";
 
 /**
@@ -281,3 +282,49 @@ export function PostopEditor({ plan, onChange, lines, onLines, patient }: { plan
 }
 
 export { MATERIAL_GROUPS, TARGET_GROUPS };
+
+/** The PROSPECT recommendation for the intervention: what to give, which block, what to avoid — one tap puts the analgesia in the post-op. */
+export function ProspectPanel({ rec, onApply, applied }: { rec: ProspectRecommendation; onApply?: () => void; applied?: boolean }) {
+  const list = (label: string, items: string[] | undefined, tone = "text-foreground") =>
+    items && items.length > 0 ? (
+      <div>
+        <p className="text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">{label}</p>
+        <ul className={cn("list-disc space-y-0.5 pl-4 text-sm", tone)}>
+          {items.map((x) => (
+            <li key={x}>{x}</li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
+  return (
+    <Panel
+      title={
+        <span className="flex items-center gap-1">
+          Analgésie recommandée · {rec.title}
+          <InfoTip label="PROSPECT (ESRA)">
+            <p className="text-foreground-muted">
+              Recommandations d&apos;analgésie par intervention de l&apos;European Society of Regional Anaesthesia, version {rec.year} (PMID {rec.pmid}). Résumé de la publication : la version intégrale fait foi, votre protocole de service prévaut.
+            </p>
+          </InfoTip>
+        </span>
+      }
+      actions={
+        onApply && (
+          <Button size="sm" variant={applied ? "ghost" : "secondary"} disabled={applied} onClick={onApply}>
+            {applied ? "Dans le post-op" : "Mettre dans le post-op"}
+          </Button>
+        )
+      }
+    >
+      {list("Analgésie de base", rec.basic)}
+      {list("ALR ou infiltration", rec.regional)}
+      {list("Compléments", rec.adjuncts)}
+      {list("Côté chirurgien", rec.surgical)}
+      {list("Non recommandé", rec.notRecommended, "text-foreground-muted")}
+      <p className="text-[11px] text-foreground-subtle">
+        Opioïdes en secours seulement. PROSPECT {rec.year}, PMID {rec.pmid}
+        {rec.note ? ` — ${rec.note}` : ""}.
+      </p>
+    </Panel>
+  );
+}

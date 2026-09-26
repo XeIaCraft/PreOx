@@ -16,8 +16,29 @@ import type { BleedingRisk } from "./catalog";
 import type { Technique } from "./rules/types";
 import type { SurgeryExamProfile } from "./exams";
 import { EXTRA_SURGERIES } from "./surgeries-extra";
+import { CHILD_SPECIFICS, EXISTING_FAMILIES, EXISTING_SPECIFICS, NEONATE_SPECIFICS, VARIANT_SURGERIES, approachFromName, populationFromName, sexFromName } from "./surgeries-variants";
 
 export type SurgeryGrade = "minor" | "intermediate" | "major";
+
+/** How the surgeon gets there: what changes for anaesthesia (pneumoperitoneum, Trendelenburg, one-lung ventilation, conversion…). */
+export type Approach = "open" | "laparoscopic" | "robotic" | "thoracoscopic" | "endoscopic" | "arthroscopic" | "percutaneous" | "endovascular" | "vaginal" | "transoral" | "microsurgical";
+
+export const APPROACHES: { code: Approach; label: string; short: string }[] = [
+  { code: "open", label: "Voie ouverte (laparotomie, thoracotomie, abord direct)", short: "Ouverte" },
+  { code: "laparoscopic", label: "Cœlioscopie", short: "Cœlio" },
+  { code: "robotic", label: "Robot-assistée", short: "Robot" },
+  { code: "thoracoscopic", label: "Thoracoscopie (VATS)", short: "VATS" },
+  { code: "endoscopic", label: "Endoscopique (voies naturelles)", short: "Endoscopie" },
+  { code: "arthroscopic", label: "Arthroscopie", short: "Arthroscopie" },
+  { code: "percutaneous", label: "Percutanée", short: "Percutanée" },
+  { code: "endovascular", label: "Endovasculaire", short: "Endovasculaire" },
+  { code: "vaginal", label: "Voie vaginale", short: "Vaginale" },
+  { code: "transoral", label: "Transorale", short: "Transorale" },
+  { code: "microsurgical", label: "Microchirurgie", short: "Micro" },
+];
+
+/** Who the procedure is for: an adult entry, a child's, a newborn's (their own risks and doses). */
+export type Population = "adult" | "child" | "neonate";
 
 export interface CatalogSurgery {
   id: string;
@@ -35,6 +56,14 @@ export interface CatalogSurgery {
   techniques?: Technique[];
   closedSpace?: boolean;
   examProfile?: SurgeryExamProfile;
+  approach?: Approach;
+  /** Variants of the same operation (open, laparoscopic, robotic, child…) share a family. */
+  family?: string;
+  population?: Population;
+  /** Operation possible for one sex only. */
+  sex?: "M" | "F";
+  /** What the approach or the operation changes for the anaesthesia. */
+  specifics?: string[];
 }
 
 const s = (
@@ -191,6 +220,8 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
 
 // More procedures, by specialty (surgeries-extra.ts) — the first entries keep their place (and ids).
 for (const e of EXTRA_SURGERIES) if (!SURGERY_CATALOG.some((x) => x.id === e.id)) SURGERY_CATALOG.push(e);
+// The other approaches of the same operations, and children's and newborns' surgery (surgeries-variants.ts).
+for (const e of VARIANT_SURGERIES) if (!SURGERY_CATALOG.some((x) => x.id === e.id)) SURGERY_CATALOG.push(e);
 
 /** Indicative durations (skin to skin, hours) — feed ARISCAT; always editable. */
 const DURATIONS: Record<string, number> = {
@@ -399,3 +430,14 @@ export const BLEEDING_RISKS: { code: BleedingRisk; label: string; definition: st
   { code: "low", label: "Faible", definition: "Saignement possible mais peu abondant ou compressible, sans conséquence grave — ex. arthroscopie, chirurgie de la main, hernie inguinale, chirurgie du sein." },
   { code: "high", label: "Élevé", definition: "Saignement potentiellement abondant, ou dans un espace clos où un hématome est grave — ex. chirurgie majeure abdominale, thoracique, orthopédique, vasculaire, urologique ; neurochirurgie, rachis." },
 ];
+
+// Approach, sex, population and family, from the name when not given; specifics of children and newborns.
+const FAMILY_OF = new Map(Object.entries(EXISTING_FAMILIES).flatMap(([family, ids]) => ids.map((id) => [id, family] as const)));
+for (const x of SURGERY_CATALOG) {
+  x.approach ??= approachFromName(x.name, x.aka);
+  x.sex ??= sexFromName(x.name, x.category);
+  x.population ??= populationFromName(x.name);
+  x.family ??= FAMILY_OF.get(x.id);
+  const extra = [...(EXISTING_SPECIFICS[x.id] ?? []), ...(x.population === "child" ? CHILD_SPECIFICS : x.population === "neonate" ? NEONATE_SPECIFICS : [])];
+  if (extra.length) x.specifics = [...(x.specifics ?? []), ...extra.filter((e) => !x.specifics?.includes(e))];
+}

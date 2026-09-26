@@ -7,7 +7,9 @@
 // textbook (Manuel pratique d'anesthésie 2020, chapter given). No patient
 // data: doses are per kilo or fixed, computed for the patient in the plan.
 
-import type { DoseUnit, DrugPhase, Protocol, ProtocolContent, ProtocolDrug, WeightBasis } from "./protocols";
+import type { DoseUnit, DrugPhase, Protocol, ProtocolContent, ProtocolDrug, ProtocolRisk, WeightBasis } from "./protocols";
+import { RISK_LIBRARY } from "./plan-catalog";
+import { DEFAULT_PCEA, type PostopPlan } from "./postop";
 
 export type ReferenceProtocol = Omit<Protocol, "created_at" | "updated_at">;
 
@@ -74,6 +76,16 @@ const ketorolac = () => drug("Kétorolac", "analgesia", "bolus_iv", { fixed: 30 
 const tranexamic = () => drug("Acide tranexamique", "haemodynamic", "perfusion", { perKg: 15 }, "mg", "10–15 mg/kg en début d'intervention (manuel, chap. 40).");
 const ketamineSparing = () => drug("Kétamine", "analgesia", "bolus_iv", { perKg: 0.15 }, "mg", "Épargne morphinique 0,15–0,5 mg/kg (cours Dubois ; manuel, chap. 6).");
 const MONITORING = ["ECG", "PNI", "SpO₂", "EtCO₂", "Température"];
+const metronidazole = () => drug("Métronidazole", "antibio", "perfusion", { fixed: 500 }, "mg", "En 20 min, avec la céfazoline (côlon, rectum, appendice) ; réinjection à 8 h (manuel, chap. 20).");
+const ropivacaineBlock = (mg: number, what: string) => drug(`Ropivacaïne (${what})`, "alr", "perinerveux", { fixed: mg }, "mg", "Échoguidé ; dose totale d'anesthésiques locaux ≤ 3 mg/kg, toutes voies cumulées (manuel, chap. 12).");
+const lidocaineIv = () => drug("Lidocaïne IV", "analgesia", "pse", { perKg: 1.5 }, "mg", "Bolus 1,5 mg/kg puis 2 mg/kg/h (manuel, tableau 7.5) : moins d'iléus et séjour plus court (RAC). PROSPECT 2024 ne la retient que si l'analgésie de base est impossible ; jamais avec une péridurale ou un bloc en cours.");
+/** A risk of the library (plan-catalog.ts): why, prevention, conduct, crisis card. */
+const risk = (id: string): ProtocolRisk => {
+  const r = RISK_LIBRARY.find((x) => x.id === id)!;
+  return { title: r.title, why: r.why, prevention: r.prevention, conduct: r.conduct, source: r.source, crisis: r.crisis };
+};
+const postop = (p: Partial<PostopPlan>): PostopPlan => ({ analgesia: [], watch: ["pain"], ...p });
+const PROSPECT_REF = (what: string, year: number, pmid: string) => `PROSPECT ${what} ${year} (PMID ${pmid})`;
 
 // Protocols ------------------------------------------------------------------
 
@@ -269,11 +281,11 @@ export const REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
         propofolInduction(),
         sufentanil(),
         rocuronium(),
-        drug("Lidocaïne IV", "analgesia", "pse", { perKg: 1.5 }, "mg", "Bolus 1,5 mg/kg puis 2 mg/kg/h : moins d'iléus et durée de séjour réduite (cours Hardy ; manuel, chap. 7)."),
+        lidocaineIv(),
         ketamineSparing(),
         drug("Dexaméthasone", "ponv", "bolus_iv", { perKg: 0.1, max: 8 }, "mg", "0,1 mg/kg (cours Hardy)."),
         cefazolin("Dans l'heure avant l'incision ; réinjection à 4 h."),
-        drug("Métronidazole", "antibio", "perfusion", { fixed: 500 }, "mg", "En 20 min, avec la céfazoline (côlon, rectum) ; réinjection à 8 h."),
+        metronidazole(),
         ondansetron(),
         paracetamol(),
         ketorolac(),
@@ -566,6 +578,256 @@ export const REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
       risks: [{ title: "NVPO fréquents", conduct: "Double prophylaxie (dexaméthasone + sétron), épargne morphinique par le bloc." }],
       postop: ["Bras du côté du curage : pas de brassard ni de perfusion (lymphœdème)", "Sortie le jour même pour une tumorectomie"],
       notes: "Allergie au bleu patenté (ganglion sentinelle) : à rechercher.",
+    }),
+  },
+  // --- Protocols after the PROSPECT recommendations (ESRA) ---------------------------------------
+  {
+    id: pid(20),
+    name: "Appendicectomie par cœlioscopie",
+    surgery: "Appendicectomie par cœlioscopie",
+    operation_category: "A",
+    hospital: "",
+    source: `${PROSPECT_REF("appendicectomie", 2024, "38214556")} ; ${MANUAL}, chap. 20 et 23.`,
+    content: content({
+      techniques: ["general"],
+      drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), metronidazole(), dexamethasone(8), ondansetron(), paracetamol(), ketorolac(), drug("Bupivacaïne intrapéritonéale", "alr", "infiltration", { fixed: 50 }, "mg", "Instillation intrapéritonéale d'anesthésique local (PROSPECT) ; dose totale ≤ 2 mg/kg.")],
+      targets: ["PAM ≥ 65 mmHg", "Normothermie ≥ 36 °C", "TOF ≥ 0,9 avant l'extubation"],
+      material: [...MONITORING, "Curarimètre (TOF)"],
+      risks: [risk("aspiration"), risk("ponv")],
+      postopPlan: postop({ destination: "ward", analgesia: ["paracetamol", "nsaid"], ponvRescue: true }),
+      notes: "Urgence souvent : estomac plein → séquence rapide. Voie ouverte : TAP unilatéral préopératoire ou infiltration pré-incisionnelle (PROSPECT). Appendicite compliquée : antibiothérapie, pas prophylaxie.",
+    }),
+  },
+  {
+    id: pid(21),
+    name: "Colectomie par laparotomie avec péridurale",
+    surgery: "Colectomie par laparotomie",
+    operation_category: "A",
+    hospital: "",
+    source: `${PROSPECT_REF("chirurgie colorectale ouverte", 2024, "38420876")} ; ${HARDY} ; ${MANUAL}, chap. 20, 25 et 30.`,
+    content: content({
+      techniques: ["general", "neuraxial"],
+      drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), metronidazole(), dexamethasone(8), ondansetron(), paracetamol()],
+      targets: ["PAM ≥ 65 mmHg", "Normothermie ≥ 36 °C", "Balance hydrique proche de zéro"],
+      material: [...MONITORING, "Curarimètre (TOF)", "Cathéter péridural thoracique", "Sonde urinaire", "Réchauffeur à air pulsé"],
+      risks: [risk("induction_hypotension"), risk("hypothermia"), risk("bleeding")],
+      postopPlan: postop({ destination: "ward", analgesia: ["paracetamol", "nsaid", "pcea"], pcea: DEFAULT_PCEA, thrombo: "lmwh_mechanical", ponvRescue: true, watch: ["pain", "sedation", "block", "urine"] }),
+      notes: "Péridurale thoracique basse avant l'induction. Sans péridurale : TAP bilatéral ou lidocaïne IV (PROSPECT), jamais deux voies d'anesthésique local en même temps. AINS pour le côlon seulement (pas pour le rectum).",
+    }),
+  },
+  {
+    id: pid(22),
+    name: "Hépatectomie par laparotomie",
+    surgery: "Hépatectomie par laparotomie",
+    operation_category: "A",
+    hospital: "",
+    source: `${PROSPECT_REF("hépatectomie ouverte", 2021, "33436442")} ; ${MANUAL}, chap. 20, 25 et 30.`,
+    content: content({
+      techniques: ["general", "neuraxial"],
+      drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), tranexamic()],
+      targets: ["PVC basse pendant la transection si demandée par le chirurgien", "PAM ≥ 65 mmHg", "Normothermie ≥ 36 °C"],
+      material: [...MONITORING, "Cathéter artériel", "Voie veineuse centrale", "Cathéter péridural thoracique", "2 VVP de gros calibre (16–14G)", "Groupe et RAI", "Réchauffeur de solutés"],
+      risks: [risk("bleeding"), risk("gas_embolism"), risk("hypothermia")],
+      postopPlan: postop({ destination: "hdu", analgesia: ["paracetamol", "pcea"], pcea: DEFAULT_PCEA, thrombo: "lmwh_mechanical", watch: ["pain", "sedation", "bleeding", "glucose", "hb"] }),
+      notes: "PROSPECT : péridurale thoracique continue ou TAP sous-costaux obliques bilatéraux. Coagulation postopératoire à contrôler avant le retrait du cathéter (hépatectomie majeure). Paracétamol et AINS selon la fonction hépatique et rénale.",
+    }),
+  },
+  {
+    id: pid(23),
+    name: "Prostatectomie radicale robot-assistée",
+    surgery: "Prostatectomie radicale robot-assistée",
+    operation_category: "J2",
+    hospital: "",
+    source: `${PROSPECT_REF("prostatectomie", 2021, "34197976")} ; ${MANUAL}, chap. 20 et 30.`,
+    content: content({
+      techniques: ["general"],
+      drugs: [propofolInduction(), sufentanil(), rocuronium(0.6), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), ketorolac(), ropivacaineBlock(150, "TAP bilatéral en fin d'intervention")],
+      targets: ["Curarisation profonde, TOF monitoré", "Restriction liquidienne jusqu'à l'anastomose", "PAM ≥ 65 mmHg"],
+      material: [...MONITORING, "Curarimètre (TOF)", "Protection des points d'appui", "2 VVP 18G (bras le long du corps)"],
+      risks: [{ title: "Trendelenburg marqué prolongé", why: "Pneumopéritoine et tête très basse pendant des heures : œdème facial et laryngé, hypoxémie, pression intraoculaire.", prevention: "Restriction liquidienne peropératoire, ventilation protectrice, yeux protégés, bras et épaules calés.", conduct: "Vérifier l'œdème avant l'extubation (test de fuite) ; tête surélevée au réveil." }, risk("ponv")],
+      postopPlan: postop({ destination: "ward", analgesia: ["paracetamol", "nsaid"], thrombo: "lmwh", ponvRescue: true }),
+      notes: "Robot arrimé : accès au patient limité, prévoir la conduite en cas d'urgence (désarrimage). Voie ouverte : lidocaïne IV et infiltration de la plaie (PROSPECT).",
+    }),
+  },
+  {
+    id: pid(24),
+    name: "Lobectomie par thoracoscopie (VATS)",
+    surgery: "Lobectomie pulmonaire",
+    operation_category: "G",
+    hospital: "",
+    source: `${PROSPECT_REF("VATS", 2021, "34739134")} ; ${MANUAL}, chap. 20 et 26.`,
+    content: content({
+      techniques: ["general", "deep_block"],
+      drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), ketorolac(), ropivacaineBlock(150, "paravertébral ou ESP")],
+      targets: ["Ventilation unipulmonaire protectrice (Vt 4–6 mL/kg de poids idéal sur un poumon, PEP)", "SpO₂ ≥ 90 %", "Restriction liquidienne"],
+      material: [...MONITORING, "Sonde double lumière", "Fibroscope", "Cathéter artériel", "Échographe"],
+      risks: [{ title: "Hypoxémie en ventilation unipulmonaire", why: "Shunt par le poumon exclu, encore perfusé ; plus fréquent à droite, en décubitus dorsal et si la fonction respiratoire préopératoire est bonne.", prevention: "Position de la sonde vérifiée au fibroscope (et après chaque mobilisation), FiO₂ adaptée, PEP 5 cmH₂O au poumon ventilé, recrutement avant l'exclusion.", conduct: "FiO₂ 100 %, revérifier la sonde au fibroscope, aspirer, recrutement du poumon ventilé, CPAP 5–10 cmH₂O au poumon exclu, puis réventilation intermittente des deux poumons ; clamper l'artère pulmonaire si pneumonectomie." }, risk("bleeding")],
+      postopPlan: postop({ destination: "ward", analgesia: ["paracetamol", "nsaid"], thrombo: "lmwh", watch: ["pain", "sedation"] }),
+      notes: "PROSPECT : paravertébral ou ESP en premier choix, serratus antérieur en second ; dexmédétomidine IV si analgésie de base et régionale impossibles.",
+    }),
+  },
+  {
+    id: pid(25),
+    name: "Thoracotomie avec péridurale thoracique",
+    surgery: "Lobectomie par thoracotomie",
+    operation_category: "G",
+    hospital: "",
+    source: `${PROSPECT_REF("thoracotomie", 2026, "41521792")} ; ${MANUAL}, chap. 20, 25 et 26.`,
+    content: content({
+      techniques: ["general", "neuraxial"],
+      drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), ketorolac()],
+      targets: ["Ventilation unipulmonaire protectrice", "SpO₂ ≥ 90 %", "Restriction liquidienne (pneumonectomie : < 3 L les 24 premières heures, manuel chap. 21)"],
+      material: [...MONITORING, "Sonde double lumière", "Fibroscope", "Cathéter artériel", "Cathéter péridural thoracique"],
+      risks: [{ title: "Hypoxémie en ventilation unipulmonaire", why: "Shunt par le poumon exclu, encore perfusé ; plus fréquent à droite, en décubitus dorsal et si la fonction respiratoire préopératoire est bonne.", prevention: "Position de la sonde vérifiée au fibroscope (et après chaque mobilisation), FiO₂ adaptée, PEP 5 cmH₂O au poumon ventilé, recrutement avant l'exclusion.", conduct: "FiO₂ 100 %, revérifier la sonde au fibroscope, aspirer, recrutement du poumon ventilé, CPAP 5–10 cmH₂O au poumon exclu, puis réventilation intermittente des deux poumons ; clamper l'artère pulmonaire si pneumonectomie." }, risk("bleeding")],
+      postopPlan: postop({ destination: "hdu", analgesia: ["paracetamol", "nsaid", "pcea"], pcea: DEFAULT_PCEA, thrombo: "lmwh_mechanical", watch: ["pain", "sedation", "block"] }),
+      notes: "PROSPECT 2025 : péridurale thoracique ou paravertébral en premier choix ; ESP, rhomboïde-intercostal ou intercostal en second.",
+    }),
+  },
+  {
+    id: pid(26),
+    name: "Craniotomie programmée",
+    surgery: "Craniotomie pour tumeur",
+    operation_category: "D",
+    hospital: "",
+    source: `${PROSPECT_REF("craniotomie", 2023, "37417808")} ; ${MANUAL}, chap. 20 et 28.`,
+    content: content({
+      techniques: ["general"],
+      drugs: [propofolInduction(), drug("Rémifentanil", "maintenance", "aivoc", { perKg: 0.5 }, "µg", "Bolus 0,5 µg/kg avant la pose de la têtière à pointes ; entretien 0,1–0,25 µg/kg/min ou AIVOC 2–5 ng/mL (manuel, chap. 7 et 22)."), rocuronium(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), drug("Dexmédétomidine", "analgesia", "pse", { perKg: 1 }, "µg", "Charge 1 µg/kg en 10 min puis 0,2–0,7 µg/kg/h (manuel, chap. 10) ; recommandée par PROSPECT. Bradycardie : réduire.")],
+      targets: ["PAM stable (perfusion cérébrale), normocapnie", "Normoglycémie", "Réveil rapide pour l'examen neurologique"],
+      material: [...MONITORING, "Cathéter artériel", "Sonde urinaire", "Curarimètre (TOF)"],
+      risks: [risk("delayed_awakening"), risk("ponv")],
+      postopPlan: postop({ destination: "hdu", analgesia: ["paracetamol", "nsaid"], thrombo: "mechanical", watch: ["pain", "neuro", "glucose"] }),
+      notes: "PROSPECT : paracétamol, AINS, dexmédétomidine IV et bloc du scalp ou infiltration du site d'incision ; opioïdes en secours. AINS à discuter avec le neurochirurgien (saignement).",
+    }),
+  },
+  {
+    id: pid(27),
+    name: "Hémorroïdectomie",
+    surgery: "Hémorroïdectomie",
+    operation_category: "A",
+    hospital: "",
+    source: `${PROSPECT_REF("hémorroïdectomie", 2023, "39917290")} ; ${MANUAL}, chap. 20 et 23.`,
+    content: content({
+      techniques: ["general", "superficial_block"],
+      drugs: [propofolInduction(), sufentanil(0.1), dexamethasone(8), ondansetron(), paracetamol(), ketorolac(), ropivacaineBlock(75, "bloc pudendal bilatéral")],
+      targets: ["Masque laryngé si position le permet"],
+      material: [...MONITORING, "Échographe ou neurostimulateur (bloc pudendal)"],
+      risks: [risk("ponv")],
+      postopPlan: postop({ destination: "ambulatory", analgesia: ["paracetamol", "nsaid"], watch: ["pain", "urine"] }),
+      notes: "PROSPECT : bloc pudendal bilatéral, corticoïde systémique ; topiques (métronidazole, diltiazem, sucralfate ou trinitrine), toxine botulique. Antibioprophylaxie selon le protocole du service.",
+    }),
+  },
+  {
+    id: pid(28),
+    name: "Hallux valgus en ambulatoire",
+    surgery: "Chirurgie de l'avant-pied",
+    operation_category: "K",
+    hospital: "",
+    source: `${PROSPECT_REF("hallux valgus", 2025, "41122054")} ; ${DUBOIS} ; ${MANUAL}, chap. 12.`,
+    content: content({
+      techniques: ["superficial_block", "general"],
+      drugs: [ropivacaineBlock(100, "bloc de cheville"), propofolInduction(), dexamethasone(8), paracetamol(), ketorolac()],
+      targets: ["Garrot de cheville : durée surveillée"],
+      material: [...MONITORING, "Échographe", "Garrot"],
+      tourniquetAlertMin: 90,
+      risks: [risk("last")],
+      postopPlan: postop({ destination: "ambulatory", analgesia: ["paracetamol", "nsaid"], watch: ["pain", "neuro"] }),
+      notes: "PROSPECT 2025 : bloc de cheville en premier choix (infiltration en alternative), chirurgie mini-invasive ou percutanée préférée. Antibioprophylaxie seulement si matériel (vis, plaque) : céfazoline 2 g selon le protocole du service.",
+    }),
+  },
+  {
+    id: pid(29),
+    name: "Arthrodèse lombaire (rachis complexe)",
+    surgery: "Arthrodèse rachidienne",
+    operation_category: "K",
+    hospital: "",
+    source: `${PROSPECT_REF("chirurgie complexe du rachis", 2021, "34397527")} ; ${MANUAL}, chap. 20 et 40.`,
+    content: content({
+      techniques: ["general"],
+      drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), tranexamic(), dexamethasone(8), ondansetron(), paracetamol(), ketorolac(), ketamineSparing()],
+      targets: ["PAM ≥ 65 mmHg (moelle, yeux en décubitus ventral)", "Normothermie ≥ 36 °C"],
+      material: [...MONITORING, "Cathéter artériel", "Protection des points d'appui", "Cell saver", "Groupe et RAI"],
+      risks: [risk("bleeding"), { title: "Décubitus ventral", why: "Compression oculaire (cécité postopératoire), points d'appui, abdomen comprimé (saignement épidural).", prevention: "Tête neutre, yeux libres vérifiés, abdomen libre, appuis rembourrés, PAM maintenue.", conduct: "Vérifier les yeux régulièrement ; hypotension prolongée à éviter." }],
+      postopPlan: postop({ destination: "ward", analgesia: ["paracetamol", "nsaid", "pca_morphine", "ketamine"], thrombo: "mechanical", watch: ["pain", "sedation", "neuro", "hb"] }),
+      notes: "PROSPECT : paracétamol, anti-COX-2 ou AINS, kétamine peropératoire ; péridurale posée par le chirurgien possible. AINS à discuter avec le chirurgien (fusion osseuse). Potentiels évoqués : TIVA.",
+    }),
+  },
+  {
+    id: pid(30),
+    name: "Décompression lombaire ou hernie discale",
+    surgery: "Décompression lombaire",
+    operation_category: "D",
+    hospital: "",
+    source: `${PROSPECT_REF("laminectomie", 2020, "33247353")} ; ${MANUAL}, chap. 20.`,
+    content: content({
+      techniques: ["general"],
+      drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), ketorolac(), drug("Bupivacaïne (infiltration de la plaie)", "alr", "infiltration", { fixed: 50 }, "mg", "Avant la fermeture (PROSPECT) ; ≤ 2 mg/kg.")],
+      targets: ["PAM ≥ 65 mmHg"],
+      material: [...MONITORING, "Protection des points d'appui"],
+      risks: [risk("ponv")],
+      postopPlan: postop({ destination: "ambulatory", analgesia: ["paracetamol", "nsaid"], watch: ["pain", "neuro"] }),
+      notes: "PROSPECT : paracétamol et AINS ou anti-COX-2 poursuivis, infiltration ou instillation de la plaie ; gabapentinoïdes et opioïdes intrathécaux non recommandés (risques).",
+    }),
+  },
+  {
+    id: pid(31),
+    name: "Réparation de la coiffe des rotateurs",
+    surgery: "Réparation de la coiffe des rotateurs",
+    operation_category: "K",
+    hospital: "",
+    source: `${PROSPECT_REF("coiffe des rotateurs", 2019, "31392721")} ; ${DUBOIS} ; ${MANUAL}, chap. 12 et 19.`,
+    content: content({
+      techniques: ["general", "superficial_block"],
+      drugs: [ropivacaineBlock(75, "bloc interscalénique ou suprascapulaire"), propofolInduction(), sufentanil(0.1), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), ketorolac()],
+      targets: ["Position semi-assise : PA mesurée ou corrigée au niveau du cerveau"],
+      material: [...MONITORING, "Échographe"],
+      risks: [{ title: "Bloc interscalénique : paralysie phrénique", why: "Parésie diaphragmatique homolatérale quasi constante.", prevention: "Éviter si insuffisance respiratoire ; bloc suprascapulaire en alternative.", conduct: "Dyspnée : position assise, oxygène ; évolution favorable avec la levée du bloc." }, risk("last")],
+      postopPlan: postop({ destination: "ambulatory", analgesia: ["paracetamol", "nsaid"], watch: ["pain", "block"] }),
+      notes: "PROSPECT : voie arthroscopique, paracétamol, AINS, dexaméthasone, bloc interscalénique ou suprascapulaire (± nerf axillaire).",
+    }),
+  },
+  {
+    id: pid(32),
+    name: "Fente palatine de l'enfant",
+    surgery: "Fente labio-palatine",
+    operation_category: "L",
+    hospital: "",
+    source: `${PROSPECT_REF("fente palatine", 2024, "38124208")} ; ${MANUAL}, chap. 37 ; ${ESAIC_FASTING}.`,
+    content: content({
+      techniques: ["general", "superficial_block"],
+      drugs: [drug("Propofol", "induction", "bolus_iv", { perKg: 3 }, "mg", "Enfant : 2,5–4 mg/kg (manuel, chap. 37) ; ou induction au sévoflurane."), drug("Ropivacaïne (bloc maxillaire suprazygomatique)", "alr", "perinerveux", { perKg: 0.3, max: 30 }, "mg", "Bilatéral ; dose totale ≤ 3 mg/kg (manuel, chap. 12)."), cefazolin("Enfant : 30 mg/kg, dans l'heure avant l'incision."), drug("Paracétamol", "analgesia", "perfusion", { perKg: 15 }, "mg", "15 mg/kg 4 ×/j (manuel, chap. 37).")],
+      targets: ["Sonde préformée (RAE), fixation médiane", "Normothermie"],
+      material: ["ECG", "PNI", "SpO₂", "EtCO₂", "Température", "Échographe", "Canule de Guedel adaptée"],
+      risks: [risk("laryngospasm"), { title: "Obstruction des voies aériennes au réveil", why: "Palais refait, œdème, saignement ; langue parfois fixée par un fil.", prevention: "Aspiration douce, extubation complètement réveillé, décubitus latéral.", conduct: "Fil de traction de langue, canule nasopharyngée, réintubation si besoin (difficile)." }],
+      postopPlan: postop({ destination: "ward", analgesia: ["paracetamol", "nsaid"], watch: ["pain", "sedation"] }),
+      notes: "PROSPECT : bloc du nerf maxillaire suprazygomatique (ou palatin), dexmédétomidine avec l'anesthésique local ou IV, paracétamol et AINS. Doses au poids de l'enfant.",
+    }),
+  },
+  {
+    id: pid(33),
+    name: "Chirurgie cardiaque sous CEC (sternotomie)",
+    surgery: "Pontages aorto-coronariens sous CEC",
+    operation_category: "F",
+    hospital: "",
+    source: `${PROSPECT_REF("sternotomie", 2023, "37501517")} ; EACTS/EACTA/EBCP : circulation extracorporelle de l'adulte 2019 (PMID 31576396) ; ${MANUAL}, chap. 20, 27 et 40.`,
+    content: content({
+      techniques: ["general"],
+      drugs: [
+        drug("Étomidate ou propofol titré", "induction", "bolus_iv", { perKg: 0.3 }, "mg", "Induction lente et titrée (étomidate 0,2–0,3 mg/kg) : fonction ventriculaire altérée, maintenir la pression de perfusion coronaire."),
+        sufentanil(0.5),
+        rocuronium(),
+        cefazolin("2 g dans l'heure avant l'incision (3 g si > 120 kg) ; seconde dose 3–4 h après ou si pertes > 1 500 mL (manuel, chap. 20)."),
+        tranexamic(),
+        drug("Héparine (CEC)", "haemodynamic", "bolus_iv", { perKg: 300 }, "UI", "300–400 UI/kg avant la canulation, sur demande du chirurgien ; ACT 400–480 s (cœur battant : ACT 250 s) (manuel, chap. 27). Antécédent de TIH : contre-indiquée."),
+        drug("Protamine", "haemodynamic", "perfusion", { perKg: 3 }, "mg", "Après la sortie de CEC, lentement : 1 mg pour 100 UI d'héparine, puis 25–50 mg si le saignement persiste (manuel, chap. 27) ; hypotension, HTAP, anaphylaxie possibles."),
+        paracetamol(),
+        drug("Magnésium", "analgesia", "perfusion", { perKg: 40 }, "mg", "Adjuvant proposé par PROSPECT (et prévention des arythmies) ; 40–50 mg/kg sur 15 min (manuel, chap. 7)."),
+      ],
+      targets: ["PAM ≥ 65 mmHg (plus si sténose carotidienne ou insuffisance rénale)", "Normoglycémie (< 10 mmol/L)", "Hb selon la situation : transfusion si < 7,5–8 g/dL (restrictive)", "Normothermie au sevrage"],
+      material: [...MONITORING, "Cathéter artériel", "Voie veineuse centrale", "ETO", "BIS", "Sonde urinaire", "Défibrillateur, palettes internes", "Sang en salle"],
+      risks: [risk("bleeding"), risk("hypothermia"), { title: "Sevrage difficile de la CEC", why: "Sidération myocardique, protection incomplète, vasoplégie.", prevention: "ETO avant sevrage, normothermie, potassium et calcium corrigés, rythme contrôlé (entraînement électrosystolique).", conduct: "Inotropes (dobutamine, adrénaline) ou noradrénaline selon l'ETO ; retour en CEC si échec ; ballon de contre-pulsion ou assistance à discuter." }],
+      postopPlan: postop({ destination: "icu", analgesia: ["paracetamol", "opioid_titration"], thrombo: "mechanical", watch: ["pain", "bleeding", "hb", "glucose", "potassium", "troponin", "delirium"] }),
+      notes: "PROSPECT : paracétamol et AINS (sauf contre-indication — souvent contre-indiqués après pontage : à décider avec l'équipe), magnésium ou dexmédétomidine peropératoires, bloc parasternal ou infiltration ; opioïdes en secours. Anticoagulation et sevrage de CEC selon le protocole local.",
     }),
   },
 ];

@@ -7,7 +7,7 @@
 
 import type { AttentionLevel } from "./attention";
 import type { Qualifier } from "./history";
-import type { SurgeryGrade } from "./surgeries";
+import type { Approach, Population, SurgeryGrade } from "./surgeries";
 import { treatmentMatches, type Medication } from "./medications";
 import type { Technique } from "./rules/types";
 import type { SurgeryExamProfile } from "./exams";
@@ -128,6 +128,13 @@ export interface SurgeryItem extends Verifiable {
   closedSpace?: boolean;
   /** Usual work-up of the procedure (exams.ts), each exam tied to its guideline. */
   examProfile?: SurgeryExamProfile;
+  approach?: Approach;
+  /** Variants of the same operation share a family (open, laparoscopic, robotic, child…). */
+  family?: string;
+  population?: Population;
+  sex?: "M" | "F";
+  /** What the approach or the operation changes for the anaesthesia. */
+  specifics?: string[];
   notes?: string;
 }
 

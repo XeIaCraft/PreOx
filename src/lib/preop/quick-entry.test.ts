@@ -20,6 +20,11 @@ describe("quick entry", () => {
     expect(r.unknown).toEqual([]);
   });
 
+  it("knows a child's sex", () => {
+    expect(parseQuickEntry("Garçon 6 ans, 22 kg", DEFAULT_CATALOGS).sex).toBe("M");
+    expect(parseQuickEntry("Fille de 4 ans, 16 kg", DEFAULT_CATALOGS).sex).toBe("F");
+    expect(parseQuickEntry("Homme 50 ans ; sa fille l'accompagne", DEFAULT_CATALOGS).sex).toBe("M");
+  });
   it("doesn't take short words for acronyms, knows former smokers and free allergies", () => {
     const r = parseQuickEntry("ex-fumeur, allergique aux fraises, il a une IC", DEFAULT_CATALOGS);
     expect(r.substances.tobacco).toBe("former");
