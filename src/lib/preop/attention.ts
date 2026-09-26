@@ -1311,9 +1311,11 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
       ].filter(Boolean);
       if (factors.length) {
         const inductions = (plan?.drugs ?? []).filter((x) => x.phase === "induction" || x.choice === "induction");
-        const sevo = inductions.some((x) => /s[ée]vo/i.test(x.name)) || plan?.gases?.agent === "sevoflurane";
-        const propofol = inductions.some((x) => /propofol/i.test(x.name));
-        const planNote = !plan ? "" : propofol && sevo ? " Le plan laisse le choix : retenir le propofol." : sevo && !propofol ? " Le plan prévoit une induction au sévoflurane : la remplacer par le propofol si une voie veineuse est possible." : "";
+        // Only the induction counts: a sevoflurane maintenance (gas plan) lowers the risk (von Ungern-Sternberg 2010).
+        const sevo = inductions.filter((x) => /s[ée]vo/i.test(x.name));
+        const propofol = inductions.filter((x) => /propofol/i.test(x.name));
+        const choice = sevo.some((x) => x.choice && propofol.some((y) => y.choice === x.choice));
+        const planNote = choice ? " Le plan laisse le choix : retenir le propofol." : sevo.length && !propofol.length ? " Le plan prévoit une induction au sévoflurane : la remplacer par le propofol si une voie veineuse est possible." : "";
         add({
           id: "paediatric-prae",
           level: factors.length >= 2 ? "high" : "medium",

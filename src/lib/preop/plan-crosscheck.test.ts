@@ -88,3 +88,26 @@ describe("difficult airway", () => {
     expect(points(patient([]), planOf([])).find((x) => x.id === "airway")).toBeUndefined();
   });
 });
+
+describe("children at respiratory risk: the plan's induction", () => {
+  const child = () => {
+    const c = patient(["asthma"]);
+    c.patient = { ...c.patient, age: 6, weightKg: 20 };
+    return c;
+  };
+  it("a sevoflurane maintenance is not an inhalational induction", () => {
+    const plan = planOf(["Propofol"], { agent: "sevoflurane", carrier: "air", fio2: [0.4, 0.5], mac: [0.7, 1] });
+    expect(points(child(), plan).find((x) => x.id === "paediatric-prae")?.detail).not.toMatch(/Le plan/);
+  });
+  it("a sevoflurane induction alone: replace it", () => {
+    expect(points(child(), planOf(["Sévoflurane"])).find((x) => x.id === "paediatric-prae")?.detail).toMatch(/la remplacer par le propofol/);
+  });
+});
+
+describe("organ dosing matches the drug, not a note in brackets", () => {
+  it("intrathecal morphine has its own advice; a TAP block note is not morphine", async () => {
+    const { organAdjustments } = await import("./organ-dosing");
+    expect(organAdjustments(["Ropivacaïne (TAP bilatéral si pas de morphine intrathécale)"], { crcl: 20 })).toEqual([]);
+    expect(organAdjustments(["Morphine intrathécale"], { crcl: 20 }).map((o) => o.drug)).toEqual(["Morphine intrathécale"]);
+  });
+});

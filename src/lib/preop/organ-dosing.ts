@@ -10,8 +10,10 @@ import { fold } from "./catalog";
 
 export interface OrganRule {
   name: string;
-  /** Words matched in a plan drug's name (folded). */
+  /** Words matched in a plan drug's name (folded, without what is in brackets). */
   words: string[];
+  /** Words that exclude the drug (« morphine intrathécale » is not systemic morphine). */
+  unless?: string[];
   /** From the lowest threshold up: the first one below which the clearance falls applies. */
   renal?: { below: number; text: string }[];
   /** Cirrhosis (any class), and a stronger text for Child B or C. */
@@ -22,11 +24,17 @@ export const ORGAN_RULES: OrganRule[] = [
   {
     name: "Morphine",
     words: ["morphine"],
+    unless: ["intrathec", "hydromorphone"],
     renal: [
       { below: 30, text: "à éviter (accumulation de la morphine-6-glucuronide : sédation, dépression respiratoire retardée) — fentanyl, ou oxycodone ou hydromorphone à dose réduite" },
       { below: 60, text: "doses réduites et intervalles allongés, surveillance de la sédation" },
     ],
     hepatic: { any: "doses réduites et intervalles allongés (biodisponibilité orale augmentée)", severe: "à éviter si possible ; sinon doses très réduites — risque d'encéphalopathie" },
+  },
+  {
+    name: "Morphine intrathécale",
+    words: ["morphine intrathec"],
+    renal: [{ below: 30, text: "métabolites qui s'accumulent : dose la plus faible (≤ 100 µg) et surveillance respiratoire 24 h, ou s'en passer" }],
   },
   {
     name: "Oxycodone",
@@ -128,8 +136,8 @@ export interface OrganAdjustment {
 }
 
 const matches = (rule: OrganRule, name: string) => {
-  const f = fold(name);
-  return rule.words.some((w) => f.includes(w));
+  const f = fold(name.replace(/\(.*?\)/g, " "));
+  return rule.words.some((w) => f.includes(w)) && !(rule.unless ?? []).some((w) => f.includes(w));
 };
 
 /**
