@@ -123,6 +123,15 @@ export const MAPAR_RULES: Proposed[] = [
     source: mapar("Adaptation des traitements (toxicomanie)"),
     question: "How long should elective surgery be postponed after recent cocaine use, and are beta-blockers contraindicated?",
   }),
+  rule(11, {
+    title: "Ticagrélor et neurochirurgie intracrânienne : arrêt 7 jours avant",
+    statement: "Antiplaquettaires : dernière prise à J-3 (aspirine), J-5 (clopidogrel, ticagrélor), J-7 (prasugrel) quand l'arrêt est décidé ; ajouter 2 jours pour une neurochirurgie intracrânienne — soit J-7 pour le ticagrélor.",
+    conditions: [drug("B01AC24"), { kind: "surgery", attribute: "closedSpace", in: ["yes"] }],
+    action: { type: "stop_before", hours: 168, target: "surgery" },
+    source: mapar("Agents antiplaquettaires (gestion périopératoire des AAP oraux)", "Ajouter 2 j à chaque durée si neurochirurgie intracrânienne."),
+    explanations: [NEURO, "Bithérapie pour stent : différer la procédure à la fin de la bithérapie ; stent < 1 mois, ou < 6 mois à haut risque thrombotique, ou infarctus < 6 mois : différer, sinon poursuivre l'aspirine."],
+    question: "Before intracranial neurosurgery, how many days before surgery should ticagrelor be stopped (ESC 2022, GIHP 2018)?",
+  }),
 ];
 
 /** Older proposals the MAPAR replaces (a more complete version of the same advice). */
@@ -133,4 +142,5 @@ const manualId = (title: string) => {
 };
 export const MAPAR_SUPERSEDES: Record<string, string[]> = {
   [id(8)]: [manualId("Jeûne préopératoire de l'adulte")],
+  [id(11)]: [manualId("Ticagrélor et chirurgie en espace clos")],
 };

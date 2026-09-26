@@ -239,7 +239,7 @@ export const PROPOSED_GROUPS: ProposedGroup[] = [
     id: "mapar",
     title: "MAPAR (évaluation préopératoire)",
     description:
-      "Ce que le MAPAR ajoute aux règles existantes : anticoagulants oraux directs et neurochirurgie intracrânienne (J-5), indications du relais héparinique, AINS avant une chirurgie hémorragique, supplémentation en corticoïdes selon le stress chirurgical, antituberculeux, prémédication, jeûne de l'adulte (remplace celui du manuel 2020), cannabis, cocaïne.",
+      "Ce que le MAPAR ajoute aux règles existantes : anticoagulants oraux directs et neurochirurgie intracrânienne (J-5), indications du relais héparinique, AINS avant une chirurgie hémorragique, supplémentation en corticoïdes selon le stress chirurgical, antituberculeux, prémédication, jeûne de l'adulte (remplace celui du manuel 2020), cannabis, cocaïne, ticagrélor avant neurochirurgie intracrânienne (7 jours).",
     rules: MAPAR_RULES,
   },
 ];
