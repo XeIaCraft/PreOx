@@ -7,6 +7,7 @@
 
 import { MANUAL_RULES } from "./proposed-manual";
 import { TREATMENT_RULES } from "./proposed-treatments";
+import { CONDITION_RULES } from "./proposed-conditions";
 import { SUPERSEDES, VERIFIED_RULES } from "./verified";
 import type { Rule, RuleSource } from "./types";
 
@@ -200,7 +201,7 @@ export const PROPOSED_GROUPS: ProposedGroup[] = [
     id: "verified-2026",
     title: "Recommandations vérifiées",
     description:
-      "Antithrombotiques avant la chirurgie (ESC 2022) et avant une ponction ou un bloc profond (ESAIC/ESRA 2022), IEC et sartans, SGLT2, diurétiques, GLP-1, bêta-bloquants, statines, lithium, ECG, hémoglobine, créatinine, HbA1c, jeûne de l'enfant. Chaque règle porte la phrase exacte de la recommandation, sa classe et son PMID ; relues en septembre 2026.",
+      "Antithrombotiques avant la chirurgie (ESC 2022) et avant une ponction ou un bloc profond (ESAIC/ESRA 2022), IEC et sartans, SGLT2, diurétiques, GLP-1, bêta-bloquants, statines, lithium, angio-œdème héréditaire, COVID-19 récent, insuffisance surrénalienne, ECG, hémoglobine, créatinine, HbA1c, jeûne de l'enfant. Chaque règle porte la phrase exacte de la recommandation, sa classe et son PMID ; relues en septembre 2026.",
     rules: VERIFIED_RULES,
     verified: true,
     supersedes: SUPERSEDES,
@@ -225,6 +226,13 @@ export const PROPOSED_GROUPS: ProposedGroup[] = [
     description:
       "Psychotropes (antidépresseurs, IMAO, lithium, antipsychotiques, stimulants), antiépileptiques, insulines, thyroïde, hormones, PDE5, antiarythmiques, HTAP, inhalés, IPP, traitements de fond rhumatologiques et biothérapies, JAK, corticoïdes, antirétroviraux, opioïdes, buprénorphine, méthadone, naltrexone, metformine, bévacizumab, inhibiteurs de la BTK, compléments. Tirées des consensus les plus récents (SPAQI, ACR/AAHKS 2022, ASER/POQI) et recoupées via Consensus ; la phrase exacte est à confronter au texte intégral.",
     rules: TREATMENT_RULES,
+  },
+  {
+    id: "conditions-2026",
+    title: "Antécédents à risque (ESC, ASH, WFH, ISHLT, FIGO, EULAR, ESAIC)",
+    description:
+      "Pacemaker et défibrillateur, assistance ventriculaire, troubles de l'hémostase, Willebrand, hémophilie, TIH, SAPL, BMR, infarctus récent, stent, thrombopénie, placenta accreta. Tirées de la recommandation de référence de chaque domaine ; la phrase exacte est à confronter au texte intégral.",
+    rules: CONDITION_RULES,
   },
 ];
 

@@ -11,6 +11,8 @@
 // - ESAIC 2022 paediatric fasting guideline (abstract), multisociety 2024
 //   GLP-1 RA guidance (full text, PMC).
 // - Lithium: Dominicus et al., Bipolar Disord 2026 (full text, PMC).
+// - Hereditary angioedema: WAO/EAACI 2021 (full text, PMC); COVID-19 timing
+//   (Anaesthesia 2022) and adrenal insufficiency (Anaesthesia 2020): abstracts.
 
 import type { Condition, Rule, RuleSource } from "./types";
 
@@ -623,7 +625,68 @@ const LITHIUM: Verified[] = [
   }),
 ];
 
-export const VERIFIED_RULES: Verified[] = [...ALR, ...SURGERY, ...TREATMENTS, ...LITHIUM];
+// ---------------------------------------------------------------------------
+// Antecedents (WAO/EAACI 2021 full text; Association of Anaesthetists 2020 and
+// 2022, sentences of the published abstracts)
+// ---------------------------------------------------------------------------
+
+const history = (condition: string, label: string): Condition => ({ kind: "history", condition, present: true, label });
+
+const ANTECEDENTS: Verified[] = [
+  rule(90, {
+    title: "Angio-œdème héréditaire : prophylaxie par C1-inhibiteur avant le geste",
+    statement: "Angio-œdème héréditaire : prophylaxie à court terme avant tout geste chirurgical, dentaire ou manipulation des voies aérodigestives (intubation, endoscopie), par C1-inhibiteur plasmatique IV au plus près du geste ; traitement à la demande disponible.",
+    conditions: [history("hereditary_angioedema", "Angio-œdème héréditaire")],
+    action: { type: "requirement", text: "C1-inhibiteur plasmatique IV (1000 U ou 20 U/kg) au plus près du geste ; 2 doses de traitement à la demande disponibles (icatibant ou C1-INH).", blocking: false, target: "both" },
+    source: {
+      organisation: "WAO / EAACI",
+      title: "The international WAO/EAACI guideline for the management of hereditary angioedema — the 2021 revision and update (Maurer et al., World Allergy Organ J 2022;15:100627)",
+      year: 2022,
+      doi: "10.1016/j.waojou.2022.100627",
+      pmid: "35497649",
+      quote: "We, therefore, recommend short-term prophylactic treatment before medical, surgical, or dental procedures as well as exposure to other angioedema attack-inducing events (Recommendation 10). We recommend the use of intravenous pdC1-INH as first line short-term prophylaxis (Recommendation 11)",
+      grade: "Recommandations 10 et 11 (Delphi)",
+      level: "int",
+    },
+    explanations: ["« Intravenous pdC1-INH concentrate should be used for pre-procedural prophylaxis, as close as possible to the start of the procedure. (…) Most experts use either 1000 units or a dose of 20 units/kg of pdC1-INH. »", "Texte intégral lu sur PMC (PMC9023902)."],
+  }),
+  rule(91, {
+    title: "COVID-19 récent : pas de chirurgie programmée dans les 7 semaines",
+    statement: "Éviter une chirurgie programmée dans les 7 semaines suivant une infection à SARS-CoV-2, sauf si le bénéfice l'emporte ; jamais dans les 10 jours ; délai plus long si symptômes persistants ou forme modérée à sévère.",
+    conditions: [history("covid_recent", "COVID-19 récent"), { kind: "surgery", attribute: "urgency", in: ["elective"] }],
+    action: { type: "requirement", text: "Chirurgie programmée ≥ 7 semaines après le diagnostic (jamais < 10 jours) ; en deçà, évaluation multidisciplinaire du risque et décision partagée.", blocking: false, target: "surgery" },
+    source: {
+      organisation: "Association of Anaesthetists, CPOC, FSSA, RCoA, RCS England",
+      title: "Timing of elective surgery and risk assessment after SARS-CoV-2 infection: an update (El-Boghdadly et al., Anaesthesia 2022;77:580-587)",
+      year: 2022,
+      doi: "10.1111/anae.15699",
+      pmid: "35194788",
+      quote: "The guidance remains that patients should avoid elective surgery within 7 weeks of infection, unless the benefits of doing so exceed the risk of waiting. (…) Elective surgery should not take place within 10 days of diagnosis of SARS-CoV-2 infection",
+      grade: "Consensus multidisciplinaire",
+      level: "int",
+    },
+    divergences: [{ summary: "Cohorte des vétérans américains (Leeds et al., Ann Surg 2024) : surmortalité seulement dans les 14 jours, chez les ASA 4–5.", source: "Ann Surg 2024", level: "article" }],
+  }),
+  rule(92, {
+    title: "Insuffisance surrénalienne : hydrocortisone de stress périopératoire",
+    statement: "Un patient sous hormonothérapie substitutive pour insuffisance surrénalienne reçoit des doses de stress d'hydrocortisone pendant la période opératoire, en plus de son traitement habituel.",
+    conditions: [history("adrenal_insufficiency", "Insuffisance surrénale")],
+    action: { type: "requirement", text: "Hydrocortisone 100 mg IV à l'induction puis 200 mg/24 h (perfusion ou 50 mg/6 h) selon l'intervention, en plus du traitement habituel ; décroissance au retour de l'alimentation.", blocking: false, target: "both" },
+    source: {
+      organisation: "Association of Anaesthetists, Royal College of Physicians, Society for Endocrinology UK",
+      title: "Guidelines for the management of glucocorticoids during the peri-operative period for patients with adrenal insufficiency (Woodcock et al., Anaesthesia 2020;75:654-663)",
+      year: 2020,
+      doi: "10.1111/anae.14963",
+      pmid: "32017012",
+      quote: "Patients taking physiological replacement doses of corticosteroids for either primary or secondary adrenal insufficiency are at significant risk of adrenal crisis and must be given stress doses of hydrocortisone during the peri-operative period.",
+      grade: "Recommandation",
+      level: "int",
+    },
+    explanations: ["Les doses (100 mg à l'induction, 200 mg/24 h) sont celles du tableau de la recommandation, à confronter au texte intégral selon l'intervention.", "« Daily doses of prednisolone of 5 mg or greater (…) for 1 month or more (…) may result in hypothalamo-pituitary-adrenal axis suppression. »"],
+  }),
+];
+
+export const VERIFIED_RULES: Verified[] = [...ALR, ...SURGERY, ...TREATMENTS, ...LITHIUM, ...ANTECEDENTS];
 
 /**
  * The drafts each verified rule replaces: archived when the verified group is

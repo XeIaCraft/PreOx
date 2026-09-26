@@ -37,3 +37,9 @@ it("each drug of a rule is a known treatment or class", () => {
   const unknown = [...new Set(atcs)].filter((a) => !known.some((k) => k.startsWith(a) || a.startsWith(k)));
   expect(unknown).toEqual([]);
 });
+
+it("each antecedent that needs a rule has one", () => {
+  const conds = new Set(rules.flatMap((r) => r.conditions.flatMap((c) => (c.kind === "history" ? [c.condition] : []))));
+  const missing = DEFAULT_CATALOGS.conditions.filter((c) => c.needsRule && !conds.has(c.id)).map((c) => c.id);
+  expect(missing).toEqual([]);
+});
