@@ -60,8 +60,9 @@ export function searchSurgeries(items: SurgeryItem[], query: string, patient: Su
     const q = words.join(" ");
     if (name === q) score += 3;
     else if ((s.aka ?? []).some((a) => fold(a) === q)) score += 1;
-    score += words.filter((w) => nameTokens.some((t) => t.startsWith(w))).length;
-    if (name.startsWith(words[0])) score += 2;
+    // Beginning of a word of the name: only from 4 letters (« PTE » is not « ptérygion »).
+    score += words.filter((w) => nameTokens.some((t) => t === w || (w.length >= 4 && t.startsWith(w)))).length;
+    if (words[0].length >= 4 && name.startsWith(words[0])) score += 2;
     // Shorter names first when equal (the general entry before its variants).
     score -= name.length / 200;
     if (s.population === "child" || s.population === "neonate") score += child ? 3 : -3;

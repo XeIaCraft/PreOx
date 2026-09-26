@@ -11,7 +11,8 @@ const wrong = (re: RegExp, ok: (s: (typeof SURGERY_CATALOG)[number]) => boolean)
 describe("classes of the interventions", () => {
   it("ESC 2022: high-risk surgery is high", () => {
     const HIGH = /duodenopancreatectomie|pancreatectomie|hepatectomie|resection hepatique|voies biliaires|bilio-digestive|oesophagectomie|surrenalectomie|(^|\s)cystectomie|pneumonectomie|transplantation (hepatique|pulmonaire)|aortique ouverte|pontage aorto|anevrisme aortique rompu|perfore|perforation|embolectomie|amputation (au-dessus|de membre inferieur)/;
-    expect(wrong(HIGH, (s) => s.cardiacRisk === "high")).toEqual([]);
+    // ESC 2022 is an adult guideline: children's entries are rated on their own terms.
+    expect(wrong(HIGH, (s) => s.cardiacRisk === "high" || s.population !== undefined)).toEqual([]);
   });
   it("ESC 2022: low-risk surgery is low", () => {
     const LOW = /^(cataracte|vitrectomie|chirurgie du sein|tumorectomie mammaire|mastectomie|thyroidectomie|lobo-isthmectomie|parathyroidectomie|extraction des dents|extractions dentaires|soins dentaires|resection transuretrale|arthroscopie|exerese cutanee|greffe de peau|segmentectomie ou wedge par thoracoscopie)/;
