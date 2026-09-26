@@ -43,3 +43,28 @@ it("each antecedent that needs a rule has one", () => {
   const missing = DEFAULT_CATALOGS.conditions.filter((c) => c.needsRule && !conds.has(c.id)).map((c) => c.id);
   expect(missing).toEqual([]);
 });
+
+it("a patient on any treatment gets a rule even with no other data (no creatinine, no surgery yet)", async () => {
+  const { classesOf } = await import("./catalog");
+  const { importPlan } = await import("./rules/activation");
+  const { evaluate } = await import("./rules/engine");
+  const now = "2026-09-27T10:00:00.000Z";
+  let all: ReturnType<typeof importPlan> = [];
+  for (const g of PROPOSED_GROUPS) {
+    const p = importPlan(g, all, now);
+    all = [...all.filter((e) => !p.some((x) => x.id === e.id)), ...p];
+  }
+  const active = all.filter((r) => r.status === "active").map((r) => ({ ...r, created_at: "", updated_at: "" }));
+  const silent: string[] = [];
+  for (const k of DEFAULT_CATALOGS.drugClasses) {
+    if (k.needsRule === false || k.id === "maoi") continue; // IMAO irréversibles : pas commercialisés en Belgique
+    const m = DEFAULT_CATALOGS.medications.find((x) => x.atc && classesOf({ atc: x.atc, catalogId: x.id, components: x.components }, DEFAULT_CATALOGS).some((c) => c.id === k.id));
+    if (!m) {
+      silent.push(`${k.id} : aucun médicament au catalogue`);
+      continue;
+    }
+    const res = evaluate(active, { age: 50, treatments: [{ id: "t", atc: m.atc, name: m.name, catalogId: m.id, components: m.components }], techniques: [] }, now);
+    if (!res.findings.some((f) => f.status !== "needs_info")) silent.push(`${k.id} (${m.name}) : aucune règle appliquée`);
+  }
+  expect(silent).toEqual([]);
+});

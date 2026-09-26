@@ -32,7 +32,7 @@ export function useRules() {
       writeCache(fresh);
       setError(null);
       // Once per visit: proposed rules you have not changed follow their new version, and the
-      // groups you imported gain their new rules (older ones they replace are archived).
+      // proposed rules you do not have yet are added, active « à relire » (older ones they replace are archived).
       if (!synced.current) {
         synced.current = true;
         const now = new Date().toISOString();
@@ -41,7 +41,6 @@ export function useRules() {
           .map((u) => u.next);
         let added = 0;
         for (const g of PROPOSED_GROUPS) {
-          if (!g.rules.some((r) => fresh.some((x) => x.id === r.id))) continue; // group not imported
           const missing = g.rules.filter((r) => !fresh.some((x) => x.id === r.id));
           if (!missing.length) continue;
           const plan = importPlan({ ...g, rules: missing }, [...fresh, ...toSave.map((r) => ({ ...r, created_at: "", updated_at: "" }))], now);

@@ -619,11 +619,12 @@ export const TREATMENT_RULES: Proposed[] = [
   }),
   // --- Compléments recoupés via Consensus (septembre 2026) ---------------------------------------
   draft(58, {
-    title: "Metformine sans facteur de risque : poursuivre",
-    statement: "Sans insuffisance rénale ni produit de contraste, la metformine est poursuivie ; reprise dès que l'alimentation est reprise et la fonction rénale stable.",
-    conditions: [drug("A10BA02"), { kind: "value", value: "crcl", op: ">=", threshold: 60 }],
-    action: continueIt("Poursuivre la metformine ; reprise avec l'alimentation, fonction rénale stable."),
+    title: "Metformine : poursuivre, sauf insuffisance rénale ou produit de contraste",
+    statement: "La metformine est poursuivie ; elle est suspendue le matin de l'intervention en cas d'insuffisance rénale (clairance < 60 mL/min) ou d'injection de produit de contraste ; reprise dès que l'alimentation est reprise et la fonction rénale stable.",
+    conditions: [drug("A10BA02")],
+    action: continueIt("Poursuivre la metformine ; la suspendre le matin si clairance < 60 mL/min ou produit de contraste ; reprise avec l'alimentation, fonction rénale stable."),
     source: COREMANS_2026,
+    explanations: ["Ancienne pratique (Manuel 2020) : arrêt 48 h avant ; la plupart des recommandations 2015–2024 ne l'arrêtent plus sans facteur de risque (revue belge, Acta Anaesthesiol Belg 2026)."],
     question: "According to current guidelines (CPOC 2021, ADA, SPAQI), should metformin be continued on the day of surgery in patients with normal renal function, and when should it be withheld?",
   }),
   draft(59, {
