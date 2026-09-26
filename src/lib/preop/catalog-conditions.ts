@@ -12,7 +12,7 @@ const c = (item: ConditionItem): ConditionItem => item;
 
 export const DEFAULT_CONDITIONS: ConditionItem[] = [
   // --- Cardiovasculaire ---------------------------------------------------------
-  c({ id: "hypertension", label: "HTA", system: "cardio", keywords: ["hypertension artérielle", "hypertendu", "hypertendue"], qualifiers: { poorlyControlled: "mal contrôlée" }, asa: 2, asaIf: { poorlyControlled: 3 } }),
+  c({ id: "hypertension", label: "HTA", system: "cardio", keywords: ["hypertension artérielle", "hypertendu", "hypertendue"], qualifiers: { poorlyControlled: "mal contrôlée" }, asa: 2, asaIf: { poorlyControlled: 3 }, attentionIf: { poorlyControlled: { level: "medium", text: "PA ≥ 180/110 mmHg : reporter une chirurgie programmée et équilibrer (ESC 2022) ; en dessous, pas de report. Peropératoire : éviter une baisse > 20 % de la PA de base." } } }),
   c({ id: "dyslipidemia", label: "Dyslipidémie", system: "cardio", keywords: ["cholestérol", "hypercholestérolémie"] }),
   c({
     id: "coronary",
@@ -71,7 +71,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
     attention: { level: "high", text: "Risque de défaillance ventriculaire droite : avis spécialisé ; éviter hypoxie, hypercapnie, acidose et hypotension." },
   }),
   c({ id: "murmur", label: "Souffle non exploré", system: "cardio", attention: { level: "medium", text: "Échocardiographie avant une chirurgie à risque." } }),
-  c({ id: "arrhythmia", label: "FA / trouble du rythme", system: "cardio", keywords: ["FA", "fibrillation auriculaire", "flutter", "arythmie", "ACFA"], asa: 2 }),
+  c({ id: "arrhythmia", label: "FA / trouble du rythme", system: "cardio", keywords: ["FA", "fibrillation auriculaire", "flutter", "arythmie", "ACFA"], asa: 2, attention: { level: "medium", text: "ECG récent ; fréquence au repos < 110/min avant une chirurgie programmée, traitement de contrôle poursuivi ; anticoagulant selon les règles (arrêt, relais) ; FA de novo périopératoire : chercher une cause (hypovolémie, douleur, sepsis, ions) (ESC 2022)." } }),
   c({ id: "long_qt", label: "QT long / Brugada", system: "cardio", keywords: ["Brugada", "QT"], asa: 2, attention: { level: "high", text: "Éviter les médicaments qui allongent le QT (dropéridol, ondansétron à discuter…) ; défibrillateur en salle.", material: ["Défibrillateur"] } }),
   c({ id: "av_block", label: "Bradycardie / bloc auriculo-ventriculaire", system: "cardio", keywords: ["BAV", "maladie du sinus"], asa: 2, attention: { level: "medium", text: "Stimulation transcutanée disponible ; avis rythmologique si symptomatique.", material: ["Électrodes de stimulation transcutanée"] } }),
   c({
@@ -87,7 +87,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
       material: ["Aimant", "Défibrillateur avec électrodes"],
     },
   }),
-  c({ id: "pad", label: "Artériopathie (AOMI, carotide)", system: "cardio", keywords: ["AOMI", "artérite", "sténose carotidienne"], asa: 3 }),
+  c({ id: "pad", label: "Artériopathie (AOMI, carotide)", system: "cardio", keywords: ["AOMI", "artérite", "sténose carotidienne"], asa: 3, attention: { level: "medium", text: "Marqueur de maladie coronaire : capacité fonctionnelle, aspirine et statine poursuivies (ESC 2022). Sténose carotidienne serrée : éviter l'hypotension ; PA au bras le mieux perfusé ; pas de garrot ni de brassard sur un membre ischémique." } }),
   c({ id: "congenital_heart", label: "Cardiopathie congénitale", system: "cardio", asa: 3, attention: { level: "medium", text: "Avis spécialisé ; comprendre la physiologie (shunt, Fontan…)." } }),
   c({ id: "bioprosthetic_valve", label: "Valve biologique / TAVI", system: "cardio", keywords: ["bioprothèse", "TAVI", "TAVR", "remplacement valvulaire"], attention: { level: "info", text: "Date et type de la valve ; traitement antithrombotique associé à gérer selon vos règles." } }),
   c({ id: "endocarditis", label: "Antécédent d'endocardite", system: "cardio", keywords: ["endocardite"], needsRule: true, attention: { level: "medium", text: "Patient à haut risque d'endocardite : prophylaxie selon le geste (vos règles)." } }),
@@ -165,8 +165,8 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
   c({ id: "cirrhosis", label: "Cirrhose / hépatopathie", system: "digest", keywords: ["cirrhose", "hépatopathie", "hépatite chronique", "insuffisance hépatique"], qualifiers: { severe: "décompensée" }, asa: 3, asaIf: { severe: 4 }, attention: { level: "medium", text: "Hémostase, albumine, encéphalopathie ; adapter les posologies." } }),
   c({ id: "gerd", label: "RGO / hernie hiatale", system: "digest", keywords: ["RGO", "reflux", "reflux gastro-œsophagien", "hernie hiatale", "pyrosis"], attention: { level: "medium", text: "Risque d'inhalation : discuter une induction en séquence rapide." } }),
   c({ id: "gastroparesis", label: "Gastroparésie", system: "digest", keywords: ["vidange gastrique"], asa: 2, attention: { level: "medium", text: "Estomac plein malgré le jeûne : discuter une séquence rapide, échographie gastrique si disponible." } }),
-  c({ id: "ibd", label: "Maladie inflammatoire de l'intestin", system: "digest", keywords: ["Crohn", "RCH", "rectocolite"], asa: 2 }),
-  c({ id: "viral_hepatitis", label: "Hépatite virale B ou C", system: "digest", keywords: ["VHB", "VHC", "hépatite B", "hépatite C", "hépatite virale"], qualifiers: { severe: "active" }, asa: 2, asaIf: { severe: 3 } }),
+  c({ id: "ibd", label: "Maladie inflammatoire de l'intestin", system: "digest", keywords: ["Crohn", "RCH", "rectocolite"], asa: 2, attention: { level: "info", text: "Corticothérapie (couverture), immunosuppresseurs ou biothérapie (règles) ; anémie, dénutrition, troubles hydroélectrolytiques ; risque thrombo-embolique accru." } }),
+  c({ id: "viral_hepatitis", label: "Hépatite virale B ou C", system: "digest", keywords: ["VHB", "VHC", "hépatite B", "hépatite C", "hépatite virale"], qualifiers: { severe: "active" }, asa: 2, asaIf: { severe: 3 }, attention: { level: "info", text: "Bilan hépatique et hémostase (TP, plaquettes) si hépatite active ou fibrose ; précautions standard contre les accidents d'exposition au sang." } }),
 
   c({ id: "bariatric_history", label: "Antécédent de chirurgie bariatrique", system: "surgical", keywords: ["bypass gastrique", "sleeve", "anneau gastrique", "gastroplastie"], attention: { level: "medium", text: "Absorption modifiée des médicaments oraux ; carences (fer, B12, vitamines) ; éviter les AINS (ulcère anastomotique)." } }),
   c({ id: "achalasia", label: "Achalasie / diverticule de Zenker", system: "digest", keywords: ["achalasie", "Zenker", "mégaœsophage"], asa: 2, attention: { level: "high", text: "Risque d'inhalation élevé malgré le jeûne : séquence rapide, vidange de l'œsophage à discuter." } }),

@@ -287,8 +287,39 @@ const MEDICATION_EXTRAS: Record<string, Partial<MedicationItem>> = {
   L04AX03: { interactions: [ix("protoxyde d'azote, AINS", ["protoxyde", "kétorolac", "ibuprofène", "diclofénac"], "Méthotrexate : toxicité majorée par le protoxyde d'azote (métabolisme des folates) et les AINS (élimination rénale).", "info")] },
 };
 
+/** Interventions followed by intensive care as a rule. */
+const ICU_AFTER =
+  /sous CEC|à cœur battant|remplacement valvulaire|valve mitrale|valve tricuspide|valvulaire mini-invasive|aorte thoracique|chirurgie aortique ouverte|aorto-bifémoral|anévrisme aortique rompu|transplantation (cardiaque|pulmonaire|hépatique|pancréatique)|cardiopathies congénitales|assistance ventriculaire|ECMO|tamponnade|œsophagectomie|duodénopancréatectomie|pancréatectomie totale|nécrosectomie|cytoréduction|thrombo-endartériectomie pulmonaire|résection trachéale|pneumonectomie|péritonite|ischémie mésentérique|brûlés étendus|hernie diaphragmatique congénitale|atrésie de l'œsophage|entérocolite|laparoschisis|scoliose neuromusculaire|craniosténose|hématome extradural|pharyngectomie|laryngectomie totale/i;
+
+/** Not planned surgery: never proposed as ambulatory. */
+const EMERGENCY_NAME = /perfor|étrangl|occlusion|rompu|plaie|abcès|fasciite|volvulus|grossesse extra-utérine|hématome|torsion/i;
+
+/** Short but usually followed by a night or more in hospital (drain, infection, surveillance, pain, trauma). */
+const NOT_AMBULATORY =
+  /trachéotomie|thoracoscopie|drain thoracique|pleuroscopie|invagination|pylorotomie|appendicectomie|fasciotomie|arthrite septique|ostéomyélite|fémur|pendant la grossesse|péridurale du travail|déchirure périnéale|corps étranger bronchique|laryngotrachéoplastie|POEM|chimio-embolisation|radiofréquence|embolisation utérine|ostéosynthèse percutanée|épiphysiolyse|réimplantation urétérale|pyéloplastie|fente labio-palatine|enclouage|plateau tibial|calcanéum|amputation|vulvectomie|curage inguinal|glande sous-maxillaire|thyréoglosse|thyroïd|fixateur externe|défilé thoraco-brachial|néphrostomie|drainage biliaire/i;
+
+/**
+ * Where the patient usually goes after the intervention — a pre-fill, always
+ * editable: ambulatory for minor or intermediate surgery with a low bleeding
+ * and cardiac risk, lasting 2 h or less, in an adult or a child (not a
+ * newborn), outside emergencies; intensive care after the operations listed
+ * above; hospitalisation otherwise.
+ */
+function usualSetting(s: (typeof SURGERY_CATALOG)[number]): SurgeryItem["setting"] {
+  if (ICU_AFTER.test(s.name)) return "icu";
+  const ambulatory =
+    s.grade !== "major" &&
+    (s.bleedingRisk === "minimal" || s.bleedingRisk === "low") &&
+    s.cardiacRisk === "low" &&
+    (s.durationHours === undefined || s.durationHours <= 2) &&
+    s.population !== "neonate" &&
+    !EMERGENCY_NAME.test(s.name) &&
+    !NOT_AMBULATORY.test(s.name);
+  return ambulatory ? "ambulatory" : "inpatient";
+}
+
 function surgeryItems(): SurgeryItem[] {
-  return SURGERY_CATALOG.map((s) => ({ ...s }));
+  return SURGERY_CATALOG.map((s) => ({ ...s, setting: usualSetting(s) }));
 }
 
 function medicationItems(): MedicationItem[] {
