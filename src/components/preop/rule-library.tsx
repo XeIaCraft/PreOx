@@ -12,6 +12,8 @@ import { describeRule } from "@/lib/preop/rules/describe";
 import type { Rule, RuleStatus } from "@/lib/preop/rules/types";
 import { PROPOSED_GROUPS } from "@/lib/preop/rules/proposed";
 import { activateAllPlan, importPlan, isUnchecked } from "@/lib/preop/rules/activation";
+import { ruleMatches } from "@/lib/preop/rules/search";
+import { Input } from "@/components/ui/input";
 
 function RuleEditModal({ rule, onSave, onClose }: { rule: Rule; onSave: (r: RuleDraft) => Promise<Rule>; onClose: () => void }) {
   const { toast } = useToast();
@@ -78,8 +80,12 @@ export function RuleLibrary({
   const [status, setStatus] = useState<RuleStatus>("active");
   const [editing, setEditing] = useState<Rule | null>(null);
   const today = new Date().toISOString().slice(0, 10);
-  const shown = rules.filter((r) => r.status === status).sort((a, b) => a.title.localeCompare(b.title, "fr"));
-  const count = (s: RuleStatus) => rules.filter((r) => r.status === s).length;
+  const [query, setQuery] = useState("");
+  // Title, text, source, and the drugs aimed at (INN and brands), antecedents, allergens.
+  const found = query.trim() ? rules.filter((r) => ruleMatches(r, query)) : rules;
+  const shown = found.filter((r) => r.status === status).sort((a, b) => a.title.localeCompare(b.title, "fr"));
+  const count = (s: RuleStatus) => found.filter((r) => r.status === s).length;
+  const allDrafts = rules.filter((r) => r.status === "draft").length;
 
   async function setRuleStatus(rule: Rule, next: RuleStatus) {
     try {
@@ -144,6 +150,7 @@ export function RuleLibrary({
           </Button>
         </div>
       ))}
+      <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Chercher une règle : produit ou marque (Glucophage), antécédent, mot du texte, source" aria-label="Chercher une règle" />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <ChipGroup
           size="sm"
@@ -156,12 +163,12 @@ export function RuleLibrary({
           onChange={(v) => v && setStatus(v)}
         />
         <div className="flex flex-wrap gap-2">
-          {count("draft") > 0 && (
+          {allDrafts > 0 && (
             <Button
               variant="secondary"
               disabled={importing !== null}
               onClick={async () => {
-                if (!confirm(`Activer les ${count("draft")} brouillon(s) ? Ils s'appliqueront tout de suite, marqués « à relire ».`)) return;
+                if (!confirm(`Activer les ${allDrafts} brouillon(s) ? Ils s'appliqueront tout de suite, marqués « à relire ».`)) return;
                 setImporting("all");
                 let done = 0;
                 try {
@@ -190,7 +197,7 @@ export function RuleLibrary({
       </div>
 
       {shown.length === 0 ? (
-        <EmptyState title={status === "active" ? "Aucune règle active." : status === "draft" ? "Aucun brouillon." : "Aucune règle archivée."}>
+        <EmptyState title={query.trim() ? `Aucune règle ${status === "active" ? "active" : status === "draft" ? "en brouillon" : "archivée"} pour « ${query.trim()} ».` : status === "active" ? "Aucune règle active." : status === "draft" ? "Aucun brouillon." : "Aucune règle archivée."}>
           {status === "active" && "Les règles naissent quand vous en avez besoin : depuis une consultation (« Préparer la question ») ou avec « Nouvelle règle »."}
         </EmptyState>
       ) : (
