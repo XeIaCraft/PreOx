@@ -1197,7 +1197,6 @@ export function ConsultationForm({
           onQuick={() => setQuick((q) => !q)}
           badges={{
             treatments: { n: ruleGaps, tone: "warn" },
-            evaluation: { n: remainingCount(groups), tone: "info" },
             exams: { n: toRequest.length, tone: "info" },
           }}
         />
@@ -1222,7 +1221,7 @@ export function ConsultationForm({
           <span className="font-semibold text-foreground">{scores.asa ? `ASA ${ROMAN[scores.asa - 1]}${s.asa ? "" : "*"}` : "ASA —"}</span>
           <span className={cn(high ? "text-danger" : "text-foreground-subtle")}>{high} alerte(s)</span>
           <span className={cn(ruleGaps ? "text-accent" : "text-foreground-subtle")}>{ruleGaps} sans règle</span>
-          <span className="text-foreground-subtle">{remainingCount(groups)} question(s)</span>
+          <span className="text-foreground-subtle">{toRequest.length} examen(s)</span>
         </button>
       </div>
       <aside className="hidden space-y-3 lg:sticky lg:top-4 lg:block lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pb-2">
@@ -1267,7 +1266,7 @@ function Synthesis({ s, scores, ruleGaps, remaining, toRequest, onGo }: { s: Con
         </li>
         <li>
           <button type="button" onClick={() => onGo("evaluation")} className="text-foreground-subtle hover:underline">
-            {remaining ? `${remaining} question(s) restante(s)` : "Scores complets"}
+            {remaining ? `${remaining} réponse(s) « non » par défaut` : "Scores complets"}
           </button>
         </li>
         <li>

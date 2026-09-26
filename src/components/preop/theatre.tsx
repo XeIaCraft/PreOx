@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock, Plus, Syringe, Trash2 } from "lucide-react";
+import { AlertTriangle, Calculator, CheckCircle2, Clock, Plus, Syringe, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup } from "@/components/carnet/ui";
@@ -16,7 +16,8 @@ import { durationTimers, fluidBalance, formatMinutes, redoseTimers } from "@/lib
 import { hhmm } from "@/lib/preop/isbar";
 import { DRUG_PHASES, computeDose, formatDose } from "@/lib/preop/protocols";
 import { cn } from "@/lib/utils";
-import { EmergencyPanel, FluidTargets, PatientStrip, SinceLastDoses, SyringeCalculator, WakeLockToggle } from "@/components/preop/theatre-tools";
+import { SinceLastDoses, SyringeCalculator, WakeLockToggle } from "@/components/preop/theatre-tools";
+import { CrisisPanel, CustomTimers, FluidStatus, Fold, PlanCard, minutesBetween } from "@/components/preop/theatre-parts";
 
 const nowIso = () => new Date().toISOString();
 
@@ -67,6 +68,12 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
   const [compType, setCompType] = useState(COMPLICATION_TYPES[0]);
   const [compSeverity, setCompSeverity] = useState<Complication["severity"]>("mild");
   const [compManagement, setCompManagement] = useState("");
+  const [crisis, setCrisis] = useState<string | null>(null);
+  const openCrisis = (id: string | null) => {
+    setCrisis(id);
+    if (id) setTimeout(() => document.getElementById("crisis-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+  const logGiven = (name: string, dose: string, route?: string) => setIo({ given: [...io.given, { id: crypto.randomUUID(), name, phase: "other", route: route === "IM" ? "im" : route === "IV continu" ? "pse" : route === "IV" || route === "IV/IO" ? "bolus_iv" : defaultRoute(name), dose, at: nowIso() }] });
 
   const timers = durationTimers(d, now);
   const redoses = redoseTimers(d, now);
@@ -90,7 +97,7 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
       <div className="space-y-4">
-        <PatientStrip d={d} />
+        <PlanCard d={d} onOpenCrisis={openCrisis} />
         <div className="flex justify-end">
           <WakeLockToggle />
         </div>
@@ -118,15 +125,15 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
         </section>
         <SinceLastDoses d={d} now={now} />
 
-        <Panel title="Événements">
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+        <Panel title="Repères et minuteurs">
+          <div className="flex flex-wrap gap-1.5">
             {eventButtons.map((e) => (
               <button
                 key={e.code}
                 type="button"
                 onClick={() => addEvent(e.code)}
                 className={cn(
-                  "min-h-12 rounded-[var(--radius-md)] border px-2 text-sm font-medium transition-colors active:scale-[0.98]",
+                  "min-h-9 rounded-full border px-3 text-xs font-medium transition-colors active:scale-[0.98]",
                   logged.has(e.code) && e.code !== "tourniquet_on" && e.code !== "tourniquet_off" ? "border-border bg-surface-muted text-foreground-subtle" : "border-primary/40 bg-primary-tint text-primary-strong hover:bg-primary-tint/70"
                 )}
               >
@@ -134,6 +141,7 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
               </button>
             ))}
           </div>
+          <CustomTimers timers={io.timers ?? []} now={now} onChange={(timers) => setIo({ timers })} />
           {has("intubation") && (
             <div className="space-y-2 rounded-[var(--radius-md)] border border-border p-2.5">
               <FieldLabel>Laryngoscopie (Cormack-Lehane)</FieldLabel>
@@ -151,20 +159,26 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
             </div>
           )}
           {events.length > 0 && (
-            <ul className="divide-y divide-border rounded-[var(--radius-md)] border border-border">
-              {events.map((e) => (
-                <li key={e.id} className="flex items-center gap-2 px-2.5 py-1.5">
-                  <TimeInput iso={e.at} onChange={(at) => setIo({ events: io.events.map((x) => (x.id === e.id ? { ...x, at } : x)) })} />
-                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                    {EVENT_TYPES.find((t) => t.code === e.type)?.label}
-                    {e.note ? <span className="text-foreground-subtle"> — {e.note}</span> : null}
-                  </span>
-                  <button type="button" onClick={() => setIo({ events: io.events.filter((x) => x.id !== e.id) })} className="rounded p-1 text-foreground-subtle hover:text-danger" aria-label="Supprimer l'événement">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <details className="text-sm">
+              <summary className="cursor-pointer text-xs font-medium text-primary">Heures et écarts ({events.length}) — la feuille d&apos;anesthésie reste la référence</summary>
+              <ul className="mt-1.5 divide-y divide-border rounded-[var(--radius-md)] border border-border">
+                {events.map((e, i) => (
+                  <li key={e.id} className="flex items-center gap-2 px-2.5 py-1">
+                    <TimeInput iso={e.at} onChange={(at) => setIo({ events: io.events.map((x) => (x.id === e.id ? { ...x, at } : x)) })} />
+                    <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                      {EVENT_TYPES.find((t) => t.code === e.type)?.label}
+                      {e.note ? <span className="text-foreground-subtle"> — {e.note}</span> : null}
+                    </span>
+                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-foreground-subtle" title="Écart avec le repère précédent · depuis maintenant">
+                      {i > 0 ? `+${formatMinutes(minutesBetween(events[i - 1].at, e.at))} · ` : ""}il y a {formatMinutes(minutesBetween(e.at, now))}
+                    </span>
+                    <button type="button" onClick={() => setIo({ events: io.events.filter((x) => x.id !== e.id) })} className="rounded p-1 text-foreground-subtle hover:text-danger" aria-label="Supprimer l'événement">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
           <form
             className="flex gap-1.5"
@@ -176,8 +190,8 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
               input.value = "";
             }}
           >
-            <Input name="note" placeholder="Autre événement (noté à l'heure actuelle)" />
-            <Button type="submit" variant="secondary" aria-label="Noter">
+            <Input name="note" placeholder="Petite note pour la transmission (heure actuelle)" className="h-9" />
+            <Button type="submit" size="sm" variant="secondary" aria-label="Noter">
               <Plus className="h-4 w-4" />
             </Button>
           </form>
@@ -269,6 +283,15 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
       </div>
 
       <div className="space-y-4">
+        <div id="crisis-panel" className="scroll-mt-4">
+          <CrisisPanel
+            d={d}
+            openId={crisis}
+            onOpen={openCrisis}
+            onGive={logGiven}
+            onLog={(c) => setIo({ complications: [...io.complications, { id: crypto.randomUUID(), type: c.title, severity: "severe", management: "", at: nowIso() }] })}
+          />
+        </div>
         <Panel
           title="Entrées / sorties"
           actions={
@@ -278,7 +301,7 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
             </span>
           }
         >
-          <FluidTargets d={d} minutes={timers.find((t) => t.key === "anaesthesia")?.minutes ?? null} urineMl={balance.byCategory.urine ?? 0} />
+          <FluidStatus d={d} minutes={timers.find((t) => t.key === "anaesthesia")?.minutes ?? null} onChange={(patch) => setIo(patch)} />
           <div className="space-y-1.5">
             <FieldLabel>Entrées</FieldLabel>
             <ChipGroup size="sm" options={FLUID_CATEGORIES.filter((c) => c.direction === "in")} value={FLUID_CATEGORIES.find((c) => c.code === fluidCat)?.direction === "in" ? fluidCat : null} onChange={(v) => v && setFluidCat(v)} />
@@ -330,8 +353,6 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
           )}
         </Panel>
 
-        <EmergencyPanel d={d} onGive={(name, dose) => setIo({ given: [...io.given, { id: crypto.randomUUID(), name, phase: "other", route: defaultRoute(name), dose, at: nowIso() }] })} />
-        <SyringeCalculator weightKg={d.consultation.patient.weightKg} />
 
         <Panel title="Complications">
           {io.complications.length > 0 && (
@@ -370,6 +391,10 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
             </Button>
           </div>
         </Panel>
+
+        <Fold title="Calculatrice de pousse-seringue" icon={<Calculator className="h-4 w-4 text-primary" />}>
+          <SyringeCalculator weightKg={d.consultation.patient.weightKg} />
+        </Fold>
 
         <Panel title="Avant de transmettre">
           <TextArea label="ALR : niveau / évaluation du bloc" value={io.alrAssessment} onChange={(v) => setIo({ alrAssessment: v })} placeholder="ex. niveau sensitif T10, bloc moteur Bromage 3" />

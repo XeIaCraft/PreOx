@@ -95,7 +95,13 @@ export function InfoTip({ label, children, className }: { label: string; childre
         onClick={(e) => {
           e.stopPropagation();
           e.preventDefault();
-          if (!open) place();
+          // Opened by hovering with a mouse: the click pins it open instead of closing it.
+          if (hover.current) {
+            hover.current = false;
+            setOpen(true);
+            return;
+          }
+          place();
           setOpen((o) => !o);
         }}
         onPointerEnter={(e) => {
@@ -429,6 +435,8 @@ export function Combobox({
   onFree,
   freeLabel = (q: string) => `Ajouter « ${q} »`,
   autoFocus,
+  onEmpty,
+  ariaLabel,
 }: {
   placeholder: string;
   search: (q: string) => ComboOption[];
@@ -436,10 +444,13 @@ export function Combobox({
   onFree?: (q: string) => void;
   freeLabel?: (q: string) => string;
   autoFocus?: boolean;
+  /** Options shown on focus before anything is typed (suggestions). */
+  onEmpty?: () => ComboOption[];
+  ariaLabel?: string;
 }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
-  const results = open && q.trim() ? search(q) : [];
+  const results = open ? (q.trim() ? search(q) : (onEmpty?.() ?? [])) : [];
   const exact = results.some((r) => r.label.toLowerCase() === q.trim().toLowerCase());
   const pick = (o: ComboOption) => {
     onPick(o);
@@ -466,10 +477,11 @@ export function Combobox({
           }
         }}
         placeholder={placeholder}
+        aria-label={ariaLabel ?? placeholder}
         autoComplete="off"
         className="h-10 w-full min-w-0 rounded-[var(--radius-sm)] border border-border bg-surface px-3 text-sm text-foreground placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
       />
-      {open && q.trim() && (results.length > 0 || onFree) && (
+      {open && (q.trim() ? results.length > 0 || onFree : results.length > 0) && (
         <div className="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-[var(--radius-md)] border border-border bg-surface shadow-lg">
           {results.map((o) => (
             <button key={o.key} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => pick(o)} className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-surface-muted">
@@ -477,7 +489,7 @@ export function Combobox({
               {o.hint && <span className="shrink-0 text-[11px] text-foreground-subtle">{o.hint}</span>}
             </button>
           ))}
-          {onFree && !exact && (
+          {onFree && q.trim() && !exact && (
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}

@@ -8,10 +8,11 @@
 
 import { adjustedBodyWeight, idealBodyWeight, leanBodyWeight, type Sex } from "./scores";
 import type { Technique } from "./rules/types";
+import type { PostopPlan } from "./postop";
 
 export type WeightBasis = "total" | "ideal" | "lean" | "adjusted";
 export type DoseUnit = "mg" | "µg" | "g" | "mL" | "UI";
-export type DrugPhase = "premed" | "induction" | "maintenance" | "alr" | "antibio" | "analgesia" | "ponv" | "haemodynamic" | "other";
+export type DrugPhase = "premed" | "induction" | "maintenance" | "alr" | "antibio" | "analgesia" | "ponv" | "haemodynamic" | "postop" | "other";
 
 export const WEIGHT_BASES: { code: WeightBasis; label: string; short: string }[] = [
   { code: "total", label: "Poids réel", short: "réel" },
@@ -29,6 +30,7 @@ export const DRUG_PHASES: { code: DrugPhase; label: string }[] = [
   { code: "analgesia", label: "Analgésie" },
   { code: "ponv", label: "Prévention des NVPO" },
   { code: "haemodynamic", label: "Hémodynamique" },
+  { code: "postop", label: "Post-opératoire" },
   { code: "other", label: "Autre" },
 ];
 
@@ -52,6 +54,13 @@ export interface ProtocolDrug {
 export interface ProtocolRisk {
   title: string;
   conduct: string;
+  /** Why it happens (mechanism, who is at risk). */
+  why?: string;
+  /** How to prevent it. */
+  prevention?: string;
+  source?: string;
+  /** Crisis procedure of the theatre screen (crises.ts). */
+  crisis?: string;
 }
 
 export interface ProtocolContent {
@@ -63,6 +72,8 @@ export interface ProtocolContent {
   material: string[];
   risks: ProtocolRisk[];
   postop: string[];
+  /** Post-operative orders to tick (analgesia, PCA/PCEA, thromboprophylaxis…), computed for the patient. */
+  postopPlan?: PostopPlan;
   /** Tourniquet alert threshold, minutes (0 = no tourniquet). */
   tourniquetAlertMin: number | null;
   notes: string;

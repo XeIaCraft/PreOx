@@ -35,6 +35,7 @@ import { treatmentMatches } from "./medications";
 import { effectiveConditions } from "./derive";
 import { drugClassOf } from "@/lib/carnet/pharmaco";
 import type { ProtocolContent } from "./protocols";
+import { postopHasOpioids } from "./postop";
 import { fold, type Catalogs } from "./catalog";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 
@@ -59,7 +60,8 @@ export function withDerived<K extends string>(answers: YesNo<K>, derived: Partia
 
 /** Opioids planned after surgery: an opioid in the analgesia part of the plan, or named in its post-op orders. */
 function plannedPostopOpioids(plan: ProtocolContent | undefined): boolean | undefined {
-  if (!plan || (plan.drugs.length === 0 && plan.postop.length === 0)) return undefined;
+  if (!plan || (plan.drugs.length === 0 && plan.postop.length === 0 && !plan.postopPlan?.analgesia.length)) return undefined;
+  if (postopHasOpioids(plan.postopPlan)) return true;
   if (plan.drugs.some((d) => d.phase === "analgesia" && drugClassOf(d.name) === "morphinique")) return true;
   if (plan.postop.some((l) => OPIOID_WORDS.test(l))) return true;
   return undefined;

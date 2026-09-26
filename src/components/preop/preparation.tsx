@@ -3,11 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BookmarkPlus, CalendarCheck2, CalendarPlus, CalendarX2, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/input";
 import { MultiChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { useToast } from "@/components/ui/toast";
 import { useCarnet } from "@/components/carnet/carnet-provider";
-import { DraftPill, FieldLabel, Panel, formatDateTime } from "@/components/preop/ui";
+import { Combobox, DraftPill, FieldLabel, Panel, formatDateTime } from "@/components/preop/ui";
 import { PlanEditor } from "@/components/preop/plan-editor";
 import { SurgeryPanel } from "@/components/preop/surgery-panel";
 import { evaluateConsultation } from "@/components/preop/consultation";
@@ -210,6 +209,19 @@ export function PreparationView({
   const instructions = useMemo(() => patientInstructions(d.consultation, evaluation), [d.consultation, evaluation]);
   const toRequest = pendingExams(d.consultation, scores.exams);
   const additions = points.filter((p) => p.material?.length || p.risk);
+  // Words of the patient and the surgery that bring the matching risks of the library forward.
+  const riskContext = [
+    d.consultation.surgery.name,
+    d.consultation.surgery.position,
+    d.consultation.surgery.bleedingRisk === "high" ? "hemorragique" : "",
+    d.consultation.surgery.emergency ? "urgence" : "",
+    (d.consultation.patient.age ?? 0) >= 70 ? "age" : "",
+    (d.consultation.patient.age ?? 99) < 16 ? "enfant" : "",
+    d.consultation.patient.allergyList?.length ? "allergie" : "",
+    scores.results.apfel.value >= 2 ? "apfel" : "",
+    scores.results.airway.level === "high" ? "intubation difficile" : "",
+    ...scores.catalogs.conditions.filter((i) => scores.conditions[i.id]?.present).map((i) => i.label),
+  ].join(" ");
 
   /** A protocol's plan for this patient: techniques from the consultation if the protocol has none, plus the patient's own precautions. */
   function planFrom(p: Protocol): ProtocolContent {
@@ -271,27 +283,27 @@ export function PreparationView({
           {protocols.length === 0 ? (
             <p className="text-sm text-foreground-subtle">Aucun protocole dans votre bibliothèque : composez le plan ci-dessous, puis gardez-le comme protocole ; la prochaine fois, il sera appliqué tout seul pour cette intervention.</p>
           ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              <Select
-                value=""
-                onChange={(e) => {
-                  const p = protocols.find((x) => x.id === e.target.value);
+            <div className="space-y-1.5">
+              <Combobox
+                ariaLabel="Partir d'un protocole"
+                placeholder={d.protocolName ? `Plan tiré de « ${d.protocolName} » — chercher un autre protocole…` : `Chercher un protocole (${protocols.length}) : nom, intervention, hôpital…`}
+                onEmpty={() => choices.slice(0, 8).map((p) => ({ key: p.id, label: p.name, hint: p.hospital || p.surgery }))}
+                search={(q) => {
+                  const f = (x: string) => x.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+                  const words = f(q).split(/\s+/).filter(Boolean);
+                  return choices
+                    .filter((p) => words.every((w) => f(`${p.name} ${p.surgery} ${p.hospital}`).includes(w)))
+                    .slice(0, 12)
+                    .map((p) => ({ key: p.id, label: p.name, hint: p.hospital || p.surgery }));
+                }}
+                onPick={(o) => {
+                  const p = protocols.find((x) => x.id === o.key);
                   if (p) applyProtocol(p);
                 }}
-                className="min-w-0 flex-1"
-                aria-label="Partir d'un protocole"
-              >
-                <option value="">{d.protocolName ? `Plan tiré de « ${d.protocolName} » — changer…` : "Partir d'un protocole…"}</option>
-                {choices.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                    {p.hospital ? ` · ${p.hospital}` : ""}
-                  </option>
-                ))}
-              </Select>
+              />
               {d.protocolName && (
                 <span className="flex items-center gap-1 text-xs text-foreground-subtle">
-                  <Copy className="h-3 w-3" /> copie modifiable
+                  <Copy className="h-3 w-3" /> Plan tiré de « {d.protocolName} » — copie modifiable
                 </span>
               )}
             </div>
@@ -310,7 +322,20 @@ export function PreparationView({
             </Button>
           )}
         </Panel>
-        <PlanEditor value={d.plan} onChange={(plan) => onChange({ ...d, plan })} body={d.consultation.patient} formKey={`${d.id}-${planKey}`} />
+        <PlanEditor
+          value={d.plan}
+          onChange={(plan) => onChange({ ...d, plan })}
+          body={d.consultation.patient}
+          formKey={`${d.id}-${planKey}`}
+          patient={{
+            weightKg: d.consultation.patient.weightKg,
+            age: d.consultation.patient.age,
+            crcl: scores.derived.crcl,
+            renalFailure: !!(scores.conditions.ckd?.present || scores.conditions.dialysis?.present),
+            liverFailure: !!scores.conditions.cirrhosis?.present,
+          }}
+          riskContext={riskContext}
+        />
       </div>
       <div className="space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pb-2">
         <AttentionPanel

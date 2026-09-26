@@ -420,6 +420,7 @@ export const COMPLICATION_TYPES = [
   "Bradycardie",
   "Hypertension",
   "Arythmie",
+  "Arrêt cardiaque",
   "Désaturation",
   "Bronchospasme",
   "Laryngospasme",
@@ -431,6 +432,14 @@ export const COMPLICATION_TYPES = [
   "Hypothermie",
   "Échec d'ALR / conversion en AG",
   "Toxicité des anesthésiques locaux",
+  "Hyperthermie maligne",
+  "Hyperkaliémie",
+  "Embolie gazeuse",
+  "Rachianesthésie haute",
+  "Brèche dure-mérienne",
+  "Lésion dentaire",
+  "Mémorisation peropératoire",
+  "Réveil retardé",
   "Réveil agité",
   "NVPO",
   "Autre",
@@ -457,6 +466,23 @@ export interface Intraop {
   alrAssessment: string;
   lastVitals: string;
   painScore?: number;
+  /** Hours since the last clear drink (or meal), for the fasting deficit. */
+  fastingHours?: number;
+  /** Insensible surgical losses (Manuel 2020, chap. 21). */
+  insensibleLoss?: InsensibleLoss;
+  /** Your own timers: a start time and, for a countdown, its length. */
+  timers?: CustomTimer[];
+}
+
+export type InsensibleLoss = "surface" | "digestive" | "major";
+
+export interface CustomTimer {
+  id: string;
+  label: string;
+  startedAt: string;
+  /** Countdown length in minutes; none for a stopwatch. */
+  minutes?: number;
+  stoppedAt?: string;
 }
 
 export interface Transmission {

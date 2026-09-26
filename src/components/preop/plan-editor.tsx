@@ -5,7 +5,9 @@ import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, MultiChipGroup } from "@/components/carnet/ui";
-import { FieldLabel, NumberField, Panel, TextArea } from "@/components/preop/ui";
+import { Disclosure, FieldLabel, InfoTip, NumberField, Panel, TextArea } from "@/components/preop/ui";
+import { CatalogChecklist, MATERIAL_GROUPS, PostopEditor, RisksEditor, TARGET_GROUPS } from "@/components/preop/plan-parts";
+import type { PostopPatient } from "@/lib/preop/postop";
 import { DRUG_ROUTES, defaultRoute, drugClassOf, drugSuggestions, routeShort } from "@/lib/carnet/pharmaco";
 import {
   DRUG_PHASES,
@@ -68,12 +70,6 @@ export function newPlanDrug(name: string, route?: string): ProtocolDrug {
     note: "",
   };
 }
-
-const lines = (text: string) =>
-  text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
 
 function DrugRow({ drug, body, onChange, onRemove, startOpen }: { drug: ProtocolDrug; body?: BodyData; onChange: (d: ProtocolDrug) => void; onRemove: () => void; startOpen: boolean }) {
   const [open, setOpen] = useState(startOpen);
@@ -252,7 +248,23 @@ function DrugAdder({ exclude, onAdd }: { exclude: string[]; onAdd: (d: ProtocolD
  * when `body` is given), targets, monitoring/equipment, frequent risks with
  * what to do, post-op. Used for a protocol and for a dossier's plan.
  */
-export function PlanEditor({ value: c, onChange, body, formKey = 0 }: { value: ProtocolContent; onChange: (c: ProtocolContent) => void; body?: BodyData; formKey?: number | string }) {
+export function PlanEditor({
+  value: c,
+  onChange,
+  body,
+  formKey = 0,
+  patient,
+  riskContext,
+}: {
+  value: ProtocolContent;
+  onChange: (c: ProtocolContent) => void;
+  body?: BodyData;
+  formKey?: number | string;
+  /** The patient, for the post-operative doses (weight, age, clearance). */
+  patient?: PostopPatient;
+  /** Words of the patient and the surgery, to propose the risks that fit. */
+  riskContext?: string;
+}) {
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const set = (patch: Partial<ProtocolContent>) => onChange({ ...c, ...patch });
   const byPhase = DRUG_PHASES.map((p) => ({ ...p, drugs: c.drugs.filter((d) => d.phase === p.code) })).filter((p) => p.drugs.length > 0);
@@ -300,43 +312,36 @@ export function PlanEditor({ value: c, onChange, body, formKey = 0 }: { value: P
         {body && !body.weightKg && c.drugs.some((d) => d.doseMode === "per_kg") && <p className="text-xs text-accent">Renseignez le poids (et la taille, le sexe pour le poids idéal/maigre) dans la consultation pour calculer les doses.</p>}
       </Panel>
 
-      <Panel title="Cibles et surveillance">
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
-          <TextArea label="Cibles (une par ligne)" rows={Math.max(4, c.targets.length + 1)} value={c.targets.join("\n")} onChange={(v) => set({ targets: lines(v) })} placeholder={"PAM ≥ 65 mmHg\nVt 6–8 mL/kg poids idéal, PEEP 5\nNormothermie"} />
-          <TextArea label="Monitorage et matériel (un par ligne)" rows={Math.max(4, c.material.length + 1)} value={c.material.join("\n")} onChange={(v) => set({ material: lines(v) })} placeholder={"BIS\nCurarimètre\n2 VVP 18G"} />
-        </div>
+      <Panel
+        title={
+          <span className="flex items-center gap-1">
+            Cibles et monitorage
+            <InfoTip label="Cibles et monitorage">
+              <p className="text-foreground-muted">Touchez ce qui s&apos;applique ; vos propres lignes vont dans « Autres ». Ces choix s&apos;affichent au bloc, en haut de l&apos;écran, et dans la transmission.</p>
+            </InfoTip>
+          </span>
+        }
+      >
+        <Disclosure summary={<>Cibles {c.targets.length ? <span className="font-normal text-foreground-subtle">— {c.targets.join(" · ")}</span> : null}</>} initialOpen={c.targets.length === 0} className="rounded-[var(--radius-md)] border border-border" summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground">
+          <div className="px-3 pb-3">
+            <CatalogChecklist groups={TARGET_GROUPS} value={c.targets} onChange={(targets) => set({ targets })} placeholder="Autre cible (ex. PAS < 140 mmHg)" />
+          </div>
+        </Disclosure>
+        <Disclosure summary={<>Monitorage et matériel {c.material.length ? <span className="font-normal text-foreground-subtle">— {c.material.join(" · ")}</span> : null}</>} initialOpen={c.material.length === 0} className="rounded-[var(--radius-md)] border border-border" summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground">
+          <div className="px-3 pb-3">
+            <CatalogChecklist groups={MATERIAL_GROUPS} value={c.material} onChange={(material) => set({ material })} placeholder="Autre (ex. matelas coquille)" />
+          </div>
+        </Disclosure>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <NumberField label="Alerte garrot" unit="min" value={c.tourniquetAlertMin ?? undefined} onChange={(v) => set({ tourniquetAlertMin: v === undefined ? null : Math.round(v) })} />
         </div>
       </Panel>
 
-      <Panel
-        title="Risques fréquents et conduite à tenir"
-        actions={
-          <Button size="sm" variant="secondary" onClick={() => set({ risks: [...c.risks, { title: "", conduct: "" }] })}>
-            <Plus className="h-3.5 w-3.5" /> Risque
-          </Button>
-        }
-      >
-        {c.risks.length === 0 && <p className="text-sm text-foreground-subtle">Ex. hypotension après rachianesthésie → remplissage, phényléphrine…</p>}
-        <ul className="space-y-2">
-          {c.risks.map((r, i) => (
-            <li key={`${formKey}-risk-${i}-${c.risks.length}`} className="space-y-1.5 rounded-[var(--radius-md)] border border-border p-2.5">
-              <div className="flex items-center gap-1.5">
-                <Input defaultValue={r.title} onChange={(e) => set({ risks: c.risks.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })} placeholder="Risque" />
-                <Button variant="ghost" size="icon" onClick={() => set({ risks: c.risks.filter((_, j) => j !== i) })} aria-label="Retirer ce risque">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-              <TextArea label="Conduite à tenir" value={r.conduct} onChange={(v) => set({ risks: c.risks.map((x, j) => (j === i ? { ...x, conduct: v } : x)) })} />
-            </li>
-          ))}
-        </ul>
-      </Panel>
+      <RisksEditor risks={c.risks} onChange={(risks) => set({ risks })} context={[riskContext ?? "", c.techniques.join(" "), c.drugs.map((d) => d.name).join(" ")].join(" ")} />
 
-      <Panel title="Post-opératoire">
-        <TextArea label="Consignes (une par ligne)" rows={Math.max(4, c.postop.length + 1)} value={c.postop.join("\n")} onChange={(v) => set({ postop: lines(v) })} placeholder={"Analgésie : …\nThromboprophylaxie : …\nReprise alimentaire : …"} />
-        <TextArea label="Notes" value={c.notes} onChange={(notes) => set({ notes })} />
+      <PostopEditor plan={c.postopPlan} onChange={(postopPlan) => set({ postopPlan })} lines={c.postop} onLines={(postop) => set({ postop })} patient={patient} />
+      <Panel title="Notes">
+        <TextArea label="Notes du plan" value={c.notes} onChange={(notes) => set({ notes })} />
       </Panel>
     </div>
   );

@@ -11,7 +11,7 @@ const drug = z.object({
   id: text(64).min(1),
   name: text(120).min(1, "Nom du produit manquant"),
   route: text(40),
-  phase: z.enum(["premed", "induction", "maintenance", "alr", "antibio", "analgesia", "ponv", "haemodynamic", "other"]),
+  phase: z.enum(["premed", "induction", "maintenance", "alr", "antibio", "analgesia", "ponv", "haemodynamic", "postop", "other"]),
   doseMode: z.enum(["fixed", "per_kg"]),
   amount,
   unit: z.enum(["mg", "µg", "g", "mL", "UI"]),
@@ -21,13 +21,27 @@ const drug = z.object({
   note: text(400),
 });
 
+const infusion = z.object({ solution: text(200), rateMlH: z.number().min(0).max(100).nullable(), bolusMl: z.number().min(0).max(50).nullable(), lockoutMin: z.number().int().min(0).max(240).nullable() });
+
 export const protocolContentSchema = z.object({
   techniques: z.array(technique).max(5),
   drugs: z.array(drug).max(60),
   targets: z.array(text(200)).max(40),
   material: z.array(text(200)).max(60),
-  risks: z.array(z.object({ title: text(200), conduct: text(2000) })).max(40),
+  risks: z.array(z.object({ title: text(200), conduct: text(2000), why: text(1000).optional(), prevention: text(1000).optional(), source: text(300).optional(), crisis: text(40).optional() })).max(40),
   postop: z.array(text(400)).max(40),
+  postopPlan: z
+    .object({
+      destination: z.enum(["ambulatory", "ward", "hdu", "icu"]).optional(),
+      analgesia: z.array(z.enum(["paracetamol", "nsaid", "metamizole", "opioid_titration", "pca_morphine", "pca_fentanyl", "pcea", "perineural", "intrathecal_morphine", "ketamine"])).max(12),
+      pcea: infusion.optional(),
+      perineural: infusion.optional(),
+      thrombo: z.enum(["lmwh", "mechanical", "lmwh_mechanical", "none"]).optional(),
+      thromboDays: z.number().int().min(0).max(120).nullable().optional(),
+      ponvRescue: z.boolean().optional(),
+      watch: z.array(z.enum(["pain", "sedation", "block", "glucose", "urine", "bleeding", "temperature", "delirium", "hb", "troponin", "potassium", "neuro"])).max(12),
+    })
+    .optional(),
   tourniquetAlertMin: z.number().int().min(0).max(600).nullable(),
   notes: text(4000),
 });

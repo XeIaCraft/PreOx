@@ -1,64 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Calculator, Droplets, Siren, Sun, Timer } from "lucide-react";
+import { Calculator, Sun, Timer } from "lucide-react";
 import { Input, Select } from "@/components/ui/input";
 import { FieldLabel, Panel } from "@/components/preop/ui";
-import { allergySummary, type Dossier } from "@/lib/preop/dossier";
+import type { Dossier } from "@/lib/preop/dossier";
 import { drugReferenceFor, formatReferenceDose } from "@/lib/preop/drug-reference";
-import { EMERGENCY_SOURCE, emergencySheet } from "@/lib/preop/emergency";
-import { fluidPlan, urineRate } from "@/lib/preop/fluids";
+import { fluidPlan } from "@/lib/preop/fluids";
 import { formatMinutes } from "@/lib/preop/intraop";
 import { hhmm } from "@/lib/preop/isbar";
-import { adjustedBodyWeight, idealBodyWeight } from "@/lib/preop/scores";
 import { cn } from "@/lib/utils";
 
 const n1 = (v: number) => String(Math.round(v * 10) / 10).replace(".", ",");
-
-/** Who is on the table, what we agreed on before: weights, allergies, targets, risks and what to do. */
-export function PatientStrip({ d }: { d: Dossier }) {
-  const p = d.consultation.patient;
-  const ibw = p.sex && p.heightCm ? idealBodyWeight(p.sex, p.heightCm) : undefined;
-  const abw = p.sex && p.heightCm && p.weightKg ? adjustedBodyWeight(p.sex, p.weightKg, p.heightCm) : undefined;
-  const allergies = allergySummary(p);
-  return (
-    <section className="space-y-2 rounded-[var(--radius-lg)] border border-border bg-surface p-3">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-lg font-semibold text-foreground">{d.initials}</span>
-        <span className="text-sm text-foreground-muted">
-          {[p.age !== undefined ? `${p.age} ans` : "", p.weightKg ? `${p.weightKg} kg` : "", ibw ? `idéal ${Math.round(ibw)}` : "", abw && p.weightKg && abw < p.weightKg - 1 ? `ajusté ${Math.round(abw)}` : "", d.consultation.asa ? `ASA ${d.consultation.asa}` : ""]
-            .filter(Boolean)
-            .join(" · ")}
-        </span>
-      </div>
-      <p className={cn("text-sm", allergies && !/aucune/i.test(allergies) ? "font-medium text-danger" : "text-foreground-muted")}>Allergies : {allergies || "non renseignées"}</p>
-      {d.plan.targets.length > 0 && (
-        <ul className="flex flex-wrap gap-1.5">
-          {d.plan.targets.map((t) => (
-            <li key={t} className="rounded-full bg-primary-tint px-2.5 py-0.5 text-xs text-primary-strong">
-              {t}
-            </li>
-          ))}
-        </ul>
-      )}
-      {d.plan.risks.length > 0 && (
-        <details className="group" open>
-          <summary className="flex cursor-pointer items-center gap-1.5 text-sm font-medium text-foreground">
-            <AlertTriangle className="h-4 w-4 text-accent" /> Risques prévus ({d.plan.risks.length})
-          </summary>
-          <ul className="mt-1.5 space-y-1">
-            {d.plan.risks.map((r) => (
-              <li key={r.title} className="rounded-[var(--radius-md)] bg-surface-muted/60 px-2.5 py-1.5 text-sm">
-                <span className="font-medium text-foreground">{r.title}</span>
-                {r.conduct && <span className="block text-xs text-foreground-muted">{r.conduct}</span>}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </section>
-  );
-}
 
 /** Minutes since the last dose of each product given — one chip per product. */
 export function SinceLastDoses({ d, now }: { d: Dossier; now: string }) {
@@ -90,72 +43,6 @@ export function SinceLastDoses({ d, now }: { d: Dossier; now: string }) {
         );
       })}
     </section>
-  );
-}
-
-/** Maintenance rate for this patient and the urine output so far. */
-export function FluidTargets({ d, minutes, urineMl }: { d: Dossier; minutes: number | null; urineMl: number }) {
-  const p = d.consultation.patient;
-  const plan = fluidPlan(p);
-  if (!plan) return <p className="text-xs text-foreground-subtle">Poids requis pour les débits d&apos;entretien.</p>;
-  const rate = minutes !== null ? urineRate(urineMl, p.weightKg, minutes) : null;
-  return (
-    <div className="space-y-1 rounded-[var(--radius-md)] border border-border px-3 py-2 text-sm">
-      <p className="flex items-center gap-1.5 font-medium text-foreground">
-        <Droplets className="h-4 w-4 text-primary" /> Entretien {plan.intraopMlH[0] === plan.intraopMlH[1] ? `${plan.intraopMlH[0]}` : `${plan.intraopMlH[0]}–${plan.intraopMlH[1]}`} mL/h
-        <span className="font-normal text-foreground-subtle">(poids {plan.basis}, {plan.weightKg} kg)</span>
-      </p>
-      <p className="text-xs text-foreground-muted">{plan.solution}</p>
-      <p className="text-xs text-foreground-muted">
-        Diurèse : {rate === null ? "à partir de 30 min d'anesthésie" : `${n1(rate)} mL/kg/h (${urineMl} mL)`}
-      </p>
-    </div>
-  );
-}
-
-/** Every emergency dose computed in advance for this patient. */
-export function EmergencyPanel({ d, onGive }: { d: Dossier; onGive?: (drug: string, dose: string) => void }) {
-  const p = d.consultation.patient;
-  const sheet = emergencySheet(p);
-  return (
-    <Panel title={`Doses d'urgence${p.weightKg ? ` · ${p.weightKg} kg` : ""}`}>
-      <div className="space-y-1.5">
-        {sheet.map((s) => (
-          <details key={s.id} className="rounded-[var(--radius-md)] border border-border">
-            <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground">
-              <Siren className="h-4 w-4 text-danger" /> {s.title}
-            </summary>
-            <ul className="divide-y divide-border border-t border-border">
-              {s.doses.map((x) => (
-                <li key={`${x.drug}-${x.label}`} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 px-3 py-1.5">
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-foreground">{x.drug}</span>
-                    <span className="block text-xs text-foreground-subtle">
-                      {x.label} · {x.how}
-                    </span>
-                    {x.note && <span className="block text-xs text-foreground-muted">{x.note}</span>}
-                  </span>
-                  <span className="flex items-center gap-2 self-center">
-                    <span className={cn("text-right font-mono text-base font-semibold tabular-nums", x.dose ? "text-primary-strong" : "text-foreground-subtle")}>{x.dose ?? "poids ?"}</span>
-                    {onGive && x.dose && (
-                      <button
-                        type="button"
-                        onClick={() => onGive(x.drug, x.dose!)}
-                        className="rounded-[var(--radius-sm)] border border-primary/40 bg-primary-tint px-2 py-1 text-xs font-medium text-primary-strong active:scale-[0.98]"
-                        aria-label={`Noter ${x.drug} ${x.dose} donné maintenant`}
-                      >
-                        Donné
-                      </button>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        ))}
-      </div>
-      <p className="text-xs text-foreground-subtle">Source : {EMERGENCY_SOURCE}. À confronter au protocole du service.</p>
-    </Panel>
   );
 }
 
@@ -212,7 +99,7 @@ export function SyringeCalculator({ weightKg }: { weightKg?: number }) {
   const refRates = ref?.doses.filter((x) => x.mode === "rate") ?? [];
 
   return (
-    <Panel title="Calculatrice de pousse-seringue">
+    <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <label className="col-span-2 block space-y-1">
           <FieldLabel>Produit</FieldLabel>
@@ -293,7 +180,7 @@ export function SyringeCalculator({ weightKg }: { weightKg?: number }) {
           Référence ({ref!.chapter}) : {refRates.map((r) => `${r.label} ${formatReferenceDose(r)}`).join(" ; ")}.
         </p>
       )}
-    </Panel>
+    </div>
   );
 }
 

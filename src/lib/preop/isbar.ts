@@ -13,7 +13,8 @@ import { EXAM_LABELS, type ExamCode } from "./exams";
 import { RISK_GRADES } from "./dossier";
 import { COMPLICATION_TYPES, EVENT_TYPES, FLUID_CATEGORIES, type Dossier } from "./dossier";
 import { durationTimers, fluidBalance, formatMinutes, lastDoses, redoseTimers } from "./intraop";
-import { fluidPlan, urineRate } from "./fluids";
+import { fluidPlan, normovolaemia, urineRate } from "./fluids";
+import { POSTOP_DESTINATIONS, postopLines } from "./postop";
 import { INDICATIONS, TECHNIQUES } from "./rules/types";
 import type { EvaluationResult } from "./rules/engine";
 
@@ -31,6 +32,33 @@ export function hhmm(iso: string): string {
 
 const DESTINATIONS: Record<string, string> = { uspa: "Salle de réveil (USPA)", usi: "Soins intensifs", ward: "Étage" };
 const SEVERITY: Record<string, string> = { mild: "légère", moderate: "modérée", severe: "sévère" };
+
+/** The post-operative orders of the plan computed for the patient, then the plan's free lines. */
+function planPostop(d: Dossier, scores: ReturnType<typeof consultationScores>): string[] {
+  const p = d.consultation.patient;
+  const computed = postopLines(d.plan.postopPlan, {
+    weightKg: p.weightKg,
+    age: p.age,
+    crcl: scores.derived.crcl,
+    renalFailure: !!(scores.conditions.ckd?.present || scores.conditions.dialysis?.present),
+    liverFailure: !!scores.conditions.cirrhosis?.present,
+  })
+    // The destination is said on its own line.
+    .filter((l) => !l.text.startsWith("Destination"))
+    .map((l) => (l.warning ? `${l.text} (${l.warning.replace(/\.$/, "")})` : l.text));
+  return [...computed, ...d.plan.postop.filter((l) => l.trim()).map((l) => l.trim())];
+}
+
+function destinationOf(d: Dossier): string {
+  if (d.transmission.destination) return DESTINATIONS[d.transmission.destination];
+  const planned = POSTOP_DESTINATIONS.find((x) => x.code === d.plan.postopPlan?.destination);
+  return planned ? planned.label : "";
+}
+
+/** Short notes typed in theatre for the handover. */
+function theatreNotes(d: Dossier): string[] {
+  return d.intraop.events.filter((e) => e.type === "note" && e.note.trim()).sort((a, b) => a.at.localeCompare(b.at)).map((e) => `${e.note.trim()} (${hhmm(e.at)})`);
+}
 
 export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResult, catalogs?: Catalogs): IsbarSection[] {
   const c = d.consultation;
@@ -118,11 +146,12 @@ export function buildIsbar(d: Dossier, now: string, evaluation?: EvaluationResul
   // R — Recommendations
   const R: IsbarSection = { key: "R", title: "Recommandations", lines: [], missing: [] };
   const t = d.transmission;
-  if (t.destination) R.lines.push(`Destination : ${DESTINATIONS[t.destination]}`);
+  const dest = destinationOf(d);
+  if (dest) R.lines.push(`Destination : ${dest}`);
   else R.missing.push("Destination");
   if (t.prescriptions.trim()) R.lines.push(t.prescriptions.trim());
-  const postop = d.plan.postop.filter((l) => l.trim());
-  for (const line of postop) R.lines.push(line.trim());
+  const postop = planPostop(d, scores);
+  for (const line of postop) R.lines.push(line);
   if (!t.prescriptions.trim() && postop.length === 0) R.missing.push("Prescriptions post-opératoires (analgésie, NVPO…)");
   const vigilance = attentionPoints(c, scores, d.plan).filter((x) => x.level !== "info");
   if (vigilance.length) R.lines.push(`Vigilance : ${vigilance.map((x) => lowerFirst(x.title)).join(", ")}`);
@@ -213,15 +242,21 @@ export function buildBrief(d: Dossier, now: string, evaluation?: EvaluationResul
         .filter(Boolean)
         .join(", ")
     );
+    const by = (cat: string) => d.intraop.fluids.filter((f) => f.category === cat).reduce((n, f) => n + f.volumeMl, 0);
+    const nv = anaes ? normovolaemia({ weightKg: p.weightKg, fastingHours: d.intraop.fastingHours, minutes: anaes.minutes, loss: d.intraop.insensibleLoss, bloodLossMl: by("blood_loss"), givenMl: by("crystalloid") + by("colloid") + by("blood") + by("other_in"), colloidMl: by("colloid") }) : null;
+    if (nv && anaes && anaes.minutes >= 15 && d.intraop.fastingHours !== undefined) how.lines.push(nv.status === "above" ? `Remplissage au-dessus de l'estimation de normovolémie (${nv.expectedMl[0]}–${nv.expectedMl[1]} mL)` : nv.status === "below" ? `Remplissage sous l'estimation de normovolémie (${nv.expectedMl[0]}–${nv.expectedMl[1]} mL)` : "Remplissage dans l'estimation de normovolémie");
   } else how.missing.push("Entrées / sorties");
+  for (const note of theatreNotes(d)) how.lines.push(note);
   if (d.intraop.lastVitals.trim()) how.lines.push(`Constantes : ${d.intraop.lastVitals.trim()}`);
   if (d.intraop.painScore !== undefined) how.lines.push(`Douleur EVA ${d.intraop.painScore}/10`);
 
   const plan: IsbarSection = { key: "4", title: "Ce qu'on prévoit", lines: [], missing: [] };
   const t = d.transmission;
-  if (t.destination) plan.lines.push(DESTINATIONS[t.destination]);
+  const dest = destinationOf(d);
+  if (dest) plan.lines.push(dest);
   else plan.missing.push("Destination");
-  for (const line of d.plan.postop.filter((l) => l.trim())) plan.lines.push(line.trim());
+  const postop = planPostop(d, scores);
+  for (const line of postop) plan.lines.push(line);
   if (t.prescriptions.trim()) plan.lines.push(t.prescriptions.trim());
   for (const r of redoseTimers(d, now)) if (r.dueAt) plan.lines.push(`${r.name} : prochaine dose à ${hhmm(r.dueAt)}`);
   for (const f of evaluation?.findings ?? [])
@@ -229,7 +264,7 @@ export function buildBrief(d: Dossier, now: string, evaluation?: EvaluationResul
       if (o.kind === "resume_after" && o.resumeFrom) plan.lines.push(`Reprise ${o.treatment?.name ?? ""} au plus tôt le ${new Date(o.resumeFrom).toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`.replace("  ", " "));
   const fp = fluidPlan(p);
   if (fp) plan.lines.push(`Si pas de boissons : ${fp.postopMlH[0] === fp.postopMlH[1] ? fp.postopMlH[0] : `${fp.postopMlH[0]}–${fp.postopMlH[1]}`} mL/h`);
-  if (d.plan.postop.length === 0 && !t.prescriptions.trim()) plan.missing.push("Suite postopératoire (protocole ou prescriptions)");
+  if (postop.length === 0 && !t.prescriptions.trim()) plan.missing.push("Suite postopératoire (protocole ou prescriptions)");
   if (t.callCriteria.trim()) plan.lines.push(`Appeler si : ${t.callCriteria.trim().replace(/\n+/g, " ; ")}`);
   if (t.contact.trim()) plan.lines.push(`Contact : ${t.contact.trim()}`);
   if (t.notes.trim()) plan.lines.push(t.notes.trim());

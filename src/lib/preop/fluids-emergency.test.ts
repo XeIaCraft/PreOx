@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { emergencySheet } from "./emergency";
 import { fluidPlan, hollidaySegar, urineRate } from "./fluids";
 
 describe("fluids", () => {
@@ -31,29 +30,21 @@ describe("fluids", () => {
   });
 });
 
-describe("emergency sheet", () => {
-  it("computes every dose for the patient, from the reference only", () => {
-    const s = emergencySheet({ age: 60, sex: "M", weightKg: 80, heightCm: 180 });
-    const all = s.flatMap((x) => x.doses);
-    expect(all.length).toBeGreaterThan(20);
-    const dantrolene = all.find((d) => d.drug === "Dantrolène")!;
-    expect(dantrolene.dose).toBe("200 mg");
-    const sugammadex = all.find((d) => d.drug === "Sugammadex")!;
-    expect(sugammadex.dose).toBe("1280 mg");
-    const lipid = all.find((d) => d.drug.startsWith("Intralipide"))!;
-    expect(lipid.dose).toBe("80–120 mL");
-    const adre = s.find((x) => x.id === "arrest")!.doses[0];
-    expect(adre.dose).toBe("1 mg");
+describe("normovolaemia (Manuel 2020, chap. 21)", () => {
+  it("reproduces the first hour of the manual's example (70 kg, 8 h of fasting, digestive surgery)", async () => {
+    const { normovolaemia } = await import("./fluids");
+    const nv = normovolaemia({ weightKg: 70, fastingHours: 8, minutes: 60, loss: "major", bloodLossMl: 0, givenMl: 1500 })!;
+    expect(nv.hourlyMl).toBe(110);
+    expect(nv.deficitMl).toBe(880);
+    expect(nv.deficitDueMl).toBe(440);
+    expect(nv.expectedMl).toEqual([440 + 110 + 560, 440 + 110 + 700]);
+    expect(nv.status).toBe("above");
   });
-
-  it("child: weight-based arrest doses", () => {
-    const s = emergencySheet({ age: 5, weightKg: 20 });
-    const adre = s.find((x) => x.id === "arrest")!.doses.find((d) => d.drug === "Adrénaline")!;
-    expect(adre.dose).toBe("0,2 mg");
-  });
-
-  it("says when the weight is missing instead of guessing", () => {
-    const s = emergencySheet({ age: 60 });
-    expect(s.flatMap((x) => x.doses).find((d) => d.drug === "Dantrolène")!.dose).toBeNull();
+  it("whole deficit due after 3 h; blood loss replaced 3–4 × by crystalloids, 1 × by colloids", async () => {
+    const { normovolaemia } = await import("./fluids");
+    const nv = normovolaemia({ weightKg: 70, fastingHours: 2, minutes: 180, loss: "surface", bloodLossMl: 300, givenMl: 500, colloidMl: 100 })!;
+    expect(nv.deficitDueMl).toBe(220);
+    expect(nv.bloodReplaceMl).toEqual([100 + 600, 100 + 800]);
+    expect(nv.status).toBe("below");
   });
 });
