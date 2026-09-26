@@ -59,6 +59,16 @@ const rt = (label: string, min: number, max: number, unit: DoseUnit | "ng", per:
 const HYPERKALAEMIA_RISK = ["hemiplegia", "spinal_cord_injury", "neuromuscular", "myotonic_dystrophy", "duchenne", "als", "sma", "burns", "bedridden", "dialysis"];
 const MAOI = ["N06AF", "N06AG", "N04BD"];
 
+/** Non-steroidal anti-inflammatory drugs (manual, chap. 7; lithium: Dominicus et al., Bipolar Disord 2026). */
+const NSAID_CAUTIONS: DrugCaution[] = [
+  { conditions: ["ckd", "dialysis", "peptic_ulcer", "gi_bleeding"], level: "contraindicated", text: "insuffisance rénale, ulcère ou hémorragie digestive" },
+  { atc: ["N05AN"], level: "contraindicated", text: "lithium : baisse de l'élimination rénale du lithium, intoxication — pas d'AINS" },
+  { atc: ["B01AF", "B01AE", "B01AA"], level: "relative", text: "anticoagulant : risque hémorragique additif" },
+  { atc: ["C09"], level: "relative", text: "IEC ou sartan (± diurétique) : risque d'insuffisance rénale aiguë" },
+  { conditions: ["heart_failure"], level: "relative", text: "insuffisance cardiaque : rétention hydrosodée" },
+  { conditions: ["pregnancy"], level: "relative", text: "grossesse : contre-indiqué à partir de 24 SA" },
+];
+
 export const DRUG_REFERENCES: DrugReference[] = [
   // --- Chapitre 6 : agents intraveineux -------------------------------------------------
   {
@@ -399,7 +409,11 @@ export const DRUG_REFERENCES: DrugReference[] = [
 
   // --- Adjuvants d'épargne morphinique (tableau 7.5) ------------------------------------------------
   { name: "Dexaméthasone", words: ["dexamethasone"], chapter: "chap. 7, 12 et 23", doses: [pk("Début d'intervention (IV lent)", 0.1, 0.2, "mg", { note: "Prolonge aussi un bloc périphérique d'environ 8 h (chap. 12)." }), fx("Prévention des NVPO, à l'induction", 4, 8), fx("Périnerveuse (dose plafond)", 4, 4)], cautions: [{ conditions: ["diabetes_insulin", "diabetes_oral"], level: "adapt", text: "diabète : élévation de la glycémie" }] },
-  { name: "Kétorolac", words: ["ketorolac", "taradyl"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention", 30, 60)], cautions: [{ conditions: ["ckd", "dialysis", "peptic_ulcer", "gi_bleeding"], level: "contraindicated", text: "insuffisance rénale, ulcère ou hémorragie digestive" }, { conditions: ["porphyria"], level: "relative", text: "porphyrie : médicament porphyrinogène (chap. 35)" }] },
+  { name: "Kétorolac", words: ["ketorolac", "taradyl"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention", 30, 60)], cautions: [...NSAID_CAUTIONS, { conditions: ["porphyria"], level: "relative", text: "porphyrie : médicament porphyrinogène (chap. 35)" }] },
+  { name: "Ibuprofène", words: ["ibuprofene", "brufen", "nurofen", "perdophen"], chapter: "chap. 7 et 37", doses: [fx("Adulte, per os ou IV, 3×/j", 400, 600), pk("Enfant après 3 mois, 3×/j (chap. 37)", 10, 10, "mg")], cautions: NSAID_CAUTIONS },
+  { name: "Diclofénac", words: ["diclofenac", "voltaren"], chapter: "chap. 7", doses: [fx("Adulte, 2–3×/j", 50, 75)], cautions: NSAID_CAUTIONS },
+  { name: "Énoxaparine", onlyInPlan: true, words: ["enoxaparine", "clexane", "hbpm"], chapter: "chap. 13 et 15", doses: [fx("Thromboprophylaxie, 1×/j", 40, 40, "mg", { note: "Clairance < 30 mL/min : 20 mg/j ; > 120 kg : 40 mg 2×/j selon le protocole." }), pk("Dose curative, 2×/j", 1, 1, "mg")], cautions: [{ conditions: ["hit_history"], level: "contraindicated", text: "antécédent de TIH : pas d'héparine (fondaparinux)" }, { conditions: ["ckd", "dialysis"], level: "adapt", text: "clairance < 30 mL/min : accumulation, 20 mg/j en prophylaxie ou HNF" }, { atc: ["B01AF", "B01AE", "B01AA"], level: "relative", text: "anticoagulant oral en cours : pas de double anticoagulation" }] },
+  { name: "Métoclopramide", words: ["metoclopramide", "primperan"], chapter: "chap. 23", doses: [fx("NVPO, lent", 10, 10)], cautions: [{ conditions: ["parkinson"], level: "contraindicated", text: "maladie de Parkinson : antidopaminergique" }, { conditions: ["pheochromocytoma"], level: "contraindicated", text: "phéochromocytome : crise hypertensive" }, { conditions: ["epilepsy"], level: "relative", text: "épilepsie : abaisse le seuil épileptogène" }] },
   { name: "Magnésium", words: ["magnesium"], chapter: "chap. 7 et 28", doses: [pk("Sur 15 min en fin d'intervention", 40, 50), fx("Crise d'asthme (en 15–20 min)", 2, 2, "g"), fx("Prééclampsie sévère, éclampsie : bolus IV (chap. 36)", 4, 4, "g", { note: "Puis 1–2 g/h ; magnésémie 2,5–3,5 mmol/l ; surveiller réflexes ostéotendineux, fréquence respiratoire, ECG." }), rt("Prééclampsie : entretien", 1, 2, "g", "/h")], cautions: [{ conditions: ["myasthenia", "neuromuscular"], level: "relative", text: "potentialise les curares" }] },
   { name: "Lidocaïne IV", words: ["lidocaine iv", "xylocaine iv", "lidocaine intraveineuse"], chapter: "chap. 7, tableau 7.5", doses: [pk("Bolus", 1.5, 1.5), rt("Perfusion", 2, 2, "mg", "/kg/h")], cautions: [{ conditions: ["av_block"], level: "relative", text: "troubles conductifs" }] },
   { name: "Paracétamol", words: ["paracetamol", "perfusalgan", "dafalgan"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention, sur 15 min", 1, 1, "g"), pk("Enfant, IV ou per os, 4×/j (chap. 37)", 15, 15, "mg", { note: "Voie rectale : charge 30 mg/kg puis 20 mg/kg 4×/j. Nouveau-né < 32 SA : 10 mg/kg 2×/j ; 32–37 SA : 15 mg/kg 3×/j." }), pk("Nouveau-né, IV (chap. 37)", 10, 15, "mg", { note: "< 32 SA : 10 mg/kg 2×/j ; 32–37 SA : 15 mg/kg 3×/j ; à terme : 10–15 mg/kg selon l'équipe." })], cautions: [{ conditions: ["cirrhosis"], level: "adapt", text: "insuffisance hépatique : réduire (contre-indiqué si sévère, chap. 25)" }] },

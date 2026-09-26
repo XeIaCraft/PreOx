@@ -347,6 +347,39 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         why: [...new Set(rest.flatMap((f) => f.because))].join(", "),
         source: `${DRUG_REFERENCE_SOURCE}, chap. 6 à 10`,
       });
+    // Gases of the plan against the patient (malignant hyperthermia, N₂O, desflurane).
+    const g = plan?.gases;
+    if (g) {
+      const volatile = g.agent !== "tiva";
+      if (volatile && has(cond, "malignant_hyperthermia"))
+        add({
+          id: "plan-gases-mh",
+          level: "high",
+          title: `${g.agent === "sevoflurane" ? "Sévoflurane" : g.agent === "desflurane" ? "Desflurane" : "Isoflurane"} au plan : contre-indiqué`,
+          detail: "Susceptibilité à l'hyperthermie maligne : AIVOC sans halogéné ni succinylcholine, machine purgée ou filtres à charbon, dantrolène disponible.",
+          why: "Hyperthermie maligne ; halogéné dans le plan de gaz",
+          source: `${DRUG_REFERENCE_SOURCE}, chap. 25`,
+        });
+      const n2oBad = ["pneumothorax", "intraocular_gas", "raised_icp", "vitamin_b12", "ponv"].filter((id) => has(cond, id));
+      if (g.carrier === "n2o" && n2oBad.length)
+        add({
+          id: "plan-gases-n2o",
+          level: n2oBad.some((id) => id === "pneumothorax" || id === "intraocular_gas") ? "high" : "medium",
+          title: "N₂O au plan : à éviter",
+          detail: "Le N₂O diffuse dans les cavités closes (pneumothorax, gaz intraoculaire : cécité), augmente la pression intracrânienne et les NVPO, inactive la vitamine B12. Air/O₂.",
+          why: n2oBad.map(labelOf).join(", "),
+          source: `${DRUG_REFERENCE_SOURCE}, chap. 3`,
+        });
+      if (g.agent === "desflurane" && has(cond, "asthma"))
+        add({
+          id: "plan-gases-des-asthma",
+          level: "medium",
+          title: "Desflurane au plan : irritant des voies aériennes",
+          detail: "Asthme : sévoflurane (bronchodilatateur) ou AIVOC.",
+          why: labelOf("asthma"),
+          source: `${DRUG_REFERENCE_SOURCE}, chap. 3`,
+        });
+    }
     const meq = morphineEquivalents(c.treatments);
     if (meq.total >= 60 || (meq.unknown.length && (has(cond, "chronic_opioids") || has(cond, "opioid_use_disorder"))))
       add({

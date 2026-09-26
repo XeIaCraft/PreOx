@@ -367,6 +367,26 @@ const pointOf = (f: Evaluated) => {
 };
 const sameFindingPoint = (a: Evaluated, b: Evaluated) => (pointOf(a) === pointOf(b) && pointOf(b).split("|")[2] !== "") || samePoint(a.rule, b.rule);
 
+/** The situations a rule is about, beyond the drug: « surgery:closedSpace », « value:crcl », « history:… ». */
+const situationsOf = (r: Rule) =>
+  new Set(r.conditions.flatMap((c) => (c.kind === "surgery" ? [`surgery:${c.attribute}`] : c.kind === "value" ? [`value:${c.value}`] : c.kind === "history" ? [`history:${c.condition}`] : c.kind === "allergy" ? [`allergy:${c.allergen}`] : [])));
+const hoursOf = (r: Rule) => ("hours" in r.action ? r.action.hours : 0);
+
+/**
+ * A delay that names a situation the winning rule doesn't consider
+ * (« clopidogrel : chirurgie en espace clos » against « clopidogrel :
+ * chirurgie ») doesn't compete on its source: both hold for this patient, so
+ * the longest one governs. The source only decides between rules on the same
+ * situation.
+ */
+function stricterElsewhere(top: Evaluated, group: Evaluated[]): Evaluated | undefined {
+  if (top.rule.action.type !== "stop_before" && top.rule.action.type !== "resume_after") return undefined;
+  const known = situationsOf(top.rule);
+  return group
+    .filter((f) => f.rule.action.type === top.rule.action.type && hoursOf(f.rule) > hoursOf(top.rule) && [...situationsOf(f.rule)].some((x) => !known.has(x)))
+    .sort((a, b) => hoursOf(b.rule) - hoursOf(a.rule))[0];
+}
+
 /**
  * Same point for the same treatment (a class-wide rule and a drug-specific one both matching
  * rivaroxaban, say): the highest source wins, the others are shown under it as divergences.
@@ -379,7 +399,9 @@ function groupApplying(applying: Evaluated[]): Finding[] {
     else groups.push([f]);
   }
   return groups.map((group) => {
-    const [winner, ...others] = [...group].sort((a, b) => (outranks(a.rule, b.rule) ? -1 : outranks(b.rule, a.rule) ? 1 : 0));
+    const ranked = [...group].sort((a, b) => (outranks(a.rule, b.rule) ? -1 : outranks(b.rule, a.rule) ? 1 : 0));
+    const winner = stricterElsewhere(ranked[0], ranked) ?? ranked[0];
+    const others = ranked.filter((f) => f !== winner);
     // Same source saying the same thing (the ECG asked for age and for HTA) isn't another opinion.
     const sameSay = (o: Rule) => o.source.organisation === winner.rule.source.organisation && o.source.year === winner.rule.source.year && JSON.stringify(o.action) === JSON.stringify(winner.rule.action);
     return { ...winner, overridden: others.map((o) => o.rule).filter((o) => !sameSay(o)) };

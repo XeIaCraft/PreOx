@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Archive, ArchiveRestore, Check, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Archive, ArchiveRestore, Check, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -13,6 +13,7 @@ import type { Rule, RuleStatus } from "@/lib/preop/rules/types";
 import { PROPOSED_GROUPS } from "@/lib/preop/rules/proposed";
 import { activateAllPlan, importPlan, isUnchecked } from "@/lib/preop/rules/activation";
 import { ruleMatches } from "@/lib/preop/rules/search";
+import { ruleConflicts } from "@/lib/preop/rules/conflicts";
 import { Input } from "@/components/ui/input";
 
 function RuleEditModal({ rule, onSave, onClose }: { rule: Rule; onSave: (r: RuleDraft) => Promise<Rule>; onClose: () => void }) {
@@ -86,6 +87,8 @@ export function RuleLibrary({
   const shown = found.filter((r) => r.status === status).sort((a, b) => a.title.localeCompare(b.title, "fr"));
   const count = (s: RuleStatus) => found.filter((r) => r.status === s).length;
   const allDrafts = rules.filter((r) => r.status === "draft").length;
+  // Two active delays on exactly the same question: one of them has to go.
+  const conflicts = ruleConflicts(rules);
 
   async function setRuleStatus(rule: Rule, next: RuleStatus) {
     try {
@@ -150,6 +153,33 @@ export function RuleLibrary({
           </Button>
         </div>
       ))}
+      {conflicts.length > 0 && (
+        <div className="space-y-2 rounded-[var(--radius-md)] border border-danger/40 bg-danger/5 p-3 text-sm">
+          <p className="flex items-center gap-1.5 font-medium text-danger">
+            <AlertTriangle className="h-4 w-4" /> {conflicts.length} contradiction(s) entre règles actives
+          </p>
+          <p className="text-xs text-foreground-muted">Mêmes conditions, délais différents : en consultation, la source de plus haut niveau s&apos;applique en attendant et l&apos;autre est affichée en « autre avis ». Archivez celle que vous ne retenez pas.</p>
+          <ul className="space-y-2">
+            {conflicts.map((c) => (
+              <li key={c.rules.map((r) => r.id).join()} className="space-y-1 border-t border-border pt-2">
+                {c.rules.map((r) => (
+                  <div key={r.id} className="flex flex-wrap items-center gap-2">
+                    <span className="min-w-0 flex-1 text-foreground">
+                      {r.title} — <strong>{"hours" in r.action ? `${r.action.hours} h` : ""}</strong>{" "}
+                      <span className="text-xs text-foreground-subtle">
+                        ({[r.source.organisation, r.source.year].filter(Boolean).join(" ")})
+                      </span>
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={() => setRuleStatus(r, "archived")}>
+                      <Archive className="h-3.5 w-3.5" /> Archiver
+                    </Button>
+                  </div>
+                ))}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Chercher une règle : produit ou marque (Glucophage), antécédent, mot du texte, source" aria-label="Chercher une règle" />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <ChipGroup

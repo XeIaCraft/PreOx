@@ -501,3 +501,16 @@ describe("draft rules", () => {
     expect(evaluate([draft, rivaroxaban72h], ctx).drafts).toEqual([]);
   });
 });
+
+describe("delays for different situations of the same patient", () => {
+  it("the stricter delay of a more specific situation governs, whatever its source", () => {
+    const esc = rule({ id: "esc", source: { ...rivaroxaban72h.source, organisation: "ESC", level: "eu", year: 2022 }, conditions: [{ kind: "drug", atc: "B01AC04" }, { kind: "surgery", attribute: "bleedingRisk", in: ["low", "high"] }], action: { type: "stop_before", hours: 120, target: "surgery" } });
+    const closed = rule({ id: "closed", source: { ...rivaroxaban72h.source, organisation: "Manuel", level: "book", year: 2020 }, conditions: [{ kind: "drug", atc: "B01AC04" }, { kind: "surgery", attribute: "closedSpace", in: ["yes"] }], action: { type: "stop_before", hours: 168, target: "surgery" } });
+    const ctx = patient({ treatments: [{ id: "c", atc: "B01AC04", name: "Clopidogrel" }], techniques: ["general"], surgery: { bleedingRisk: "high", closedSpace: "yes" } });
+    const res = evaluate([esc, closed], ctx);
+    expect(res.findings.map((f) => f.rule.id)).toEqual(["closed"]);
+    expect(res.findings[0].overridden.map((r) => r.id)).toEqual(["esc"]);
+    // Outside a closed space, the ESC rule alone.
+    expect(evaluate([esc, closed], { ...ctx, surgery: { bleedingRisk: "high", closedSpace: "no" } }).findings.map((f) => f.rule.id)).toEqual(["esc"]);
+  });
+});
