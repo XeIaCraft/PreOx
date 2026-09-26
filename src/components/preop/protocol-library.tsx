@@ -12,6 +12,7 @@ import type { ProtocolInput } from "@/components/preop/use-protocols";
 import { OPERATION_CATEGORIES, operationCategoryLabel } from "@/lib/carnet/referentiel";
 import { emptyProtocolContent, type BodyData, type Protocol } from "@/lib/preop/protocols";
 import { REFERENCE_PROTOCOLS } from "@/lib/preop/reference-protocols";
+import { keepMarker, protocolUpdates, signedReference, sourceWithoutMarker } from "@/lib/preop/reference-sync";
 import { protocolQuestion } from "@/lib/preop/rules/question";
 import { AiQuestionPanel } from "@/components/preop/ai-assistant";
 import { TECHNIQUES } from "@/lib/preop/rules/types";
@@ -22,7 +23,8 @@ function blankProtocol(): ProtocolInput {
 }
 
 function ProtocolEditor({ initial, onSave, onCancel }: { initial: ProtocolInput; onSave: (p: ProtocolInput) => Promise<void>; onCancel: () => void }) {
-  const [p, setP] = useState<ProtocolInput>(initial);
+  // The signature of the reference version stays out of sight, and is kept on save.
+  const [p, setP] = useState<ProtocolInput>({ ...initial, source: sourceWithoutMarker(initial.source) });
   const [sample, setSample] = useState<BodyData>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,7 @@ function ProtocolEditor({ initial, onSave, onCancel }: { initial: ProtocolInput;
             setSaving(true);
             setError(null);
             try {
-              await onSave(p);
+              await onSave({ ...p, source: keepMarker(initial.source, p.source) });
             } catch (err) {
               setError(err instanceof Error ? err.message : "Enregistrement impossible.");
             } finally {
@@ -160,7 +162,7 @@ export function ProtocolLibrary({
     let done = 0;
     try {
       for (const r of missing) {
-        await onSave(r);
+        await onSave(signedReference(r));
         done++;
       }
       toast(`${done} protocole(s) de référence ajouté(s) : adaptez-les au protocole de votre service.`, { variant: "success" });
@@ -171,8 +173,50 @@ export function ProtocolLibrary({
     }
   }
 
+  const outdated = protocolUpdates(protocols).filter((u) => u.modified);
+
+  async function updateModified(ids: string[]) {
+    if (!confirm(`Remplacer ${ids.length} protocole(s) par la nouvelle version de référence ? Vos modifications de ces protocoles seront perdues.`)) return;
+    setImporting(true);
+    let done = 0;
+    try {
+      for (const u of outdated.filter((x) => ids.includes(x.current.id))) {
+        await onSave(signedReference(u.reference));
+        done++;
+      }
+      toast(`${done} protocole(s) mis à jour.`, { variant: "success" });
+    } catch (err) {
+      toast(`${done} mis à jour ; ${err instanceof Error ? err.message : "échec"}`, { variant: "error" });
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
+      {outdated.length > 0 && (
+        <div className="space-y-2 rounded-[var(--radius-md)] border border-border bg-surface-muted/60 p-3">
+          <p className="text-sm font-medium text-foreground">Nouvelle version de référence pour {outdated.length} protocole(s) que vous avez modifié(s)</p>
+          <p className="text-xs text-foreground-muted">
+            Les protocoles de référence que vous n&apos;avez pas touchés se mettent à jour tout seuls. Ceux-ci gardent votre version tant que vous ne choisissez pas de la remplacer.
+          </p>
+          <ul className="divide-y divide-border rounded-[var(--radius-md)] border border-border bg-surface text-sm">
+            {outdated.map((u) => (
+              <li key={u.current.id} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                <span className="min-w-0 truncate">{u.current.name}</span>
+                <Button size="sm" variant="ghost" disabled={importing} onClick={() => updateModified([u.current.id])}>
+                  Mettre à jour
+                </Button>
+              </li>
+            ))}
+          </ul>
+          {outdated.length > 1 && (
+            <Button size="sm" variant="secondary" disabled={importing} onClick={() => updateModified(outdated.map((u) => u.current.id))}>
+              Tout mettre à jour
+            </Button>
+          )}
+        </div>
+      )}
       {missing.length > 0 && (
         <div className="space-y-2 rounded-[var(--radius-md)] border border-accent/40 bg-accent-tint/50 p-3">
           <p className="text-sm font-medium text-foreground">Protocoles de référence : {missing.length} à ajouter</p>

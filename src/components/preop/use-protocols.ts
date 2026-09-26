@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Protocol } from "@/lib/preop/protocols";
+import { protocolUpdates, signedReference } from "@/lib/preop/reference-sync";
 import { readCache, request, writeCache } from "./api";
 
 // Protocol library: same model as the rules (device copy first, then the
@@ -15,6 +16,9 @@ export function useProtocols() {
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Reference protocols brought up to date by themselves at this visit. */
+  const [autoUpdated, setAutoUpdated] = useState<string[]>([]);
+  const synced = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -22,6 +26,29 @@ export function useProtocols() {
       setProtocols(fresh);
       writeCache(CACHE_KEY, fresh);
       setError(null);
+      // Once per visit: the reference protocols you have not changed follow the new version by themselves.
+      if (!synced.current) {
+        synced.current = true;
+        const updated: string[] = [];
+        for (const u of protocolUpdates(fresh).filter((x) => !x.modified)) {
+          try {
+            const { protocol: saved } = await request<{ protocol: Protocol }>("/api/preop/protocols", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ protocol: signedReference(u.reference) }),
+            });
+            if (u.current.content && JSON.stringify(u.current.content) !== JSON.stringify(saved.content)) updated.push(saved.name);
+            setProtocols((current) => {
+              const next = current.map((p) => (p.id === saved.id ? saved : p));
+              writeCache(CACHE_KEY, next);
+              return next;
+            });
+          } catch {
+            break; // offline or refused: next visit
+          }
+        }
+        if (updated.length) setAutoUpdated(updated);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Chargement impossible.");
     } finally {
@@ -61,5 +88,5 @@ export function useProtocols() {
     });
   }, []);
 
-  return { protocols, loading, error, save, remove };
+  return { protocols, loading, error, save, remove, autoUpdated };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { BookMarked, FolderOpen, Loader2, NotebookTabs, Settings2, Sparkles, Stethoscope } from "lucide-react";
 import { AiSettings } from "@/components/preop/ai-assistant";
@@ -65,8 +65,16 @@ function PreopScreens() {
   const tabParam = searchParams.get("t") as DossierTab | null;
   const dossierTab: DossierTab = tabParam && DOSSIER_TABS.some((t) => t.tab === tabParam) ? tabParam : "consultation";
 
-  const { rules, loading, error, save, remove } = useRules();
+  const { rules, loading, error, save, remove, autoUpdated: rulesUpdated } = useRules();
   const protocolLib = useProtocols();
+  // Reference protocols and rules follow their new version by themselves: say so, once.
+  useEffect(() => {
+    if (protocolLib.autoUpdated.length) toast(`${protocolLib.autoUpdated.length} protocole(s) de référence mis à jour automatiquement.`, { variant: "success" });
+  }, [protocolLib.autoUpdated, toast]);
+  useEffect(() => {
+    const { updated, added } = rulesUpdated;
+    if (updated || added) toast([updated ? `${updated} règle(s) mise(s) à jour` : "", added ? `${added} nouvelle(s) règle(s) ajoutée(s)` : ""].filter(Boolean).join(", ") + " automatiquement.", { variant: "success" });
+  }, [rulesUpdated, toast]);
   const dossierStore = useDossiers(userId);
   const [pendingQuestion, setPendingQuestion] = useState<QuestionInput | null>(null);
   const [wizardKey, setWizardKey] = useState(0);
