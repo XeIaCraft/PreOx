@@ -84,6 +84,8 @@ export interface QuickEntryResult {
   surgery?: { id: string; name: string; side?: string; plannedAt?: string; from: string };
   /** Past operations and anaesthesias (a surgical-history section, or a known procedure with a year). */
   surgicalHistory: string[];
+  /** Why the patient is operated (« HDM : … », « Indication : … »). */
+  indication?: string;
   /** Lines of an antecedents section nothing matched — to « Autres antécédents ». */
   history: string[];
   /** Pieces nothing matched outside any section. */
@@ -94,7 +96,7 @@ export interface QuickEntryResult {
   document: boolean;
 }
 
-type Section = "none" | "history" | "surgical" | "family" | "treatment" | "allergy" | "habits" | "exam" | "biology" | "surgery" | "conclusion" | "other";
+type Section = "none" | "history" | "indication" | "surgical" | "family" | "treatment" | "allergy" | "habits" | "exam" | "biology" | "surgery" | "conclusion" | "other";
 
 const SECTION_WORDS: [Section, RegExp][] = [
   ["family", /^(antecedents?|atcd?s?)\s+familiaux|^familia(l|ux)/],
@@ -105,7 +107,8 @@ const SECTION_WORDS: [Section, RegExp][] = [
   ["habits", /^(habitudes|assuetudes|intoxications?|mode de vie|toxiques)$/],
   ["exam", /^(examen(\s+clinique|\s+physique)?|ec|clinique|parametres|constantes|signes vitaux|voies aeriennes)$/],
   ["biology", /^(biologie|bio|labo(ratoire)?|analyses?|bilan(\s+sanguin|\s+biologique)?)$/],
-  ["surgery", /^(intervention(\s+prevue|\s+programmee)?|chirurgie(\s+prevue|\s+programmee)?|indication|motif(\s+de\s+(la\s+)?consultation)?|objet|acte(\s+prevu)?|operation(\s+prevue)?)$/],
+  ["indication", /^(hdm|histoire( de la maladie)?|anamnese|indication( operatoire)?|motif( de (la )?(consultation|l intervention|l hospitalisation))?)$/],
+  ["surgery", /^(intervention(\s+prevue|\s+programmee)?|chirurgie(\s+prevue|\s+programmee)?|objet|acte(\s+prevu)?|operation(\s+prevue)?)$/],
   ["conclusion", /^(conclusion|synthese|evaluation|avis|proposition|anesthesie(\s+proposee|\s+prevue)?|plan)$/],
 ];
 
@@ -376,7 +379,14 @@ export function parseQuickEntry(text: string, catalogs: Cats): QuickEntryResult 
   const surgeries = catalogs.surgeries ?? [];
   const findSurgery = (seg: string) => {
     const sw = words(seg);
-    return surgeries.find((s) => [s.name, ...(s.aka ?? [])].some((k) => fold(k).length >= 3 && containsPhrase(sw, words(k))));
+    // The most specific name wins: « néphrectomie partielle » over « néphrectomie ».
+    let best: { s: (typeof surgeries)[number]; len: number } | undefined;
+    for (const s of surgeries)
+      for (const k of [s.name, ...(s.aka ?? [])]) {
+        const kw = words(k);
+        if (fold(k).length >= 3 && containsPhrase(sw, kw) && (!best || kw.length > best.len)) best = { s, len: kw.length };
+      }
+    return best?.s;
   };
   const planned = lines.find((l) => l.section === "surgery") ?? lines.find((l) => /\b(prevue?|programmee?|en vue d|pour (une|un|la|le)|candidat a)\b/.test(fold(l.text)) && findSurgery(l.text));
   if (planned) {
@@ -403,6 +413,8 @@ export function parseQuickEntry(text: string, catalogs: Cats): QuickEntryResult 
       continue;
     }
     if (line === planned && line.section === "surgery") continue;
+    // The history of the illness goes to the intervention; its words still count (« masse rénale » → cancer).
+    if (line.section === "indication" && line.text.trim()) result.indication = [result.indication, line.text.trim()].filter(Boolean).join(" ");
     const inSurgical = line.section === "surgical";
     if (line.section === "allergy" && /\b(aucune|pas d|neant|nka|0)\b|^non\b/.test(fold(line.text))) {
       result.noKnownAllergy = true;
@@ -535,6 +547,7 @@ export function isEmptyQuickEntry(r: QuickEntryResult): boolean {
     !r.mallampati &&
     !r.surgery &&
     !r.surgicalHistory.length &&
+    !r.indication &&
     !r.history.length &&
     !r.unknown.length
   );
@@ -558,6 +571,7 @@ export function selectAll(r: QuickEntryResult): QuickSelection {
     "mp",
     "surg",
     "sh",
+    "ind",
     "h",
     "nka",
     "sex",
@@ -598,6 +612,7 @@ export function applyQuickEntry(c: ConsultationState, r: QuickEntryResult, sel: 
   if (sel.has("sh") && r.surgicalHistory.length) p.surgicalHistory = [p.surgicalHistory, ...r.surgicalHistory].filter(Boolean).join(" ; ");
 
   const next: ConsultationState = { ...c, conditions, treatments, patient: p, substances: sel.has("s") ? { ...c.substances, ...r.substances } : c.substances };
+  if (r.indication && sel.has("ind") && !c.surgery.indication?.trim()) next.surgery = { ...c.surgery, indication: r.indication };
   if (r.asa && sel.has("asa") && c.asa === undefined) next.asa = r.asa;
   if (r.mallampati && sel.has("mp") && c.mallampati === undefined) next.mallampati = r.mallampati;
   if (!sel.has("u") && sel.has("notes") && r.unknown.length) next.notes = [c.notes, ...r.unknown].filter(Boolean).join("\n");

@@ -16,6 +16,7 @@ import { durationTimers, fluidBalance, formatMinutes, redoseTimers } from "@/lib
 import { hhmm } from "@/lib/preop/isbar";
 import { DRUG_PHASES, computeDose, formatDose } from "@/lib/preop/protocols";
 import { cn } from "@/lib/utils";
+import { EmergencyPanel, FluidTargets, PatientStrip, SinceLastDoses, SyringeCalculator, WakeLockToggle } from "@/components/preop/theatre-tools";
 
 const nowIso = () => new Date().toISOString();
 
@@ -89,6 +90,10 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
       <div className="space-y-4">
+        <PatientStrip d={d} />
+        <div className="flex justify-end">
+          <WakeLockToggle />
+        </div>
         {/* Timers: derived from the events — nothing to start or stop by hand. */}
         <section className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {timers.length === 0 && <p className="col-span-full rounded-[var(--radius-md)] bg-surface-muted px-3 py-2 text-sm text-foreground-muted">Les chronos démarrent avec « Entrée en salle », « Induction », « Incision » et le garrot.</p>}
@@ -111,6 +116,7 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
             </div>
           ))}
         </section>
+        <SinceLastDoses d={d} now={now} />
 
         <Panel title="Événements">
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -195,7 +201,13 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
                     <Button
                       size="sm"
                       variant={given.length ? "secondary" : "primary"}
-                      onClick={() => setIo({ given: [...io.given, { id: crypto.randomUUID(), name: drug.name, phase: drug.phase, route: drug.route, dose: dose ? formatDose(dose) : "", at: nowIso(), planDrugId: drug.id }] })}
+                      onClick={() => {
+                        const at = nowIso();
+                        const given = [...io.given, { id: crypto.randomUUID(), name: drug.name, phase: drug.phase, route: drug.route, dose: dose ? formatDose(dose) : "", at, planDrugId: drug.id }];
+                        // The first induction drug starts the anaesthesia clock, if nobody tapped « Induction ».
+                        const startsAnaesthesia = drug.phase === "induction" && !io.events.some((e) => e.type === "anaesthesia_start");
+                        setIo(startsAnaesthesia ? { given, events: [...io.events, { id: crypto.randomUUID(), type: "anaesthesia_start", at, note: "" }] } : { given });
+                      }}
                     >
                       <Syringe className="h-3.5 w-3.5" /> {given.length ? "Encore" : "Donné"}
                     </Button>
@@ -266,6 +278,7 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
             </span>
           }
         >
+          <FluidTargets d={d} minutes={timers.find((t) => t.key === "anaesthesia")?.minutes ?? null} urineMl={balance.byCategory.urine ?? 0} />
           <div className="space-y-1.5">
             <FieldLabel>Entrées</FieldLabel>
             <ChipGroup size="sm" options={FLUID_CATEGORIES.filter((c) => c.direction === "in")} value={FLUID_CATEGORIES.find((c) => c.code === fluidCat)?.direction === "in" ? fluidCat : null} onChange={(v) => v && setFluidCat(v)} />
@@ -316,6 +329,9 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
             </details>
           )}
         </Panel>
+
+        <EmergencyPanel d={d} onGive={(name, dose) => setIo({ given: [...io.given, { id: crypto.randomUUID(), name, phase: "other", route: defaultRoute(name), dose, at: nowIso() }] })} />
+        <SyringeCalculator weightKg={d.consultation.patient.weightKg} />
 
         <Panel title="Complications">
           {io.complications.length > 0 && (

@@ -100,6 +100,16 @@ export function SurgeryPanel({ s, onChange, extra, title = "Intervention" }: { s
           </Select>
         </label>
         <label className="col-span-2 block min-w-0 sm:col-span-4">
+          <span className="block text-[11px] font-medium text-foreground-subtle">Indication / histoire de la maladie</span>
+          <textarea
+            rows={2}
+            className="mt-0.5 w-full rounded-[var(--radius-md)] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus:ring-2 focus:ring-primary/40"
+            defaultValue={s.indication ?? ""}
+            onChange={(e) => set({ indication: e.target.value })}
+            placeholder="ex. masse rénale droite de 3 cm découverte fortuitement, sans métastase"
+          />
+        </label>
+        <label className="col-span-2 block min-w-0 sm:col-span-4">
           <span className="block text-[11px] font-medium text-foreground-subtle">Position</span>
           <Input className="mt-0.5 h-9" defaultValue={s.position} onChange={(e) => set({ position: e.target.value })} placeholder="Décubitus dorsal, latéral, ventral, lithotomie…" />
         </label>

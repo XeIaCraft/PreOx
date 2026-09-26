@@ -13,11 +13,13 @@ import { EXAM_LABELS, type ExamCode } from "./exams";
 import { RISK_GRADES } from "./dossier";
 import { COMPLICATION_TYPES, EVENT_TYPES, FLUID_CATEGORIES, type Dossier } from "./dossier";
 import { durationTimers, fluidBalance, formatMinutes, lastDoses, redoseTimers } from "./intraop";
+import { fluidPlan, urineRate } from "./fluids";
 import { INDICATIONS, TECHNIQUES } from "./rules/types";
 import type { EvaluationResult } from "./rules/engine";
 
 export interface IsbarSection {
-  key: "I" | "S" | "B" | "A" | "R";
+  /** « I », « S »… for the ISBAR; « 1 »…« 5 » for the short handover. */
+  key: string;
   title: string;
   lines: string[];
   missing: string[];
@@ -157,6 +159,93 @@ export function suggestedCallCriteria(d: Dossier): string[] {
     techs.has("deep_block") ? "bloc moteur non levé 24 h après le bloc plexique ou tronculaire" : "",
     "EVA > 3 malgré le traitement, nausées ou vomissements persistants",
   ].filter(Boolean);
+}
+
+/**
+ * The short handover, in the order it is said at the bedside: who, why he
+ * is here (and the history of the illness), how it went, what is planned,
+ * then the antecedents. Built from the same dossier as the ISBAR.
+ */
+export function buildBrief(d: Dossier, now: string, evaluation?: EvaluationResult, catalogs?: Catalogs): IsbarSection[] {
+  const c = d.consultation;
+  const p = c.patient;
+  const scores = consultationScores(c, { plan: d.plan, catalogs });
+  const summary = consultationSummary(c, scores);
+
+  const who: IsbarSection = { key: "1", title: "Qui", lines: [], missing: [] };
+  who.lines.push(
+    [d.initials, p.sex === "M" ? "homme" : p.sex === "F" ? "femme" : "", p.age !== undefined ? `${p.age} ans` : "", p.weightKg ? `${p.weightKg} kg` : "", scores.asa ? `ASA ${scores.asa}` : ""].filter(Boolean).join(", ")
+  );
+  const allergies = allergySummary(p);
+  if (allergies) who.lines.push(`Allergies : ${allergies}`);
+  else who.missing.push("Allergies");
+
+  const why: IsbarSection = { key: "2", title: "Pourquoi il est là", lines: [], missing: [] };
+  const s = c.surgery;
+  if (s.name) why.lines.push(`${s.name}${s.side ? ` ${s.side}` : ""}${s.urgency === "urgent" || s.emergency ? ", en urgence" : ""}`);
+  else why.missing.push("Intervention");
+  if (s.indication?.trim()) why.lines.push(s.indication.trim());
+  else why.missing.push("Indication / histoire de la maladie");
+
+  const how: IsbarSection = { key: "3", title: "Comment ça s'est passé", lines: [], missing: [] };
+  const techniques = d.plan.techniques.length ? d.plan.techniques : c.techniques;
+  const airway = [d.intraop.airwayDevice, d.intraop.cormack ? `Cormack ${d.intraop.cormack}` : "", d.intraop.airwayNote].filter(Boolean).join(", ");
+  if (techniques.length) how.lines.push(`${techniques.map((t) => TECHNIQUES.find((x) => x.code === t)?.label.split(" (")[0] ?? t).join(" + ")}${airway ? ` — ${airway}` : ""}`);
+  if (d.intraop.alrAssessment.trim()) how.lines.push(`ALR : ${d.intraop.alrAssessment.trim()}`);
+  const durations = durationTimers(d, now).filter((t) => t.key !== "tourniquet" || t.minutes > 0);
+  if (durations.length) how.lines.push(durations.map((t) => `${t.label.toLowerCase()} ${formatMinutes(t.minutes)}`).join(", "));
+  how.lines.push(d.intraop.complications.length ? d.intraop.complications.map((x) => `${x.type} (${SEVERITY[x.severity]})${x.management ? ` : ${x.management}` : ""}`).join(" ; ") : "Sans complication");
+  const doses = lastDoses(d, now);
+  if (doses.length) how.lines.push(`Reçu : ${doses.map((x) => `${x.name}${x.dose ? ` ${x.dose}` : ""} (${hhmm(x.at)})`).join(", ")}`);
+  const fb = fluidBalance(d);
+  if (d.intraop.fluids.length) {
+    const anaes = durationTimers(d, now).find((t) => t.key === "anaesthesia");
+    const urine = fb.byCategory.urine ?? 0;
+    const rate = anaes ? urineRate(urine, p.weightKg, anaes.minutes) : null;
+    how.lines.push(
+      [
+        `Entrées ${fb.inMl} mL`,
+        fb.byCategory.blood ? `dont produits sanguins ${fb.byCategory.blood} mL` : "",
+        fb.byCategory.blood_loss ? `pertes sanguines ${fb.byCategory.blood_loss} mL` : "",
+        urine ? `diurèse ${urine} mL${rate !== null ? ` (${String(rate).replace(".", ",")} mL/kg/h)` : ""}` : "",
+        `bilan ${fb.balanceMl >= 0 ? "+" : ""}${fb.balanceMl} mL`,
+      ]
+        .filter(Boolean)
+        .join(", ")
+    );
+  } else how.missing.push("Entrées / sorties");
+  if (d.intraop.lastVitals.trim()) how.lines.push(`Constantes : ${d.intraop.lastVitals.trim()}`);
+  if (d.intraop.painScore !== undefined) how.lines.push(`Douleur EVA ${d.intraop.painScore}/10`);
+
+  const plan: IsbarSection = { key: "4", title: "Ce qu'on prévoit", lines: [], missing: [] };
+  const t = d.transmission;
+  if (t.destination) plan.lines.push(DESTINATIONS[t.destination]);
+  else plan.missing.push("Destination");
+  for (const line of d.plan.postop.filter((l) => l.trim())) plan.lines.push(line.trim());
+  if (t.prescriptions.trim()) plan.lines.push(t.prescriptions.trim());
+  for (const r of redoseTimers(d, now)) if (r.dueAt) plan.lines.push(`${r.name} : prochaine dose à ${hhmm(r.dueAt)}`);
+  for (const f of evaluation?.findings ?? [])
+    for (const o of f.outcomes)
+      if (o.kind === "resume_after" && o.resumeFrom) plan.lines.push(`Reprise ${o.treatment?.name ?? ""} au plus tôt le ${new Date(o.resumeFrom).toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`.replace("  ", " "));
+  const fp = fluidPlan(p);
+  if (fp) plan.lines.push(`Si pas de boissons : ${fp.postopMlH[0] === fp.postopMlH[1] ? fp.postopMlH[0] : `${fp.postopMlH[0]}–${fp.postopMlH[1]}`} mL/h`);
+  if (d.plan.postop.length === 0 && !t.prescriptions.trim()) plan.missing.push("Suite postopératoire (protocole ou prescriptions)");
+  if (t.callCriteria.trim()) plan.lines.push(`Appeler si : ${t.callCriteria.trim().replace(/\n+/g, " ; ")}`);
+  if (t.contact.trim()) plan.lines.push(`Contact : ${t.contact.trim()}`);
+  if (t.notes.trim()) plan.lines.push(t.notes.trim());
+
+  const history: IsbarSection = { key: "5", title: "Antécédents", lines: [], missing: [] };
+  const conditions = conditionsSummary(scores.conditions, scores.catalogs.conditions);
+  if (conditions) history.lines.push(conditions);
+  if (p.history?.trim()) history.lines.push(p.history.trim());
+  if (p.surgicalHistory?.trim()) history.lines.push(`Chirurgie / anesthésie : ${p.surgicalHistory.trim()}`);
+  if (c.treatments.length) history.lines.push(`Traitements : ${c.treatments.map((x) => `${x.name}${x.dailyDoseMg ? ` ${x.dailyDoseMg} mg/j` : ""}`).join(", ")}`);
+  const substances = substanceSummary(c.substances);
+  if (substances) history.lines.push(substances);
+  if (summary.airway) history.lines.push(`Voies aériennes : ${summary.airway}`);
+  if (!history.lines.length) history.lines.push("Pas d'antécédent notable renseigné");
+
+  return [who, why, how, plan, history];
 }
 
 export function isbarText(d: Dossier, sections: IsbarSection[]): string {

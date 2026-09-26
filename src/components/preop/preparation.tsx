@@ -26,6 +26,7 @@ import { patientInstructions } from "@/lib/preop/instructions";
 import { pendingExams } from "@/lib/preop/exams";
 import { AttentionPanel, InstructionsPanel } from "@/components/preop/attention-panel";
 import { useCatalogs } from "@/components/preop/use-catalogs";
+import { FluidPlanPanel } from "@/components/preop/theatre-tools";
 import type { Rule } from "@/lib/preop/rules/types";
 import { cn } from "@/lib/utils";
 
@@ -321,6 +322,7 @@ export function PreparationView({
             setPlanKey((k) => k + 1);
           }}
         />
+        <FluidPlanPanel d={d} />
         <RuleReminders d={d} rules={rules} />
         {toRequest.length > 0 && (
           <Panel title="Examens encore à demander">

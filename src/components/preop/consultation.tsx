@@ -65,6 +65,7 @@ import { combineQuestions, questionForMissingStop, type QuestionInput } from "@/
 import { INDICATIONS, TECHNIQUES, type Indication, type PatientTreatment, type Rule, type Technique } from "@/lib/preop/rules/types";
 import { classesOf, fold, medicationOf, type Catalogs, type MedicationItem } from "@/lib/preop/catalog";
 import { cbipChapterPath, cbipLink } from "@/lib/preop/cbip";
+import { nutritionGrade, thromboticRisk } from "@/lib/preop/periop-risks";
 import { cn } from "@/lib/utils";
 
 type YesNo<K extends string> = Partial<Record<K, boolean>>;
@@ -556,6 +557,8 @@ function EvaluationStep({ s, set, onChange, scores }: { s: ConsultationState; se
   const { merged, results: r, asaSuggestion, asa } = scores;
   const groups = remainingQuestions(s, scores);
   const anticoag = scores.conditions.arrhythmia?.present || s.treatments.some((t) => /^B01A[AEF]/.test(t.atc));
+  const thrombo = thromboticRisk(s, scores.conditions, r.cha.value);
+  const nutrition = nutritionGrade(s, scores.conditions);
   return (
     <div className="space-y-4">
       <Panel title="ASA" actions={asa ? <RiskPill level={asa >= 3 ? "intermediate" : "info"}>{`${ASA_CLASSES[asa - 1].label}${s.surgery.emergency ? "E" : ""}${s.asa ? "" : " · suggéré"}`}</RiskPill> : null}>
@@ -632,12 +635,12 @@ function EvaluationStep({ s, set, onChange, scores }: { s: ConsultationState; se
         <ScoreTile name="STOP-BANG" value={`${r.stopBang.value}/8`} label={r.stopBang.label} level={r.stopBang.level} missing={r.stopBang.missing} />
         <ScoreTile name="Apfel" value={`${r.apfel.value}/4`} label={r.apfel.label} level={r.apfel.level} missing={r.apfel.missing} />
         <ScoreTile name="ARISCAT" value={`${r.ariscat.value}`} label={r.ariscat.label} level={r.ariscat.level} missing={r.ariscat.missing} />
-        <ScoreTile name="El-Ganzouri" value={`${r.airway.value}`} label={r.airway.label} level={r.airway.level} missing={r.airway.missing} />
         <ScoreTile name="Langeron" value={`${r.mask.value}/5`} label={r.mask.label} level={r.mask.level} missing={r.mask.missing} />
         <ScoreTile name="HEMSTOP" value={`${r.hemstop.value}/7`} label={r.hemstop.label} level={r.hemstop.level} missing={r.hemstop.missing} />
         {(s.surgery.cardiacRisk === "intermediate" || s.surgery.cardiacRisk === "high" || r.dasi.missing < 12) && <ScoreTile name="DASI" value={r.dasi.missing === 0 ? `${r.dasi.mets} METs` : `${r.dasi.value}`} label={r.dasi.label} level={r.dasi.level} missing={r.dasi.missing} />}
         {anticoag && <ScoreTile name="CHA₂DS₂-VASc" value={`${r.cha.value}`} label={r.cha.label} level={r.cha.level} missing={r.cha.missing} />}
-        {anticoag && <ScoreTile name="HAS-BLED" value={`${r.hasBled.value}`} label={r.hasBled.label} level={r.hasBled.level} missing={r.hasBled.missing} />}
+        {thrombo && <ScoreTile name="Risque thrombotique" value={thrombo.level === "high" ? "Élevé" : thrombo.level === "low_moderate" ? "Faible–mod." : "?"} label={thrombo.level === "high" ? "relais à discuter" : thrombo.level === "low_moderate" ? "pas de relais (ESC)" : "indication à préciser"} level={thrombo.level === "high" ? "high" : "low"} missing={0} />}
+        {nutrition && <ScoreTile name="Grade nutritionnel" value={`GN ${nutrition.grade}`} label={nutrition.malnourished ? "dénutrition" : nutrition.grade === 1 ? "pas de risque" : "à risque"} level={nutrition.grade >= 3 ? "high" : nutrition.grade === 2 ? "intermediate" : "low"} missing={0} />}
       </div>
 
       <details className="rounded-[var(--radius-lg)] border border-border bg-surface">
@@ -672,7 +675,7 @@ function EvaluationStep({ s, set, onChange, scores }: { s: ConsultationState; se
               onChange={(v) => set({ cha: v })}
             />
           </ScoreCard>
-          <ScoreCard title="HAS-BLED" summary={r.hasBled.label} level={r.hasBled.level} missing={r.hasBled.missing} reference={HAS_BLED_REFERENCE.label}>
+          <ScoreCard title="HAS-BLED (optionnel)" summary={r.hasBled.label} level={r.hasBled.level} missing={r.hasBled.missing} reference={HAS_BLED_REFERENCE.label}>
             <ItemsGrid items={HAS_BLED_ITEMS} answers={merged.hasBled.merged} derivedKeys={merged.hasBled.derivedKeys} onChange={(v) => set({ hasBled: v })} />
           </ScoreCard>
         </div>

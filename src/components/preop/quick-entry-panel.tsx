@@ -218,6 +218,13 @@ export function QuickEntryPanel({ value, onChange, onClose }: { value: Consultat
               </Pick>
             </Group>
           )}
+          {r.indication && (
+            <Group title="Indication / histoire de la maladie">
+              <Pick on={on("ind")} onToggle={() => toggle("ind")} tone="muted">
+                {r.indication}
+              </Pick>
+            </Group>
+          )}
           {r.surgicalHistory.length > 0 && (
             <Group title="Antécédents chirurgicaux et anesthésiques">
               <Pick on={on("sh")} onToggle={() => toggle("sh")} tone="muted">

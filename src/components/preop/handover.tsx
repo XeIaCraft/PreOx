@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/toast";
 import { FieldLabel, Panel, TextArea } from "@/components/preop/ui";
 import { evaluateConsultation } from "@/components/preop/consultation";
 import { useCatalogs } from "@/components/preop/use-catalogs";
-import { buildIsbar, isbarText, suggestedCallCriteria } from "@/lib/preop/isbar";
+import { buildBrief, buildIsbar, isbarText, suggestedCallCriteria } from "@/lib/preop/isbar";
 import type { Dossier, Transmission } from "@/lib/preop/dossier";
 import type { Rule } from "@/lib/preop/rules/types";
 
@@ -46,7 +46,8 @@ export function HandoverView({ d, onChange, rules }: { d: Dossier; onChange: (d:
   const evaluation = useMemo(() => evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }, catalogs), [rules, d.consultation, d.plan.techniques, catalogs]);
   // Recomputed at each render: the durations run until « Sortie de salle ».
   const now = new Date().toISOString();
-  const sections = buildIsbar(d, now, evaluation, catalogs);
+  const [format, setFormat] = useState<"brief" | "isbar">("brief");
+  const sections = format === "brief" ? buildBrief(d, now, evaluation, catalogs) : buildIsbar(d, now, evaluation, catalogs);
   const missing = sections.reduce((n, s) => n + s.missing.length, 0);
   const text = isbarText(d, sections);
 
@@ -86,7 +87,17 @@ export function HandoverView({ d, onChange, rules }: { d: Dossier; onChange: (d:
       </Panel>
 
       <Panel
-        title="ISBAR"
+        title={
+          <ChipGroup
+            size="sm"
+            options={[
+              { code: "brief" as const, label: "Transmission" },
+              { code: "isbar" as const, label: "ISBAR complet" },
+            ]}
+            value={format}
+            onChange={(v) => v && setFormat(v)}
+          />
+        }
         actions={
           <>
             <Button

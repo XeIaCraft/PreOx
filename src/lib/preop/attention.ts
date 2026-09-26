@@ -15,6 +15,7 @@ import type { ConsultationScores } from "./consultation-scores";
 import { ecgSummary, examSummary, urgencyOf, type AllergyEntry, type ConsultationState } from "./dossier";
 import { ARISCAT_REFERENCE, MASK_VENTILATION_ITEMS, MASK_VENTILATION_REFERENCE, PEN_FAST_REFERENCE, penFast, type MaskVentilationItem } from "./scores";
 import { implausibleValues, valueFindings } from "./value-checks";
+import { nutritionGrade, thromboticRisk } from "./periop-risks";
 import type { ProtocolContent, ProtocolRisk } from "./protocols";
 import type { Qualifier } from "./history";
 
@@ -1523,6 +1524,52 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         detail: "Même niveau de sécurité qu'au bloc : ECG, PNI, SpO₂, capnographie, température (salles froides) ; BIS si AG légère et longue. Anticiper médicaments, O₂ et monitorage de transport, câbles et tubulures longs (accès à la tête limité), points d'appui ; tablier de plomb et dosimètre ; IRM : matériel compatible. Sédation : profondeur évaluée régulièrement (score de Ramsay) ; AG si geste long, douloureux ou exigeant l'immobilité.",
         why: surgeryName,
         source: CH(42, "anesthésie hors bloc"),
+      });
+
+    // Thrombotic risk under an oral anticoagulant: decides a bridging (ESC 2022).
+    const thrombo = thromboticRisk(c, cond, r.cha.value);
+    if (thrombo)
+      add({
+        id: "thrombotic-risk",
+        level: thrombo.level === "high" ? "medium" : "info",
+        title: `Risque thrombotique : ${thrombo.label.toLowerCase()}`,
+        detail: thrombo.conduct,
+        why: thrombo.reasons.length ? thrombo.reasons.join(", ") : "Anticoagulant oral",
+        source: thrombo.source,
+      });
+
+    // Nutritional grade 1–4 (SFNEP / ESPEN).
+    const nutrition = nutritionGrade(c, cond);
+    if (nutrition && nutrition.grade >= 2)
+      add({
+        id: "nutrition-grade",
+        level: nutrition.grade >= 3 ? "medium" : "info",
+        title: `Grade nutritionnel ${nutrition.grade}${nutrition.malnourished ? " : dénutrition" : ""}`,
+        detail: nutrition.conduct,
+        why: nutrition.why.join(", "),
+        source: nutrition.source,
+      });
+
+    // Postoperative delirium: screening at the consultation of the older patient (ESAIC 2023).
+    if (p.age !== undefined && p.age >= 65)
+      add({
+        id: "delirium-screening",
+        level: has(cond, "cognitive") || has(cond, "postop_delirium") ? "medium" : "info",
+        title: "Delirium postopératoire : dépister les facteurs de risque",
+        detail:
+          "Test cognitif simple (Mini-Cog ou MoCA), fragilité, troubles sensoriels (lunettes, appareils auditifs), dénutrition, polymédication, anémie ; noter la stratégie de prévention et la partager avec l'équipe (profondeur d'anesthésie, analgésie adaptée, pas de benzodiazépine, stabilité hémodynamique).",
+        why: `Âge ${p.age} ans${has(cond, "cognitive") ? ", troubles cognitifs" : ""}${has(cond, "postop_delirium") ? ", delirium antérieur" : ""}`,
+        source: "ESAIC 2023, delirium postopératoire (Aldecoa et al., PMID 37599617)",
+      });
+
+    // Blood: to plan, not to order from here.
+    if (c.surgery.bleedingRisk === "high")
+      add({
+        id: "blood-plan",
+        level: "info",
+        title: "Sang à prévoir",
+        detail: "Groupe sanguin, RAI et réserve de concentrés selon le protocole de l'hôpital et le type d'intervention ; la commande se fait par la voie habituelle.",
+        why: `${c.surgery.name || "Intervention"} à risque hémorragique élevé`,
       });
 
     // Elderly patient (chap. 43).

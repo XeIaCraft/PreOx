@@ -269,6 +269,8 @@ export interface Surgery {
   category: string;
   side: string;
   surgeon: string;
+  /** Why the patient is operated: the indication and the history of the illness (said at the handover). */
+  indication?: string;
   /** Severity grade of the procedure (minor / intermediate / major), as in the KCE / NICE preop testing grids. */
   kce?: SurgeryGrade;
   /** Surgical cardiac risk class (ESC 2022). */
