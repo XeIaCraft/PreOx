@@ -12,7 +12,7 @@ const c = (item: ConditionItem): ConditionItem => item;
 
 export const DEFAULT_CONDITIONS: ConditionItem[] = [
   // --- Cardiovasculaire ---------------------------------------------------------
-  c({ id: "hypertension", label: "HTA", system: "cardio", keywords: ["hypertension artérielle"], qualifiers: { poorlyControlled: "mal contrôlée" }, asa: 2, asaIf: { poorlyControlled: 3 } }),
+  c({ id: "hypertension", label: "HTA", system: "cardio", keywords: ["hypertension artérielle", "hypertendu", "hypertendue"], qualifiers: { poorlyControlled: "mal contrôlée" }, asa: 2, asaIf: { poorlyControlled: 3 } }),
   c({ id: "dyslipidemia", label: "Dyslipidémie", system: "cardio", keywords: ["cholestérol", "hypercholestérolémie"] }),
   c({
     id: "coronary",
@@ -27,7 +27,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
       severe: { level: "high", text: "Ischémie active : avis cardiologique avant toute chirurgie non urgente." },
     },
   }),
-  c({ id: "cabg", label: "Pontage coronarien", system: "cardio", keywords: ["PAC", "pontages"], asa: 3 }),
+  c({ id: "cabg", label: "Pontage coronarien", system: "cardio", keywords: ["PAC", "pontages", "pontage aorto-coronarien", "pontages aorto-coronariens"], asa: 3 }),
   c({
     id: "heart_failure",
     label: "Insuffisance cardiaque",
@@ -102,6 +102,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
     id: "asthma",
     label: "Asthme",
     system: "resp",
+    keywords: ["asthmatique", "hyperréactivité bronchique"],
     qualifiers: { poorlyControlled: "mal contrôlé" },
     asa: 2,
     asaIf: { poorlyControlled: 3 },
@@ -118,8 +119,8 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
     attention: { level: "medium", text: "Épargne morphinique, ALR si possible, surveillance de la SpO₂ au réveil ; PPC du patient à apporter.", material: ["PPC du patient"] },
     attentionIf: { poorlyControlled: { level: "medium", text: "SAOS non appareillé : épargne morphinique, ALR si possible, surveillance prolongée de la SpO₂." } },
   }),
-  c({ id: "home_o2", label: "Oxygénothérapie à domicile", system: "resp", keywords: ["O2", "insuffisance respiratoire chronique"], asa: 3, attention: { level: "high", text: "Insuffisance respiratoire chronique : avis pneumologique, gazométrie, surveillance postopératoire adaptée." } }),
-  c({ id: "restrictive", label: "Fibrose / syndrome restrictif", system: "resp", keywords: ["fibrose pulmonaire", "pneumopathie interstitielle"], asa: 3, attention: { level: "medium", text: "Épreuves fonctionnelles récentes ; FiO₂ la plus basse possible si bléomycine." } }),
+  c({ id: "home_o2", label: "Oxygénothérapie à domicile", system: "resp", keywords: ["O2", "insuffisance respiratoire chronique", "oxygène à domicile", "oxygénodépendant", "OLD"], asa: 3, attention: { level: "high", text: "Insuffisance respiratoire chronique : avis pneumologique, gazométrie, surveillance postopératoire adaptée." } }),
+  c({ id: "restrictive", label: "Fibrose pulmonaire / syndrome restrictif", system: "resp", keywords: ["fibrose pulmonaire", "pneumopathie interstitielle"], asa: 3, attention: { level: "medium", text: "Épreuves fonctionnelles récentes ; FiO₂ la plus basse possible si bléomycine." } }),
   c({ id: "obesity_hypoventilation", label: "Syndrome obésité-hypoventilation", system: "resp", keywords: ["SOH", "hypoventilation", "Pickwick"], asa: 3, attention: { level: "high", text: "Hypercapnie chronique : gazométrie, ventilation non invasive du patient, épargne morphinique, surveillance postopératoire rapprochée.", material: ["VNI du patient"] } }),
   c({ id: "cystic_fibrosis", label: "Mucoviscidose", system: "resp", keywords: ["mucoviscidose"], asa: 3, attention: { level: "high", text: "Avis du centre de référence ; kinésithérapie avant et après ; fonction respiratoire et hépatique." } }),
   c({ id: "bronchiectasis", label: "Dilatation des bronches", system: "resp", keywords: ["DDB", "bronchectasies"], asa: 2, attention: { level: "info", text: "Kinésithérapie de drainage avant l'intervention ; pas d'intervention programmée en surinfection." } }),
@@ -129,7 +130,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
   c({ id: "recent_uri", label: "Infection respiratoire < 1 mois", system: "resp", keywords: ["bronchite", "rhume", "pneumonie récente"], attention: { level: "medium", text: "Hyperréactivité bronchique : discuter le report d'une chirurgie programmée si infection récente symptomatique." } }),
 
   // --- Endocrinien et métabolique ---------------------------------------------------
-  c({ id: "diabetes_oral", label: "Diabète (sans insuline)", system: "endo", keywords: ["DT2", "diabète de type 2", "diabète", "diabétique"], qualifiers: { poorlyControlled: "mal contrôlé" }, asa: 2, asaIf: { poorlyControlled: 3 }, attention: { level: "info", text: "Glycémies périopératoires ; antidiabétiques gérés selon vos règles." } }),
+  c({ id: "diabetes_oral", label: "Diabète (sans insuline)", system: "endo", keywords: ["DT2", "diabète de type 2", "diabète", "diabétique", "DNID", "diabète non insulinodépendant"], qualifiers: { poorlyControlled: "mal contrôlé" }, asa: 2, asaIf: { poorlyControlled: 3 }, attention: { level: "info", text: "Glycémies périopératoires ; antidiabétiques gérés selon vos règles." } }),
   c({
     id: "diabetes_insulin",
     label: "Diabète insulinotraité",
@@ -142,7 +143,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
     attention: { level: "medium", text: "Protocole de gestion de l'insuline et glycémies capillaires périopératoires ; en début de programme si possible.", material: ["Glycémies capillaires"] },
   }),
   c({ id: "thyroid", label: "Dysthyroïdie", system: "endo", keywords: ["goitre"], qualifiers: { poorlyControlled: "non équilibrée" }, asa: 2, asaIf: { poorlyControlled: 3 }, attentionIf: { poorlyControlled: { level: "high", text: "Dysthyroïdie non équilibrée : reporter une chirurgie programmée ; goitre : voies aériennes." } } }),
-  c({ id: "adrenal_insufficiency", label: "Insuffisance surrénale", system: "endo", keywords: ["Addison"], asa: 3, needsRule: true, attention: { level: "high", text: "Supplémentation en hydrocortisone périopératoire (selon vos règles)." } }),
+  c({ id: "adrenal_insufficiency", label: "Insuffisance surrénale", system: "endo", keywords: ["Addison", "insuffisance surrénalienne", "insuffisance corticotrope"], asa: 3, needsRule: true, attention: { level: "high", text: "Supplémentation en hydrocortisone périopératoire (selon vos règles)." } }),
   c({ id: "pheochromocytoma", label: "Phéochromocytome", system: "endo", asa: 3, attention: { level: "high", text: "Préparation préopératoire spécialisée (alpha-bloquant) ; avis endocrinologique." } }),
   c({ id: "porphyria", label: "Porphyrie", system: "endo", asa: 2, attention: { level: "high", text: "Médicaments porphyrinogènes à éviter : vérifier chaque produit sur une liste de sécurité." } }),
 
@@ -156,16 +157,16 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
   // --- Rénal ------------------------------------------------------------------------
   c({ id: "ckd", label: "Insuffisance rénale chronique", system: "renal", keywords: ["IRC", "MRC", "néphropathie"], qualifiers: { severe: "terminale, non dialysée" }, asa: 2, asaIf: { severe: 4 }, attention: { level: "medium", text: "Adapter les posologies à la clairance ; éviter les néphrotoxiques." } }),
   c({ id: "dialysis", label: "Dialyse", system: "renal", keywords: ["hémodialyse", "dialyse péritonéale", "FAV"], asa: 3, attention: { level: "medium", text: "Séance la veille, kaliémie du jour, bras de la fistule protégé (ni brassard ni perfusion).", material: ["Protéger le bras de la fistule"] } }),
-  c({ id: "kidney_transplant", label: "Greffe rénale", system: "renal", asa: 3, attention: { level: "medium", text: "Immunosuppresseurs poursuivis ; protéger le greffon (volémie, néphrotoxiques)." } }),
+  c({ id: "kidney_transplant", label: "Greffe rénale", system: "renal", keywords: ["greffé rénal", "greffée rénale", "greffe de rein", "transplantation rénale", "transplanté rénal"], asa: 3, attention: { level: "medium", text: "Immunosuppresseurs poursuivis ; protéger le greffon (volémie, néphrotoxiques)." } }),
 
-  c({ id: "single_kidney", label: "Rein unique / néphrectomie", system: "surgical", keywords: ["rein unique", "néphrectomie totale", "néphrectomie élargie"], attention: { level: "info", text: "Protéger la fonction rénale (volémie, néphrotoxiques, AINS)." } }),
+  c({ id: "single_kidney", label: "Rein unique", system: "surgical", keywords: ["rein unique", "néphrectomie totale", "néphrectomie élargie"], attention: { level: "info", text: "Protéger la fonction rénale (volémie, néphrotoxiques, AINS)." } }),
 
   // --- Hépatique et digestif -----------------------------------------------------------
   c({ id: "cirrhosis", label: "Cirrhose / hépatopathie", system: "digest", keywords: ["cirrhose", "hépatopathie", "hépatite chronique", "insuffisance hépatique"], qualifiers: { severe: "décompensée" }, asa: 3, asaIf: { severe: 4 }, attention: { level: "medium", text: "Hémostase, albumine, encéphalopathie ; adapter les posologies." } }),
   c({ id: "gerd", label: "RGO / hernie hiatale", system: "digest", keywords: ["RGO", "reflux", "reflux gastro-œsophagien", "hernie hiatale", "pyrosis"], attention: { level: "medium", text: "Risque d'inhalation : discuter une induction en séquence rapide." } }),
   c({ id: "gastroparesis", label: "Gastroparésie", system: "digest", keywords: ["vidange gastrique"], asa: 2, attention: { level: "medium", text: "Estomac plein malgré le jeûne : discuter une séquence rapide, échographie gastrique si disponible." } }),
   c({ id: "ibd", label: "Maladie inflammatoire de l'intestin", system: "digest", keywords: ["Crohn", "RCH", "rectocolite"], asa: 2 }),
-  c({ id: "viral_hepatitis", label: "Hépatite virale B ou C", system: "digest", keywords: ["VHB", "VHC"], asa: 2 }),
+  c({ id: "viral_hepatitis", label: "Hépatite virale B ou C", system: "digest", keywords: ["VHB", "VHC", "hépatite B", "hépatite C", "hépatite virale"], qualifiers: { severe: "active" }, asa: 2, asaIf: { severe: 3 } }),
 
   c({ id: "bariatric_history", label: "Antécédent de chirurgie bariatrique", system: "surgical", keywords: ["bypass gastrique", "sleeve", "anneau gastrique", "gastroplastie"], attention: { level: "medium", text: "Absorption modifiée des médicaments oraux ; carences (fer, B12, vitamines) ; éviter les AINS (ulcère anastomotique)." } }),
   c({ id: "achalasia", label: "Achalasie / diverticule de Zenker", system: "digest", keywords: ["achalasie", "Zenker", "mégaœsophage"], asa: 2, attention: { level: "high", text: "Risque d'inhalation élevé malgré le jeûne : séquence rapide, vidange de l'œsophage à discuter." } }),
@@ -185,13 +186,13 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
     asaIf: { recent: 4 },
     attentionIf: { recent: { level: "high", text: "AVC / AIT de moins de 3 mois : discuter le report d'une chirurgie non urgente ; maintenir la pression de perfusion." } },
   }),
-  c({ id: "epilepsy", label: "Épilepsie", system: "neuro", keywords: ["convulsions", "crises"], asa: 2, attention: { level: "info", text: "Antiépileptiques poursuivis, y compris le matin de l'intervention." } }),
+  c({ id: "epilepsy", label: "Épilepsie", system: "neuro", keywords: ["convulsions", "crises", "épileptique", "comitialité"], asa: 2, attention: { level: "info", text: "Antiépileptiques poursuivis, y compris le matin de l'intervention." } }),
   c({ id: "parkinson", label: "Maladie de Parkinson", system: "neuro", asa: 2, attention: { level: "medium", text: "Antiparkinsoniens sans interruption (prise le matin, reprise précoce) ; éviter dropéridol et métoclopramide." } }),
   c({ id: "myasthenia", label: "Myasthénie", system: "neuro", asa: 3, attention: { level: "high", text: "Sensibilité aux curares non dépolarisants, résistance à la succinylcholine ; monitorage de la curarisation ; anticholinestérasiques poursuivis.", material: ["Curarimètre"] } }),
   c({ id: "neuromuscular", label: "Myopathie / maladie neuromusculaire", system: "neuro", keywords: ["myopathie", "Charcot-Marie-Tooth"], asa: 3, attention: { level: "high", text: "Succinylcholine contre-indiquée dans les myopathies ; curares avec monitorage ; risque respiratoire postopératoire.", material: ["Curarimètre"] } }),
   c({ id: "multiple_sclerosis", label: "Sclérose en plaques", system: "neuro", keywords: ["SEP"], asa: 2, attention: { level: "medium", text: "Poussée possible en postopératoire (hyperthermie, stress) ; documenter le déficit avant une ALR." } }),
-  c({ id: "spinal_cord_injury", label: "Lésion médullaire", system: "neuro", keywords: ["paraplégie", "tétraplégie", "blessé médullaire"], asa: 3, attention: { level: "high", text: "Succinylcholine contre-indiquée (hyperkaliémie) ; hyperréflexie autonome si lésion au-dessus de T6." } }),
-  c({ id: "neuropathy", label: "Neuropathie périphérique", system: "neuro", keywords: ["polyneuropathie"], attention: { level: "info", text: "Documenter le déficit avant une ALR." } }),
+  c({ id: "spinal_cord_injury", label: "Lésion médullaire", system: "neuro", keywords: ["paraplégie", "tétraplégie", "blessé médullaire", "paraplégique", "tétraplégique"], asa: 3, attention: { level: "high", text: "Succinylcholine contre-indiquée (hyperkaliémie) ; hyperréflexie autonome si lésion au-dessus de T6." } }),
+  c({ id: "neuropathy", label: "Neuropathie périphérique", system: "neuro", keywords: ["polyneuropathie", "neuropathie diabétique", "neuropathie"], attention: { level: "info", text: "Documenter le déficit avant une ALR." } }),
   c({ id: "cognitive", label: "Troubles cognitifs / démence", system: "neuro", keywords: ["démence", "Alzheimer", "troubles de la mémoire"], asa: 2 }),
 
   c({ id: "intracranial_lesion", label: "Tumeur ou lésion cérébrale", system: "neuro", keywords: ["tumeur cérébrale", "méningiome", "glioblastome"], asa: 3, attention: { level: "high", text: "Éviter hypercapnie, hypoxie et hypotension ; ponction neuraxiale contre-indiquée si HTIC." } }),
@@ -204,7 +205,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
 
   // --- Psychiatrique ------------------------------------------------------------------
   c({ id: "depression", label: "Dépression", system: "psy", keywords: ["syndrome dépressif"], asa: 2, attention: { level: "info", text: "Traitement poursuivi ; interactions à vérifier (ISRS, IMAO)." } }),
-  c({ id: "bipolar", label: "Trouble bipolaire", system: "psy", asa: 2, attention: { level: "info", text: "Lithium : natrémie et fonction rénale." } }),
+  c({ id: "bipolar", label: "Trouble bipolaire", system: "psy", keywords: ["bipolaire", "psychose maniaco-dépressive"], asa: 2, attention: { level: "info", text: "Lithium : natrémie et fonction rénale." } }),
   c({ id: "psychosis", label: "Schizophrénie / psychose", system: "psy", keywords: ["schizophrénie"], asa: 2, attention: { level: "info", text: "Antipsychotiques poursuivis ; QT." } }),
   c({ id: "anxiety", label: "Anxiété importante", system: "psy", keywords: ["phobie", "angoisse"], attention: { level: "info", text: "Prémédication et information à discuter." } }),
 
@@ -213,7 +214,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
   c({ id: "adhd", label: "TDAH", system: "psy", keywords: ["hyperactivité", "déficit d'attention"], attention: { level: "info", text: "Psychostimulant : à gérer selon le prescripteur." } }),
 
   // --- Hématologie ------------------------------------------------------------------
-  c({ id: "anemia", label: "Anémie connue", system: "hemato", asa: 2, attention: { level: "medium", text: "À rechercher et traiter avant une chirurgie programmée (bilan martial, fer si carence)." } }),
+  c({ id: "anemia", label: "Anémie connue", system: "hemato", keywords: ["anémie", "anémique", "carence martiale"], asa: 2, attention: { level: "medium", text: "À rechercher et traiter avant une chirurgie programmée (bilan martial, fer si carence)." } }),
   c({ id: "bleeding_disorder", label: "Trouble de l'hémostase", system: "hemato", keywords: ["saignements"], asa: 2, needsRule: true, attention: { level: "high", text: "Avis hématologique ; substitution et bilan selon le trouble." } }),
   c({ id: "thrombocytopenia", label: "Thrombopénie", system: "hemato", keywords: ["plaquettes basses"], asa: 2, needsRule: true, attention: { level: "medium", text: "Seuils plaquettaires selon le geste (neuraxial, chirurgie) : voir vos règles." } }),
   c({ id: "thrombophilia", label: "Thrombophilie", system: "hemato", keywords: ["facteur V Leiden"], asa: 2, attention: { level: "medium", text: "Thromboprophylaxie renforcée à discuter." } }),
@@ -227,14 +228,14 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
 
   // --- Autres -------------------------------------------------------------------------
   c({ id: "cancer", label: "Cancer / tumeur maligne", system: "other", keywords: ["cancer évolutif", "néoplasie", "tumeur", "masse rénale", "tumeur rénale", "tumeur du rein", "carcinome", "adénocarcinome", "lésion suspecte"], asa: 2 }),
-  c({ id: "chemotherapy", label: "Chimiothérapie récente", system: "other", keywords: ["anthracycline", "bléomycine"], asa: 3, attention: { level: "medium", text: "Toxicités : anthracyclines (cardiaque), bléomycine (pulmonaire, FiO₂ basse) ; neutropénie, thrombopénie." } }),
+  c({ id: "chemotherapy", label: "Chimiothérapie récente", system: "other", keywords: ["anthracycline", "bléomycine", "chimiothérapie", "chimio"], asa: 3, attention: { level: "medium", text: "Toxicités : anthracyclines (cardiaque), bléomycine (pulmonaire, FiO₂ basse) ; neutropénie, thrombopénie." } }),
   c({ id: "transplant", label: "Greffe d'organe", system: "other", keywords: ["transplantation"], asa: 3, attention: { level: "medium", text: "Immunosuppresseurs poursuivis ; asepsie renforcée." } }),
   c({ id: "rheumatoid", label: "Polyarthrite rhumatoïde", system: "other", keywords: ["PR"], asa: 2, attention: { level: "medium", text: "Instabilité cervicale C1-C2 possible (imagerie si symptômes) ; ouverture de bouche." } }),
   c({ id: "ankylosing", label: "Spondylarthrite ankylosante", system: "other", keywords: ["Bechterew", "SPA"], asa: 2, attention: { level: "high", text: "Intubation et ALR neuraxiale potentiellement difficiles (rachis cervical et lombaire rigides)." } }),
   c({ id: "down_syndrome", label: "Trisomie 21", system: "other", asa: 2, attention: { level: "medium", text: "Instabilité atlanto-axiale, voies aériennes, cardiopathie associée." } }),
   c({ id: "hiv", label: "VIH", system: "other", asa: 2, attention: { level: "info", text: "Interactions des antirétroviraux à vérifier." } }),
   c({ id: "chronic_pain", label: "Douleur chronique", system: "other", keywords: ["fibromyalgie", "lombalgie chronique"], asa: 2, attention: { level: "medium", text: "Plan analgésique multimodal ; tolérance aux opioïdes possible." } }),
-  c({ id: "pregnancy", label: "Grossesse", system: "other", female: true, asa: 2, attention: { level: "high", text: "Avis obstétrical ; décubitus latéral gauche après 20 SA ; risque d'inhalation." } }),
+  c({ id: "pregnancy", label: "Grossesse", system: "other", female: true, keywords: ["enceinte", "gestante", "grossesse en cours"], asa: 2, attention: { level: "high", text: "Avis obstétrical ; décubitus latéral gauche après 20 SA ; risque d'inhalation." } }),
   c({ id: "breastfeeding", label: "Allaitement", system: "other", female: true, attention: { level: "info", text: "Compatibilité des produits à vérifier au cas par cas." } }),
 
   c({ id: "lupus", label: "Lupus / connectivite", system: "other", keywords: ["lupus", "LED", "Sjögren", "vascularite"], asa: 2, attention: { level: "info", text: "Atteintes d'organes (rein, cœur, poumon) à rechercher ; corticothérapie." } }),
@@ -245,9 +246,9 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
   c({ id: "glaucoma", label: "Glaucome", system: "other", keywords: ["glaucome"], attention: { level: "info", text: "Traitement poursuivi ; angle fermé : prudence avec les anticholinergiques ; éviter la pression sur les yeux (décubitus ventral)." } }),
   c({ id: "scoliosis", label: "Scoliose / rachis opéré", system: "surgical", keywords: ["scoliose", "arthrodèse lombaire", "matériel rachidien", "cyphose"], attention: { level: "medium", text: "Ponction neuraxiale plus difficile : repérage échographique ; scoliose sévère : syndrome restrictif.", material: ["Échographe pour le repérage"] } }),
   c({ id: "cervical_spine", label: "Rachis cervical instable ou fixé", system: "surgical", keywords: ["arthrodèse cervicale", "canal cervical étroit", "myélopathie cervicale", "instabilité cervicale"], attention: { level: "high", text: "Intubation en rectitude (vidéolaryngoscope, fibroscope) ; installation avec contrôle de la tête.", material: ["Vidéolaryngoscope", "Fibroscope"] } }),
-  c({ id: "head_neck_radiotherapy", label: "Radiothérapie / chirurgie cervico-faciale", system: "other", keywords: ["radiothérapie cervicale", "radiothérapie ORL", "cancer ORL"], attention: { level: "high", text: "Voies aériennes potentiellement difficiles (fibrose, trismus) : examen soigneux, stratégie décidée à l'avance.", material: ["Vidéolaryngoscope", "Fibroscope"] } }),
+  c({ id: "head_neck_radiotherapy", label: "Radiothérapie ou chirurgie cervico-faciale", system: "other", keywords: ["radiothérapie cervicale", "radiothérapie ORL", "cancer ORL"], attention: { level: "high", text: "Voies aériennes potentiellement difficiles (fibrose, trismus) : examen soigneux, stratégie décidée à l'avance.", material: ["Vidéolaryngoscope", "Fibroscope"] } }),
   c({ id: "interpreter", label: "Barrière linguistique", system: "other", keywords: ["interprète", "ne parle pas français"], attention: { level: "info", text: "Interprète (professionnel si possible) pour l'information et le consentement." } }),
-  c({ id: "advance_directive", label: "Directives anticipées / limitation", system: "other", keywords: ["DNR", "directives anticipées", "non-réanimation", "limitation thérapeutique"], attention: { level: "medium", text: "Discuter et documenter ce qui s'applique en périopératoire (suspension ou maintien)." } }),
+  c({ id: "advance_directive", label: "Directives anticipées / limitation des soins", system: "other", keywords: ["DNR", "directives anticipées", "non-réanimation", "limitation thérapeutique"], attention: { level: "medium", text: "Discuter et documenter ce qui s'applique en périopératoire (suspension ou maintien)." } }),
 
   // --- Antécédents anesthésiques ------------------------------------------------------
   c({ id: "ponv", label: "NVPO / mal des transports", system: "anaes", keywords: ["NVPO", "PONV", "nausées postopératoires", "vomissements postopératoires", "mal des transports"] }),

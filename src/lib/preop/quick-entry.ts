@@ -325,6 +325,24 @@ function timesPerDay(f: string): number | null {
 
 type Cats = Pick<Catalogs, "conditions" | "medications" | "allergens"> & Partial<Pick<Catalogs, "surgeries">>;
 
+/**
+ * What a catalogue label is dictated as: the whole label, each part of
+ * « AVC / AIT », without its parenthesis, and the proper name of
+ * « Maladie de Parkinson » or « Syndrome de Marfan ».
+ */
+function labelTerms(label: string): string[] {
+  const parts = label
+    .replace(/\([^)]*\)/g, " ")
+    .split(/\s*\/\s*/)
+    .map((p) => p.trim());
+  const out = [label, ...parts];
+  for (const p of parts) {
+    const m = p.match(/^(?:maladie|syndrome|myopathie) de (.+)$/i);
+    if (m) out.push(m[1]);
+  }
+  return [...new Set(out)].filter((t) => t.replace(/[^\p{L}]/gu, "").length >= 3);
+}
+
 export function parseQuickEntry(text: string, catalogs: Cats): QuickEntryResult {
   const result: QuickEntryResult = { conditions: [], negated: [], treatments: [], freeTreatments: [], allergies: [], substances: {}, values: [], exam: {}, surgicalHistory: [], history: [], unknown: [], ignored: [], document: false };
   const all = fold(text);
@@ -484,7 +502,7 @@ export function parseQuickEntry(text: string, catalogs: Cats): QuickEntryResult 
       for (const c of catalogs.conditions) {
         if (plannedLine && c.system === "surgical") continue;
         let at = -1;
-        const hit = [c.label, ...(c.keywords ?? [])].find((k) => (at = keywordAt(segment, segWords, k)) >= 0);
+        const hit = [...labelTerms(c.label), ...(c.keywords ?? [])].find((k) => (at = keywordAt(segment, segWords, k)) >= 0);
         if (!hit) continue;
         matched = true;
         const before = segWords.slice(Math.max(0, at - 5), at).join(" ");

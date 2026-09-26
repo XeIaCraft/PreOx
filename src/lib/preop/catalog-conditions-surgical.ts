@@ -78,7 +78,7 @@ export const SURGICAL_CONDITIONS: ConditionItem[] = [
     label: "Césarienne(s) antérieure(s) / utérus cicatriciel",
     system: "surgical",
     female: true,
-    keywords: ["césarienne antérieure", "utérus cicatriciel", "myomectomie"],
+    keywords: ["césarienne antérieure", "césarienne", "césariennes", "utérus cicatriciel", "myomectomie"],
     attention: { level: "medium", text: "Nouvelle grossesse : rechercher un placenta prævia ou accreta (hémorragie majeure) ; plan transfusionnel si suspicion." },
   }),
   c({
@@ -108,7 +108,7 @@ export const SURGICAL_CONDITIONS: ConditionItem[] = [
     id: "delayed_emergence",
     label: "Réveil prolongé ou retardé",
     system: "anaes",
-    keywords: ["réveil long", "réveil retardé", "réveil tardif", "réveil prolongé", "long à se réveiller"],
+    keywords: ["réveil long", "réveil retardé", "réveil tardif", "réveil prolongé", "long à se réveiller", "réveil difficile"],
     attention: {
       level: "medium",
       text: "Rechercher la cause : curarisation résiduelle (déficit en pseudocholinestérase), sensibilité aux opioïdes ou aux benzodiazépines, hypothermie, hypoglycémie, hypercapnie (SAOS), hyponatrémie, insuffisance hépatique ou rénale. Agents de courte durée, monitorage de la curarisation et de la profondeur d'anesthésie, glycémie et température.",
