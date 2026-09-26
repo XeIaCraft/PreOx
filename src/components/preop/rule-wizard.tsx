@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/toast";
 import { ChipGroup, Textarea } from "@/components/carnet/ui";
 import { RuleEditor, type RuleDraft } from "@/components/preop/rule-editor";
 import { SourceBadge } from "@/components/preop/ui";
+import { AiQuestionPanel } from "@/components/preop/ai-assistant";
 import { atcLabel } from "@/lib/preop/medications";
 import { parseAnswer, type BlockCheck, type ParsedAnswer, type ParsedBlock } from "@/lib/preop/rules/parse-answer";
 import { SEARCH_TOOLS, buildQuestion, type QuestionInput } from "@/lib/preop/rules/question";
@@ -246,6 +247,15 @@ export function RuleWizard({ initial, onSave, onDone }: { initial: QuestionInput
               </a>
             ))}
           </div>
+          <AiQuestionPanel
+            query={question}
+            prompt={prompt}
+            onAnswer={(text, used) => {
+              setAnswer(text);
+              setTool(used);
+              setStep(2);
+            }}
+          />
           <div className="flex justify-end">
             <Button variant="secondary" onClick={() => setStep(2)} disabled={!question.trim()}>
               J&apos;ai la réponse <ArrowRight className="h-4 w-4" />
@@ -258,7 +268,12 @@ export function RuleWizard({ initial, onSave, onDone }: { initial: QuestionInput
         <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-surface p-3 sm:p-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium uppercase tracking-wide text-foreground-subtle">Outil utilisé</span>
-            <ChipGroup size="sm" options={[...SEARCH_TOOLS.map((t) => ({ code: t.name, label: t.name })), { code: "Autre", label: "Autre" }]} value={tool} onChange={(v) => v && setTool(v)} />
+            <ChipGroup
+              size="sm"
+              options={[...SEARCH_TOOLS.map((t) => ({ code: t.name, label: t.name })), ...(SEARCH_TOOLS.some((t) => t.name === tool) || tool === "Autre" ? [] : [{ code: tool, label: tool }]), { code: "Autre", label: "Autre" }]}
+              value={tool}
+              onChange={(v) => v && setTool(v)}
+            />
           </div>
           <label className="block space-y-1">
             <span className="block text-xs font-medium uppercase tracking-wide text-foreground-subtle">Réponse complète, avec la bibliographie</span>

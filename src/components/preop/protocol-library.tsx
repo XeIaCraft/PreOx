@@ -12,6 +12,8 @@ import type { ProtocolInput } from "@/components/preop/use-protocols";
 import { OPERATION_CATEGORIES, operationCategoryLabel } from "@/lib/carnet/referentiel";
 import { emptyProtocolContent, type BodyData, type Protocol } from "@/lib/preop/protocols";
 import { REFERENCE_PROTOCOLS } from "@/lib/preop/reference-protocols";
+import { protocolQuestion } from "@/lib/preop/rules/question";
+import { AiQuestionPanel } from "@/components/preop/ai-assistant";
 import { TECHNIQUES } from "@/lib/preop/rules/types";
 import type { Sex } from "@/lib/preop/scores";
 
@@ -24,6 +26,7 @@ function ProtocolEditor({ initial, onSave, onCancel }: { initial: ProtocolInput;
   const [sample, setSample] = useState<BodyData>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [proposal, setProposal] = useState<{ text: string; tool: string } | null>(null);
   const set = (patch: Partial<ProtocolInput>) => setP((x) => ({ ...x, ...patch }));
 
   return (
@@ -79,6 +82,24 @@ function ProtocolEditor({ initial, onSave, onCancel }: { initial: ProtocolInput;
         <TextArea label="Sources (recommandation, protocole du service, RCP…)" value={p.source} onChange={(source) => set({ source })} placeholder="ex. Protocole du service 2025 ; SFAR/ESAIC…" />
         <p className="text-xs text-foreground-subtle">Les doses viennent des sources notées ici (les vôtres, ou celles d&apos;un protocole de référence) : PreOx calcule pour le patient à partir de ce qui est écrit.</p>
       </Panel>
+      {(p.surgery.trim() || p.name.trim()) && (
+        <Panel title="Proposition documentée (assistant IA)">
+          <AiQuestionPanel
+            mode="protocol"
+            {...protocolQuestion({ surgery: p.surgery.trim() || p.name.trim(), techniques: p.content.techniques })}
+            onAnswer={(text, used) => setProposal({ text, tool: used })}
+          />
+          {proposal && (
+            <div className="space-y-2">
+              <p className="text-xs text-foreground-subtle">Proposition de {proposal.tool} : à lire et à recopier dans les champs après vérification des sources ; rien n&apos;est rempli automatiquement.</p>
+              <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-[var(--radius-md)] border border-border bg-surface-muted p-3 text-xs text-foreground">{proposal.text}</pre>
+              <Button variant="secondary" size="sm" onClick={() => set({ source: [p.source, `Proposition ${proposal.tool} du ${new Date().toLocaleDateString("fr-BE")} (à vérifier)`].filter(Boolean).join(" ; ") })}>
+                Noter la proposition dans les sources
+              </Button>
+            </div>
+          )}
+        </Panel>
+      )}
 
       <Panel title="Essayer les doses sur un patient type">
         <ChipGroup
@@ -156,9 +177,8 @@ export function ProtocolLibrary({
         <div className="space-y-2 rounded-[var(--radius-md)] border border-accent/40 bg-accent-tint/50 p-3">
           <p className="text-sm font-medium text-foreground">Protocoles de référence : {missing.length} intervention(s) courante(s)</p>
           <p className="text-xs text-foreground-muted">
-            Prothèses de hanche et de genou, fracture du col, épaule, césarienne, cholécystectomie, colectomie RAC, hernie en ambulatoire, amygdalectomie de l&apos;enfant, thyroïdectomie, RTUP,
-            hystérectomie, cataracte, bariatrique. Doses tirées des cours belges (EIUA : Dubois, Roelants, Hardy) et du manuel, source notée sur chaque protocole : un point de départ à adapter au
-            protocole de votre service.
+            Orthopédie, obstétrique, chirurgie générale et ambulatoire, ORL, urologie, gynécologie, ophtalmologie, endoscopie. Doses tirées des cours belges (EIUA : Dubois, Roelants, Hardy) et du
+            manuel, source notée sur chaque protocole : un point de départ à adapter au protocole de votre service.
           </p>
           <details className="text-xs text-foreground-muted">
             <summary className="cursor-pointer text-primary">Voir la liste</summary>

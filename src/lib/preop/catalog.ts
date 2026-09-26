@@ -18,7 +18,7 @@ export interface AttentionSpec {
   material?: string[];
 }
 
-export type SystemCode = "cardio" | "resp" | "endo" | "renal" | "digest" | "neuro" | "psy" | "hemato" | "other" | "anaes";
+export type SystemCode = "cardio" | "resp" | "endo" | "renal" | "digest" | "neuro" | "psy" | "hemato" | "other" | "surgical" | "anaes";
 
 export const SYSTEM_LABELS: Record<SystemCode, string> = {
   cardio: "Cardiovasculaire",
@@ -30,10 +30,11 @@ export const SYSTEM_LABELS: Record<SystemCode, string> = {
   psy: "Psychiatrique",
   hemato: "Hématologie",
   other: "Autres",
+  surgical: "Antécédents chirurgicaux",
   anaes: "Antécédents anesthésiques",
 };
 
-export const SYSTEM_ORDER: SystemCode[] = ["cardio", "resp", "endo", "renal", "digest", "neuro", "psy", "hemato", "other", "anaes"];
+export const SYSTEM_ORDER: SystemCode[] = ["cardio", "resp", "endo", "renal", "digest", "neuro", "psy", "hemato", "other", "surgical", "anaes"];
 
 /** When and against what the item was last checked in the literature. */
 export interface Verifiable {

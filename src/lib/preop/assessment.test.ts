@@ -184,7 +184,7 @@ describe("completeness", () => {
   it("says what each step still lacks", async () => {
     const { stepMissing } = await import("./completeness");
     const { remainingQuestions } = await import("./remaining-questions");
-    const c = consult({ patient: { sex: "F", age: 50, weightKg: 60, heightCm: 165, noKnownAllergy: true }, noTreatment: true, historyReviewed: ["cardio", "resp", "endo", "renal", "digest", "neuro", "psy", "hemato", "other", "anaes"], substances: { tobacco: "never" } });
+    const c = consult({ patient: { sex: "F", age: 50, weightKg: 60, heightCm: 165, noKnownAllergy: true }, noTreatment: true, historyReviewed: ["cardio", "resp", "endo", "renal", "digest", "neuro", "psy", "hemato", "other", "surgical", "anaes"], substances: { tobacco: "never" } });
     const scores = consultationScores(c);
     const m = stepMissing(c, scores, remainingQuestions(c, scores));
     expect(m.patient).toEqual([]);

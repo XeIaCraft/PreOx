@@ -124,7 +124,27 @@ export const DEFAULT_CONDITION_DETAILS: Record<string, ConditionDetail[]> = {
   anaesthetic_allergy: [text("drug", "Produit en cause"), choice("workup", "Bilan allergologique", [o("done", "Fait"), o("none", "Non fait", { attention: high("Réaction per-anesthésique sans bilan : bilan allergologique avant une chirurgie programmée ; éviter tous les produits alors administrés.") })])],
   kidney_transplant: [date("when", "Date de la greffe")],
   transplant: [text("organ", "Organe et date")],
+  bariatric_history: [
+    choice("type", "Intervention", [
+      o("bypass", "Bypass gastrique", { attention: medium("Bypass : absorption des médicaments oraux modifiée, carences (fer, B12, vitamines), AINS à éviter (ulcère anastomotique) ; pas de sonde gastrique à l'aveugle.") }),
+      o("sleeve", "Sleeve gastrectomie", { attention: medium("Sleeve : reflux gastro-œsophagien fréquent (inhalation) ; carences à rechercher.") }),
+      o("band", "Anneau gastrique", { attention: high("Anneau : mal positionné ou trop serré, risque d'inhalation (séquence rapide — manuel, chap. 44) ; demander dysphagie et vomissements.") }),
+      o("other", "Autre ou plusieurs"),
+    ]),
+    date("when", "Date"),
+  ],
   cancer: [
+    choice(
+      "extent",
+      "Extension",
+      [
+        o("local", "Localisée, sans retentissement général", { asa: 1 }),
+        o("advanced", "Localement avancée ou avec retentissement (amaigrissement, anémie, douleur)", { asa: 3 }),
+        o("metastatic", "Métastatique", { asa: 3 }),
+        o("remission", "Traitée, en rémission", { asa: 1 }),
+      ],
+      "L'ASA décrit le retentissement général : une tumeur localisée qui motive l'intervention, sans autre maladie, ne l'élève pas ; les autres antécédents et la chimiothérapie comptent à part."
+    ),
     text("treatment", "Traitement en cours", "Chimiothérapie, radiothérapie, immunothérapie, hormonothérapie…"),
     choice("radiotherapy", "Radiothérapie", [o("none", "Aucune"), o("neck", "Cervicale ou ORL", { attention: high("Cou irradié : sclérose cervicale, trismus, ostéoradionécrose — intubation difficile possible (manuel, chap. 45).") }), o("chest", "Médiastinale ou thoracique", { attention: medium("Médiastin irradié : péricardite, poumon radique, toxicité cardiaque des anthracyclines majorée (manuel, chap. 45).") }), o("other", "Autre site")]),
   ],

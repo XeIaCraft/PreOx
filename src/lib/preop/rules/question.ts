@@ -123,3 +123,17 @@ export function combineQuestions(questions: QuestionInput[]): QuestionInput {
     context: contexts.join("; "),
   };
 }
+
+/** The general question behind a protocol: a type of intervention, never a patient. */
+export function protocolQuestion(p: { surgery: string; techniques?: Technique[]; category?: string }): { query: string; prompt: string } {
+  const surgery = p.surgery.trim();
+  const query = `Anaesthetic management and recommended protocol for ${surgery} in adults: technique, drugs and doses, antibiotic prophylaxis, analgesia, enhanced recovery`;
+  const prompt = [
+    `Question: What is the current recommended anaesthetic protocol for ${surgery}${p.techniques?.length ? ` under ${p.techniques.map((t) => TECHNIQUE_EN[t]).join(" and ")}` : ""} in an adult without major comorbidity: technique, drugs and doses (with the weight they apply to), antibiotic prophylaxis, haemodynamic and ventilation targets, monitoring, specific risks, postoperative analgesia and thromboprophylaxis?`,
+    "",
+    "Context: anaesthesiologist practising in Belgium; general protocol for this type of intervention, not for a given patient.",
+    "",
+    "Source priority: 1) Belgian guidance (Superior Health Council for antibiotic prophylaxis, KCE, BCFI/CBIP); 2) European guidelines and PROSPECT (ESRA), ERAS Society; 3) other societies (SFAR, ASRA). Prefer official guidelines over individual studies.",
+  ].join("\n");
+  return { query, prompt };
+}

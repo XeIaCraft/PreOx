@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { BookMarked, FolderOpen, Loader2, NotebookTabs, Settings2, Stethoscope } from "lucide-react";
+import { BookMarked, FolderOpen, Loader2, NotebookTabs, Settings2, Sparkles, Stethoscope } from "lucide-react";
+import { AiSettings } from "@/components/preop/ai-assistant";
 import { ConsultationView } from "@/components/preop/consultation";
 import { DossierList } from "@/components/preop/dossiers";
 import { DOSSIER_TABS, DossierView, type DossierTab } from "@/components/preop/dossier-view";
@@ -20,7 +21,7 @@ import { emptyDossier, withAutoStatus } from "@/lib/preop/dossier";
 import type { QuestionInput } from "@/lib/preop/rules/question";
 import { cn } from "@/lib/utils";
 
-type View = "consultation" | "dossiers" | "dossier" | "protocoles" | "regles" | "nouvelle" | "parametres";
+type View = "consultation" | "dossiers" | "dossier" | "protocoles" | "regles" | "nouvelle" | "parametres" | "ia";
 
 const TABS: { view: View; label: string; short: string; icon: typeof Stethoscope }[] = [
   { view: "consultation", label: "Consultation", short: "Consult.", icon: Stethoscope },
@@ -33,9 +34,10 @@ const SETTINGS_SECTIONS: { view: View; label: string; icon: typeof Stethoscope }
   { view: "parametres", label: "Listes et seuils", icon: Settings2 },
   { view: "protocoles", label: "Protocoles", icon: NotebookTabs },
   { view: "regles", label: "Règles", icon: BookMarked },
+  { view: "ia", label: "Assistant IA", icon: Sparkles },
 ];
 
-const VIEWS: View[] = ["consultation", "dossiers", "dossier", "protocoles", "regles", "nouvelle", "parametres"];
+const VIEWS: View[] = ["consultation", "dossiers", "dossier", "protocoles", "regles", "nouvelle", "parametres", "ia"];
 
 /**
  * The "Préop" module, one client-side app: the consultation (kept only if
@@ -83,7 +85,7 @@ function PreopScreens() {
   };
 
   const dossier = view === "dossier" ? dossierStore.dossiers.find((d) => d.id === dossierId) : undefined;
-  const activeTab: View = view === "dossier" ? "dossiers" : view === "nouvelle" || view === "regles" || view === "protocoles" ? "parametres" : view;
+  const activeTab: View = view === "dossier" ? "dossiers" : view === "nouvelle" || view === "regles" || view === "protocoles" || view === "ia" ? "parametres" : view;
   const settingsSection: View = view === "nouvelle" ? "regles" : view;
 
   return (
@@ -220,6 +222,7 @@ function PreopScreens() {
       )}
       {view === "nouvelle" && <RuleWizard key={wizardKey} initial={pendingQuestion} onSave={save} onDone={() => go("regles")} />}
       {view === "parametres" && <SettingsView protocols={protocolLib.protocols} />}
+      {view === "ia" && <AiSettings />}
     </div>
   );
 }

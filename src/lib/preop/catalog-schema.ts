@@ -25,7 +25,7 @@ const interaction = z.object({ with: text(160), words: words, effect: text(1000)
 const condition = z.object({
   id,
   label: text(120).min(1),
-  system: z.enum(["cardio", "resp", "endo", "renal", "digest", "neuro", "psy", "hemato", "other", "anaes"]),
+  system: z.enum(["cardio", "resp", "endo", "renal", "digest", "neuro", "psy", "hemato", "other", "surgical", "anaes"]),
   keywords: words.optional(),
   qualifiers: z.partialRecord(qualifier, text(60)).optional(),
   asa: asa.optional(),

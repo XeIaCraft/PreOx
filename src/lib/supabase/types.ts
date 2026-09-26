@@ -728,6 +728,16 @@ export type CarnetYearRow = WithUser<import("@/lib/carnet/types").CarnetYear> & 
 export type PreopRuleRow = WithUser<import("@/lib/preop/rules/types").Rule>;
 export type PreopProtocolRow = WithUser<import("@/lib/preop/protocols").Protocol>;
 
+export type PreopAiSettingsRow = {
+  user_id: string;
+  gemini_api_key_encrypted: string | null;
+  gemini_model: string;
+  consensus_api_key_encrypted: string | null;
+  consensus_monthly_limit: number;
+  consensus_usage: unknown;
+  updated_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -1185,6 +1195,12 @@ export type Database = {
         Row: PreopRuleRow;
         Insert: Partial<PreopRuleRow> & { id: string; user_id: string; statement: string };
         Update: Partial<PreopRuleRow>;
+        Relationships: [];
+      };
+      preop_ai_settings: {
+        Row: PreopAiSettingsRow;
+        Insert: Partial<PreopAiSettingsRow> & { user_id: string };
+        Update: Partial<PreopAiSettingsRow>;
         Relationships: [];
       };
       preop_catalogs: {

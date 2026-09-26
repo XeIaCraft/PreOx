@@ -467,7 +467,10 @@ export function parseQuickEntry(text: string, catalogs: Cats): QuickEntryResult 
       }
 
       // Antecedents: catalogue labels and synonyms, with their qualifiers; negated and family ones apart.
+      // The planned intervention is not a past one (« mastectomie prévue » is not an antecedent of mastectomy).
+      const plannedLine = line === planned || line.section === "surgery" || /\b(prevue?|programmee?|en vue d|candidat a)\b/.test(fold(line.text));
       for (const c of catalogs.conditions) {
+        if (plannedLine && c.system === "surgical") continue;
         let at = -1;
         const hit = [c.label, ...(c.keywords ?? [])].find((k) => (at = keywordAt(segment, segWords, k)) >= 0);
         if (!hit) continue;

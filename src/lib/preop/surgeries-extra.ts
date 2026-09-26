@@ -188,6 +188,7 @@ export const EXTRA_SURGERIES = [
   x("Curiethérapie prostatique", "J2", "minor", "low", "low", false, P, { aka: ["grains d'iode"], h: 1.5, t: SP, pos: LITHO }),
   x("Injection intravésicale de toxine botulique", "J2", "minor", "low", "minimal", false, P, { aka: ["Botox vésical"], h: 0.5, t: SED, pos: LITHO }),
   x("Surrénalectomie ou chirurgie rétropéritonéale", "J2", "major", "high", "high", true, UA, { aka: ["curage rétropéritonéal", "masse rétropéritonéale"], h: 4, t: G, pos: DORSAL }),
+  x("Lithotripsie extracorporelle", "J2", "minor", "low", "low", false, P, { aka: ["LEC", "lithotripsie", "ESWL", "calcul rénal"], h: 1, t: SED, pos: DORSAL }),
   x("Circoncision de l'enfant ou cure de phimosis", "J2", "minor", "low", "minimal", false, P, { aka: ["phimosis", "posthectomie"], h: 0.5, t: G, pos: DORSAL }),
 
   // --- Gynécologie (J1) et obstétrique (B) --------------------------------------------------
