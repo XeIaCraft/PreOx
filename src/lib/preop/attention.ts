@@ -9,6 +9,7 @@
 import { QUALIFIER_LABELS, anyOf, has } from "./history";
 import { DRUG_REFERENCES, DRUG_REFERENCE_SOURCE, cautionsFor, drugReferenceFor, localAnaestheticLoad, morphineEquivalents } from "./drug-reference";
 import { computeDose, type ProtocolDrug } from "./protocols";
+import { ORGAN_SOURCE, organAdjustments } from "./organ-dosing";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 import { classesOf, fold, medicationOf, type AllergenItem, type AttentionSpec } from "./catalog";
 import type { ConsultationScores } from "./consultation-scores";
@@ -378,6 +379,37 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
           detail: "Asthme : sévoflurane (bronchodilatateur) ou AIVOC.",
           why: labelOf("asthma"),
           source: `${DRUG_REFERENCE_SOURCE}, chap. 3`,
+        });
+    }
+    // Doses of the plan to adapt to the kidney and the liver.
+    if (plan?.drugs.length) {
+      const cirrhosis = c.conditions.cirrhosis;
+      const child = String(cirrhosis?.details?.child ?? "");
+      const liver = cirrhosis?.present ? (child === "b" || child === "c" || cirrhosis.severe ? "severe" : "any") : undefined;
+      const crcl = scores.derived.crcl;
+      const organ = organAdjustments(
+        plan.drugs.map((x) => x.name),
+        { crcl, dialysis: has(cond, "dialysis"), liver }
+      );
+      const renal = organ.filter((o) => o.organ === "renal");
+      const hepatic = organ.filter((o) => o.organ === "hepatic");
+      if (renal.length)
+        add({
+          id: "plan-renal-doses",
+          level: renal.some((o) => /contre-indiqué|à éviter|non recommandé/.test(o.text)) ? "high" : "medium",
+          title: "Doses du plan à adapter au rein",
+          detail: renal.map((o) => `${o.drug} : ${o.text}`).join(" ; ") + ".",
+          why: has(cond, "dialysis") ? "dialyse" : `clairance de la créatinine ${Math.round(crcl ?? 0)} mL/min (Cockcroft-Gault)`,
+          source: ORGAN_SOURCE,
+        });
+      if (hepatic.length)
+        add({
+          id: "plan-hepatic-doses",
+          level: liver === "severe" ? "high" : "medium",
+          title: "Doses du plan à adapter au foie",
+          detail: hepatic.map((o) => `${o.drug} : ${o.text}`).join(" ; ") + ".",
+          why: `${labelOf("cirrhosis")}${child ? `, Child ${child.toUpperCase()}` : ""}`,
+          source: ORGAN_SOURCE,
         });
     }
     const meq = morphineEquivalents(c.treatments);
@@ -1236,7 +1268,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         title: `Enfant de ${ageText}${w !== undefined ? ` (${n(w)} kg)` : ""} : repères`,
         detail: [
           uri && urgency === "elective" ? "Infection des voies aériennes récente : reporter une intervention non urgente de 3–4 semaines après la fin des symptômes (sauf rhinorrhée claire sans fièvre)." : "",
-          `Matériel : ${tubeText} ; lame ${blade}${lma ? ` ; masque laryngé ${lma}` : ""}${bag ? ` ; ballon ${bag}` : ""} ; sonde gastrique ${gastric}, urinaire ${urinary}.`,
+          `Matériel : ${tubeText} ; lame ${blade}${lma ? ` ; masque laryngé ${lma}` : ""}${bag ? ` ; ballon ${bag}` : ""} ; sonde gastrique ${gastric}, urinaire ${urinary}. Sonde à ballonnet : pression du ballonnet < 20 cmH₂O (manomètre).`,
           `Normes : ${vitals} (hypotension = baisse de 10–20 % de la valeur avant l'induction).`,
           w !== undefined && w < 10 ? "Ventilation en pression contrôlée 10–25 cmH₂O, PEP 3–5, Vt 6–8 ml/kg." : "",
           `Doses : ${dose("atropine", 0.02, "mg", 0.6)}, ${dose("propofol", 3, "mg")} (2,5–4), ${dose("succinylcholine", 2, "mg")} (1,5–2), ${dose("paracétamol", 15, "mg", 1000)}, ${dose("dexaméthasone", 0.15, "mg", 8)}, ${dose("ondansétron", 0.1, "mg", 4)}, ${dose("morphine", 0.05, "mg")} par bolus${age >= 0.5 && (w === undefined || w >= 10) ? `, ${dose("ibuprofène", 10, "mg", 400)}` : " ; pas d'AINS avant 6 mois ni sous 10 kg"} ; pas d'aspirine (syndrome de Reye).`,
@@ -1249,6 +1281,32 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         source: CH(37, "tableaux 37.1 à 37.3, posologies, matériel"),
         material: [tube !== undefined ? `Sondes ${n(tube - 0.5)}, ${n(tube)} et ${n(tube + 0.5)}` : "Sondes d'intubation pédiatriques", `Lame ${blade}`, lma ? `Masque laryngé ${lma}` : "", `Sonde gastrique ${gastric}`, "Réchauffement (matelas, air pulsé)"].filter(Boolean),
       });
+    }
+
+    // Children at risk of perioperative respiratory adverse events: the induction to prefer.
+    if (age !== undefined && age < 16) {
+      const factors = [
+        has(cond, "recent_uri") ? "infection respiratoire récente" : "",
+        has(cond, "asthma") ? "asthme" : "",
+        has(cond, "child_wheeze") ? "sifflements, toux nocturne ou eczéma" : "",
+        has(cond, "child_family_atopy") ? "atopie familiale ou tabagisme passif" : "",
+        has(cond, "osa") ? "SAOS / ronflement" : "",
+        /amygdal|adéno|végétations|laryng|bronchoscop|trachéo|fente|palat/i.test(c.surgery.name) ? "chirurgie des voies aériennes" : "",
+      ].filter(Boolean);
+      if (factors.length) {
+        const inductions = (plan?.drugs ?? []).filter((x) => x.phase === "induction" || x.choice === "induction");
+        const sevo = inductions.some((x) => /s[ée]vo/i.test(x.name)) || plan?.gases?.agent === "sevoflurane";
+        const propofol = inductions.some((x) => /propofol/i.test(x.name));
+        const planNote = !plan ? "" : propofol && sevo ? " Le plan laisse le choix : retenir le propofol." : sevo && !propofol ? " Le plan prévoit une induction au sévoflurane : la remplacer par le propofol si une voie veineuse est possible." : "";
+        add({
+          id: "paediatric-prae",
+          level: factors.length >= 2 ? "high" : "medium",
+          title: "Enfant à risque respiratoire : induction IV",
+          detail: `Induction IV au propofol plutôt qu'inhalatoire (événements respiratoires 26 % contre 43 % chez l'enfant à ≥ 2 facteurs de risque) ; masque facial ou laryngé plutôt qu'intubation quand c'est possible ; entretien aux halogénés ; gestion des voies aériennes par un anesthésiste pédiatrique expérimenté. Infection respiratoire : risque accru si symptômes présents ou < 2 semaines, pas au-delà de 2–4 semaines.${planNote}`,
+          why: factors.join(", "),
+          source: "von Ungern-Sternberg, Lancet 2010 (doi:10.1016/S0140-6736(10)61193-2) ; Ramgolam, Anesthesiology 2018 (doi:10.1097/ALN.0000000000002152)",
+        });
+      }
     }
 
     // Infants and former preterm babies: postoperative apnoea (chap. 37).

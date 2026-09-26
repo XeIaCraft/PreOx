@@ -37,3 +37,43 @@ describe("the plan checked against the patient", () => {
     expect(points(patient(["asthma"]), planOf([], { ...sevo, agent: "desflurane" })).find((p) => p.id === "plan-gases-des-asthma")).toBeDefined();
   });
 });
+
+describe("doses adapted to the kidney and the liver", () => {
+  it("kidney: from the Cockcroft-Gault clearance, or dialysis", async () => {
+    const { organAdjustments } = await import("./organ-dosing");
+    expect(organAdjustments(["Morphine", "Kétorolac", "Propofol"], { crcl: 25 }).map((o) => o.drug)).toEqual(["Morphine", "Kétorolac"]);
+    expect(organAdjustments(["Morphine"], { crcl: 45 })[0].text).toMatch(/doses réduites/);
+    expect(organAdjustments(["Morphine"], { crcl: 90 })).toEqual([]);
+    expect(organAdjustments(["Sugammadex"], { dialysis: true })[0].text).toMatch(/non recommandé/);
+    expect(organAdjustments(["Métoclopramide"], { crcl: 10 })[0].text).toMatch(/75 %/);
+  });
+
+  it("liver: cirrhosis, stronger for Child B or C; shown as a point of attention", async () => {
+    const { organAdjustments } = await import("./organ-dosing");
+    expect(organAdjustments(["Paracétamol"], { liver: "any" })[0].text).toBe("3 g/j au maximum");
+    expect(organAdjustments(["Paracétamol"], { liver: "severe" })[0].text).toBe("2 g/j au maximum");
+    const c = patient(["cirrhosis"]);
+    c.conditions.cirrhosis = { present: true, details: { child: "c" } };
+    const p = points(c, planOf(["Paracétamol", "Midazolam"])).find((x) => x.id === "plan-hepatic-doses");
+    expect(p?.level).toBe("high");
+    expect(p?.detail).toMatch(/Paracétamol : 2 g\/j/);
+    expect(p?.why).toMatch(/Child C/);
+  });
+});
+
+describe("children at respiratory risk", () => {
+  it("asks for an IV induction, and says which induction of the plan to keep", () => {
+    const c = patient(["recent_uri", "child_wheeze"]);
+    c.patient = { ...c.patient, age: 5, weightKg: 18 };
+    c.surgery = { ...c.surgery, name: "Amygdalectomie" };
+    const choice = planOf(["Propofol", "Sévoflurane"]);
+    choice.drugs = choice.drugs.map((x) => ({ ...x, choice: "induction" }));
+    const p = points(c, choice).find((x) => x.id === "paediatric-prae");
+    expect(p?.level).toBe("high");
+    expect(p?.detail).toMatch(/retenir le propofol/);
+    expect(p?.why).toMatch(/chirurgie des voies aériennes/);
+    const adult = patient(["recent_uri"]);
+    adult.patient = { ...adult.patient, age: 40 };
+    expect(points(adult, choice).find((x) => x.id === "paediatric-prae")).toBeUndefined();
+  });
+});
