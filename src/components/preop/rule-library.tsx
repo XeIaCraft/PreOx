@@ -11,6 +11,7 @@ import { SourceBadge, TargetTag } from "@/components/preop/ui";
 import { describeRule } from "@/lib/preop/rules/describe";
 import type { Rule, RuleStatus } from "@/lib/preop/rules/types";
 import { PROPOSED_GROUPS } from "@/lib/preop/rules/proposed";
+import { activateAllPlan, importPlan, isUnchecked } from "@/lib/preop/rules/activation";
 
 function RuleEditModal({ rule, onSave, onClose }: { rule: Rule; onSave: (r: RuleDraft) => Promise<Rule>; onClose: () => void }) {
   const { toast } = useToast();
@@ -105,8 +106,7 @@ export function RuleLibrary({
               </>
             ) : (
               <>
-                {group.description} Elles arrivent en <strong>brouillon</strong> : aucune ne s&apos;applique avant que vous l&apos;ayez vérifiée et activée. Chacune contient la question à poser à Consensus pour la
-                vérifier.
+                {group.description} Elles arrivent <strong>actives, marquées « à relire »</strong> : chacune contient la question à poser à Consensus pour la vérifier. Quand une règle plus récente répond à la même question, l&apos;ancienne est archivée.
               </>
             )}
           </p>
@@ -125,33 +125,22 @@ export function RuleLibrary({
               setImporting(group.id);
               let done = 0;
               try {
-                for (const p of group.rules) {
-                  await onSave(p);
+                const plan = importPlan(group, rules, new Date().toISOString());
+                for (const r of plan) {
+                  await onSave(r);
                   done++;
                 }
-                if (group.verified) {
-                  const replaced = new Set(group.rules.flatMap((p) => group.supersedes?.[p.id] ?? []));
-                  let archived = 0;
-                  for (const r of rules) {
-                    if (r.status === "draft" && replaced.has(r.id)) {
-                      await onSave({ ...r, status: "archived" });
-                      archived++;
-                    }
-                  }
-                  toast(`${done} règle(s) vérifiée(s) activée(s)${archived ? `, ${archived} brouillon(s) remplacé(s) archivé(s)` : ""}.`, { variant: "success" });
-                  setStatus("active");
-                } else {
-                  toast(`${done} règle(s) ajoutée(s) en brouillon : ouvrez chacune pour la vérifier.`, { variant: "success" });
-                  setStatus("draft");
-                }
+                const archived = plan.filter((r) => r.status === "archived").length;
+                toast(`${done - archived} règle(s) ajoutée(s) et activée(s)${archived ? `, ${archived} règle(s) plus ancienne(s) remplacée(s) archivée(s)` : ""}.`, { variant: "success" });
+                setStatus("active");
               } catch (err) {
-                toast(`${done} ajoutée(s) ; ${err instanceof Error ? err.message : "échec"}`, { variant: "error" });
+                toast(`${done} enregistrée(s) ; ${err instanceof Error ? err.message : "échec"}`, { variant: "error" });
               } finally {
                 setImporting(null);
               }
             }}
           >
-            <Plus className="h-3.5 w-3.5" /> {importing === group.id ? "Ajout…" : group.verified ? "Ajouter et activer" : "Ajouter en brouillon"}
+            <Plus className="h-3.5 w-3.5" /> {importing === group.id ? "Ajout…" : "Ajouter et activer"}
           </Button>
         </div>
       ))}
@@ -166,9 +155,38 @@ export function RuleLibrary({
           value={status}
           onChange={(v) => v && setStatus(v)}
         />
-        <Button onClick={onNew}>
-          <Plus className="h-4 w-4" /> Nouvelle règle
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {count("draft") > 0 && (
+            <Button
+              variant="secondary"
+              disabled={importing !== null}
+              onClick={async () => {
+                if (!confirm(`Activer les ${count("draft")} brouillon(s) ? Ils s'appliqueront tout de suite, marqués « à relire ».`)) return;
+                setImporting("all");
+                let done = 0;
+                try {
+                  const plan = activateAllPlan(rules, new Date().toISOString());
+                  for (const r of plan) {
+                    await onSave(r);
+                    done++;
+                  }
+                  const archived = plan.filter((r) => r.status === "archived").length;
+                  toast(`${done - archived} règle(s) activée(s)${archived ? `, ${archived} remplacée(s) par une plus récente et archivée(s)` : ""}.`, { variant: "success" });
+                  setStatus("active");
+                } catch (err) {
+                  toast(`${done} enregistrée(s) ; ${err instanceof Error ? err.message : "échec"}`, { variant: "error" });
+                } finally {
+                  setImporting(null);
+                }
+              }}
+            >
+              <Check className="h-4 w-4" /> {importing === "all" ? "Activation…" : "Activer tous les brouillons"}
+            </Button>
+          )}
+          <Button onClick={onNew}>
+            <Plus className="h-4 w-4" /> Nouvelle règle
+          </Button>
+        </div>
       </div>
 
       {shown.length === 0 ? (
@@ -186,7 +204,11 @@ export function RuleLibrary({
                   <TargetTag rule={rule} />
                   <p className="text-xs text-foreground-subtle">
                     {[rule.source.organisation, rule.source.year, rule.source.grade && `grade ${rule.source.grade}`, `v${rule.version}`].filter(Boolean).join(" · ")}
-                    {rule.review_at && rule.review_at < today && <span className="ml-1.5 rounded bg-accent-tint px-1 text-accent">à revérifier</span>}
+                    {isUnchecked(rule) ? (
+                      <span className="ml-1.5 rounded bg-accent-tint px-1 text-accent">à relire</span>
+                    ) : (
+                      rule.review_at && rule.review_at < today && <span className="ml-1.5 rounded bg-accent-tint px-1 text-accent">à revérifier</span>
+                    )}
                   </p>
                 </div>
               </div>

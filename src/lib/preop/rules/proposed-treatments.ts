@@ -6,6 +6,7 @@
 // statements are commonly cited for, and each rule must be checked against
 // the full text before it is activated — hence the question on each.
 
+import { MANUAL_RULES } from "./proposed-manual";
 import type { Rule, RuleSource } from "./types";
 
 type Proposed = Omit<Rule, "created_at" | "updated_at">;
@@ -393,7 +394,7 @@ export const TREATMENT_RULES: Proposed[] = [
     conditions: [drug("L04AF")],
     action: { type: "stop_before", hours: 72, target: "surgery" },
     source: ACR_2022,
-    explanations: [ARTHROPLASTY, "Reprise après cicatrisation, sans infection, en général ≥ 14 jours."],
+    explanations: [ARTHROPLASTY, "Reprise après cicatrisation, sans infection, en général ≥ 14 jours.", "Recoupé (Consensus, septembre 2026) : « In 2022, this guideline was revised to suggest a 3-day preoperative discontinuation period for JAKi » (Harigane et al., Ann Rheum Dis 2025) ; « recent guidelines recommend a 3-day preoperative withdrawal of JAKi » (Yoshida et al., Ann Rheum Dis 2023)."],
     question: "According to the 2022 ACR/AAHKS guideline, how many days before elective arthroplasty should JAK inhibitors (tofacitinib, baricitinib, upadacitinib) be stopped, and when restarted?",
   }),
   draft(41, {
@@ -542,3 +543,14 @@ export const TREATMENT_RULES: Proposed[] = [
     question: "According to current perioperative guidance (SPAQI 2022, WHO), should varenicline and nicotine replacement therapy be continued before surgery?",
   }),
 ];
+
+/** The older proposals (Manuel 2020) a more recent rule of this file replaces. */
+const manualId = (title: string) => {
+  const r = MANUAL_RULES.find((x) => x.title === title);
+  if (!r) throw new Error(`Règle du manuel introuvable : ${title}`);
+  return r.id;
+};
+export const TREATMENT_SUPERSEDES: Record<string, string[]> = {
+  [id(13)]: [manualId("Myasthénie : anticholinestérasique arrêté 6 h avant")],
+  [id(41)]: [manualId("Corticothérapie : maintenir")],
+};

@@ -564,30 +564,31 @@ export const VERIFIED_RULES: Verified[] = [...ALR, ...SURGERY, ...TREATMENTS];
 
 /**
  * The drafts each verified rule replaces: archived when the verified group is
- * imported, so that the library holds one live answer per question. Only
+ * imported, so that the library holds one live answer per question (the
+ * Manuel 2020 delays that ESC 2022 and ESAIC/ESRA 2022 revised). Only
  * drafts are touched — a rule you activated yourself stays as it is.
  */
 export const SUPERSEDES: Record<string, string[]> = {
-  [id(1)]: [manual(11)],
+  [id(1)]: [manual(11), manual(118)],
   [id(2)]: [manual(15)],
-  [id(3)]: [manual(15)],
+  [id(3)]: [manual(15), manual(122)],
   [id(21)]: [manual(15)],
-  [id(4)]: [guideline(5), manual(7)],
+  [id(4)]: [guideline(5), manual(7), manual(120)],
   [id(5)]: [guideline(5), manual(19)],
-  [id(6)]: [guideline(6), guideline(7), guideline(8), manual(3)],
-  [id(8)]: [guideline(9), manual(25)],
+  [id(6)]: [guideline(6), guideline(7), guideline(8), manual(3), manual(124)],
+  [id(8)]: [guideline(9), manual(25), manual(107)],
   [id(9)]: [manual(26)],
-  [id(10)]: [guideline(10), manual(27)],
+  [id(10)]: [guideline(10), manual(27), manual(109)],
   [id(11)]: [manual(28)],
-  [id(12)]: [manual(29)],
-  [id(13)]: [manual(23)],
+  [id(12)]: [manual(29), manual(105)],
+  [id(13)]: [manual(23), manual(111)],
   [id(15)]: [guideline(11), manual(33)],
   [id(16)]: [guideline(1), manual(49)],
-  [id(17)]: [guideline(4), manual(68)],
-  [id(18)]: [guideline(2), manual(58)],
-  [id(19)]: [guideline(3), manual(63)],
+  [id(17)]: [guideline(4), manual(68), manual(116)],
+  [id(18)]: [guideline(2), manual(58), manual(113)],
+  [id(19)]: [guideline(3), manual(63), manual(114)],
   [id(20)]: [manual(50)],
-  [id(30)]: [manual(5), manual(9), manual(13), manual(17)],
+  [id(30)]: [manual(5), manual(9), manual(13), manual(17), manual(8), manual(12), manual(16), manual(20)],
   [id(32)]: [manual(6), manual(10), manual(14), manual(18)],
   [id(33)]: [manual(1)],
   [id(36)]: [manual(2)],
@@ -600,10 +601,12 @@ export const SUPERSEDES: Record<string, string[]> = {
   [id(47)]: [manual(53)],
   [id(60)]: [manual(77)],
   [id(61)]: [manual(78)],
-  [id(62)]: [manual(71)],
+  [id(62)]: [manual(71), manual(135), manual(136), manual(137)],
   [id(63)]: [manual(72)],
   [id(64)]: [guideline(12)],
   [id(67)]: [manual(80)],
   [id(68)]: [guideline(13)],
   [id(71)]: [guideline(16)],
+  [id(35)]: [manual(4)],
+  [id(75)]: [manual(104)],
 };
