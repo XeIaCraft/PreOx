@@ -200,7 +200,7 @@ export const DEFAULT_DRUG_CLASSES: DrugClassItem[] = [
   d({ id: "overactive_bladder", atc: "G04BD", label: "Médicaments de la vessie hyperactive", needsRule: false }),
   d({ id: "bph", atc: "G04CB", label: "Inhibiteurs de la 5-alpha-réductase", needsRule: false }),
   d({ id: "hiv", atc: "J05AR", label: "Associations d'antirétroviraux", implies: "hiv", attention: { level: "info", text: "Antirétroviraux : poursuivre sans interruption ; interactions (inhibiteurs de protéase boostés : midazolam, fentanyl…)." } }),
-  d({ id: "imids", atc: "L04AX04", label: "Lénalidomide", attention: { level: "medium", text: "Lénalidomide : risque thromboembolique élevé." } }),
+  d({ id: "imids", atc: "L04AX04", label: "Immunomodulateurs (lénalidomide, thalidomide, pomalidomide)", attention: { level: "medium", text: "Lénalidomide, thalidomide, pomalidomide : risque thromboembolique élevé, thromboprophylaxie par HBPM autour de la chirurgie." } }),
   d({ id: "eye_betablockers", atc: "S01ED", label: "Bêtabloquants en collyre", attention: { level: "info", text: "Bêtabloquant en collyre : passage systémique (bradycardie, bronchospasme)." } }),
   d({ id: "st_johns_wort", atc: "N06AX25", label: "Millepertuis", attention: { level: "medium", text: "Millepertuis : inducteur enzymatique (baisse de nombreux médicaments, dont anticoagulants et immunosuppresseurs) et risque sérotoninergique." } }),
   d({ id: "ginkgo", atc: "N06DX02", label: "Ginkgo biloba", attention: { level: "info", text: "Ginkgo : effet antiplaquettaire possible." } }),

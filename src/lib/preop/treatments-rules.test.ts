@@ -6,7 +6,7 @@ import { expect, it } from "vitest";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 import { PROPOSED_GROUPS } from "./rules/proposed";
 
-const LEFT_TO_THE_QUESTION = ["nalmefene", "disulfiram", "imids", "checkpoint", "abiraterone", "platelet_reducers", "hydroxyurea", "mavacamten", "antifibrotics", "testosterone"];
+const LEFT_TO_THE_QUESTION: string[] = [];
 
 const rules = PROPOSED_GROUPS.flatMap((g) => g.rules);
 const atcs = rules.flatMap((r) => r.conditions.flatMap((c) => (c.kind === "drug" ? [c.atc] : [])));

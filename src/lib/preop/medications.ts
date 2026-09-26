@@ -407,6 +407,8 @@ export const MEDICATIONS: Medication[] = [
   { atc: "L04AC07", name: "Tocilizumab", brands: ["RoActemra"] },
   { atc: "L04AX01", name: "Azathioprine", brands: ["Imuran"] },
   { atc: "L04AX04", name: "Lénalidomide", brands: ["Revlimid"] },
+  { atc: "L04AX02", name: "Thalidomide", brands: ["Thalidomide BMS"] },
+  { atc: "L04AX06", name: "Pomalidomide", brands: ["Imnovid"] },
   { atc: "J05AR20", name: "Bictégravir + emtricitabine + ténofovir alafénamide", brands: ["Biktarvy"] },
   { atc: "M04AA03", name: "Fébuxostat", brands: ["Adenuric"] },
   { atc: "S01ED01", name: "Timolol (collyre)", brands: ["Timoptol"] },

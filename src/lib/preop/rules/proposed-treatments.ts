@@ -86,6 +86,37 @@ const IBRUTINIB: RuleSource = {
   level: "article",
 };
 
+const ICI_REVIEW: RuleSource = {
+  organisation: "Br J Anaesth (revue) ; J Anesth 2026 (cohorte)",
+  title: "Immune checkpoint inhibitors: a narrative review of considerations for the anaesthesiologist (Lewis et al., Br J Anaesth 2020) ; Effects of immune checkpoint inhibitors on perioperative endocrine abnormalities and intraoperative hemodynamics (Li et al., J Anesth 2026)",
+  year: 2026,
+  doi: "",
+  pmid: "",
+  quote: "Subgroup analysis of ICI-treated patients showed higher incidences of sustained intraoperative hypotension (…) in the endocrine irAEs cohort compared with matched controls.",
+  grade: "Revue et cohorte",
+  level: "article",
+};
+const IMWG_2008: RuleSource = {
+  organisation: "International Myeloma Working Group",
+  title: "Prevention of thalidomide- and lenalidomide-associated thrombosis in myeloma (Palumbo et al., Leukemia 2008) — https://consensus.app/papers/details/db029a28e524591eb929479430d0a9b0/",
+  year: 2008,
+  doi: "",
+  pmid: "",
+  quote: "Individual risk factors for thrombosis associated with thalidomide/lenalidomide-based therapy include age, history of VTE, central venous catheter, comorbidities (infections, diabetes, cardiac disease), immobilization, surgery and inherited thrombophilia.",
+  grade: "Consensus d'experts",
+  level: "int",
+};
+const SMPC: RuleSource = {
+  organisation: "RCP (résumé des caractéristiques du produit), via le CBIP",
+  title: "Résumé des caractéristiques du produit — consulter la fiche CBIP de la spécialité",
+  year: 2026,
+  doi: "",
+  pmid: "",
+  quote: "",
+  grade: "RCP",
+  level: "be_inst",
+};
+
 const ARTHROPLASTY = "La recommandation ACR/AAHKS porte sur la prothèse de hanche et de genou programmée ; elle est couramment étendue aux autres chirurgies orthopédiques programmées, pas au-delà sans avis.";
 
 const draft = (n: number, p: Pick<Proposed, "title" | "statement" | "conditions" | "action" | "source" | "question"> & Partial<Proposed>): Proposed => ({
@@ -638,6 +669,97 @@ export const TREATMENT_RULES: Proposed[] = [
     source: ASER_POQI_2019,
     explanations: ["Recoupé (Consensus) : Crosier et al., Am J Surg 2024 — « Continuing home opioids for chronic opioid users following VHR resulted in less opioid prescribing with no increase in refills. »"],
     question: "According to the ASER/POQI 2019 joint consensus statement, should the baseline opioid regimen of patients on long-term opioid therapy be continued on the day of surgery?",
+  }),
+  draft(64, {
+    title: "Immunothérapie (anti-PD-1, anti-PD-L1, anti-CTLA-4) : bilan endocrinien avant l'intervention",
+    statement: "Sous inhibiteur de point de contrôle immunitaire, rechercher une toxicité endocrinienne (thyroïde, surrénales, hypophyse, diabète) et une pneumopathie ou une myocardite avant l'intervention.",
+    conditions: [drug("L01FF")],
+    action: { type: "exam", exam: "TSH, T4 libre, cortisol de 8 h, glycémie, ionogramme (troponine et ECG si symptômes)", withinDays: 30 },
+    source: ICI_REVIEW,
+    explanations: ["Recoupé via Consensus (septembre 2026) ; méta-analyse (Zhou et al., Ther Adv Med Oncol 2024) : risque accru d'hypothyroïdie, d'insuffisance surrénalienne et d'hypophysite sous immunothérapie périopératoire."],
+    question: "Which preoperative tests are recommended in patients treated with immune checkpoint inhibitors (endocrine, pulmonary, cardiac toxicities), and how should suspected adrenal insufficiency be managed perioperatively?",
+  }),
+  draft(65, {
+    title: "Immunothérapie : hypotension réfractaire, penser à l'insuffisance surrénalienne",
+    statement: "Une hypotension peropératoire inexpliquée ou réfractaire sous immunothérapie évoque une insuffisance surrénalienne : hydrocortisone.",
+    conditions: [drug("L01FF")],
+    action: { type: "info", text: "Hypotension réfractaire, hyponatrémie, hypoglycémie : hydrocortisone 100 mg IV après prélèvement du cortisol.", target: "anaesthesia" },
+    source: ICI_REVIEW,
+    question: "In a patient on immune checkpoint inhibitors with refractory perioperative hypotension, when should adrenal insufficiency be suspected and hydrocortisone given?",
+  }),
+  ...([[66, "L04AX04", "Lénalidomide"], [75, "L04AX02", "Thalidomide"], [76, "L04AX06", "Pomalidomide"]] as const).map(([n, atc, name]) =>
+    draft(n, {
+      title: `${name} : thromboprophylaxie obligatoire`,
+      statement: "La chirurgie s'ajoute au risque thromboembolique des immunomodulateurs : thromboprophylaxie par HBPM ; interruption éventuelle décidée avec l'hématologue.",
+      conditions: [drug(atc)],
+      action: { type: "info", text: "Thromboprophylaxie par HBPM (pas d'aspirine seule) ; interruption éventuelle à décider avec l'hématologue.", target: "surgery" },
+      source: IMWG_2008,
+      question: "How should lenalidomide or thalidomide be managed around surgery (interruption, thromboprophylaxis), according to IMWG and current haematology guidance?",
+    })
+  ),
+  draft(67, {
+    title: "Abiratérone : corticoïde associé et kaliémie",
+    statement: "L'abiratérone est poursuivie ; la prednisone associée expose à une insuffisance surrénalienne relative, et l'excès minéralocorticoïde à une hypokaliémie et une HTA.",
+    conditions: [drug("L02BX03")],
+    action: { type: "exam", exam: "Kaliémie ; prednisone associée à poursuivre (supplémentation selon l'intervention)", withinDays: 30 },
+    source: SMPC,
+    question: "How should abiraterone and the associated prednisone be managed perioperatively (hypokalaemia, adrenal insufficiency)?",
+  }),
+  draft(68, {
+    title: "Hydroxycarbamide : poursuivre, hémogramme",
+    statement: "L'hydroxycarbamide est poursuivie (drépanocytose, syndrome myéloprolifératif) ; hémogramme avant l'intervention.",
+    conditions: [drug("L01XX05")],
+    action: { type: "exam", exam: "Hémogramme (cytopénies)", withinDays: 30 },
+    source: SMPC,
+    question: "Should hydroxyurea be continued perioperatively in sickle cell disease or myeloproliferative neoplasms, and which tests are needed?",
+  }),
+  draft(69, {
+    title: "Anagrélide : effet antiagrégant, avis de l'hématologue",
+    statement: "L'anagrélide a un effet antiagrégant et cardiovasculaire (palpitations, QT) : décision de poursuite avec l'hématologue ; plaquettes et ECG.",
+    conditions: [drug("L01XX35")],
+    action: { type: "exam", exam: "Plaquettes, ECG (QT)", withinDays: 30 },
+    source: SMPC,
+    question: "How should anagrelide be managed before surgery (bleeding risk, thrombotic risk of essential thrombocythaemia)?",
+  }),
+  draft(70, {
+    title: "Mavacamten : FEVG récente, éviter l'hypovolémie",
+    statement: "Mavacamten (cardiomyopathie hypertrophique obstructive) : FEVG récente ; éviter hypovolémie et inotropes positifs ; interactions CYP2C19 et CYP3A4.",
+    conditions: [drug("C01EB24")],
+    action: { type: "exam", exam: "Échocardiographie récente (FEVG ≥ 50 %)", withinDays: 90 },
+    source: SMPC,
+    question: "How should mavacamten be managed perioperatively (continuation, LVEF check, interactions)?",
+  }),
+  draft(71, {
+    title: "Nintédanib et pirfénidone : fonction respiratoire, risque hémorragique",
+    statement: "Antifibrosants pulmonaires : fonction respiratoire récente ; le nintédanib majore le risque hémorragique et gêne la cicatrisation.",
+    conditions: [drug("L04AX05")],
+    action: { type: "info", text: "EFR et gazométrie récentes ; nintédanib : risque hémorragique, discussion d'un arrêt avant une chirurgie majeure avec le pneumologue.", target: "both" },
+    source: SMPC,
+    question: "Should nintedanib or pirfenidone be withheld before surgery, and for how long?",
+  }),
+  draft(72, {
+    title: "Testostérone : hématocrite, risque thromboembolique",
+    statement: "La testostérone est poursuivie ; polyglobulie et risque thromboembolique à intégrer.",
+    conditions: [drug("G03B")],
+    action: { type: "exam", exam: "Hémogramme (hématocrite)", withinDays: 90 },
+    source: SMPC,
+    question: "Should testosterone therapy be continued before surgery, and what are the perioperative thromboembolic considerations?",
+  }),
+  draft(73, {
+    title: "Disulfirame : pas d'antiseptique ni de médicament alcoolique",
+    statement: "Sous disulfirame, éviter l'exposition à l'alcool (antiseptiques alcooliques en grande quantité, solutions buvables alcoolisées) ; effet antabuse.",
+    conditions: [drug("N07BB01")],
+    action: { type: "info", text: "Préférer un antiseptique non alcoolique si possible ; pas de médicament contenant de l'alcool ; hépatotoxicité.", target: "both" },
+    source: SMPC,
+    question: "Should disulfiram be stopped before surgery, and should alcohol-based skin antiseptics be avoided?",
+  }),
+  draft(74, {
+    title: "Nalméfène : arrêt une semaine avant si des opioïdes sont prévus",
+    statement: "Antagoniste opioïde : arrêter le nalméfène une semaine avant une intervention qui nécessitera des opioïdes.",
+    conditions: [drug("N07BB05")],
+    action: { type: "stop_before", hours: 168, target: "anaesthesia" },
+    source: SMPC,
+    question: "According to the nalmefene (Selincro) SmPC, how long before an anticipated opioid use should nalmefene be stopped?",
   }),
 ];
 
