@@ -2,8 +2,9 @@
 // data), stored on the server; copied into a patient dossier as its plan
 // and adjusted there. Doses are written per kilo or fixed, with the weight
 // they apply to — PreOx computes the dose for the patient and shows the
-// basis next to it. Nothing here is pre-filled: doses and targets come
-// from the user's own sources (the protocol's "source" field).
+// basis next to it. Doses and targets come from the protocol's own sources
+// (its "source" field): the user's, or those of the reference protocols
+// (reference-protocols.ts), imported only on request.
 
 import { adjustedBodyWeight, idealBodyWeight, leanBodyWeight, type Sex } from "./scores";
 import type { Technique } from "./rules/types";

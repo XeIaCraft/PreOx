@@ -99,8 +99,16 @@ export function RuleLibrary({
             {group.title} : {group.rules.length} règle(s) proposée(s)
           </p>
           <p className="text-xs text-foreground-muted">
-            {group.description} Elles arrivent en <strong>brouillon</strong> : aucune ne s&apos;applique avant que vous l&apos;ayez vérifiée et activée. Chacune contient la question à poser à Consensus pour la
-            vérifier.
+            {group.verified ? (
+              <>
+                {group.description} Elles arrivent <strong>actives</strong> ; les brouillons qu&apos;elles remplacent sont archivés (une règle que vous avez activée vous-même n&apos;est jamais touchée).
+              </>
+            ) : (
+              <>
+                {group.description} Elles arrivent en <strong>brouillon</strong> : aucune ne s&apos;applique avant que vous l&apos;ayez vérifiée et activée. Chacune contient la question à poser à Consensus pour la
+                vérifier.
+              </>
+            )}
           </p>
           <details className="text-xs text-foreground-muted">
             <summary className="cursor-pointer text-primary">Voir la liste</summary>
@@ -121,8 +129,21 @@ export function RuleLibrary({
                   await onSave(p);
                   done++;
                 }
-                toast(`${done} règle(s) ajoutée(s) en brouillon : ouvrez chacune pour la vérifier.`, { variant: "success" });
-                setStatus("draft");
+                if (group.verified) {
+                  const replaced = new Set(group.rules.flatMap((p) => group.supersedes?.[p.id] ?? []));
+                  let archived = 0;
+                  for (const r of rules) {
+                    if (r.status === "draft" && replaced.has(r.id)) {
+                      await onSave({ ...r, status: "archived" });
+                      archived++;
+                    }
+                  }
+                  toast(`${done} règle(s) vérifiée(s) activée(s)${archived ? `, ${archived} brouillon(s) remplacé(s) archivé(s)` : ""}.`, { variant: "success" });
+                  setStatus("active");
+                } else {
+                  toast(`${done} règle(s) ajoutée(s) en brouillon : ouvrez chacune pour la vérifier.`, { variant: "success" });
+                  setStatus("draft");
+                }
               } catch (err) {
                 toast(`${done} ajoutée(s) ; ${err instanceof Error ? err.message : "échec"}`, { variant: "error" });
               } finally {
@@ -130,7 +151,7 @@ export function RuleLibrary({
               }
             }}
           >
-            <Plus className="h-3.5 w-3.5" /> {importing === group.id ? "Ajout…" : "Ajouter en brouillon"}
+            <Plus className="h-3.5 w-3.5" /> {importing === group.id ? "Ajout…" : group.verified ? "Ajouter et activer" : "Ajouter en brouillon"}
           </Button>
         </div>
       ))}

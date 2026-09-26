@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, Copy, FilePlus2, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Copy, FilePlus2, Library, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, EmptyState } from "@/components/carnet/ui";
@@ -11,6 +11,7 @@ import { PlanEditor } from "@/components/preop/plan-editor";
 import type { ProtocolInput } from "@/components/preop/use-protocols";
 import { OPERATION_CATEGORIES, operationCategoryLabel } from "@/lib/carnet/referentiel";
 import { emptyProtocolContent, type BodyData, type Protocol } from "@/lib/preop/protocols";
+import { REFERENCE_PROTOCOLS } from "@/lib/preop/reference-protocols";
 import { TECHNIQUES } from "@/lib/preop/rules/types";
 import type { Sex } from "@/lib/preop/scores";
 
@@ -76,7 +77,7 @@ function ProtocolEditor({ initial, onSave, onCancel }: { initial: ProtocolInput;
           </label>
         </div>
         <TextArea label="Sources (recommandation, protocole du service, RCP…)" value={p.source} onChange={(source) => set({ source })} placeholder="ex. Protocole du service 2025 ; SFAR/ESAIC…" />
-        <p className="text-xs text-foreground-subtle">Les doses viennent de vos sources : PreOx ne pré-remplit rien, il calcule pour le patient à partir de ce que vous écrivez ici.</p>
+        <p className="text-xs text-foreground-subtle">Les doses viennent des sources notées ici (les vôtres, ou celles d&apos;un protocole de référence) : PreOx calcule pour le patient à partir de ce qui est écrit.</p>
       </Panel>
 
       <Panel title="Essayer les doses sur un patient type">
@@ -112,6 +113,7 @@ export function ProtocolLibrary({
   const { toast } = useToast();
   const [editing, setEditing] = useState<ProtocolInput | null>(null);
   const [query, setQuery] = useState("");
+  const [importing, setImporting] = useState(false);
 
   if (editing) {
     return (
@@ -130,9 +132,47 @@ export function ProtocolLibrary({
 
   const q = query.trim().toLowerCase();
   const shown = protocols.filter((p) => !q || [p.name, p.surgery, p.hospital].some((x) => x.toLowerCase().includes(q)));
+  const missing = REFERENCE_PROTOCOLS.filter((r) => !protocols.some((p) => p.id === r.id));
+
+  async function importReferences() {
+    setImporting(true);
+    let done = 0;
+    try {
+      for (const r of missing) {
+        await onSave(r);
+        done++;
+      }
+      toast(`${done} protocole(s) de référence ajouté(s) : adaptez-les au protocole de votre service.`, { variant: "success" });
+    } catch (err) {
+      toast(`${done} ajouté(s) ; ${err instanceof Error ? err.message : "échec"}`, { variant: "error" });
+    } finally {
+      setImporting(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
+      {missing.length > 0 && (
+        <div className="space-y-2 rounded-[var(--radius-md)] border border-accent/40 bg-accent-tint/50 p-3">
+          <p className="text-sm font-medium text-foreground">Protocoles de référence : {missing.length} intervention(s) courante(s)</p>
+          <p className="text-xs text-foreground-muted">
+            Prothèses de hanche et de genou, fracture du col, épaule, césarienne, cholécystectomie, colectomie RAC, hernie en ambulatoire, amygdalectomie de l&apos;enfant, thyroïdectomie, RTUP,
+            hystérectomie, cataracte, bariatrique. Doses tirées des cours belges (EIUA : Dubois, Roelants, Hardy) et du manuel, source notée sur chaque protocole : un point de départ à adapter au
+            protocole de votre service.
+          </p>
+          <details className="text-xs text-foreground-muted">
+            <summary className="cursor-pointer text-primary">Voir la liste</summary>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {missing.map((r) => (
+                <li key={r.id}>{r.name}</li>
+              ))}
+            </ul>
+          </details>
+          <Button size="sm" disabled={importing} onClick={importReferences}>
+            <Library className="h-3.5 w-3.5" /> {importing ? "Ajout…" : "Ajouter les protocoles de référence"}
+          </Button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Chercher un protocole" className="min-w-0 flex-1" />
         <Button onClick={() => setEditing(blankProtocol())}>

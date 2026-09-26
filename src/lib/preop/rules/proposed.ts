@@ -6,6 +6,7 @@
 // which is exactly why they must be checked against the source you follow.
 
 import { MANUAL_RULES } from "./proposed-manual";
+import { SUPERSEDES, VERIFIED_RULES } from "./verified";
 import type { Rule, RuleSource } from "./types";
 
 type Proposed = Omit<Rule, "created_at" | "updated_at">;
@@ -183,7 +184,26 @@ const GUIDELINE_RULES: Proposed[] = [
 ];
 
 /** Proposed rules, by origin — each group is imported on its own. */
-export const PROPOSED_GROUPS: { id: string; title: string; description: string; rules: Proposed[] }[] = [
+export interface ProposedGroup {
+  id: string;
+  title: string;
+  description: string;
+  rules: Proposed[];
+  /** Checked against the source: imported active, and archives the drafts it replaces. */
+  verified?: boolean;
+  supersedes?: Record<string, string[]>;
+}
+
+export const PROPOSED_GROUPS: ProposedGroup[] = [
+  {
+    id: "verified-2026",
+    title: "Recommandations vérifiées",
+    description:
+      "Antithrombotiques avant la chirurgie (ESC 2022) et avant une ponction ou un bloc profond (ESAIC/ESRA 2022), IEC et sartans, SGLT2, diurétiques, GLP-1, bêta-bloquants, statines, ECG, hémoglobine, créatinine, HbA1c, jeûne de l'enfant. Chaque règle porte la phrase exacte de la recommandation, sa classe et son PMID ; relues en septembre 2026.",
+    rules: VERIFIED_RULES,
+    verified: true,
+    supersedes: SUPERSEDES,
+  },
   {
     id: "guidelines",
     title: "Principales recommandations",
@@ -200,4 +220,5 @@ export const PROPOSED_GROUPS: { id: string; title: string; description: string; 
   },
 ];
 
-export const PROPOSED_RULES: Proposed[] = PROPOSED_GROUPS.flatMap((g) => g.rules);
+/** The drafts only (the verified group is imported active). */
+export const PROPOSED_RULES: Proposed[] = PROPOSED_GROUPS.filter((g) => !g.verified).flatMap((g) => g.rules);

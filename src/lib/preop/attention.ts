@@ -1743,9 +1743,9 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
       id: "tobacco",
       level: sub.packYears !== undefined && sub.packYears >= 20 ? "medium" : "info",
       title: `Tabagisme actif${sub.packYears !== undefined && sub.packYears >= 20 ? " (≥ 20 paquets-années : risque respiratoire)" : ""}`,
-      detail: "Proposer l'arrêt, idéalement 6 à 8 semaines avant (morbidité respiratoire réduite). Bénéfices : 12–24 h moins de carboxyhémoglobine, 48–72 h voies aériennes moins réactives, 1–2 semaines moins de sécrétions (après une phase d'hypersécrétion), 4–6 semaines EFR améliorées. La SpO₂ surestime l'oxygénation (carboxyhémoglobine).",
+      detail: "Proposer l'arrêt au moins 4 semaines avant (ESC 2022, classe I B : moins de complications et de mortalité), idéalement 6 à 8 semaines (morbidité respiratoire). Bénéfices : 12–24 h moins de carboxyhémoglobine, 48–72 h voies aériennes moins réactives, 1–2 semaines moins de sécrétions (après une phase d'hypersécrétion), 4–6 semaines EFR améliorées. La SpO₂ surestime l'oxygénation (carboxyhémoglobine).",
       why: `Assuétudes : fumeur${sub.packYears ? ` (${sub.packYears} PA)` : ""}`,
-      source: "Manuel pratique d'anesthésie 2020, chap. 28 (tableau 28.3)",
+      source: "ESC 2022 (PMID 36017553) ; Manuel pratique d'anesthésie 2020, chap. 28 (tableau 28.3)",
     });
   if (c.surgery.emergency) add({ id: "emergency", level: "info", title: "Chirurgie urgente", detail: "Jeûne à vérifier ; risque majoré.", why: "Intervention marquée urgente" });
 
