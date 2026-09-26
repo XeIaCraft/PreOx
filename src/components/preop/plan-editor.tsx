@@ -24,6 +24,8 @@ import {
 } from "@/lib/preop/protocols";
 import { TECHNIQUES, type Technique } from "@/lib/preop/rules/types";
 import { DRUG_REFERENCE_SOURCE, drugReferenceFor, formatReferenceDose, localAnaestheticLoad } from "@/lib/preop/drug-reference";
+import { DEFAULT_GASES, GAS_AGENTS, GAS_CARRIERS, GASES_SOURCE, describeGases } from "@/lib/preop/gases";
+import type { GasAgent, GasCarrier, GasPlan } from "@/lib/preop/protocols";
 import { cn } from "@/lib/utils";
 
 const UNITS: DoseUnit[] = ["mg", "µg", "g", "mL", "UI", "%"];
@@ -186,6 +188,10 @@ function DrugRow({ drug, body, onChange, onRemove, startOpen }: { drug: Protocol
               </>
             )}
             <NumberField label="Réinjection toutes les" unit="min" value={drug.redoseEveryMin ?? undefined} onChange={(v) => set({ redoseEveryMin: v === undefined ? null : Math.round(v) })} />
+            <label className="block space-y-1">
+              <FieldLabel>Au choix avec</FieldLabel>
+              <Input defaultValue={drug.choice ?? ""} onChange={(e) => set({ choice: e.target.value.trim() || undefined })} placeholder="ex. induction" title="Les produits qui portent le même mot sont des alternatives : l'un ou l'autre." />
+            </label>
           </div>
           <label key={`note-${formKey}`} className="block space-y-1">
             <FieldLabel>Remarque</FieldLabel>
@@ -332,6 +338,7 @@ export function PlanEditor({
             <CatalogChecklist groups={MATERIAL_GROUPS} value={c.material} onChange={(material) => set({ material })} placeholder="Autre (ex. matelas coquille)" />
           </div>
         </Disclosure>
+        {c.techniques.includes("general") && <GasesEditor value={c.gases} age={patient?.age} onChange={(gases) => set({ gases })} />}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <NumberField label="Alerte garrot" unit="min" value={c.tourniquetAlertMin ?? undefined} onChange={(v) => set({ tourniquetAlertMin: v === undefined ? null : Math.round(v) })} />
         </div>
@@ -344,5 +351,75 @@ export function PlanEditor({
         <TextArea label="Notes du plan" value={c.notes} onChange={(notes) => set({ notes })} />
       </Panel>
     </div>
+  );
+}
+
+const pct = (f: number) => Math.round(f * 100);
+
+/** Gases of the general anaesthesia: carrier, FiO₂, volatile agent and MAC target, fresh gas flow. */
+function GasesEditor({ value, age, onChange }: { value: GasPlan | undefined; age?: number; onChange: (g: GasPlan | undefined) => void }) {
+  const g = value ?? DEFAULT_GASES;
+  const set = (patch: Partial<GasPlan>) => onChange({ ...g, ...patch });
+  return (
+    <Disclosure
+      summary={
+        <>
+          Gaz {value ? <span className="font-normal text-foreground-subtle">— {describeGases(value, age).slice(0, 2).join(" · ")}</span> : <span className="font-normal text-foreground-subtle">— non précisés</span>}
+        </>
+      }
+      initialOpen={!value}
+      className="rounded-[var(--radius-md)] border border-border"
+      summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground"
+    >
+      <div className="space-y-2 px-3 pb-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <label className="block space-y-1">
+            <FieldLabel>Entretien</FieldLabel>
+            <Select value={g.agent} onChange={(e) => set({ agent: e.target.value as GasAgent, ...(e.target.value !== "tiva" && !g.mac ? { mac: [0.7, 1] as [number, number] } : {}) })}>
+              {GAS_AGENTS.map((a) => (
+                <option key={a.code} value={a.code}>
+                  {a.label}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="block space-y-1">
+            <FieldLabel>Gaz vecteur</FieldLabel>
+            <Select value={g.carrier} onChange={(e) => set({ carrier: e.target.value as GasCarrier })}>
+              {GAS_CARRIERS.map((x) => (
+                <option key={x.code} value={x.code}>
+                  {x.label}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <NumberField label="FiO₂ min" unit="%" value={pct(g.fio2[0])} onChange={(v) => v !== undefined && set({ fio2: [Math.min(Math.max(v, 21), 100) / 100, g.fio2[1]] })} />
+          <NumberField label="FiO₂ max" unit="%" value={pct(g.fio2[1])} onChange={(v) => v !== undefined && set({ fio2: [g.fio2[0], Math.min(Math.max(v, 21), 100) / 100] })} />
+          {g.agent !== "tiva" && (
+            <>
+              <NumberField label="CAM min" value={g.mac?.[0]} onChange={(v) => v !== undefined && set({ mac: [v, g.mac?.[1] ?? 1] })} />
+              <NumberField label="CAM max" value={g.mac?.[1]} onChange={(v) => v !== undefined && set({ mac: [g.mac?.[0] ?? 0.7, v] })} />
+            </>
+          )}
+          <NumberField label="Débit de gaz frais" unit="L/min" value={g.freshGasLMin} onChange={(v) => set({ freshGasLMin: v })} />
+        </div>
+        <label className="block space-y-1">
+          <FieldLabel>Pas de N₂O parce que</FieldLabel>
+          <Input defaultValue={g.noN2O ?? ""} onChange={(e) => set({ noN2O: e.target.value.trim() || undefined })} placeholder="ex. occlusion, oreille moyenne, laser" />
+        </label>
+        <label className="block space-y-1">
+          <FieldLabel>Remarque</FieldLabel>
+          <Input defaultValue={g.note ?? ""} onChange={(e) => set({ note: e.target.value.trim() || undefined })} placeholder="ex. FiO₂ titrée pour SpO₂ ≥ 92 % en unipulmonaire" />
+        </label>
+        {value && (
+          <ul className="space-y-0.5 text-xs text-foreground-muted">
+            {describeGases(value, age).map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+        )}
+        <p className="text-[11px] text-foreground-subtle">{GASES_SOURCE}.</p>
+      </div>
+    </Disclosure>
   );
 }

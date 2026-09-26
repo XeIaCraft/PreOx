@@ -7,6 +7,7 @@
 // textbook (Manuel pratique d'anesthésie 2020, chapter given). No patient
 // data: doses are per kilo or fixed, computed for the patient in the plan.
 
+import { referenceGases } from "./reference-gases";
 import {
   pid,
   MANUAL,
@@ -776,4 +777,17 @@ const FIRST_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
   },
 ];
 
-export const REFERENCE_PROTOCOLS: ReferenceProtocol[] = [...FIRST_REFERENCE_PROTOCOLS, ...MORE_REFERENCE_PROTOCOLS, ...CHILDREN_AND_OTHER_PROTOCOLS];
+/** Induction hypnotics offered as alternatives (one or the other), by protocol number. */
+const INDUCTION_CHOICES: Record<number, RegExp> = {
+  71: /^(Kétamine|Propofol)$/,
+  76: /^(Étomidate|Propofol)$/,
+  92: /^(Kétamine|Propofol)$/,
+};
+
+export const REFERENCE_PROTOCOLS: ReferenceProtocol[] = [...FIRST_REFERENCE_PROTOCOLS, ...MORE_REFERENCE_PROTOCOLS, ...CHILDREN_AND_OTHER_PROTOCOLS].map((p) => {
+  const n = Number(p.id.slice(-12));
+  const choice = INDUCTION_CHOICES[n];
+  const drugs = choice ? p.content.drugs.map((d) => (d.phase === "induction" && choice.test(d.name) ? { ...d, choice: "induction" } : d)) : p.content.drugs;
+  const gases = referenceGases(n, p.content);
+  return { ...p, content: { ...p.content, drugs, ...(gases ? { gases } : {}) } };
+});

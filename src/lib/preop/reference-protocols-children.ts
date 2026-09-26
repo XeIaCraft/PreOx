@@ -45,10 +45,14 @@ const childPremed = () => drug("Midazolam (prémédication)", "premed", "po", { 
 // Inhalational and IV induction are equivalent in the healthy child (meta-analysis,
 // Porter et al., Paediatr Anaesth 2020); IV propofol is preferred with a high risk of
 // respiratory adverse events (Ramgolam et al., Anesthesiology 2018) or a full stomach.
-const childSevoflurane = (extra = "") =>
-  drug("Sévoflurane (induction au masque)", "induction", "inhalation", { fixed: 8 }, "%", `Induction de référence sans voie veineuse : 6–8 % dans l'O₂ (± N₂O), voie veineuse posée endormi, puis environ 1 CAM. Équivalente au propofol IV chez l'enfant sain (méta-analyse, Porter 2020).${extra}`);
-const childPropofol = () =>
-  drug("Propofol", "induction", "bolus_iv", { perKg: 3 }, "mg", "2,5–5 mg/kg (manuel, chap. 37). À préférer si voie veineuse en place, grand enfant, risque respiratoire élevé (≥ 2 facteurs : infection respiratoire récente, asthme, tabagisme passif, ronflement — Ramgolam 2018) ou estomac plein ; moins de laryngospasme, d'agitation et de NVPO.");
+const childSevoflurane = (extra = "") => ({
+  ...drug("Sévoflurane (induction au masque)", "induction", "inhalation", { fixed: 8 }, "%", `Induction de référence sans voie veineuse : 6–8 % dans l'O₂ (± N₂O), voie veineuse posée endormi, puis environ 1 CAM. Équivalente au propofol IV chez l'enfant sain (méta-analyse, Porter 2020).${extra}`),
+  choice: "induction",
+});
+const childPropofol = (extra = "") => ({
+  ...drug("Propofol", "induction", "bolus_iv", { perKg: 3 }, "mg", `2,5–5 mg/kg (manuel, chap. 37). À préférer si voie veineuse en place, grand enfant, risque respiratoire élevé (≥ 2 facteurs : infection respiratoire récente, asthme, tabagisme passif, ronflement — Ramgolam 2018) ou estomac plein ; moins de laryngospasme, d'agitation et de NVPO.${extra}`),
+  choice: "induction",
+});
 const childSufentanil = () => drug("Sufentanil", "induction", "bolus_iv", { perKg: 0.2 }, "µg", "0,1–0,3 µg/kg (manuel, chap. 37).");
 const childAtropine = () => drug("Atropine", "premed", "bolus_iv", { perKg: 0.02, max: 0.6 }, "mg", "20 µg/kg si bradycardie (nourrisson, réflexe oculocardiaque, succinylcholine).");
 const childParacetamol = () => drug("Paracétamol", "analgesia", "perfusion", { perKg: 15, max: 1000 }, "mg", "15 mg/kg IV ou per os, 4 × / jour (nouveau-né : voir le manuel, chap. 37).");
@@ -138,7 +142,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: CHILD,
     content: content({
       techniques: ["general"],
-      drugs: [childPremed(), childSevoflurane(), childPropofol(), childParacetamol(), childDexa(), childIbuprofen()],
+      drugs: [childPremed(), childPropofol(" ORL : induction IV à privilégier (voies aériennes réactives, végétations, infection récente)."), childSevoflurane(" ORL : si pas de voie veineuse possible."), childParacetamol(), childDexa(), childIbuprofen()],
       targets: ["Induction au masque (sévoflurane) acceptable pour les gestes très courts", "Masque laryngé ou masque facial ; sonde préformée pour l'adénoïdectomie", "Larynx, trachée, corps étranger : voies aériennes partagées, ventilation spontanée sous propofol ou sévoflurane, plan partagé avec l'ORL, bronchoscope rigide prêt"],
       material: CHILD_MONITORING,
       risks: [risk("laryngospasm"), { title: "Infection des voies aériennes récente", why: "Hyperréactivité bronchique pendant 2–4 semaines.", prevention: "Report si fièvre ou infection basse ; sinon masque laryngé, pas de sonde si possible.", conduct: "Désaturation : laryngospasme ou bronchospasme, fiches de crise." }],

@@ -50,6 +50,8 @@ export interface ProtocolDrug {
   /** Re-dosing interval (antibiotic, relaxant…) — drives a timer in theatre. */
   redoseEveryMin: number | null;
   note: string;
+  /** Drugs sharing this key are alternatives — one or the other (« induction »). */
+  choice?: string;
 }
 
 export interface ProtocolRisk {
@@ -77,7 +79,28 @@ export interface ProtocolContent {
   postopPlan?: PostopPlan;
   /** Tourniquet alert threshold, minutes (0 = no tourniquet). */
   tourniquetAlertMin: number | null;
+  /** Gases of a general anaesthesia: carrier, FiO₂, volatile agent and its MAC target, fresh gas flow. */
+  gases?: GasPlan;
   notes: string;
+}
+
+export type GasAgent = "sevoflurane" | "desflurane" | "isoflurane" | "tiva";
+export type GasCarrier = "air" | "n2o";
+
+export interface GasPlan {
+  /** Maintenance: a volatile agent, or TIVA (no volatile). */
+  agent: GasAgent;
+  /** What the oxygen is mixed with. */
+  carrier: GasCarrier;
+  /** Maintenance FiO₂, fraction (0.4–0.5). */
+  fio2: [number, number];
+  /** MAC target of the volatile agent, age-adjusted in theatre (0.7–1). */
+  mac?: [number, number];
+  /** Maintenance fresh gas flow, L/min. */
+  freshGasLMin?: number;
+  /** Why N₂O is avoided here (closed cavity, laser, PONV…), when it is. */
+  noN2O?: string;
+  note?: string;
 }
 
 export interface Protocol {

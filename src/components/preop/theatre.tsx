@@ -203,13 +203,25 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
               {DRUG_PHASES.flatMap((p) => d.plan.drugs.filter((x) => x.phase === p.code)).map((drug) => {
                 const dose = computeDose(drug, d.consultation.patient);
                 const given = io.given.filter((g) => g.planDrugId === drug.id);
+                // Alternatives (« au choix ») : once one is given, the others step back.
+                const others = drug.choice ? d.plan.drugs.filter((x) => x.choice === drug.choice && x.id !== drug.id) : [];
+                const chosenOther = others.find((x) => io.given.some((g) => g.planDrugId === x.id));
                 return (
-                  <li key={drug.id} className="flex items-center gap-2 rounded-[var(--radius-md)] border border-border px-2.5 py-1.5">
+                  <li key={drug.id} className={cn("flex items-center gap-2 rounded-[var(--radius-md)] border border-border px-2.5 py-1.5", chosenOther && !given.length && "opacity-50")}>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-foreground">
                         {drug.name} <span className="font-normal text-foreground-subtle">· {routeShort(drug.route)}</span>
+                        {others.length > 0 && <span className="ml-1.5 rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px] font-normal text-foreground-muted">au choix</span>}
                       </span>
-                      <span className="block truncate text-xs text-foreground-subtle">{given.length ? `donné ${given.map((g) => hhmm(g.at)).join(", ")}` : DRUG_PHASES.find((p) => p.code === drug.phase)?.label}</span>
+                      <span className="block truncate text-xs text-foreground-subtle">
+                        {given.length
+                          ? `donné ${given.map((g) => hhmm(g.at)).join(", ")}`
+                          : chosenOther
+                            ? `non retenu : ${chosenOther.name} donné`
+                            : others.length
+                              ? `ou ${others.map((x) => x.name).join(", ")}`
+                              : DRUG_PHASES.find((p) => p.code === drug.phase)?.label}
+                      </span>
                     </span>
                     {dose && <span className="shrink-0 font-mono text-sm font-semibold tabular-nums text-primary-strong">{formatDose(dose)}</span>}
                     <Button

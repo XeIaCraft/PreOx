@@ -13,6 +13,7 @@ import { formatMinutes } from "@/lib/preop/intraop";
 import { hhmm } from "@/lib/preop/isbar";
 import { adjustedBodyWeight, idealBodyWeight } from "@/lib/preop/scores";
 import { TECHNIQUES } from "@/lib/preop/rules/types";
+import { describeGases, GASES_SOURCE } from "@/lib/preop/gases";
 import { cn } from "@/lib/utils";
 
 const minutesBetween = (a: string, b: string) => Math.max(0, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60_000));
@@ -60,6 +61,20 @@ export function PlanCard({ d, onOpenCrisis }: { d: Dossier; onOpenCrisis: (id: s
       <p className={cn("text-sm", allergies && !/aucune/i.test(allergies) ? "font-medium text-danger" : "text-foreground-muted")}>Allergies : {allergies || "non renseignées"}</p>
       {row("Technique", techniques, "bg-surface-muted text-foreground")}
       {row("Cibles", d.plan.targets)}
+      {d.plan.gases && (
+        <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-2">
+          <span className="flex items-center gap-1 pt-0.5 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">
+            Gaz <InfoTip label="Gaz conseillés">{GASES_SOURCE}</InfoTip>
+          </span>
+          <ul className="flex flex-wrap gap-1">
+            {describeGases(d.plan.gases, p.age).map((t) => (
+              <li key={t} className="rounded-full bg-primary-tint px-2 py-0.5 text-xs text-primary-strong">
+                {t}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {row("Monitorage", d.plan.material, "bg-surface-muted text-foreground")}
       {d.plan.risks.length > 0 && (
         <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-2">

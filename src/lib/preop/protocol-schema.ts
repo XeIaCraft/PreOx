@@ -19,6 +19,17 @@ const drug = z.object({
   maxAmount: amount,
   redoseEveryMin: z.number().int().min(0).max(24 * 60).nullable(),
   note: text(400),
+  choice: text(40).optional(),
+});
+
+const gases = z.object({
+  agent: z.enum(["sevoflurane", "desflurane", "isoflurane", "tiva"]),
+  carrier: z.enum(["air", "n2o"]),
+  fio2: z.tuple([z.number().min(0.21).max(1), z.number().min(0.21).max(1)]),
+  mac: z.tuple([z.number().min(0).max(2), z.number().min(0).max(2)]).optional(),
+  freshGasLMin: z.number().min(0).max(15).optional(),
+  noN2O: text(200).optional(),
+  note: text(400).optional(),
 });
 
 const infusion = z.object({ solution: text(200), rateMlH: z.number().min(0).max(100).nullable(), bolusMl: z.number().min(0).max(50).nullable(), lockoutMin: z.number().int().min(0).max(240).nullable() });
@@ -43,6 +54,7 @@ export const protocolContentSchema = z.object({
     })
     .optional(),
   tourniquetAlertMin: z.number().int().min(0).max(600).nullable(),
+  gases: gases.optional(),
   notes: text(4000),
 });
 
