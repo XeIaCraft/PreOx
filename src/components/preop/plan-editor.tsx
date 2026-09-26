@@ -26,7 +26,7 @@ import { TECHNIQUES, type Technique } from "@/lib/preop/rules/types";
 import { DRUG_REFERENCE_SOURCE, drugReferenceFor, formatReferenceDose, localAnaestheticLoad } from "@/lib/preop/drug-reference";
 import { cn } from "@/lib/utils";
 
-const UNITS: DoseUnit[] = ["mg", "µg", "g", "mL", "UI"];
+const UNITS: DoseUnit[] = ["mg", "µg", "g", "mL", "UI", "%"];
 
 /** Phase guessed from the drug's class in the carnet catalogue. */
 function guessPhase(name: string): DrugPhase {

@@ -12,7 +12,7 @@ import type { Technique } from "./rules/types";
 import type { PostopPlan } from "./postop";
 
 export type WeightBasis = "total" | "ideal" | "lean" | "adjusted";
-export type DoseUnit = "mg" | "µg" | "g" | "mL" | "UI";
+export type DoseUnit = "mg" | "µg" | "g" | "mL" | "UI" | "%";
 export type DrugPhase = "premed" | "induction" | "maintenance" | "alr" | "antibio" | "analgesia" | "ponv" | "haemodynamic" | "postop" | "other";
 
 export const WEIGHT_BASES: { code: WeightBasis; label: string; short: string }[] = [

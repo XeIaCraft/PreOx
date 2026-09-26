@@ -14,7 +14,7 @@ const drug = z.object({
   phase: z.enum(["premed", "induction", "maintenance", "alr", "antibio", "analgesia", "ponv", "haemodynamic", "postop", "other"]),
   doseMode: z.enum(["fixed", "per_kg"]),
   amount,
-  unit: z.enum(["mg", "µg", "g", "mL", "UI"]),
+  unit: z.enum(["mg", "µg", "g", "mL", "UI", "%"]),
   weightBasis: z.enum(["total", "ideal", "lean", "adjusted"]),
   maxAmount: amount,
   redoseEveryMin: z.number().int().min(0).max(24 * 60).nullable(),

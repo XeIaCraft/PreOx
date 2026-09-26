@@ -31,7 +31,7 @@ it("reference protocols are consistent", () => {
       if (has("perinerveux") && !pp.watch.includes("block") && pp.destination !== "icu") out.push(`${tag}: bloc sans surveillance du bloc`);
       if (!pp.thrombo) out.push(`${tag}: thromboprophylaxie non précisée`);
     } else out.push(`${tag}: pas de plan post-op`);
-    if (CHILD_DOSED.has(n(p.id))) for (const d of c.drugs) if (d.doseMode === "fixed" && !/sédation|noradr|glucose|morphine intrath|infiltration/i.test(d.name + d.route) && d.amount! > 1) out.push(`${tag}: dose fixe chez l'enfant — ${d.name} ${d.amount} ${d.unit}`);
+    if (CHILD_DOSED.has(n(p.id))) for (const d of c.drugs) if (d.doseMode === "fixed" && d.unit !== "%" && !/sédation|noradr|glucose|morphine intrath|infiltration/i.test(d.name + d.route) && d.amount! > 1) out.push(`${tag}: dose fixe chez l'enfant — ${d.name} ${d.amount} ${d.unit}`);
     if (c.risks.length < 2) out.push(`${tag}: ${c.risks.length} risque(s) seulement`);
     if (c.targets.length < 2) out.push(`${tag}: ${c.targets.length} cible(s)`);
     for (const r of c.risks) if (!r.why || !r.prevention) out.push(`${tag}: risque « ${r.title} » sans pourquoi/prévention`);

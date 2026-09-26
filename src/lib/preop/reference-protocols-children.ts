@@ -42,7 +42,13 @@ const sedationRemi = () => drug("Rémifentanil (sédation)", "maintenance", "pse
 const lidocaineTopical = () => drug("Lidocaïne 5 % naphazolinée ou 4 % (topique)", "alr", "infiltration", { fixed: 100 }, "mg", "Méchage ou pulvérisation par le chirurgien ; maximum 4,5 mg/kg.");
 // Children: doses per kilo, capped to the adult dose.
 const childPremed = () => drug("Midazolam (prémédication)", "premed", "po", { perKg: 0.3, max: 15 }, "mg", "0,3–0,5 mg/kg per os, 20–30 min avant ; ou dexmédétomidine intranasale 1–2 µg/kg (manuel, chap. 37).");
-const childPropofol = () => drug("Propofol", "induction", "bolus_iv", { perKg: 3 }, "mg", "2,5–5 mg/kg ; ou induction au sévoflurane puis voie veineuse (manuel, chap. 37).");
+// Inhalational and IV induction are equivalent in the healthy child (meta-analysis,
+// Porter et al., Paediatr Anaesth 2020); IV propofol is preferred with a high risk of
+// respiratory adverse events (Ramgolam et al., Anesthesiology 2018) or a full stomach.
+const childSevoflurane = (extra = "") =>
+  drug("Sévoflurane (induction au masque)", "induction", "inhalation", { fixed: 8 }, "%", `Induction de référence sans voie veineuse : 6–8 % dans l'O₂ (± N₂O), voie veineuse posée endormi, puis environ 1 CAM. Équivalente au propofol IV chez l'enfant sain (méta-analyse, Porter 2020).${extra}`);
+const childPropofol = () =>
+  drug("Propofol", "induction", "bolus_iv", { perKg: 3 }, "mg", "2,5–5 mg/kg (manuel, chap. 37). À préférer si voie veineuse en place, grand enfant, risque respiratoire élevé (≥ 2 facteurs : infection respiratoire récente, asthme, tabagisme passif, ronflement — Ramgolam 2018) ou estomac plein ; moins de laryngospasme, d'agitation et de NVPO.");
 const childSufentanil = () => drug("Sufentanil", "induction", "bolus_iv", { perKg: 0.2 }, "µg", "0,1–0,3 µg/kg (manuel, chap. 37).");
 const childAtropine = () => drug("Atropine", "premed", "bolus_iv", { perKg: 0.02, max: 0.6 }, "mg", "20 µg/kg si bradycardie (nourrisson, réflexe oculocardiaque, succinylcholine).");
 const childParacetamol = () => drug("Paracétamol", "analgesia", "perfusion", { perKg: 15, max: 1000 }, "mg", "15 mg/kg IV ou per os, 4 × / jour (nouveau-né : voir le manuel, chap. 37).");
@@ -132,7 +138,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: CHILD,
     content: content({
       techniques: ["general"],
-      drugs: [childPremed(), childPropofol(), childParacetamol(), childDexa(), childIbuprofen()],
+      drugs: [childPremed(), childSevoflurane(), childPropofol(), childParacetamol(), childDexa(), childIbuprofen()],
       targets: ["Induction au masque (sévoflurane) acceptable pour les gestes très courts", "Masque laryngé ou masque facial ; sonde préformée pour l'adénoïdectomie", "Larynx, trachée, corps étranger : voies aériennes partagées, ventilation spontanée sous propofol ou sévoflurane, plan partagé avec l'ORL, bronchoscope rigide prêt"],
       material: CHILD_MONITORING,
       risks: [risk("laryngospasm"), { title: "Infection des voies aériennes récente", why: "Hyperréactivité bronchique pendant 2–4 semaines.", prevention: "Report si fièvre ou infection basse ; sinon masque laryngé, pas de sonde si possible.", conduct: "Désaturation : laryngospasme ou bronchospasme, fiches de crise." }],
@@ -202,7 +208,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${MANUAL}, chap. 37 et 39.`,
     content: content({
       techniques: ["general"],
-      drugs: [childPropofol(), childSufentanil(), childAtropine(), childDexa(), childOndansetron(), childParacetamol(), droperidol()],
+      drugs: [childSevoflurane(" Pas en cas de globe ouvert (pleurs, toux, poussée de pression intraoculaire) : propofol IV."), childPropofol(), childSufentanil(), childAtropine(), childDexa(), childOndansetron(), childParacetamol(), droperidol()],
       targets: ["Réflexe oculocardiaque : atropine prête", "NVPO (strabisme) : double prophylaxie", "Globe ouvert : pas de pression sur l'œil, pas de toux à l'induction"],
       material: CHILD_MONITORING,
       risks: [risk("ponv"), { title: "Réflexe oculocardiaque", why: "Traction des muscles oculomoteurs.", prevention: "Atropine prête, profondeur suffisante.", conduct: "Arrêt de la traction, atropine 20 µg/kg." }, risk("mh")],
@@ -555,7 +561,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: CHILD,
     content: content({
       techniques: ["general", "neuraxial"],
-      drugs: [childPremed(), childPropofol(), caudal(), drug("Clonidine (caudale)", "alr", "peridural", { perKg: 1 }, "µg", "1 µg/kg avec l'anesthésique local, après 6 mois (manuel, chap. 37)."), childParacetamol(), childIbuprofen(), childDexa()],
+      drugs: [childPremed(), childSevoflurane(), childPropofol(), caudal(), drug("Clonidine (caudale)", "alr", "peridural", { perKg: 1 }, "µg", "1 µg/kg avec l'anesthésique local, après 6 mois (manuel, chap. 37)."), childParacetamol(), childIbuprofen(), childDexa()],
       targets: ["Masque laryngé, ventilation spontanée", "Caudale après l'induction (ou bloc ilio-inguinal, pénien)", "Ancien prématuré < 60 SA post-conceptionnel : surveillance des apnées"],
       material: CHILD_MONITORING,
       risks: [risk("laryngospasm"), { title: "Apnées postopératoires (ancien prématuré)", why: "Immaturité du contrôle respiratoire, anémie.", prevention: "Rachianesthésie seule possible, caféine selon l'équipe.", conduct: "Surveillance monitorée 12–24 h, pas d'ambulatoire." }],
@@ -606,7 +612,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: CHILD,
     content: content({
       techniques: ["general", "neuraxial"],
-      drugs: [childPremed(), childPropofol(), childSufentanil(), drug("Rocuronium", "induction", "bolus_iv", { perKg: 0.6 }, "mg", "0,6 mg/kg."), childCefazolin(), drug("Ropivacaïne 0,2 % (péridurale de l'enfant)", "alr", "peridural", { perKg: 0.5 }, "mg", "0,5 mL/kg de 0,2 % à la dose test, puis 0,2 mg/kg/h (manuel, chap. 37)."), childParacetamol(), childDexa()],
+      drugs: [childPremed(), childSevoflurane(), childPropofol(), childSufentanil(), drug("Rocuronium", "induction", "bolus_iv", { perKg: 0.6 }, "mg", "0,6 mg/kg."), childCefazolin(), drug("Ropivacaïne 0,2 % (péridurale de l'enfant)", "alr", "peridural", { perKg: 0.5 }, "mg", "0,5 mL/kg de 0,2 % à la dose test, puis 0,2 mg/kg/h (manuel, chap. 37)."), childParacetamol(), childDexa()],
       targets: ["Normothermie, glycémie", "Saignement rapporté au volume sanguin (80 mL/kg)", "Péridurale posée sous AG chez l'enfant"],
       material: [...CHILD_MONITORING, "Cathéter artériel si chirurgie majeure", "Deux voies veineuses"],
       risks: [risk("bleeding"), risk("hypothermia"), risk("laryngospasm")],
@@ -623,7 +629,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: CHILD,
     content: content({
       techniques: ["general", "superficial_block"],
-      drugs: [childPropofol(), drug("Ropivacaïne 0,2 % (bloc périphérique)", "alr", "perinerveux", { perKg: 0.5, max: 150 }, "mg", "0,5 mL/kg selon le bloc (axillaire, fémoral, poplité) ; maximum 2,5 mg/kg au total (manuel, chap. 37)."), childSufentanil(), drug("Rocuronium (séquence rapide)", "induction", "bolus_iv", { perKg: 1 }, "mg", "Estomac plein après un traumatisme récent."), childCefazolin(), childParacetamol(), childIbuprofen(), childDexa()],
+      drugs: [childSevoflurane(), childPropofol(), drug("Ropivacaïne 0,2 % (bloc périphérique)", "alr", "perinerveux", { perKg: 0.5, max: 150 }, "mg", "0,5 mL/kg selon le bloc (axillaire, fémoral, poplité) ; maximum 2,5 mg/kg au total (manuel, chap. 37)."), childSufentanil(), drug("Rocuronium (séquence rapide)", "induction", "bolus_iv", { perKg: 1 }, "mg", "Estomac plein après un traumatisme récent."), childCefazolin(), childParacetamol(), childIbuprofen(), childDexa()],
       targets: ["Traumatisme : estomac plein (vidange ralentie)", "Syndrome des loges : pas de bloc profond masquant sans accord du chirurgien", "Épiphysiolyse : adolescent souvent obèse"],
       material: CHILD_MONITORING,
       risks: [risk("aspiration"), { title: "Syndrome des loges", why: "Fracture, œdème, plâtre.", prevention: "Surveillance, analgésie adaptée.", conduct: "Douleur croissante : fendre le plâtre, avis chirurgical." }],
@@ -657,7 +663,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${CHILD} ; ${MANUAL}, chap. 22.`,
     content: content({
       techniques: ["sedation", "general"],
-      drugs: [childPremed(), childPropofol(), drug("Propofol (sédation)", "maintenance", "pse", { perKg: 1 }, "mg", "Bolus 1 mg/kg puis 6–10 mg/kg/h titré (manuel, chap. 37)."), drug("Dexmédétomidine intranasale", "premed", "intranasal", { perKg: 2 }, "µg", "1–2 µg/kg, 30–45 min avant (imagerie sans douleur) (manuel, chap. 37)."), drug("Kétamine", "analgesia", "bolus_iv", { perKg: 0.5 }, "mg", "0,5–1 mg/kg pour un geste douloureux (ponction, myélogramme).")],
+      drugs: [childPremed(), childSevoflurane(" Imagerie : induction au masque puis relais IV ou masque laryngé."), childPropofol(), drug("Propofol (sédation)", "maintenance", "pse", { perKg: 1 }, "mg", "Bolus 1 mg/kg puis 6–10 mg/kg/h titré (manuel, chap. 37)."), drug("Dexmédétomidine intranasale", "premed", "intranasal", { perKg: 2 }, "µg", "1–2 µg/kg, 30–45 min avant (imagerie sans douleur) (manuel, chap. 37)."), drug("Kétamine", "analgesia", "bolus_iv", { perKg: 0.5 }, "mg", "0,5–1 mg/kg pour un geste douloureux (ponction, myélogramme).")],
       targets: ["Ventilation spontanée, capnographie", "IRM : matériel compatible, monitorage à distance, accès à l'enfant préparé", "Sortie selon les critères pédiatriques"],
       material: ["ECG compatible IRM", "PNI", "SpO₂", "EtCO₂", "Masque laryngé prêt", "Aspiration"],
       risks: [risk("laryngospasm"), { title: "Dépression respiratoire loin du bloc", why: "Sédation profonde, accès limité (IRM).", prevention: "Capnographie, équipe et matériel complets sur place.", conduct: "Stimuler, subluxation, masque, masque laryngé." }],
@@ -674,7 +680,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: CHILD,
     content: content({
       techniques: ["general"],
-      drugs: [childPremed(), childPropofol(), childSufentanil(), drug("Rocuronium", "induction", "bolus_iv", { perKg: 0.6 }, "mg", "0,6 mg/kg."), childCefazolin(), drug("Acide tranexamique", "haemodynamic", "perfusion", { perKg: 15 }, "mg", "10–15 mg/kg puis perfusion (manuel, chap. 40)."), childParacetamol()],
+      drugs: [childPremed(), childSevoflurane(" Hypertension intracrânienne : propofol IV."), childPropofol(), childSufentanil(), drug("Rocuronium", "induction", "bolus_iv", { perKg: 0.6 }, "mg", "0,6 mg/kg."), childCefazolin(), drug("Acide tranexamique", "haemodynamic", "perfusion", { perKg: 15 }, "mg", "10–15 mg/kg puis perfusion (manuel, chap. 40)."), childParacetamol()],
       targets: ["Saignement majeur rapporté au volume sanguin (80 mL/kg) : sang en salle, transfusion précoce", "Embolie gazeuse : EtCO₂, position", "Normothermie"],
       material: [...CHILD_MONITORING, "Cathéter artériel", "Deux voies veineuses de bon calibre", "Voie veineuse centrale selon l'équipe"],
       risks: [risk("bleeding"), risk("gas_embolism"), risk("hypothermia")],
@@ -691,7 +697,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${CHILD} ; ${MANUAL}, chap. 26.`,
     content: content({
       techniques: ["general", "deep_block"],
-      drugs: [childPropofol(), childSufentanil(), drug("Rocuronium", "induction", "bolus_iv", { perKg: 0.6 }, "mg", "0,6 mg/kg."), childCefazolin(), drug("Ropivacaïne 0,2 % (ESP ou paravertébral)", "alr", "perinerveux", { perKg: 1.5, max: 150 }, "mg", "1,5 mg/kg au total, maximum 150 mg ; cathéters bilatéraux pour le pectus (manuel, chap. 37)."), childDexa(), childOndansetron(), childParacetamol(), childIbuprofen(), ketamineSparing()],
+      drugs: [childSevoflurane(), childPropofol(), childSufentanil(), drug("Rocuronium", "induction", "bolus_iv", { perKg: 0.6 }, "mg", "0,6 mg/kg."), childCefazolin(), drug("Ropivacaïne 0,2 % (ESP ou paravertébral)", "alr", "perinerveux", { perKg: 1.5, max: 150 }, "mg", "1,5 mg/kg au total, maximum 150 mg ; cathéters bilatéraux pour le pectus (manuel, chap. 37)."), childDexa(), childOndansetron(), childParacetamol(), childIbuprofen(), ketamineSparing()],
       targets: ["Pectus : douleur postopératoire intense — péridurale thoracique, ESP ou paravertébral continus, ou cryoanalgésie", "Pectus : passage de la barre sous thoracoscopie (arythmies, perforation cardiaque rare)", "Lobectomie de l'enfant : exclusion pulmonaire par bloqueur bronchique ou intubation sélective"],
       material: [...MONITORING, "Cathéter artériel selon l'équipe", "Échographe"],
       risks: [{ title: "Lésion cardiaque ou hémorragie au passage de la barre", why: "Barre passée derrière le sternum, près du cœur.", prevention: "Thoracoscopie, élévation sternale.", conduct: "Hypotension brutale : sang, sternotomie en urgence." }, risk("ponv")],
