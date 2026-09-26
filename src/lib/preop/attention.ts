@@ -9,6 +9,7 @@
 import { QUALIFIER_LABELS, anyOf, has } from "./history";
 import { DRUG_REFERENCES, DRUG_REFERENCE_SOURCE, cautionsFor, drugReferenceFor, localAnaestheticLoad, morphineEquivalents } from "./drug-reference";
 import { computeDose, type ProtocolDrug } from "./protocols";
+import { RISK_LIBRARY } from "./plan-catalog";
 import { ORGAN_SOURCE, organAdjustments } from "./organ-dosing";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 import { classesOf, fold, medicationOf, type AllergenItem, type AttentionSpec } from "./catalog";
@@ -160,17 +161,32 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
   }
 
   // --- Computed from the scores and the intervention ----------------------------------------
-  if (r.airway.level === "high" && !has(cond, "difficult_airway"))
-    add({
-      id: "airway",
-      level: "high",
-      title: "Intubation difficile prévisible",
-      detail: "Stratégie décidée à l'avance selon l'algorithme du service ; préoxygénation optimisée ; matériel en salle.",
-      why: `Score d'El-Ganzouri ${r.airway.value}/12 (difficulté prévisible à partir de 4) — étape Voies aériennes`,
-      source: "El-Ganzouri, Anesth Analg 1996 ; DAS / SFAR (algorithmes)",
-      material: ["Vidéolaryngoscope", "Chariot d'intubation difficile", "Dispositifs supraglottiques"],
-      risk: { title: "Intubation difficile", conduct: "Appel à l'aide précoce, plan B supraglottique, plan C oxygénation, plan D abord cervical selon l'algorithme." },
-    });
+  // Difficult airway: the A-B-C-D plan, announced to the team before the induction (DAS 2015, SFAR 2017).
+  {
+    const predicted = r.airway.level === "high";
+    const known = has(cond, "difficult_airway") === true;
+    const maskToo = r.mask.level === "high" || has(cond, "difficult_mask") === true;
+    if (predicted || known) {
+      const lib = RISK_LIBRARY.find((x) => x.id === "difficult_airway")!;
+      add({
+        id: "airway",
+        level: "high",
+        title: known ? "Intubation difficile connue : plan A-B-C-D" : "Intubation difficile prévisible : plan A-B-C-D",
+        detail: [
+          maskToo ? "Ventilation au masque aussi difficile : intubation vigile (fibroscope ou vidéolaryngoscope, anesthésie topique, sédation légère) à privilégier (DAS 2020)." : "",
+          "Préoxygénation jusqu'à FeO₂ ≥ 90 %, oxygénation apnéique (lunettes à haut débit), position proclive ; curare et sugammadex (16 mg/kg si rocuronium) calculés.",
+          "Plan A — laryngoscopie : vidéolaryngoscope d'emblée, mandrin long ; 3 tentatives au plus (+ 1 par un senior). Plan B — dispositif supraglottique de 2e génération, 3 tentatives au plus ; si oxygénation : réveiller le patient, ou intuber par le dispositif (fibroscope). Plan C — ventilation au masque à deux mains, canule ; si possible : réveiller (sugammadex). Plan D — « ni intubation, ni oxygénation » : cricothyroïdotomie au bistouri (bistouri, bougie, sonde 6,0 à ballonnet).",
+          "Aide appelée tôt ; chariot d'intubation difficile et capnographie en salle ; plan d'extubation (vigile, sur mandrin échangeur si besoin) ; courrier « intubation difficile » au patient.",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        why: [known ? "Antécédent : intubation difficile" : "", predicted ? `score d'El-Ganzouri ${r.airway.value}/12 (difficulté prévisible à partir de 4)` : "", maskToo ? "ventilation au masque difficile" : ""].filter(Boolean).join(" ; "),
+        source: "DAS 2015 (PMID 26556848) ; DAS intubation vigile 2020 ; SFAR 2017 (intubation difficile) ; El-Ganzouri, Anesth Analg 1996",
+        material: ["Vidéolaryngoscope", "Chariot d'intubation difficile", "Dispositifs supraglottiques de 2e génération", "Fibroscope", "Kit de cricothyroïdotomie (bistouri, bougie, sonde 6,0)", "Lunettes nasales à haut débit"],
+        risk: { title: lib.title, why: lib.why, prevention: lib.prevention, conduct: lib.conduct, source: lib.source, crisis: lib.crisis },
+      });
+    }
+  }
   if (r.mask.level === "high") {
     const met = (Object.keys(MASK_VENTILATION_ITEMS) as MaskVentilationItem[]).filter((k) => scores.merged.mask.merged[k]).map((k) => MASK_VENTILATION_ITEMS[k].toLowerCase());
     add({ id: "mask", level: "medium", title: "Ventilation au masque difficile prévisible", detail: "Préoxygénation optimisée, canule oropharyngée et ventilation à deux mains prêtes ; dispositif supraglottique à portée.", why: `Au moins 2 critères de Langeron : ${met.join(", ")}`, source: MASK_VENTILATION_REFERENCE.label, material: ["Canules oropharyngées"] });

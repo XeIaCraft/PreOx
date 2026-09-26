@@ -77,3 +77,14 @@ describe("children at respiratory risk", () => {
     expect(points(adult, choice).find((x) => x.id === "paediatric-prae")).toBeUndefined();
   });
 });
+
+describe("difficult airway", () => {
+  it("gives the A-B-C-D plan, the awake option when the mask is difficult too, and the crisis card", () => {
+    const p = points(patient(["difficult_airway", "difficult_mask"]), planOf([])).find((x) => x.id === "airway");
+    expect(p?.title).toMatch(/connue : plan A-B-C-D/);
+    expect(p?.detail).toMatch(/intubation vigile/);
+    expect(p?.detail).toMatch(/Plan D/);
+    expect(p?.risk?.crisis).toBe("cant_intubate");
+    expect(points(patient([]), planOf([])).find((x) => x.id === "airway")).toBeUndefined();
+  });
+});

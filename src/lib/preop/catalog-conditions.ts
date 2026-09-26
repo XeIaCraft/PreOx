@@ -257,7 +257,7 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
     label: "Intubation difficile",
     system: "anaes",
     keywords: ["ID", "intubation difficile", "fibroscopie"],
-    attention: { level: "high", text: "Stratégie décidée à l'avance selon l'algorithme du service ; matériel en salle.", material: ["Vidéolaryngoscope", "Chariot d'intubation difficile"] },
+    attention: { level: "info", text: "Récupérer le courrier d'intubation difficile (ce qui a échoué, ce qui a réussi) ; le plan A-B-C-D suit." },
   }),
   c({
     id: "malignant_hyperthermia",
