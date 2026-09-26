@@ -79,6 +79,8 @@ export function buildMedicationList(curated: Medication[] = MEDICATIONS): CbipMe
     if (known) {
       const x = extra.get(known.atc) ?? { brands: new Set<string>(), pages: {} };
       brands.forEach((b) => x.brands.add(b));
+      // The CBIP name is dictated too (« alendronate » for « acide alendronique »).
+      if (parts.length === 1 && fold(parts[0]) !== fold(known.name)) x.brands.add(parts[0]);
       Object.assign(x.pages, pages);
       x.chapter ??= e.h;
       extra.set(known.atc, x);

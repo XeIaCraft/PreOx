@@ -6,6 +6,7 @@
 // which is exactly why they must be checked against the source you follow.
 
 import { MANUAL_RULES } from "./proposed-manual";
+import { TREATMENT_RULES } from "./proposed-treatments";
 import { SUPERSEDES, VERIFIED_RULES } from "./verified";
 import type { Rule, RuleSource } from "./types";
 
@@ -217,6 +218,13 @@ export const PROPOSED_GROUPS: ProposedGroup[] = [
     description:
       "Anticoagulants et antiplaquettaires (chirurgie, ponction, reprise, stents), IEC/sartans, antidiabétiques, bêta-bloquants, statines, corticoïdes, examens préopératoires, sténose aortique, prémédication, jeûne. Chaque règle porte la phrase exacte du livre et ce qu'elle protège (chirurgie ou anesthésie) ; le livre date de 2020 : à confronter aux recommandations actuelles.",
     rules: MANUAL_RULES,
+  },
+  {
+    id: "treatments-spaqi",
+    title: "Traitements courants (SPAQI, ACR/AAHKS 2022)",
+    description:
+      "Psychotropes (antidépresseurs, IMAO, lithium, antipsychotiques, stimulants), antiépileptiques, insulines, thyroïde, hormones, PDE5, antiarythmiques, HTAP, inhalés, IPP, traitements de fond rhumatologiques et biothérapies, JAK, corticoïdes, antirétroviraux, buprénorphine, méthadone, naltrexone, compléments. Brouillons tirés des consensus les plus récents : seul le résumé a pu être lu, à confronter au texte intégral avant activation.",
+    rules: TREATMENT_RULES,
   },
 ];
 

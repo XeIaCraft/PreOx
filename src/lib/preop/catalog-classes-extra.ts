@@ -20,6 +20,9 @@ export const EXTRA_DRUG_CLASSES: DrugClassItem[] = [
   d({ id: "antiarrhythmics_3", atc: "C01BD", label: "Antiarythmiques de classe III", attention: { level: "medium", text: "Allongement du QT : éviter les autres médicaments qui l'allongent ; bradycardie." } }),
   d({ id: "heparins", atc: "B01AB", label: "Héparines (HNF, HBPM)", needsRule: true, attention: { level: "medium", text: "Héparine : délai avant la chirurgie et avant une ponction neuraxiale, plaquettes (TIH) ; reprise selon le risque hémorragique." } }),
   d({ id: "fondaparinux", atc: "B01AX05", label: "Fondaparinux", needsRule: true, attention: { level: "medium", text: "Demi-vie longue, élimination rénale : délais allongés si insuffisance rénale ; ponction neuraxiale prudente." } }),
+  d({ id: "alpha1_antihypertensives", atc: "C02CA", label: "Alpha-bloquants antihypertenseurs", attention: { level: "info", text: "Doxazosine, prazosine : hypotension orthostatique et à l'induction ; syndrome de l'iris flasque (cataracte)." } }),
+  d({ id: "pah_drugs", atc: "C02KX", label: "Traitements de l'hypertension artérielle pulmonaire", implies: "pulmonary_hypertension", attention: { level: "high", text: "Bosentan, ambrisentan, macitentan, riociguat, sélexipag, tréprostinil, époprosténol : ne jamais interrompre (rebond, crise d'HTAP), relais IV ou inhalé si le jeûne se prolonge ; riociguat contre-indiqué avec les dérivés nitrés et les inhibiteurs de la PDE5. Prise en charge en centre expert." } }),
+  d({ id: "mavacamten", atc: "C01EB24", label: "Mavacamten", implies: "hcm", attention: { level: "medium", text: "Inhibiteur de la myosine cardiaque (cardiomyopathie obstructive) : FEVG récente, éviter l'hypovolémie et les inotropes positifs ; interactions CYP2C19 et CYP3A4." } }),
   d({ id: "pentoxifylline", atc: "C04AD", label: "Vasodilatateurs périphériques", attention: { level: "info", text: "Effet antiagrégant modeste (pentoxifylline, cilostazol) à prendre en compte." } }),
 
   // --- Métabolisme ---------------------------------------------------------------------
@@ -27,6 +30,7 @@ export const EXTRA_DRUG_CLASSES: DrugClassItem[] = [
   d({ id: "sulfonylureas", atc: "A10BB", label: "Sulfamides hypoglycémiants", needsRule: true, attention: { level: "medium", text: "Risque d'hypoglycémie pendant le jeûne : glycémies capillaires." } }),
   d({ id: "dpp4", atc: "A10BH", label: "Gliptines (inhibiteurs de la DPP-4)", attention: { level: "info", text: "Peu d'hypoglycémies ; souvent poursuivies." } }),
   d({ id: "antithyroid", atc: "H03B", label: "Antithyroïdiens", implies: "hyperthyroidism", attention: { level: "medium", text: "Hyperthyroïdie traitée : euthyroïdie à confirmer avant une chirurgie programmée ; agranulocytose possible (hémogramme)." } }),
+  d({ id: "mineralocorticoids", atc: "H02AA", label: "Minéralocorticoïdes", implies: "adrenal_insufficiency", attention: { level: "medium", text: "Fludrocortisone : poursuivre, le matin de l'intervention compris ; insuffisance surrénalienne primaire : supplémentation en hydrocortisone selon l'intervention." } }),
   d({ id: "desmopressin", atc: "H01BA", label: "Desmopressine", attention: { level: "medium", text: "Hyponatrémie : natrémie ; restriction hydrique adaptée." } }),
   d({ id: "somatostatin", atc: "H01CB", label: "Analogues de la somatostatine", attention: { level: "info", text: "Octréotide : poursuivre (acromégalie, carcinoïde) ; glycémie." } }),
   d({ id: "gout_drugs", atc: "M04", label: "Antigoutteux", attention: { level: "info", text: "Colchicine : toxicité en cas d'insuffisance rénale ou d'inhibiteur du CYP3A4." } }),
@@ -46,8 +50,10 @@ export const EXTRA_DRUG_CLASSES: DrugClassItem[] = [
 
   // --- Respiratoire ----------------------------------------------------------------------
   d({ id: "inhaled_bronchodilators", atc: "R03A", label: "Bronchodilatateurs inhalés", implies: "asthma", attention: { level: "info", text: "Poursuivre et apporter l'inhalateur ; prise le matin de l'intervention." } }),
+  d({ id: "inhaled_anticholinergics", atc: "R03BB", label: "Anticholinergiques inhalés", implies: "copd", attention: { level: "info", text: "Tiotropium, glycopyrronium, uméclidinium, ipratropium : poursuivre et apporter l'inhalateur ; prise le matin de l'intervention." } }),
   d({ id: "inhaled_steroids", atc: "R03BA", label: "Corticoïdes inhalés", attention: { level: "info", text: "Poursuivre ; doses élevées au long cours : discuter une insuffisance surrénalienne." } }),
   d({ id: "leukotriene", atc: "R03DC", label: "Antileucotriènes", attention: { level: "info", text: "Poursuivre (asthme)." } }),
+  d({ id: "antifibrotics", atc: "L04AX05", label: "Antifibrosants pulmonaires", implies: "restrictive", attention: { level: "medium", text: "Pirfénidone, nintédanib : fibrose pulmonaire (fonction respiratoire à documenter) ; nintédanib : risque hémorragique et hépatotoxicité." } }),
   d({ id: "asthma_biologics", atc: "R03DX", label: "Biothérapies de l'asthme", implies: "asthma", attention: { level: "info", text: "Asthme sévère sous biothérapie : contrôle de l'asthme à vérifier avant une chirurgie programmée." } }),
 
   // --- Anti-infectieux (interactions) --------------------------------------------------------

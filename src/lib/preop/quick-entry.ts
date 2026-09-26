@@ -469,10 +469,16 @@ export function parseQuickEntry(text: string, catalogs: Cats): QuickEntryResult 
       }
 
       // Treatments: catalogue names and brands (the whole CBIP), with the dose next to them and how often.
+      // « Buprénorphine (substitution) » is dictated « buprénorphine » and
+      // « Colécalciférol (vitamine D) » « vitamine D »; a phrase counts once,
+      // for the first treatment it names.
+      const hits = new Set<string>();
       for (const m of catalogs.medications) {
-        const names = [m.name, ...(m.brands ?? [])].filter((n) => fold(n).length >= 4);
+        const names = [m.name, ...labelTerms(m.name), ...(m.brands ?? [])].filter((n) => fold(n).length >= 4);
         const hit = names.find((n) => containsPhrase(segWords, words(n)));
         if (!hit) continue;
+        if (hits.has(fold(hit)) && !result.treatments.some((t) => t.id === m.id)) continue;
+        hits.add(fold(hit));
         // Negated (« pas d'anticoagulant ») or past (« Xarelto arrêté ») treatments are left out.
         const at = phraseAt(segWords, words(hit));
         if (NEGATION.test(segWords.slice(Math.max(0, at - 4), at).join(" ")) || /\b(arrete|stoppe|interrompu|ancien traitement)\b/.test(f)) continue;

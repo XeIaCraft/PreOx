@@ -339,12 +339,52 @@ const CLASS_CBIP: Record<string, string[]> = {
   checkpoint: ["MCA"],
   theophylline: ["DAH"],
   antihistamines: ["LDA"],
-  iron: ["BCA"],
+  iron: ["BCA", "NAA"],
+  potassium: ["NAD"],
+  vitamins: ["NB"],
   ginkgo: ["JKC"],
+  // Classes that were reached by ATC code only: the CBIP products of the same chapter.
+  central_antihypertensives: ["AAB"],
+  mra: ["ADB"],
+  dihydropyridines: ["AFA"],
+  acei_arb: ["AG"],
+  pentoxifylline: ["AJB"],
+  pah_drugs: ["AN"],
+  mavacamten: ["AOC"],
+  inhaled_bronchodilators: ["DAA", "DAC", "DAE", "DAF"],
+  inhaled_anticholinergics: ["DAB"],
+  inhaled_steroids: ["DAD"],
+  leukotriene: ["DAG"],
+  antifibrotics: ["DCC"],
+  gnrh: ["EDF", "EDG"],
+  somatostatin: ["EFD"],
+  nsaids: ["IAA"],
+  bisphosphonates: ["IEB"],
+  smoking_cessation: ["JEB"],
+  cannabinoids: ["JHB"],
+  triptans: ["JIA"],
+  macrolides: ["KAB"],
+  fluoroquinolones: ["KAE"],
+  azoles: ["KBC"],
+  metronidazole: ["KCC"],
+  chemotherapy: ["MA", "MB", "MCC"],
+  imids: ["MCDB"],
+  antiemetics_5ht3: ["CDB"],
+  eye_betablockers: ["PDB"],
+  eye_prostaglandins: ["PDD"],
+  eye_betablockers_glaucoma: ["PD"],
 };
 
+/**
+ * Classes whose management is only « continue, with the precaution of the
+ * point of attention » (interactions of short anti-infective courses,
+ * antiemetics, eye drops, hormonotherapy…): no rule is asked for them —
+ * editable in Paramètres.
+ */
+const NO_RULE_NEEDED = new Set(["macrolides", "fluoroquinolones", "azoles", "metronidazole", "rifampicin", "antiemetics_5ht3", "antiemetics_d2", "eye_betablockers", "eye_betablockers_glaucoma", "carbonic_anhydrase", "retinoids", "gout_drugs", "triptans", "cannabinoids", "denosumab", "dantrolene", "pentoxifylline", "ivabradine", "somatostatin", "aromatase_inhibitors", "gnrh", "antiandrogens", "epo"]);
+
 function drugClassItems(): DrugClassItem[] {
-  return DEFAULT_DRUG_CLASSES.map((k) => ({ ...k, ...(CLASS_INTERACTIONS[k.id] ? { interactions: CLASS_INTERACTIONS[k.id] } : {}), ...(CLASS_CBIP[k.id] ? { cbip: CLASS_CBIP[k.id] } : {}) }));
+  return DEFAULT_DRUG_CLASSES.map((k) => ({ ...k, ...(NO_RULE_NEEDED.has(k.id) && k.needsRule === undefined ? { needsRule: false } : {}), ...(CLASS_INTERACTIONS[k.id] ? { interactions: CLASS_INTERACTIONS[k.id] } : {}), ...(CLASS_CBIP[k.id] ? { cbip: CLASS_CBIP[k.id] } : {}) }));
 }
 
 export const DEFAULT_CATALOGS: Catalogs = {
