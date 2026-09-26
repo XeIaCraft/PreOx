@@ -8,6 +8,7 @@
 import { MANUAL_RULES } from "./proposed-manual";
 import { TREATMENT_RULES } from "./proposed-treatments";
 import { CONDITION_RULES } from "./proposed-conditions";
+import { MAPAR_RULES } from "./proposed-mapar";
 import { SUPERSEDES, VERIFIED_RULES } from "./verified";
 import type { Rule, RuleSource } from "./types";
 
@@ -233,6 +234,13 @@ export const PROPOSED_GROUPS: ProposedGroup[] = [
     description:
       "Pacemaker et défibrillateur, assistance ventriculaire, troubles de l'hémostase, Willebrand, hémophilie, TIH, SAPL, BMR, infarctus récent, stent, thrombopénie, placenta accreta. Tirées de la recommandation de référence de chaque domaine ; la phrase exacte est à confronter au texte intégral.",
     rules: CONDITION_RULES,
+  },
+  {
+    id: "mapar",
+    title: "MAPAR (évaluation préopératoire)",
+    description:
+      "Ce que le MAPAR ajoute aux règles existantes : anticoagulants oraux directs et neurochirurgie intracrânienne (J-5), indications du relais héparinique, AINS avant une chirurgie hémorragique, supplémentation en corticoïdes selon le stress chirurgical, antituberculeux, prémédication, jeûne de l'adulte (remplace celui du manuel 2020), cannabis, cocaïne.",
+    rules: MAPAR_RULES,
   },
 ];
 

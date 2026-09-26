@@ -507,6 +507,7 @@ export const TREATMENT_RULES: Proposed[] = [
     action: continueIt("Poursuivre à la dose habituelle (éventuellement fractionnée) ; analgésie multimodale."),
     source: PSY,
     explanations: ["PAIN 2019 (Goel et al., Br J Anaesth 2019, PMID 31153631) : « The major recommendation of this practice advisory is to continue buprenorphine therapy in the perioperative period. » ; Hitt et al., Anesthesiology 2024 : l'interruption double les besoins en opioïdes (recoupé via Consensus)."],
+    divergences: [{ summary: "MAPAR : douleur postopératoire modérée à sévère prévue — arrêt avant la chirurgie selon la dose (≤ 4 mg/j : 24 h ; 4–8 mg/j : 48 h ; 8–12 mg/j : 72 h ; au-delà : addictologue) et relais par un opioïde fort titré.", source: "MAPAR (douleur postopératoire sous buprénorphine)", level: "book" }],
     question: "According to the PAIN 2019 clinical practice advisory (Br J Anaesth 2019) and SPAQI 2022, should buprenorphine be continued perioperatively, and how should postoperative pain be managed?",
   }),
   draft(45, {

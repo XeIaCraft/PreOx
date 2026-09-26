@@ -7,7 +7,9 @@
 //   locaux, 13 rachianesthésie, 23 complications anesthésiques, 27 embolie
 //   gazeuse, 32 hyperkaliémie, 35 transfusion) — doses copied as printed;
 // - ERC 2021 Adult advanced life support (Soar et al., PMID 33773825);
-// - DAS 2015 unanticipated difficult intubation (Frerk et al., PMID 26556848).
+// - DAS 2015 unanticipated difficult intubation (Frerk et al., PMID 26556848);
+// - MAPAR (fiches Urgences et Réanimation) : feu au bloc, arrêt cardiaque de
+//   la femme enceinte, embolie pulmonaire grave — faits repris, pas le texte.
 // Children: only the doses a source gives per kilo are computed; the others
 // say so.
 
@@ -80,6 +82,7 @@ function ratePerKgMin(drug: string, min: number, max: number, unit: string, w: n
 
 const MANUAL = "Manuel pratique d'anesthésie 2020";
 const ERC = "ERC 2021, réanimation avancée de l'adulte (Soar et al., PMID 33773825)";
+const MAPAR = "MAPAR, fiches Urgences";
 
 export function crises(p: CrisisPatient = {}): Crisis[] {
   const w = p.weightKg;
@@ -305,6 +308,7 @@ export function crises(p: CrisisPatient = {}): Crisis[] {
           dose: perKg("Dantrolène", 2.5, 2.5, "mg", w, "IV"),
           urgent: true,
         },
+        { text: "Pas d'amélioration : 1 mg/kg toutes les 10 min, jusqu'à 10 mg/kg au total", dose: perKg("Dantrolène", 1, 1, "mg", w, "IV") },
         { text: "Acidose : bicarbonate de sodium, puis selon l'excès de base", dose: perKg("Bicarbonate de sodium", 1, 2, "mmol", w, "IV") },
         { text: "Hyperkaliémie : insuline 10 UI dans 50 mL de glucose 30 %, chlorure de calcium 2–5 mg/kg ; pas d'anticalcique avec le dantrolène" },
         { text: "Refroidir jusqu'à 38 °C : glace, perfusions froides, lavages au NaCl 4 °C (15 mL/kg, 3 fois à 15 min)" },
@@ -403,6 +407,59 @@ export function crises(p: CrisisPatient = {}): Crisis[] {
         { text: "Pas de cause trouvée : scanner cérébral (AVC, embolie, hématome)" },
       ],
       source: `${MANUAL}, chap. 23`,
+    },
+    {
+      id: "arrest_pregnancy",
+      title: "Arrêt cardiaque de la femme enceinte",
+      category: "cardio",
+      words: ["arret cardiaque", "femme enceinte", "grossesse", "cesarienne perimortem", "hysterotomie de sauvetage"],
+      recognise: ["Arrêt cardiaque au-delà de 20 SA (ou utérus à l'ombilic) : la compression aorto-cave empêche le massage d'être efficace."],
+      steps: [
+        { text: "Appel à l'aide (plus de 3 personnes), équipe obstétricale et réanimation néonatale ; noter l'heure", urgent: true },
+        { text: "RCP de base 30:2, massage continu 100–120/min ; déviation manuelle PERMANENTE de l'utérus vers la gauche", urgent: true },
+        { text: "Voie veineuse au-dessus du diaphragme (ou intraosseuse humérale) ; défibrillation et adrénaline comme chez l'adulte" },
+        { text: "Intubation précoce par un expert (estomac plein, œdème), FiO₂ 100 %, capnographie" },
+        { text: "Pas de reprise en 4 min : hystérotomie de sauvetage sur place, extraction dans les 5 min (sauvetage maternel) ; monitorage fœtal inutile", urgent: true },
+        { text: "Sous sulfate de magnésium : l'arrêter et injecter du gluconate de calcium 10 %", dose: fixed("Gluconate de calcium 10 %", "10 mL", "IVL") },
+        { text: "Causes : rachianesthésie totale ou toxicité des anesthésiques locaux, hémorragie, cardiopathie, erreur médicamenteuse ou magnésium, embolie amniotique ou pulmonaire, sepsis, métabolique, prééclampsie" },
+        { text: "Envisager tôt l'ECMO veino-artérielle" },
+      ],
+      after: ["Bilan : gaz du sang, hémogramme, hémostase, ionogramme, troponine, hémocultures ; tryptase et histamine précoces (embolie amniotique ou anaphylaxie) ; échocardiographie."],
+      source: `${MAPAR} (arrêt cardiaque chez la femme enceinte) ; ${ERC} (situations particulières)`,
+    },
+    {
+      id: "pulmonary_embolism",
+      title: "Embolie pulmonaire grave",
+      category: "cardio",
+      words: ["embolie pulmonaire", "ep", "coeur pulmonaire aigu", "choc obstructif", "thrombolyse"],
+      recognise: ["Hypoxémie brutale, chute de l'EtCO₂, hypotension ou arrêt ; dilatation du ventricule droit à l'échographie (VD/VG > 1). « Haut risque » : PAS < 90 mmHg ou baisse ≥ 40 mmHg pendant 15 min."],
+      steps: [
+        { text: "Appel à l'aide, FiO₂ 100 %, échographie cardiaque au lit", urgent: true },
+        { text: "Héparine non fractionnée sans délai (si le saignement chirurgical le permet)", dose: perKg("Héparine non fractionnée", 80, 80, "UI", w, "IV") },
+        { text: "Soutenir le ventricule droit : noradrénaline, remplissage prudent (pas plus de 500 mL), dobutamine si bas débit ; éviter les hautes pressions d'insufflation" },
+        { text: "Choc : lever l'obstacle — thrombolyse (altéplase 10 mg en 1–2 min puis 90 mg en 2 h), ou embolectomie chirurgicale ou percutanée si chirurgie récente ou contre-indication à la thrombolyse", dose: fixed("Altéplase", "10 mg puis 90 mg en 2 h", "IV") },
+        { text: "Échec du traitement symptomatique : ECMO veino-artérielle en attendant la désobstruction" },
+        { text: "Arrêt cardiaque : RCP et thrombolyse, massage prolongé 60–90 min après thrombolyse" },
+      ],
+      after: ["Relais par HNF (TCA 2–3 fois le témoin) ; échographie des membres inférieurs ; bilan de thrombophilie selon le contexte."],
+      source: `MAPAR (embolie pulmonaire grave) ; ESC 2019 (embolie pulmonaire) ; ${ERC}`,
+    },
+    {
+      id: "fire",
+      title: "Feu au bloc opératoire",
+      category: "airway",
+      words: ["feu", "incendie", "flamme", "brulure des voies aeriennes", "laser"],
+      recognise: ["Signes précurseurs : bruit, odeur, chaleur, fumée, étincelle ou flamme. Triade : comburant (O₂, N₂O), combustible (antiseptique alcoolique, champs, compresses, sonde), source de chaleur (bistouri électrique, laser)."],
+      steps: [
+        { text: "Annoncer le feu, arrêter l'intervention et la source de chaleur", urgent: true },
+        { text: "Feu des voies aériennes : couper le débit de gaz et la ventilation, retirer la sonde d'intubation, retirer les compresses et corps étrangers, verser du NaCl 0,9 % dans les voies aériennes", urgent: true },
+        { text: "Feu sur le patient : fermer l'O₂ et le N₂O, retirer champs et matériaux en feu, éteindre (NaCl, étouffer) ; extincteur au CO₂ si le feu persiste" },
+        { text: "Reprendre la ventilation au masque en air (SpO₂ 92–94 %), réintuber ; bronchoscopie pour évaluer les voies aériennes (brûlure, fragments)" },
+        { text: "Feu persistant : alarme incendie, fermer l'arrivée d'O₂ de la salle, évacuer patient et personnel, fermer les portes" },
+        { text: "Inhalation de fumées chez un patient non intubé : penser à l'hydroxocobalamine (cyanure)" },
+      ],
+      after: ["Garder le matériel pour l'expertise ; déclaration d'événement indésirable grave.", "Prévention : antiseptique alcoolique sec (3–5 min) avant le bistouri électrique ; laser ou chirurgie des voies aériennes : FiO₂ < 30 %, pas de N₂O, sonde résistante au laser, packing humide, pas d'oxygénothérapie à haut débit ; le chirurgien prévient avant d'activer le laser."],
+      source: `${MAPAR} (feu au bloc opératoire) ; ASA 2013 (prévention et prise en charge des feux au bloc)`,
     },
   ];
   return list;

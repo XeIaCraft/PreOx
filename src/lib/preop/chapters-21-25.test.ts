@@ -44,7 +44,8 @@ describe("Manuel pratique d'anesthésie 2020, chapitres 21–25", () => {
     const c = base({ patient: patient({ age: 8 }), conditions: { recent_uri: { present: true } }, surgery: { ...emptySurgery(), name: "Amygdalectomie" } });
     const p = points(c);
     expect(p.some((x) => x.id === "laryngospasm")).toBe(true);
-    expect(p.find((x) => x.id === "ponv")?.title).toBe("Chirurgie émétisante : NVPO");
+    // Child: the VPOP score replaces Apfel (8 years: 2, tonsillectomy: 1).
+    expect(p.find((x) => x.id === "ponv")?.title).toBe("NVPO de l'enfant : score VPOP 3/6");
     const spinal = points(base(), { ...emptyProtocolContent(), techniques: ["neuraxial"] });
     expect(spinal.find((x) => x.id === "motor-block")?.risk?.title).toBe("Bloc moteur prolongé");
   });

@@ -7,6 +7,7 @@
 
 import { SUPERSEDES } from "./verified";
 import { TREATMENT_SUPERSEDES } from "./proposed-treatments";
+import { MAPAR_SUPERSEDES } from "./proposed-mapar";
 import type { ProposedGroup } from "./proposed";
 import type { Rule } from "./types";
 
@@ -17,7 +18,7 @@ const UNCHECKED_TOOL = "PreOx : activée sans vérification sur la source — à
 /** Rule id → the older proposals it replaces. */
 export const ALL_SUPERSEDES: Record<string, string[]> = (() => {
   const out: Record<string, string[]> = {};
-  for (const map of [SUPERSEDES, TREATMENT_SUPERSEDES]) for (const [k, v] of Object.entries(map)) out[k] = [...(out[k] ?? []), ...v];
+  for (const map of [SUPERSEDES, TREATMENT_SUPERSEDES, MAPAR_SUPERSEDES]) for (const [k, v] of Object.entries(map)) out[k] = [...(out[k] ?? []), ...v];
   return out;
 })();
 

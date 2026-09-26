@@ -111,3 +111,24 @@ describe("organ dosing matches the drug, not a note in brackets", () => {
     expect(organAdjustments(["Morphine intrathécale"], { crcl: 20 }).map((o) => o.drug)).toEqual(["Morphine intrathécale"]);
   });
 });
+
+describe("MAPAR additions", () => {
+  it("N₂O is flagged under methotrexate", () => {
+    const p = points(patient([], ["L04AX03"]), planOf([], { agent: "sevoflurane", carrier: "n2o", fio2: [0.5, 0.5], mac: [0.7, 1] })).find((x) => x.id === "plan-gases-n2o");
+    expect(p?.why).toMatch(/antifolate/);
+  });
+
+  it("a DOAC before intracranial surgery: 5 days, stricter than the ESC 48 h", async () => {
+    const { evaluate } = await import("./rules/engine");
+    const { importPlan } = await import("./rules/activation");
+    const { PROPOSED_GROUPS } = await import("./rules/proposed");
+    let rules: ReturnType<typeof importPlan> = [];
+    for (const g of PROPOSED_GROUPS) {
+      const plan = importPlan(g, rules, "2026-09-26T10:00:00.000Z");
+      rules = [...rules.filter((e) => !plan.some((x) => x.id === e.id)), ...plan];
+    }
+    const res = evaluate(rules.map((r) => ({ ...r, created_at: "", updated_at: "" })), { treatments: [{ id: "a", atc: "B01AF02", name: "Apixaban" }], techniques: ["general"], surgery: { bleedingRisk: "high", closedSpace: "yes" }, age: 60, weightKg: 70, sex: "M", creatinineMgDl: 0.9 }, "2026-09-26T10:00:00.000Z");
+    const stop = res.findings.filter((f) => f.status === "applies" && f.rule.action.type === "stop_before" && f.rule.action.target === "surgery");
+    expect(stop.map((f) => ("hours" in f.rule.action ? f.rule.action.hours : 0))).toEqual([120]);
+  });
+});

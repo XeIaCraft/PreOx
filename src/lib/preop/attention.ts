@@ -229,8 +229,29 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
     });
   {
     // Apfel: 0–4 factors ≈ 10, 20, 40, 60, 80 % (manual, chap. 23); some surgeries add their own risk.
+    // Children: Apfel isn't valid — VPOP score (Bourdaud, Paediatr Anaesth 2014; MAPAR, pédiatrie), 0–6 ≈ 5 to 52 %.
     const ponvSurgery = /strabism|amygdal|oreille|tympan|cochle|stapedo/.test(fold(c.surgery.name));
-    if (r.apfel.level === "high" || ponvSurgery)
+    const childAge = p.age !== undefined && p.age < 16 ? p.age : undefined;
+    if (childAge !== undefined) {
+      const opioids = scores.merged.apfel.merged.postopOpioids === true;
+      const parts = [
+        childAge >= 6 && childAge <= 13 ? { pts: 2, why: `âge ${n(childAge)} ans (6–13 : 2)` } : childAge >= 3 ? { pts: 1, why: `âge ${n(childAge)} ans (1)` } : null,
+        has(cond, "ponv") ? { pts: 1, why: "antécédent de NVPO (1)" } : null,
+        (c.surgery.durationHours ?? 0) > 0.75 ? { pts: 1, why: "anesthésie > 45 min (1)" } : null,
+        /strabism|amygdal|tympan/.test(fold(c.surgery.name)) ? { pts: 1, why: "amygdalectomie, tympanoplastie ou strabisme (1)" } : null,
+        opioids ? { pts: 1, why: "morphiniques (1)" } : null,
+      ].filter((x): x is { pts: number; why: string } => x !== null);
+      const vpop = parts.reduce((t, x) => t + x.pts, 0);
+      if (vpop >= 2 || ponvSurgery)
+        add({
+          id: "ponv",
+          level: "medium",
+          title: `NVPO de l'enfant : score VPOP ${vpop}/6`,
+          detail: "Risque de 5 % (score 0) à 52 % (score 6) ; le score d'Apfel n'est pas valide chez l'enfant. Dexaméthasone 150 µg/kg en début d'intervention ± ondansétron 100 µg/kg (4 mg au plus) ; épargne morphinique ; pas de N₂O.",
+          why: parts.map((x) => x.why).join(", ") || "chirurgie émétisante",
+          source: "Score VPOP (Bourdaud et al., Paediatr Anaesth 2014) ; MAPAR (pédiatrie : nausées-vomissements postopératoires)",
+        });
+    } else if (r.apfel.level === "high" || ponvSurgery)
       add({
         id: "ponv",
         level: "medium",
@@ -378,14 +399,16 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
           source: `${DRUG_REFERENCE_SOURCE}, chap. 25`,
         });
       const n2oBad = ["pneumothorax", "intraocular_gas", "raised_icp", "vitamin_b12", "ponv"].filter((id) => has(cond, id));
-      if (g.carrier === "n2o" && n2oBad.length)
+      // Methotrexate: N₂O adds to its antifolate toxicity (MAPAR, adaptation des traitements).
+      const mtx = c.treatments.filter((t) => t.atc === "L04AX03" || t.atc === "L01BA01");
+      if (g.carrier === "n2o" && (n2oBad.length || mtx.length))
         add({
           id: "plan-gases-n2o",
           level: n2oBad.some((id) => id === "pneumothorax" || id === "intraocular_gas") ? "high" : "medium",
           title: "N₂O au plan : à éviter",
-          detail: "Le N₂O diffuse dans les cavités closes (pneumothorax, gaz intraoculaire : cécité), augmente la pression intracrânienne et les NVPO, inactive la vitamine B12. Air/O₂.",
-          why: n2oBad.map(labelOf).join(", "),
-          source: `${DRUG_REFERENCE_SOURCE}, chap. 3`,
+          detail: "Le N₂O diffuse dans les cavités closes (pneumothorax, gaz intraoculaire : cécité), augmente la pression intracrânienne et les NVPO, inactive la vitamine B12 (toxicité additive avec le méthotrexate). Air/O₂.",
+          why: [...n2oBad.map(labelOf), ...mtx.map((t) => `${t.name} (antifolate)`)].join(", "),
+          source: `${DRUG_REFERENCE_SOURCE}, chap. 3${mtx.length ? " ; MAPAR (méthotrexate)" : ""}`,
         });
       if (g.agent === "desflurane" && has(cond, "asthma"))
         add({
@@ -1283,7 +1306,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         level: uri && urgency === "elective" ? "medium" : "info",
         title: `Enfant de ${ageText}${w !== undefined ? ` (${n(w)} kg)` : ""} : repères`,
         detail: [
-          uri && urgency === "elective" ? "Infection des voies aériennes récente : reporter une intervention non urgente de 3–4 semaines après la fin des symptômes (sauf rhinorrhée claire sans fièvre)." : "",
+          uri && urgency === "elective" ? "Enfant enrhumé : reporter si fièvre > 38,5 °C, laryngite ou auscultation anormale — de 2 semaines (voies aériennes supérieures), 3–4 semaines (atteinte basse) ; rhinorrhée claire sans fièvre : pas de report ; rhinorrhée purulente ou toux grasse : discuter selon le terrain (âge < 1 an, intubation, comorbidité). Si on opère : salbutamol en aérosol 30–50 min avant (1,25 mg < 6 mois, 2,5 mg < 20 kg, 5 mg au-delà), pas de desflurane, masque facial plutôt que laryngé plutôt qu'intubation, extubation réveillé." : "",
           `Matériel : ${tubeText} ; lame ${blade}${lma ? ` ; masque laryngé ${lma}` : ""}${bag ? ` ; ballon ${bag}` : ""} ; sonde gastrique ${gastric}, urinaire ${urinary}. Sonde à ballonnet : pression du ballonnet < 20 cmH₂O (manomètre).`,
           `Normes : ${vitals} (hypotension = baisse de 10–20 % de la valeur avant l'induction).`,
           w !== undefined && w < 10 ? "Ventilation en pression contrôlée 10–25 cmH₂O, PEP 3–5, Vt 6–8 ml/kg." : "",
@@ -1294,7 +1317,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
           .filter(Boolean)
           .join(" "),
         why: `Âge ${ageText}${w !== undefined ? `, ${n(w)} kg` : ""}${uri ? " ; infection respiratoire récente" : ""}`,
-        source: CH(37, "tableaux 37.1 à 37.3, posologies, matériel"),
+        source: `${CH(37, "tableaux 37.1 à 37.3, posologies, matériel")}${uri ? " ; MAPAR (anesthésie de l'enfant enrhumé)" : ""}`,
         material: [tube !== undefined ? `Sondes ${n(tube - 0.5)}, ${n(tube)} et ${n(tube + 0.5)}` : "Sondes d'intubation pédiatriques", `Lame ${blade}`, lma ? `Masque laryngé ${lma}` : "", `Sonde gastrique ${gastric}`, "Réchauffement (matelas, air pulsé)"].filter(Boolean),
       });
     }

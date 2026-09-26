@@ -65,6 +65,7 @@ const NSAID_CAUTIONS: DrugCaution[] = [
   { atc: ["N05AN"], level: "contraindicated", text: "lithium : baisse de l'élimination rénale du lithium, intoxication — pas d'AINS" },
   { atc: ["B01AF", "B01AE", "B01AA"], level: "relative", text: "anticoagulant : risque hémorragique additif" },
   { atc: ["C09"], level: "relative", text: "IEC ou sartan (± diurétique) : risque d'insuffisance rénale aiguë" },
+  { atc: ["L04AX03", "L01BA01"], level: "relative", text: "méthotrexate : élimination rénale diminuée, toxicité hématologique et rénale (MAPAR)" },
   { conditions: ["heart_failure"], level: "relative", text: "insuffisance cardiaque : rétention hydrosodée" },
   { conditions: ["pregnancy"], level: "relative", text: "grossesse : contre-indiqué à partir de 24 SA" },
 ];
