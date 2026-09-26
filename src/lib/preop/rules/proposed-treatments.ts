@@ -43,6 +43,49 @@ const ACR_2022: RuleSource = {
   level: "int",
 };
 
+const SERTOZ_2025 = "Recoupé (Consensus, septembre 2026) — Sertöz et al., Minerva Anestesiol 2025 (PMID 40873193) : « The decision to maintain or adjust monoamine oxidase inhibitors or psychostimulants should be carefully individualized, considering the patient's overall health status and the potential for drug interactions with specific anesthetic agents. »";
+
+const COREMANS_2026: RuleSource = {
+  organisation: "Acta Anaesthesiologica Belgica (revue narrative de 10 recommandations 2015–2024)",
+  title: "Towards ending the perioperative metformin controversy: a narrative review (Coremans et al., Acta Anaesthesiol Belg 2026) — https://consensus.app/papers/details/5087325a64785cb9946e39c9eaa9a27c/",
+  year: 2026,
+  doi: "",
+  pmid: "",
+  quote: "Seven out of ten guidelines support continuing metformin in patients without risk factors, such as impaired renal function or the use of contrast agents. When risk factors are present, most guidelines recommend withholding metformin on the morning of surgery.",
+  grade: "Revue narrative",
+  level: "article",
+};
+const ASER_POQI_2019: RuleSource = {
+  organisation: "ASER / POQI",
+  title: "American Society for Enhanced Recovery and Perioperative Quality Initiative Joint Consensus Statement on Perioperative Management of Patients on Preoperative Opioid Therapy (Edwards et al., Anesth Analg 2019;129:553-566)",
+  year: 2019,
+  doi: "10.1213/ANE.0000000000004018",
+  pmid: "30768461",
+  quote: "",
+  grade: "Consensus",
+  level: "int",
+};
+const BEVACIZUMAB: RuleSource = {
+  organisation: "RCP du bévacizumab (Avastin), repris par la littérature",
+  title: "A review on bevacizumab and surgical wound healing: an important warning to all surgeons (Gordon et al., Ann Plast Surg 2009;62:707-9)",
+  year: 2009,
+  doi: "10.1097/SAP.0b013e3181828141",
+  pmid: "19461291",
+  quote: "Current literature suggests patients should wait at least 6 to 8 weeks (>40 days) after cessation to have surgery (half-life = 20 days). In addition, postoperative reinitiation of bevacizumab must wait > or =28 days to prevent an increased risk of wound healing complications, and the surgical incision should be fully healed.",
+  grade: "Revue",
+  level: "article",
+};
+const IBRUTINIB: RuleSource = {
+  organisation: "RCP de l'ibrutinib (Imbruvica), repris par la littérature",
+  title: "Simulation of perioperative ibrutinib withdrawal using a population pharmacokinetic model (Kimura et al., Cancer Chemother Pharmacol 2025;95:107)",
+  year: 2025,
+  doi: "10.1007/s00280-025-04816-2",
+  pmid: "41264019",
+  quote: "After a withdrawal period of 3-7 days there were no bleeding events in patients that underwent surgery with a low bleeding risk; however, bleeding events occurred in one patient that underwent gastrectomy with moderate or higher bleeding risk.",
+  grade: "Étude exploratoire",
+  level: "article",
+};
+
 const ARTHROPLASTY = "La recommandation ACR/AAHKS porte sur la prothèse de hanche et de genou programmée ; elle est couramment étendue aux autres chirurgies orthopédiques programmées, pas au-delà sans avis.";
 
 const draft = (n: number, p: Pick<Proposed, "title" | "statement" | "conditions" | "action" | "source" | "question"> & Partial<Proposed>): Proposed => ({
@@ -92,6 +135,7 @@ export const TREATMENT_RULES: Proposed[] = [
     conditions: [drug("N06AF")],
     action: continueIt("Poursuivre sauf décision avec le psychiatre (sevrage de 2 semaines) ; pas de péthidine, tramadol, éphédrine ; vasopresseurs directs à faible dose."),
     source: PSY,
+    explanations: [SERTOZ_2025],
     question: "According to the SPAQI 2022 consensus, should irreversible MAO inhibitors be continued or stopped before surgery (and how long before), and which drugs must be avoided?",
   }),
   draft(5, {
@@ -136,12 +180,12 @@ export const TREATMENT_RULES: Proposed[] = [
     question: "According to the SPAQI 2022 consensus, should chronic benzodiazepines be continued before surgery?",
   }),
   draft(10, {
-    title: "Psychostimulants (TDAH) : suspendus le jour de l'intervention",
-    statement: "Méthylphénidate et amphétamines sont suspendus le jour de l'intervention (hypertension, arythmies, interaction avec les vasopresseurs).",
+    title: "Psychostimulants (TDAH) : décision au cas par cas",
+    statement: "Méthylphénidate et amphétamines : poursuite ou suspension le jour de l'intervention décidée au cas par cas ; chez l'enfant, la prise du matin ne s'accompagne pas d'instabilité hémodynamique.",
     conditions: [drug("N06BA")],
-    action: { type: "stop_before", hours: 24, target: "anaesthesia" },
+    action: { type: "info", text: "Poursuivre ou suspendre le matin selon le terrain (cardiopathie, HTA) ; s'il est pris : vasopresseurs directs à faible dose, pas d'éphédrine en première intention.", target: "anaesthesia" },
     source: PSY,
-    divergences: [{ summary: "Certaines équipes les poursuivent quand le trouble est sévère : décision au cas par cas.", source: "Pratiques variables", level: "int" }],
+    explanations: [SERTOZ_2025, "Cartabuke et al., Paediatr Anaesth 2017 : « continuing preoperative stimulant medication is not associated with cardiovascular instability in the pediatric population »."],
     question: "According to the SPAQI 2022 consensus, should ADHD stimulants (methylphenidate, amphetamines) be held on the day of surgery or continued?",
   }),
   // --- Neurologie ----------------------------------------------------------------------------
@@ -431,8 +475,8 @@ export const TREATMENT_RULES: Proposed[] = [
     conditions: [drug("N07BC01")],
     action: continueIt("Poursuivre à la dose habituelle (éventuellement fractionnée) ; analgésie multimodale."),
     source: PSY,
-    divergences: [{ summary: "Consensus multisociétés (Kohan et al., Reg Anesth Pain Med 2021) : poursuivre la buprénorphine en périopératoire.", source: "ASRA et autres, 2021", level: "int" }],
-    question: "According to current multisociety guidance (e.g. Kohan et al. 2021, SPAQI), should buprenorphine be continued perioperatively, and how should postoperative pain be managed?",
+    explanations: ["PAIN 2019 (Goel et al., Br J Anaesth 2019, PMID 31153631) : « The major recommendation of this practice advisory is to continue buprenorphine therapy in the perioperative period. » ; Hitt et al., Anesthesiology 2024 : l'interruption double les besoins en opioïdes (recoupé via Consensus)."],
+    question: "According to the PAIN 2019 clinical practice advisory (Br J Anaesth 2019) and SPAQI 2022, should buprenorphine be continued perioperatively, and how should postoperative pain be managed?",
   }),
   draft(45, {
     title: "Méthadone : poursuivre",
@@ -542,6 +586,59 @@ export const TREATMENT_RULES: Proposed[] = [
     source: PSY,
     question: "According to current perioperative guidance (SPAQI 2022, WHO), should varenicline and nicotine replacement therapy be continued before surgery?",
   }),
+  // --- Compléments recoupés via Consensus (septembre 2026) ---------------------------------------
+  draft(58, {
+    title: "Metformine sans facteur de risque : poursuivre",
+    statement: "Sans insuffisance rénale ni produit de contraste, la metformine est poursuivie ; reprise dès que l'alimentation est reprise et la fonction rénale stable.",
+    conditions: [drug("A10BA02"), { kind: "value", value: "crcl", op: ">=", threshold: 60 }],
+    action: continueIt("Poursuivre la metformine ; reprise avec l'alimentation, fonction rénale stable."),
+    source: COREMANS_2026,
+    question: "According to current guidelines (CPOC 2021, ADA, SPAQI), should metformin be continued on the day of surgery in patients with normal renal function, and when should it be withheld?",
+  }),
+  draft(59, {
+    title: "Metformine avec facteur de risque : suspendre le matin de l'intervention",
+    statement: "En cas d'insuffisance rénale (clairance < 60 mL/min) ou d'injection de produit de contraste, la metformine est suspendue le matin de l'intervention.",
+    conditions: [drug("A10BA02"), { kind: "value", value: "crcl", op: "<", threshold: 60 }],
+    action: { type: "stop_before", hours: 12, target: "both" },
+    source: COREMANS_2026,
+    explanations: ["Seuil de 60 mL/min retenu par PreOx pour « impaired renal function » : à ajuster à la recommandation suivie (CPOC : DFGe < 60 et produit de contraste)."],
+    question: "According to current guidelines (CPOC 2021, ADA, SPAQI), from which renal function threshold should metformin be withheld on the day of surgery?",
+  }),
+  draft(60, {
+    title: "Bévacizumab (anti-VEGF) : 6 à 8 semaines entre la dernière dose et la chirurgie",
+    statement: "Une chirurgie programmée a lieu au moins 6 à 8 semaines après la dernière dose de bévacizumab (demi-vie de 20 jours) ; reprise au moins 28 jours après, plaie cicatrisée.",
+    conditions: [drug("L01FG")],
+    action: { type: "stop_before", hours: 1008, target: "surgery" },
+    source: BEVACIZUMAB,
+    explanations: ["Reprise ≥ 28 jours après la chirurgie, incision cicatrisée. Décision avec l'oncologue (chirurgie oncologique souvent programmée sur ce délai)."],
+    question: "How long before elective surgery should bevacizumab be stopped, and when can it be restarted (SmPC, ESMO)?",
+  }),
+  draft(61, {
+    title: "Inhibiteurs de la BTK : arrêt 3 jours avant une chirurgie à faible risque hémorragique",
+    statement: "L'ibrutinib (et les autres inhibiteurs de la BTK) est interrompu 3 jours avant et après une intervention mineure.",
+    conditions: [drug("L01EL"), { kind: "surgery", attribute: "bleedingRisk", in: ["minimal", "low"] }],
+    action: { type: "stop_before", hours: 72, target: "surgery" },
+    source: IBRUTINIB,
+    explanations: ["RCP de l'ibrutinib : interruption 3 à 7 jours avant et après la chirurgie selon le type d'intervention et le risque hémorragique."],
+    question: "According to the ibrutinib SmPC and current haematology guidance, how many days before and after surgery should BTK inhibitors be withheld depending on bleeding risk?",
+  }),
+  draft(62, {
+    title: "Inhibiteurs de la BTK : arrêt 7 jours avant une chirurgie à haut risque hémorragique",
+    statement: "L'ibrutinib est interrompu 7 jours avant et après une chirurgie à haut risque hémorragique.",
+    conditions: [drug("L01EL"), { kind: "surgery", attribute: "bleedingRisk", in: ["high"] }],
+    action: { type: "stop_before", hours: 168, target: "surgery" },
+    source: IBRUTINIB,
+    question: "According to the ibrutinib SmPC, how many days before major surgery should BTK inhibitors be withheld?",
+  }),
+  draft(63, {
+    title: "Opioïdes au long cours : poursuivre la dose de base",
+    statement: "Le traitement opioïde au long cours est poursuivi, y compris le matin de l'intervention (dose de base), avec une analgésie multimodale et une ALR quand c'est possible.",
+    conditions: [drug("N02A")],
+    action: continueIt("Poursuivre la dose de base (matin compris), patch en place ; analgésie multimodale, kétamine, ALR ; besoins postopératoires majorés."),
+    source: ASER_POQI_2019,
+    explanations: ["Recoupé (Consensus) : Crosier et al., Am J Surg 2024 — « Continuing home opioids for chronic opioid users following VHR resulted in less opioid prescribing with no increase in refills. »"],
+    question: "According to the ASER/POQI 2019 joint consensus statement, should the baseline opioid regimen of patients on long-term opioid therapy be continued on the day of surgery?",
+  }),
 ];
 
 /** The older proposals (Manuel 2020) a more recent rule of this file replaces. */
@@ -553,4 +650,6 @@ const manualId = (title: string) => {
 export const TREATMENT_SUPERSEDES: Record<string, string[]> = {
   [id(13)]: [manualId("Myasthénie : anticholinestérasique arrêté 6 h avant")],
   [id(41)]: [manualId("Corticothérapie : maintenir")],
+  [id(58)]: [manualId("Metformine : arrêt 48 h avant")],
+  [id(59)]: [manualId("Metformine : arrêt 48 h avant")],
 };

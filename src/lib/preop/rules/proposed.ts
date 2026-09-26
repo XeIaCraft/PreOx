@@ -200,7 +200,7 @@ export const PROPOSED_GROUPS: ProposedGroup[] = [
     id: "verified-2026",
     title: "Recommandations vérifiées",
     description:
-      "Antithrombotiques avant la chirurgie (ESC 2022) et avant une ponction ou un bloc profond (ESAIC/ESRA 2022), IEC et sartans, SGLT2, diurétiques, GLP-1, bêta-bloquants, statines, ECG, hémoglobine, créatinine, HbA1c, jeûne de l'enfant. Chaque règle porte la phrase exacte de la recommandation, sa classe et son PMID ; relues en septembre 2026.",
+      "Antithrombotiques avant la chirurgie (ESC 2022) et avant une ponction ou un bloc profond (ESAIC/ESRA 2022), IEC et sartans, SGLT2, diurétiques, GLP-1, bêta-bloquants, statines, lithium, ECG, hémoglobine, créatinine, HbA1c, jeûne de l'enfant. Chaque règle porte la phrase exacte de la recommandation, sa classe et son PMID ; relues en septembre 2026.",
     rules: VERIFIED_RULES,
     verified: true,
     supersedes: SUPERSEDES,
@@ -223,7 +223,7 @@ export const PROPOSED_GROUPS: ProposedGroup[] = [
     id: "treatments-spaqi",
     title: "Traitements courants (SPAQI, ACR/AAHKS 2022)",
     description:
-      "Psychotropes (antidépresseurs, IMAO, lithium, antipsychotiques, stimulants), antiépileptiques, insulines, thyroïde, hormones, PDE5, antiarythmiques, HTAP, inhalés, IPP, traitements de fond rhumatologiques et biothérapies, JAK, corticoïdes, antirétroviraux, buprénorphine, méthadone, naltrexone, compléments. Brouillons tirés des consensus les plus récents : seul le résumé a pu être lu, à confronter au texte intégral avant activation.",
+      "Psychotropes (antidépresseurs, IMAO, lithium, antipsychotiques, stimulants), antiépileptiques, insulines, thyroïde, hormones, PDE5, antiarythmiques, HTAP, inhalés, IPP, traitements de fond rhumatologiques et biothérapies, JAK, corticoïdes, antirétroviraux, opioïdes, buprénorphine, méthadone, naltrexone, metformine, bévacizumab, inhibiteurs de la BTK, compléments. Tirées des consensus les plus récents (SPAQI, ACR/AAHKS 2022, ASER/POQI) et recoupées via Consensus ; la phrase exacte est à confronter au texte intégral.",
     rules: TREATMENT_RULES,
   },
 ];

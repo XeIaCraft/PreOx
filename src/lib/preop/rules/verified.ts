@@ -10,6 +10,7 @@
 //   (the journal full text could not be opened from here — see `explanations`).
 // - ESAIC 2022 paediatric fasting guideline (abstract), multisociety 2024
 //   GLP-1 RA guidance (full text, PMC).
+// - Lithium: Dominicus et al., Bipolar Disord 2026 (full text, PMC).
 
 import type { Condition, Rule, RuleSource } from "./types";
 
@@ -22,6 +23,7 @@ const TOOL = "PreOx : PubMed, Consensus et texte de la recommandation";
 const id = (n: number) => `5f1c0a10-0003-4000-8000-${String(n).padStart(12, "0")}`;
 const guideline = (n: number) => `5f1c0a10-0001-4000-8000-${String(n).padStart(12, "0")}`;
 const manual = (n: number) => `5f1c0a10-0002-4000-8000-${String(n).padStart(12, "0")}`;
+const treatmentDraft = (n: number) => `5f1c0a10-0005-4000-8000-${String(n).padStart(12, "0")}`;
 
 const ESC_2022 = {
   organisation: "ESC (avec l'ESAIC)",
@@ -560,7 +562,68 @@ const TREATMENTS: Verified[] = [
   }),
 ];
 
-export const VERIFIED_RULES: Verified[] = [...ALR, ...SURGERY, ...TREATMENTS];
+
+// ---------------------------------------------------------------------------
+// Lithium (Dominicus et al., Bipolar Disord 2026 — full text read on PMC)
+// ---------------------------------------------------------------------------
+
+const LITHIUM_2026: RuleSource = {
+  organisation: "UMC Utrecht (psychiatrie, anesthésie, gériatrie, pharmacie clinique)",
+  title: "Perioperative Management of Lithium Therapy: Considerations and Recommendations (Dominicus et al., Bipolar Disord 2026;28:e70087)",
+  year: 2026,
+  doi: "10.1111/bdi.70087",
+  pmid: "41641765",
+  quote: "",
+  grade: "Recommandations d'experts",
+  level: "article",
+};
+const lithium = (quote: string): RuleSource => ({ ...LITHIUM_2026, quote });
+const LITHIUM_RISK =
+  "L'article classe le risque d'intoxication selon les pertes sanguines, les mouvements liquidiens et la reprise des apports oraux ; PreOx l'approche par le grade de l'intervention (mineure, intermédiaire, majeure) : à ajuster au cas (âge, fonction rénale, diabète insipide néphrogénique).";
+
+const LITHIUM: Verified[] = [
+  rule(80, {
+    title: "Lithium et chirurgie mineure : poursuivre",
+    statement: "Sans pertes sanguines ni mouvements liquidiens attendus et avec des apports oraux conservés, le lithium est poursuivi sans adaptation ; lithémie 1 semaine après.",
+    conditions: [{ kind: "drug", atc: "N05AN" }, { kind: "surgery", attribute: "grade", in: ["minor"] }],
+    action: { type: "info", text: "Poursuivre le lithium sans adaptation ; lithémie de contrôle 1 semaine après l'intervention.", target: "both" },
+    source: lithium("For patients undergoing procedures without anticipated significant blood loss or fluid shifts or reduced postoperative intake, lithium therapy can generally be continued without dose adjustments."),
+    explanations: [LITHIUM_RISK],
+  }),
+  rule(81, {
+    title: "Lithium et chirurgie intermédiaire : arrêt la veille au soir",
+    statement: "Pertes sanguines limitées ou apports oraux modérément réduits (prothèse de hanche ou de genou, chirurgie abdominale par cœlioscopie) : arrêter le lithium la veille au soir et le reprendre à J1 si l'état hémodynamique, les apports et la fonction rénale le permettent.",
+    conditions: [{ kind: "drug", atc: "N05AN" }, { kind: "surgery", attribute: "grade", in: ["intermediate"] }],
+    action: { type: "stop_before", hours: 12, target: "both" },
+    source: lithium("Lithium should be stopped the evening prior to surgery and resumed 1 day after surgery, provided that patient remains hemodynamic stable, oral intake can be resumed, and renal function remains stable."),
+    explanations: [LITHIUM_RISK, "Lithémie de contrôle 1 semaine après l'intervention."],
+  }),
+  rule(82, {
+    title: "Lithium et chirurgie majeure : arrêt 72 h avant",
+    statement: "Pertes sanguines ou mouvements liquidiens importants, ou reprise orale incertaine : arrêter le lithium 72 h avant (au moins 24 h) ; reprise progressive quand ionogramme, créatinine, hémodynamique et apports sont normalisés.",
+    conditions: [{ kind: "drug", atc: "N05AN" }, { kind: "surgery", attribute: "grade", in: ["major"] }],
+    action: { type: "stop_before", hours: 72, target: "both" },
+    source: lithium("Discontinuation is recommended 72 h before surgery (at least 24 h), given lithium's half-life of 24–36 h."),
+    explanations: [LITHIUM_RISK, "« Reintroduction of lithium should only occur if potassium and sodium levels are normal, creatinine level is back to preoperative level, the patient is hemodynamically stable, and adequate fluid intake is provided. »"],
+  }),
+  rule(83, {
+    title: "Lithium : créatinine et ionogramme récents avant chirurgie majeure",
+    statement: "Avant une chirurgie à haut risque, créatinine et DFG de moins d'1 mois ; ionogramme (sodium, potassium) du mois écoulé.",
+    conditions: [{ kind: "drug", atc: "N05AN" }, { kind: "surgery", attribute: "grade", in: ["intermediate", "major"] }],
+    action: { type: "exam", exam: "Créatinine, DFG, sodium, potassium (lithémie si doute)", withinDays: 30 },
+    source: lithium("For high-risk surgeries, creatinine and GFR must be measured within 1 month prior to the procedure."),
+    explanations: ["« Electrolyte levels, including sodium and potassium, should also be evaluated unless results from the previous month are available. For intermediate- and high-risk surgeries, electrolyte levels should be rechecked upon admission. »"],
+  }),
+  rule(84, {
+    title: "Lithium : pas d'AINS en périopératoire",
+    statement: "Sous lithium, éviter les AINS pour l'analgésie périopératoire (risque d'intoxication).",
+    conditions: [{ kind: "drug", atc: "N05AN" }],
+    action: { type: "info", text: "Pas d'AINS : analgésie multimodale sans anti-inflammatoire ; surveiller les apports hydriques.", target: "both" },
+    source: lithium("Due to the variable risk of lithium toxicity, NSAID's should be avoided in the perioperative pain management."),
+  }),
+];
+
+export const VERIFIED_RULES: Verified[] = [...ALR, ...SURGERY, ...TREATMENTS, ...LITHIUM];
 
 /**
  * The drafts each verified rule replaces: archived when the verified group is
@@ -609,4 +672,6 @@ export const SUPERSEDES: Record<string, string[]> = {
   [id(71)]: [guideline(16)],
   [id(35)]: [manual(4)],
   [id(75)]: [manual(104)],
+  [id(82)]: [treatmentDraft(6)],
+  [id(83)]: [treatmentDraft(7)],
 };
