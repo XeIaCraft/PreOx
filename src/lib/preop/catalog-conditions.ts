@@ -106,7 +106,8 @@ export const DEFAULT_CONDITIONS: ConditionItem[] = [
     qualifiers: { poorlyControlled: "mal contrôlé" },
     asa: 2,
     asaIf: { poorlyControlled: 3 },
-    attentionIf: { poorlyControlled: { level: "high", text: "Asthme mal contrôlé : optimiser le traitement avant une chirurgie programmée ; bronchodilatateur disponible." } },
+    attention: { level: "info", text: "Traitement de fond poursuivi ; β2-mimétique inhalé 30–60 min avant l'induction ; ALR ou AG sans intubation si possible ; propofol ou kétamine, sévoflurane ; anesthésie profonde avant l'intubation ; éviter atracurium et succinylcholine (MAPAR)." },
+    attentionIf: { poorlyControlled: { level: "high", text: "Asthme mal contrôlé : optimiser le traitement avant une chirurgie programmée. Urgence : β2-mimétiques en nébulisation (3 cycles à 20 min), méthylprednisolone 1 mg/kg, ± magnésium 2 g en 20 min (MAPAR)." } },
   }),
   c({ id: "copd", label: "BPCO", system: "resp", keywords: ["bronchite chronique", "emphysème"], qualifiers: { severe: "sévère" }, asa: 3, attention: { level: "medium", text: "Ventilation protectrice, traitement inhalé poursuivi, kinésithérapie respiratoire." } }),
   c({

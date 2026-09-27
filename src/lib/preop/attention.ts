@@ -919,13 +919,19 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
       if (hours !== undefined && hours > 1.5) against.push(`durée prévue ${n(hours)} h (> 1 h 30)`);
       if (c.surgery.bleedingRisk === "high") against.push("risque hémorragique élevé");
       if (has(cond, "osa") || r.stopBang.level === "high") against.push("SAOS : premier du programme et surveillance de 5 à 8 h avant la sortie");
+      // Medical exclusions (MAPAR, anesthésie ambulatoire).
+      if (has(cond, "recent_mi")) against.push("infarctus récent (< 6 semaines : exclu)");
+      if (has(cond, "aortic_stenosis")) against.push("rétrécissement aortique significatif");
+      if (cond.asthma?.present && cond.asthma.poorlyControlled) against.push("asthme mal contrôlé");
+      if (has(cond, "pulmonary_hypertension")) against.push("hypertension pulmonaire");
+      if (has(cond, "difficult_airway") || r.airway.level === "high") against.push("intubation difficile : hospitalisation conventionnelle préférable");
       add({
         id: "day-case",
         level: against.some((x) => !x.startsWith("SAOS") && !x.startsWith("ASA 3")) ? "medium" : "info",
         title: against.length ? "Ambulatoire : critères à revoir" : "Ambulatoire : consignes de sortie",
         detail: `Adulte accompagnant pour le retour et la première nuit, téléphone et soins accessibles, ni conduite ni travail pendant 24 h. Sortie : constantes comme avant l'intervention, pas de saignement, voies aériennes libres, orienté, sans nausées, miction reprise (après rachianesthésie ou chirurgie urologique), bloc médullaire levé, marche assurée. Agents de courte durée, analgésie précoce (ALR, infiltration, paracétamol, AINS) et prophylaxie des NVPO systématique.${against.length ? ` À revoir : ${against.join(" ; ")}.` : ""}`,
         why: `Intervention prévue en ambulatoire${against.length ? ` ; ${against.join(" ; ")}` : ""}`,
-        source: CH(26, "chirurgie ambulatoire"),
+        source: `${CH(26, "chirurgie ambulatoire")} ; MAPAR (anesthésie ambulatoire)`,
       });
     }
 
@@ -1710,9 +1716,9 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         id: "elderly-plan",
         level: "info",
         title: `Patient âgé (${p.age} ans) : adapter l'anesthésie`,
-        detail: "Diminuer les doses d'induction et d'entretien (hypnotiques, opioïdes, halogénés : CAM plus basse ; effets prolongés), benzodiazépines à dose réduite (effet très prolongé) ; AL neuraxiaux : moins par métamère, rétention urinaire ; agonistes adrénergiques et atropine : doses plus fortes (syndrome anticholinergique central) ; succinylcholine inchangée ; anticholinestérasiques prolongés. Hypotension à l'induction, réflexes atténués ; surcharge hydrique, hyponatrémie ; hypothermie ; hypoxémie postopératoire ; protéger les membres (peau fragile, neuropathies) ; antibiotiques adaptés à la fonction rénale ; interactions (polymédication).",
+        detail: "Diminuer les doses d'induction et d'entretien (hypnotiques, opioïdes, halogénés : CAM plus basse ; effets prolongés), benzodiazépines à dose réduite (effet très prolongé) ; AL neuraxiaux : moins par métamère, rétention urinaire ; agonistes adrénergiques et atropine : doses plus fortes (syndrome anticholinergique central) ; succinylcholine inchangée ; anticholinestérasiques prolongés. Hypotension à l'induction, réflexes atténués ; surcharge hydrique, hyponatrémie ; hypothermie ; hypoxémie postopératoire ; protéger les membres (peau fragile, neuropathies) ; antibiotiques adaptés à la fonction rénale ; interactions (polymédication). MAPAR : rémifentanil — bolus divisé par 2, débit par 3 ; curares : atracurium ou cisatracurium de choix, rocuronium réduit, monitorage indispensable ; paracétamol 3 g/j ; AINS −25 à 50 % et contre-indiqués si clairance < 50 mL/min ; néfopam déconseillé ; morphine intrathécale ≤ 100 µg.",
         why: `Âge ${p.age} ans`,
-        source: CH(43, "tableau 43.1"),
+        source: `${CH(43, "tableau 43.1")} ; MAPAR (anesthésie du sujet âgé)`,
       });
 
     // Obesity (chap. 44).

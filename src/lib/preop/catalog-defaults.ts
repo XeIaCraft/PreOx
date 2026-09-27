@@ -301,7 +301,7 @@ const NOT_AMBULATORY =
 /**
  * Where the patient usually goes after the intervention — a pre-fill, always
  * editable: ambulatory for minor or intermediate surgery with a low bleeding
- * and cardiac risk, lasting 2 h or less, in an adult or a child (not a
+ * and cardiac risk, lasting 1 h 30 or less (the day-case criterion of the attention points), in an adult or a child (not a
  * newborn), outside emergencies; intensive care after the operations listed
  * above; hospitalisation otherwise.
  */
@@ -311,7 +311,7 @@ function usualSetting(s: (typeof SURGERY_CATALOG)[number]): SurgeryItem["setting
     s.grade !== "major" &&
     (s.bleedingRisk === "minimal" || s.bleedingRisk === "low") &&
     s.cardiacRisk === "low" &&
-    (s.durationHours === undefined || s.durationHours <= 2) &&
+    (s.durationHours === undefined || s.durationHours <= 1.5) &&
     s.population !== "neonate" &&
     !EMERGENCY_NAME.test(s.name) &&
     !NOT_AMBULATORY.test(s.name);
