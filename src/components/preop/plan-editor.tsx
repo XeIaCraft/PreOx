@@ -381,6 +381,7 @@ function GasesEditor({ value, age, onChange }: { value: GasPlan | undefined; age
                   {a.label}
                 </option>
               ))}
+              {!GAS_AGENTS.some((a) => a.code === g.agent) && <option value={g.agent}>{g.agent === "desflurane" ? "Desflurane" : "Isoflurane"} (plus utilisé en Belgique)</option>}
             </Select>
           </label>
           <label className="block space-y-1">

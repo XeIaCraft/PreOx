@@ -11,13 +11,17 @@
 // desflurane and N₂O, fresh gas flow ≤ 1 L/min in maintenance.
 
 import type { GasAgent, GasCarrier, GasPlan } from "./protocols";
+import { tivaMaintenance } from "./tci";
 
+/** What can be chosen: in Belgium, sevoflurane is the only volatile agent still in use. */
 export const GAS_AGENTS: { code: GasAgent; label: string; mac40?: number }[] = [
   { code: "sevoflurane", label: "Sévoflurane", mac40: 1.8 },
-  { code: "desflurane", label: "Desflurane", mac40: 6.6 },
-  { code: "isoflurane", label: "Isoflurane", mac40: 1.17 },
-  { code: "tiva", label: "AIVOC (propofol ± rémifentanil), pas d'halogéné" },
+  { code: "tiva", label: "AIVOC (propofol ± rémifentanil)" },
 ];
+
+/** MAC at 40 years of every agent an older plan may still name (Mapleson 1996). */
+const MAC40: Partial<Record<GasAgent, number>> = { sevoflurane: 1.8, desflurane: 6.6, isoflurane: 1.17 };
+const AGENT_LABEL: Record<GasAgent, string> = { sevoflurane: "Sévoflurane", desflurane: "Desflurane", isoflurane: "Isoflurane", tiva: "AIVOC" };
 
 export const GAS_CARRIERS: { code: GasCarrier; label: string }[] = [
   { code: "air", label: "Air / O₂" },
@@ -29,11 +33,11 @@ const ageFactor = (age: number) => Math.pow(10, -0.00269 * (age - 40));
 
 /** MAC (%) of an agent at this age; infants from Lerman 1994 for sevoflurane. */
 export function macAt(agent: GasAgent, ageYears: number | undefined): number | null {
-  const a = GAS_AGENTS.find((x) => x.code === agent);
-  if (!a?.mac40) return null;
+  const mac40 = MAC40[agent];
+  if (!mac40) return null;
   const age = ageYears ?? 40;
   if (agent === "sevoflurane" && age < 1) return age < 1 / 12 ? 3.3 : age < 0.5 ? 3.2 : 2.5;
-  return Math.round(a.mac40 * ageFactor(Math.max(age, 1)) * 100) / 100;
+  return Math.round(mac40 * ageFactor(Math.max(age, 1)) * 100) / 100;
 }
 
 /** Share of a MAC brought by the N₂O of the mix (0.5 FiO₂ → 50 % N₂O ≈ 0.5 MAC). */
@@ -66,9 +70,9 @@ export function describeGases(plan: GasPlan, ageYears: number | undefined): stri
   const out: string[] = [];
   const carrier = GAS_CARRIERS.find((c) => c.code === plan.carrier)?.label ?? "";
   out.push(`${carrier} — FiO₂ ${plan.fio2[0] === plan.fio2[1] ? pct(plan.fio2[0]) : `${pct(plan.fio2[0])}–${pct(plan.fio2[1])}`}`);
-  if (plan.agent === "tiva") out.push("AIVOC propofol ± rémifentanil : pas d'halogéné");
+  if (plan.agent === "tiva") out.push(...tivaLines(ageYears));
   else {
-    const label = GAS_AGENTS.find((a) => a.code === plan.agent)?.label ?? plan.agent;
+    const label = AGENT_LABEL[plan.agent];
     const t = gasTarget(plan, ageYears);
     const mac = plan.mac ? `CAM ${String(plan.mac[0]).replace(".", ",")}–${String(plan.mac[1]).replace(".", ",")}` : "";
     out.push(t ? `${label} : ${mac} → Fet ${dec(t.fet[0])}–${dec(t.fet[1])} % (1 CAM = ${dec(t.mac, 2)} %${ageYears !== undefined ? ` à ${ageYears < 1 ? `${Math.round(ageYears * 12)} mois` : `${Math.round(ageYears)} ans`}` : " à 40 ans"}${t.n2oShare ? `, N₂O compté ${String(t.n2oShare).replace(".", ",")} CAM` : ""})` : `${label} ${mac}`);
@@ -84,15 +88,29 @@ export const DEFAULT_GASES: GasPlan = { agent: "sevoflurane", carrier: "air", fi
 
 export const TIVA_GASES: GasPlan = { agent: "tiva", carrier: "air", fio2: [0.4, 0.5], freshGasLMin: 1 };
 
-export const GASES_SOURCE = "CAM selon l'âge : Mapleson, Br J Anaesth 1996 ; nourrisson : Lerman, Anesthesiology 1994 ; bas débit, pas de desflurane ni de N₂O en routine : ESAIC 2023 (déclaration de Glasgow)";
+export const GASES_SOURCE = "CAM selon l'âge : Mapleson, Br J Anaesth 1996 ; nourrisson : Lerman, Anesthesiology 1994 ; bas débit, pas de desflurane ni de N₂O en routine : ESAIC 2023 (déclaration de Glasgow) — en Belgique, le sévoflurane est le seul halogéné encore utilisé. AIVOC : cibles à l'effecteur usuelles (Absalom 2016), à titrer sur la clinique et le BIS 40–60.";
+
+/** The TIVA of the maintenance: effect-site targets for this age, not « no volatile agent ». */
+function tivaLines(ageYears: number | undefined): string[] {
+  const t = tivaMaintenance(ageYears);
+  const r = (x: [number, number]) => `${dec(x[0]).replace(",0", "")}–${dec(x[1]).replace(",0", "")}`;
+  return [
+    ...t.filter((x) => !/Réveil/.test(x.phase)).map((x) => `AIVOC ${x.drug.toLowerCase()} : Ce ${r(x.range)} ${x.unit} (${x.phase.toLowerCase()}${(ageYears ?? 40) >= 65 ? ", âgé : cibles réduites" : ""})`),
+    ...t.filter((x) => /Réveil/.test(x.phase)).map((x) => `Réveil attendu vers propofol Ce ${r(x.range)} ${x.unit}`),
+    "Titrer sur la clinique et le BIS (40–60) ; réglages de la pompe (modèle, débits) : bloc AIVOC",
+  ];
+}
 
 /** One short line for the handover: « Sévoflurane CAM 0,7–1 (Fet 1,2–1,7 %), air/O₂ FiO₂ 40–50 %, 1 L/min ». */
 export function gasesShort(plan: GasPlan, ageYears: number | undefined): string {
   const carrier = plan.carrier === "n2o" ? "N₂O/O₂" : "air/O₂";
   const fio2 = plan.fio2[0] === plan.fio2[1] ? pct(plan.fio2[0]) : `${Math.round(plan.fio2[0] * 100)}–${pct(plan.fio2[1])}`;
-  let agent = "AIVOC, pas d'halogéné";
+  let agent = `AIVOC ${tivaMaintenance(ageYears)
+    .filter((t) => !/Réveil/.test(t.phase))
+    .map((t) => `${t.drug.toLowerCase()} Ce ${dec(t.range[0]).replace(",0", "")}–${dec(t.range[1]).replace(",0", "")} ${t.unit}`)
+    .join(", ")}`;
   if (plan.agent !== "tiva") {
-    const label = GAS_AGENTS.find((a) => a.code === plan.agent)?.label ?? plan.agent;
+    const label = AGENT_LABEL[plan.agent];
     const t = gasTarget(plan, ageYears);
     agent = `${label}${plan.mac ? ` CAM ${dec(plan.mac[0]).replace(",0", "")}–${dec(plan.mac[1]).replace(",0", "")}` : ""}${t ? ` (Fet ${dec(t.fet[0])}–${dec(t.fet[1])} %)` : ""}`;
   }

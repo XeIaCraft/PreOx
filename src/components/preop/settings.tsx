@@ -40,7 +40,8 @@ import { cbipChapterPath, cbipPageUrl } from "@/lib/preop/cbip";
 import type { Protocol } from "@/lib/preop/protocols";
 import { QUALIFIER_LABELS, type Qualifier } from "@/lib/preop/history";
 import { OPERATION_CATEGORIES } from "@/lib/carnet/referentiel";
-import { BLEEDING_RISKS, SURGERY_GRADES } from "@/lib/preop/surgeries";
+import { APPROACHES, BLEEDING_RISKS, SURGERY_GRADES } from "@/lib/preop/surgeries";
+import { APPROACH_SPECIFICS } from "@/lib/preop/surgeries-variants";
 import { RISK_GRADES } from "@/lib/preop/dossier";
 import { EXAM_LABELS, SURGERY_EXAM_PROFILES } from "@/lib/preop/exams";
 import { cn } from "@/lib/utils";
@@ -444,6 +445,49 @@ function SurgeryForm({ item, onChange, protocols }: { item: SurgeryItem; onChang
         <ToggleChip pressed={!!item.closedSpace} onChange={(closedSpace) => set({ closedSpace: closedSpace || undefined })} className="min-h-9 text-xs">
           Espace clos (intracrânien, canal médullaire, chambre postérieure de l&apos;œil)
         </ToggleChip>
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <FieldLabel>Voie d&apos;abord</FieldLabel>
+          <ChipGroup size="sm" options={APPROACHES.map((a) => ({ code: a.code, label: a.short, title: a.label }))} value={item.approach ?? null} onChange={(v) => set({ approach: v ?? undefined })} allowClear />
+        </div>
+        <div className="space-y-1">
+          <FieldLabel>Population</FieldLabel>
+          <ChipGroup
+            size="sm"
+            options={[
+              { code: "adult" as const, label: "Adulte" },
+              { code: "child" as const, label: "Enfant" },
+              { code: "neonate" as const, label: "Nouveau-né" },
+            ]}
+            value={item.population ?? null}
+            onChange={(v) => set({ population: v ?? undefined })}
+            allowClear
+          />
+        </div>
+      </div>
+      <div className="space-y-1">
+        <FieldLabel>Ce que l&apos;intervention change pour l&apos;anesthésie (une ligne par point)</FieldLabel>
+        <textarea
+          className="min-h-24 w-full rounded-[var(--radius-md)] border border-border bg-surface px-3 py-2 text-sm text-foreground"
+          defaultValue={(item.specifics ?? []).join("\n")}
+          placeholder="Ex. : ventilation unipulmonaire ; garrot ; saignement brutal possible ; position ventrale…"
+          onChange={(e) => {
+            const lines = e.target.value.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 20);
+            set({ specifics: lines.length ? lines : undefined });
+          }}
+        />
+        {item.approach && APPROACH_SPECIFICS[item.approach] && (
+          <div className="rounded-[var(--radius-md)] bg-surface-muted/60 px-3 py-2 text-xs text-foreground-muted">
+            <p className="font-medium text-foreground">S&apos;ajoute automatiquement pour la voie {APPROACHES.find((a) => a.code === item.approach)?.short.toLowerCase()} :</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {APPROACH_SPECIFICS[item.approach]!.map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <p className="text-[11px] text-foreground-subtle">Affiché à la consultation, en préparation et au bloc.</p>
       </div>
       <div className="space-y-1">
         <FieldLabel>Bilan propre à l&apos;intervention</FieldLabel>

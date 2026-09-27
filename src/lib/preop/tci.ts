@@ -286,3 +286,17 @@ export function tciDrugOf(name: string): TciDrug | null {
 
 export const TCI_SOURCE =
   "Modèles : Marsh 1991, Schnider 1998–1999, Paedfusor (Absalom 2003), Minto 1997, Gepts 1995 ; masse maigre de James comme les pompes ; usage : Absalom et al., Anesth Analg 2016. Cibles usuelles à titrer sur la clinique et le BIS (40–60). Débits : maintien d'une concentration plasmatique constante, indicatifs.";
+
+/**
+ * Maintenance targets of a TIVA for the gas plan: propofol and remifentanil
+ * effect-site ranges for this age (reduced from 65 years or when frail).
+ */
+export function tivaMaintenance(age: number | undefined, frail = false): { drug: string; range: [number, number]; unit: string; phase: string }[] {
+  const p = { age: age ?? 40, sex: "M" as Sex, weightKg: 70, heightCm: 170 };
+  const pick = (drug: TciDrug, re: RegExp) => {
+    const t = targetsFor(drug, p, frail).find((x) => re.test(x.phase))!;
+    const info = TCI_DRUGS.find((d) => d.code === drug)!;
+    return { drug: info.label, range: t.range, unit: info.unit, phase: t.phase };
+  };
+  return [pick("propofol", /Entretien avec opioïde/), pick("remifentanil", /Entretien/), ...(p.age >= 16 ? [pick("propofol", /Réveil/)] : [])];
+}

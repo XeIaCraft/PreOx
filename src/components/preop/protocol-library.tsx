@@ -22,6 +22,12 @@ function blankProtocol(): ProtocolInput {
   return { id: crypto.randomUUID(), name: "", surgery: "", operation_category: "", hospital: "", content: emptyProtocolContent(), source: "" };
 }
 
+/** A copy to turn into a variant or a new protocol: new id, no reference signature (it is yours from the start). */
+function copyOf(p: Protocol, name: string): ProtocolInput {
+  const source = sourceWithoutMarker(p.source);
+  return { id: crypto.randomUUID(), name, surgery: p.surgery, operation_category: p.operation_category, hospital: p.hospital, content: structuredClone(p.content), source: source ? `D'après « ${p.name} » : ${source}` : `D'après « ${p.name} »` };
+}
+
 function ProtocolEditor({ initial, onSave, onCancel }: { initial: ProtocolInput; onSave: (p: ProtocolInput) => Promise<void>; onCancel: () => void }) {
   // The signature of the reference version stays out of sight, and is kept on save.
   const [p, setP] = useState<ProtocolInput>({ ...initial, source: sourceWithoutMarker(initial.source) });
@@ -137,6 +143,7 @@ export function ProtocolLibrary({
   const [editing, setEditing] = useState<ProtocolInput | null>(null);
   const [query, setQuery] = useState("");
   const [importing, setImporting] = useState(false);
+  const [startFrom, setStartFrom] = useState("");
 
   if (editing) {
     return (
@@ -243,6 +250,30 @@ export function ProtocolLibrary({
           <FilePlus2 className="h-4 w-4" /> Nouveau protocole
         </Button>
       </div>
+      {protocols.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-foreground-muted">Ou partir d&apos;un protocole existant :</span>
+          <Select className="h-9 min-w-0 flex-1" value={startFrom} onChange={(e) => setStartFrom(e.target.value)} aria-label="Protocole de départ">
+            <option value="">Choisir…</option>
+            {[...protocols].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
+          <Button
+            variant="secondary"
+            disabled={!startFrom}
+            onClick={() => {
+              const p = protocols.find((x) => x.id === startFrom);
+              if (p) setEditing(copyOf(p, `${p.name} — variante`));
+              setStartFrom("");
+            }}
+          >
+            <Copy className="h-4 w-4" /> Créer à partir de celui-ci
+          </Button>
+        </div>
+      )}
       {protocols.length === 0 ? (
         <EmptyState title="Aucun protocole">
           Un protocole = votre plan type pour une intervention (technique, produits et doses par kilo, cibles, matériel, risques, post-op). Il se copie dans le dossier d&apos;un patient la veille, où les doses se calculent.
@@ -262,8 +293,8 @@ export function ProtocolLibrary({
                   <Button variant="ghost" size="icon" onClick={() => setEditing(p)} aria-label={`Modifier ${p.name}`}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => setEditing({ ...p, id: crypto.randomUUID(), name: `${p.name} (copie)` })} aria-label={`Dupliquer ${p.name}`}>
-                    <Copy className="h-4 w-4" />
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(copyOf(p, `${p.name} (copie)`))} aria-label={`Créer une copie de ${p.name}`} title="Créer une copie (variante ou nouveau protocole)">
+                    <Copy className="h-4 w-4" /> <span className="hidden sm:inline">Copier</span>
                   </Button>
                   <Button
                     variant="ghost"

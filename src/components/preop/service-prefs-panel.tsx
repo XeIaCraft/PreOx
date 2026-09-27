@@ -41,22 +41,9 @@ export function ServicePrefsPanel() {
   return (
     <Panel title="Habitudes du service">
       <p className="text-sm text-foreground-muted">
-        Appliquées à chaque protocole quand il devient le plan d&apos;un patient adulte ; les protocoles eux-mêmes ne changent pas. Un protocole en AIVOC reste en AIVOC ; un enfant garde le plan pédiatrique.
+        Appliquées à chaque protocole quand il devient le plan d&apos;un patient adulte ; les protocoles eux-mêmes ne changent pas. Un protocole en AIVOC reste en AIVOC ; un enfant garde le plan pédiatrique. Halogéné : sévoflurane (le seul encore utilisé en Belgique).
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Row label="Halogéné">
-          <ChipGroup<Opt<NonNullable<ServicePrefs["agent"]>>>
-            size="sm"
-            options={[
-              { code: PROTOCOL, label: "Celui du protocole" },
-              { code: "sevoflurane", label: "Sévoflurane" },
-              { code: "isoflurane", label: "Isoflurane" },
-              { code: "desflurane", label: "Desflurane", title: "Impact climatique ~20× le sévoflurane (ESAIC 2023)" },
-            ]}
-            value={p.agent ?? PROTOCOL}
-            onChange={(v) => set({ agent: !v || v === PROTOCOL ? null : v })}
-          />
-        </Row>
         <Row label="FiO₂ d'entretien">
           <ChipGroup
             size="sm"

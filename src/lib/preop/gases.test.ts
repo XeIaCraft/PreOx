@@ -49,3 +49,20 @@ describe("reference protocols: gases and induction choices", () => {
     expect(byNumber(95).content.drugs.some((d) => /Sévoflurane/.test(d.name))).toBe(false);
   });
 });
+
+describe("Belgium: sevoflurane or TIVA", () => {
+  it("only sevoflurane and TIVA are offered", async () => {
+    const { GAS_AGENTS } = await import("./gases");
+    expect(GAS_AGENTS.map((a) => a.code)).toEqual(["sevoflurane", "tiva"]);
+  });
+  it("a TIVA maintenance shows its effect-site targets, not « no volatile agent »", async () => {
+    const { describeGases, gasesShort } = await import("./gases");
+    const tiva = { agent: "tiva" as const, carrier: "air" as const, fio2: [0.4, 0.5] as [number, number], freshGasLMin: 1 };
+    const lines = describeGases(tiva, 50).join(" ");
+    expect(lines).toMatch(/propofol : Ce 2,5–4 µg\/mL/);
+    expect(lines).toMatch(/rémifentanil : Ce 3–8 ng\/mL/);
+    expect(lines).not.toMatch(/pas d'halogéné/);
+    expect(describeGases(tiva, 80).join(" ")).toMatch(/propofol : Ce 1,5–3 µg\/mL/);
+    expect(gasesShort(tiva, 50)).toMatch(/^AIVOC propofol Ce 2,5–4 µg\/mL, rémifentanil Ce 3–8 ng\/mL/);
+  });
+});
