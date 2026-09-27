@@ -74,9 +74,11 @@ export const content = (c: Partial<ProtocolContent>): ProtocolContent => {
 
 // Shared pieces --------------------------------------------------------------
 
-export const cefazolin = (note = "Dans l'heure avant l'incision ; > 120 kg : 3 g. Durée > 4 h : réinjection de 1 g.") =>
+/** Antibioprophylaxis: SFAR 2024 (PMID 41628822), ASHP/IDSA/SIS/SHEA 2013, AAAAI/ACAAI drug allergy 2022 (PMID 36122788). */
+export const ABX_SOURCE = "SFAR 2024 (PMID 41628822) ; ASHP/IDSA 2013";
+export const cefazolin = (note = "30–60 min avant l'incision ; ≥ 120 kg : 3 g. Réinjection de 1 g toutes les 4 h d'intervention ou si pertes > 1 500 mL ; pas de prolongation après la fermeture.") =>
   drug("Céfazoline", "antibio", "bolus_iv", { fixed: 2 }, "g", note, 240);
-export const clindamycinAlt = () => drug("Clindamycine (si allergie immédiate aux bêtalactamines)", "antibio", "perfusion", { fixed: 600 }, "mg", "En 30 min, à la place de la céfazoline ; réinjection à 6 h.");
+export const clindamycinAlt = () => drug("Clindamycine (si céfazoline contre-indiquée)", "antibio", "perfusion", { fixed: 900 }, "mg", "En 20–30 min, à la place de la céfazoline, seulement si allergie à la céfazoline ou toxidermie grave aux bêtalactamines : une allergie à la pénicilline, même immédiate, n'empêche pas la céfazoline (AAAAI 2022). Réinjection 600 mg à 4 h (SFAR 2024).", 240);
 export const propofolInduction = (perKg = 2, basis: WeightBasis = "total") => drug("Propofol", "induction", "bolus_iv", { perKg, basis }, "mg", "2–3 mg/kg chez l'adulte, 1–2 mg/kg chez la personne âgée (manuel, chap. 6).");
 export const sufentanil = (perKg = 0.2) => drug("Sufentanil", "induction", "bolus_iv", { perKg, basis: "lean" }, "µg", "0,2–0,6 µg/kg à l'induction (manuel, chap. 7).");
 export const rocuronium = (perKg = 0.6) => drug("Rocuronium", "induction", "bolus_iv", { perKg, basis: "ideal" }, "mg", "Au poids idéal ; 0,9–1,2 mg/kg en séquence rapide.");
@@ -88,7 +90,7 @@ export const ketorolac = () => drug("Kétorolac", "analgesia", "bolus_iv", { fix
 export const tranexamic = () => drug("Acide tranexamique", "haemodynamic", "perfusion", { perKg: 15 }, "mg", "10–15 mg/kg en début d'intervention (manuel, chap. 40).");
 export const ketamineSparing = () => drug("Kétamine", "analgesia", "bolus_iv", { perKg: 0.15 }, "mg", "Épargne morphinique 0,15–0,5 mg/kg (cours Dubois ; manuel, chap. 6).");
 export const MONITORING = ["ECG", "PNI", "SpO₂", "EtCO₂", "Température"];
-export const metronidazole = () => drug("Métronidazole", "antibio", "perfusion", { fixed: 500 }, "mg", "En 20 min, avec la céfazoline (côlon, rectum, appendice) ; réinjection à 8 h (manuel, chap. 20).");
+export const metronidazole = () => drug("Métronidazole", "antibio", "perfusion", { fixed: 1 }, "g", "En 20 min, avec la céfazoline (côlon, rectum, appendice) : 1 g (SFAR 2024 ; 500 mg ASHP), dose unique (demi-vie longue).");
 export const ropivacaineBlock = (mg: number, what: string) => drug(`Ropivacaïne (${what})`, "alr", "perinerveux", { fixed: mg }, "mg", "Échoguidé ; dose totale d'anesthésiques locaux ≤ 3 mg/kg, toutes voies cumulées (manuel, chap. 12).");
 export const lidocaineIv = () => drug("Lidocaïne IV", "analgesia", "pse", { perKg: 1.5 }, "mg", "Bolus 1,5 mg/kg puis 2 mg/kg/h (manuel, tableau 7.5) : moins d'iléus et séjour plus court (RAC). PROSPECT 2024 ne la retient que si l'analgésie de base est impossible ; jamais avec une péridurale ou un bloc en cours.");
 /** A risk of the library (plan-catalog.ts): why, prevention, conduct, crisis card. */

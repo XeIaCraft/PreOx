@@ -692,35 +692,42 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
     const betalactam = allergies.find((a) => a.allergen.id === "betalactams");
     const cephalo = allergies.find((a) => a.allergen.id === "cephalosporins");
     const blPf = betalactam?.entry?.penFast ? penFast(betalactam.entry.penFast) : null;
-    const immediate = !!cephalo || (!!betalactam && (betalactam.entry?.timing === "immediate" || !!betalactam.entry?.ringGrade || (!!blPf?.label && blPf.value >= 3)));
+    // Cefazolin has a side chain of its own: a penicillin allergy, even anaphylaxis, does not rule it
+    // out (AAAAI/ACAAI 2022, PMID 36122788; SFAR 2024). Alternatives only for a cephalosporin allergy.
+    const immediate = !!cephalo;
+    const penicillinImmediate = !!betalactam && (betalactam.entry?.timing === "immediate" || !!betalactam.entry?.ringGrade || (!!blPf?.label && blPf.value >= 3));
     if (immediate) {
       const vanco = p.weightKg ? Math.min(2500, Math.round((p.weightKg * 15) / 50) * 50) : undefined;
-      abx.push(`Allergie ${cephalo ? "aux céphalosporines" : "immédiate aux pénicillines"} : vancomycine 15–30 mg/kg${vanco ? ` (≈ ${vanco} mg à 15 mg/kg)` : ""}, maximum 2 500 mg, en ≥ 60 min, ou clindamycine 600 mg en 30 min.`);
-      abxWhy.push(`allergie : ${(cephalo ?? betalactam)!.as}`);
+      abx.push(`Allergie aux céphalosporines : vancomycine 15 mg/kg${vanco ? ` (≈ ${vanco} mg)` : ""}, maximum 2 500 mg, en ≥ 60 min, débutée 60–120 min avant l'incision, ou clindamycine 900 mg en 20–30 min. Préciser la molécule : une allergie à une autre céphalosporine n'exclut pas toujours la céfazoline (avis allergologique).`);
+      abxWhy.push(`allergie : ${cephalo!.as}`);
     } else if (betalactam && !(blPf?.label && blPf.value < 3)) {
-      abx.push(betalactam.entry?.timing === "delayed" ? "Allergie non immédiate aux pénicillines : céfazoline utilisable (réactivité croisée ≈ 2 %)." : "Allergie aux pénicillines : préciser le type de réaction — l'alternative (vancomycine, clindamycine) n'est réservée qu'aux réactions immédiates (urticaire, angiœdème, bronchospasme, anaphylaxie).");
+      abx.push(
+        penicillinImmediate
+          ? "Allergie immédiate aux pénicillines : la céfazoline reste utilisable (chaîne latérale différente, pas de réactivité croisée IgE), même après une anaphylaxie ; injection lente sous surveillance. Alternative (vancomycine, clindamycine) seulement si allergie à la céfazoline ou toxidermie grave (Stevens-Johnson, DRESS) aux bêtalactamines. Proposer un bilan allergologique (délabellisation)."
+          : "Allergie non immédiate aux pénicillines : céfazoline utilisable (réactivité croisée négligeable), sauf toxidermie grave (Stevens-Johnson, DRESS)."
+      );
       abxWhy.push(`allergie : ${betalactam.as}`);
     }
-    if (p.weightKg !== undefined && p.weightKg > 120) {
-      abx.push(`Poids ${p.weightKg} kg (> 120) : céfazoline 3 g.`);
+    if (p.weightKg !== undefined && p.weightKg >= 120) {
+      abx.push(`Poids ${p.weightKg} kg (≥ 120) : céfazoline 3 g (bénéfice incertain, pratique courante ASHP).`);
       abxWhy.push(`poids ${p.weightKg} kg`);
     }
     if (/colon|colect|sigmoid|rect|append|hartmann|colorect|caecum|stomie/.test(name)) {
-      abx.push(immediate ? "Côlon, rectum ou appendice : clindamycine + gentamicine 5 mg/kg + métronidazole 500 mg." : "Côlon, rectum ou appendice : ajouter métronidazole 500 mg (en 20 min).");
+      abx.push(immediate ? "Côlon, rectum ou appendice : clindamycine 900 mg + gentamicine 5 mg/kg (poids ajusté) + métronidazole 1 g." : "Côlon, rectum ou appendice : ajouter métronidazole 1 g (500 mg ASHP) en 20 min, dose unique.");
       abxWhy.push(`${surgeryName}`);
     }
     if ((hours !== undefined && hours > 3) || c.surgery.bleedingRisk === "high") {
-      abx.push("Réinjection : 3–4 h après la 1re dose si l'intervention dure, ou si pertes sanguines > 1 500 ml (vancomycine, métronidazole : 8 h ; clindamycine : 6 h).");
+      abx.push("Réinjection : céfazoline 1 g toutes les 4 h d'intervention, ou si pertes sanguines > 1 500 ml ; clindamycine 600 mg à 4 h ; vancomycine et métronidazole : pas de réinjection habituelle.");
       abxWhy.push(hours !== undefined && hours > 3 ? `durée prévue ${n(hours)} h` : "risque hémorragique élevé");
     }
     if (abx.length && c.surgery.name && c.surgery.category !== "I" && c.surgery.category !== "X")
       add({
         id: "antibioprophylaxis",
-        level: immediate ? "medium" : "info",
+        level: immediate || penicillinImmediate ? "medium" : "info",
         title: "Antibioprophylaxie : adaptations pour ce patient",
-        detail: `${abx.join(" ")} Dose unique dans l'heure avant l'incision, sans adaptation rénale ; à vérifier avec le protocole du service et l'avis du Conseil Supérieur de la Santé.`,
+        detail: `${abx.join(" ")} Dans l'heure avant l'incision (30–60 min), sans adaptation rénale, sans prolongation après la fermeture ; à confronter au protocole de l'hôpital.`,
         why: abxWhy.join(" ; "),
-        source: `${MANUAL}, chap. 20 (schéma prophylactique) — ouvrage suisse de 2020`,
+        source: `SFAR, antibioprophylaxie 2024 (PMID 41628822) ; ASHP/IDSA/SIS/SHEA 2013 ; AAAAI/ACAAI 2022 (PMID 36122788) ; ${MANUAL}, chap. 20`,
       });
 
     // Endocarditis prophylaxis (chap. 20; ESC 2023 is the reference in Belgium).

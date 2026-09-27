@@ -54,7 +54,7 @@ const phenylephrine = (note = "Bolus 50–100 µg, ou perfusion ; noradrénaline
 const noradrenaline = (note = "Perfusion 0,05–0,3 µg/kg/min par voie dédiée, titrée sur la PAM.") => drug("Noradrénaline", "haemodynamic", "pse", { fixed: 8 }, "µg", note);
 const morphineIt = (mg: number, note = "") => drug("Morphine intrathécale", "analgesia", "intrathecal", { fixed: mg }, "mg", `${mg * 1000} µg (tableau 13.5 du manuel) ; surveillance respiratoire 24 h.${note ? ` ${note}` : ""}`);
 const bupiSpinal = (mg: number, note = "") => drug("Bupivacaïne hyperbare 0,5 %", "alr", "intrathecal", { fixed: mg }, "mg", `Rachianesthésie (manuel, chap. 13).${note ? ` ${note}` : ""}`);
-const vancomycinAlt = () => drug("Vancomycine (si allergie immédiate aux bêtalactamines)", "antibio", "perfusion", { perKg: 15, max: 2500 }, "mg", "15–30 mg/kg, maximum 2,5 g, ≥ 60 min (hypotension par histaminolibération) ; à la place de la céfazoline (manuel, chap. 20).");
+const vancomycinAlt = () => drug("Vancomycine (allergie à la céfazoline ou portage de SARM)", "antibio", "perfusion", { perKg: 15, max: 2500 }, "mg", "15 mg/kg, maximum 2,5 g, débutée 60–120 min avant l'incision, ≥ 60 min par g (hypotension, flush) ; à la place de la céfazoline si allergie, en plus si SARM. Allergie à la pénicilline : la céfazoline reste utilisable (AAAAI 2022).");
 const heparinVascular = () => drug("Héparine non fractionnée", "haemodynamic", "bolus_iv", { fixed: 5000 }, "UI", "50–100 UI/kg avant le clampage, sur demande du chirurgien ; ACT cible selon l'équipe ; neutralisation par protamine si besoin.");
 const PELVIC_POS = "Lithotomie : points d'appui (nerf fibulaire), durée limitée, jambes descendues une à une.";
 
@@ -173,7 +173,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     source: `${ERAS_PD} ; ${MANUAL}, chap. 12 et 21.`,
     content: content({
       techniques: ["general", "neuraxial"],
-      drugs: [propofolInduction(), sufentanil(0.3), rocuronium(), cefazolin(), metronidazole(), dexamethasone(8), ondansetron(), paracetamol(), drug("Ropivacaïne 0,2 % (péridurale thoracique)", "alr", "peridural", { fixed: 10 }, "mg", "T6–T8 ; ou cathéters pariétaux (alternative à la péridurale, ERAS 2019)."), noradrenaline(), tranexamic()],
+      drugs: [propofolInduction(), sufentanil(0.3), rocuronium(), drug("Pipéracilline-tazobactam (duodénopancréatectomie)", "antibio", "perfusion", { fixed: 4 }, "g", "4 g 30–60 min avant l'incision, réinjection toutes les 2 h : moins d'infections du site et de fistules qu'avec la céfoxitine (essai JAMA 2023, PMID 37078771), surtout avec une prothèse biliaire.", 120), cefazolin("Pancréatectomie gauche : céfazoline seule. Duodénopancréatectomie : pipéracilline-tazobactam à la place."), dexamethasone(8), ondansetron(), paracetamol(), drug("Ropivacaïne 0,2 % (péridurale thoracique)", "alr", "peridural", { fixed: 10 }, "mg", "T6–T8 ; ou cathéters pariétaux (alternative à la péridurale, ERAS 2019)."), noradrenaline(), tranexamic()],
       targets: ["Normothermie (preuve forte, ERAS 2019)", "Glycémie 6–10 mmol/L", "Euvolémie, PAM ≥ 65 mmHg"],
       material: [...MONITORING, "Cathéter artériel", "Voie veineuse centrale", "Sonde urinaire", "Réchauffeur de liquides"],
       risks: [risk("bleeding"), risk("hypothermia"), risk("ponv")],
@@ -432,7 +432,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     source: `${MANUAL}, chap. 13 et 33.`,
     content: content({
       techniques: ["general", "neuraxial"],
-      drugs: [propofolInduction(), drug("Alfentanil", "induction", "bolus_iv", { perKg: 10 }, "µg", "10–40 µg/kg ; geste court (manuel, chap. 7)."), bupiSpinal(7.5, "Rachianesthésie basse si terrain respiratoire."), drug("Céfuroxime", "antibio", "bolus_iv", { fixed: 1.5 }, "g", "Urine stérile avant le geste (ECBU) ; sinon antibiothérapie adaptée."), dexamethasone(4), ondansetron(), paracetamol()],
+      drugs: [propofolInduction(), drug("Alfentanil", "induction", "bolus_iv", { perKg: 10 }, "µg", "10–40 µg/kg ; geste court (manuel, chap. 7)."), bupiSpinal(7.5, "Rachianesthésie basse si terrain respiratoire."), drug("Céfuroxime", "antibio", "bolus_iv", { fixed: 1.5 }, "g", "Urétéroscopie, résection de vessie : dose unique, urine stérile (ECBU) ; cystoscopie diagnostique : pas d'antibioprophylaxie (EAU 2024). Bactériurie : traitement adapté avant le geste."), dexamethasone(4), ondansetron(), paracetamol()],
       targets: ["Masque laryngé, ventilation spontanée ou contrôlée", "Résection de vessie latérale : curarisation (réflexe obturateur)"],
       material: [...MONITORING.slice(0, 4), "Masque laryngé", "Étriers (lithotomie)"],
       risks: [{ title: "Réflexe obturateur (résection de vessie latérale)", why: "Stimulation du nerf obturateur par le courant : adduction brutale, perforation vésicale.", prevention: "Curarisation sous AG, ou bloc obturateur échoguidé sous rachianesthésie.", conduct: "Perforation : prévenir le chirurgien, douleur abdominale ou scapulaire, laparotomie si intrapéritonéale." }, { title: "Sepsis urinaire", why: "Obstacle infecté, manipulation.", prevention: "ECBU préopératoire, antibiothérapie.", conduct: "Fièvre, hypotension : hémocultures, antibiotiques, remplissage." }],
@@ -577,7 +577,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
         succinylcholine(),
         drug("Rocuronium (alternative)", "induction", "bolus_iv", { perKg: 1.2 }, "mg", "1,2 mg/kg ; sugammadex 16 mg/kg prêt."),
         drug("Citrate de sodium 0,3 M", "premed", "po", { fixed: 30 }, "mL", "Antiacide avant une AG."),
-        cefazolin("Avant l'incision (ERAS césarienne 2025)."),
+        cefazolin("Avant l'incision (ERAS césarienne 2025) ; ≥ 120 kg : 3 g. Césarienne en travail ou membranes rompues : + azithromycine 500 mg IV (C/SOAP 2016)."),
         drug("Ocytocine", "haemodynamic", "bolus_iv", { fixed: 5 }, "UI", "Après la naissance, bolus lent (5 min), puis 5–10 UI/h (cours Roelants)."),
         drug("Acide tranexamique", "haemodynamic", "perfusion", { fixed: 1 }, "g", "Hémorragie du post-partum : 1 g IV en 10 min dès le diagnostic, 2e g si persistance (CNGOF/SFAR 2022)."),
         drug("Sulprostone", "haemodynamic", "pse", { fixed: 500 }, "µg", "Atonie résistante à l'ocytocine : 500 µg en 1 h."),

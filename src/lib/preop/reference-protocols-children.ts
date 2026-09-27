@@ -59,7 +59,7 @@ const childParacetamol = () => drug("Paracétamol", "analgesia", "perfusion", { 
 const childDexa = () => drug("Dexaméthasone", "ponv", "bolus_iv", { perKg: 0.15, max: 8 }, "mg", "0,1–0,2 mg/kg (manuel, chap. 38).");
 const childOndansetron = () => drug("Ondansétron", "ponv", "bolus_iv", { perKg: 0.1, max: 4 }, "mg", "0,1 mg/kg (manuel, chap. 23).");
 const childIbuprofen = () => drug("Ibuprofène", "analgesia", "po", { perKg: 10, max: 400 }, "mg", "10 mg/kg per os, 3 × / jour, après 3 mois (manuel, chap. 37).");
-const childCefazolin = () => drug("Céfazoline", "antibio", "bolus_iv", { perKg: 30, max: 2000 }, "mg", "30 mg/kg, maximum 2 g, dans l'heure avant l'incision.");
+const childCefazolin = () => drug("Céfazoline", "antibio", "bolus_iv", { perKg: 30, max: 2000 }, "mg", "30 mg/kg, maximum 2 g, 30–60 min avant l'incision ; réinjection 15 mg/kg toutes les 4 h ; pas de prolongation postopératoire (SFAR 2024). Côlon, appendice : + métronidazole 15 mg/kg (maximum 1 g).", 240);
 const caudal = () => drug("Bupivacaïne 0,25 % (caudale)", "alr", "peridural", { perKg: 2.5 }, "mg", "1 mL/kg (T10) ; clonidine 1 µg/kg pour prolonger après 6 mois (manuel, chap. 37).");
 const CHILD_MONITORING = ["ECG", "PNI", "SpO₂", "EtCO₂", "Température", "Matériel au poids (tableau du manuel, chap. 37)", "Réchauffement (air pulsé)"];
 
@@ -125,7 +125,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${MANUAL}, chap. 38 ; ERAS tête et cou avec lambeau libre (Dort et al., JAMA Otolaryngol 2017).`,
     content: content({
       techniques: ["general"],
-      drugs: [propofolInduction(), sufentanil(0.3), rocuronium(), drug("Amoxicilline-clavulanate", "antibio", "bolus_iv", { fixed: 2 }, "g", "Chirurgie contaminée (ouverture des voies aérodigestives) : 2 g, réinjection 1 g toutes les 2 h (protocole local) ; allergie : clindamycine + gentamicine."), dexamethasone(8), ondansetron(), paracetamol(), ketamineSparing(), tranexamic()],
+      drugs: [propofolInduction(), sufentanil(0.3), rocuronium(), drug("Amoxicilline-clavulanate", "antibio", "bolus_iv", { fixed: 2 }, "g", "Chirurgie contaminée (ouverture des voies aérodigestives) : 2 g, réinjection 1 g toutes les 2 h, 24 h au maximum (SFAR 2024) ; si amoxicilline contre-indiquée : céfazoline 2 g + métronidazole 1 g, ou clindamycine 900 mg + gentamicine 5 mg/kg.", 120), dexamethasone(8), ondansetron(), paracetamol(), ketamineSparing(), tranexamic()],
       targets: ["Voies aériennes : évaluation, intubation vigile au fibroscope ou trachéotomie sous AL si tumeur obstructive", "Lambeau libre : normothermie, normovolémie, Hb 8–10 g/dL, PAM stable, pas de vasopresseur à forte dose", "Sevrage alcoolo-tabagique : prévention du delirium"],
       material: [...MONITORING, "Fibroscope", "Cathéter artériel", "Sonde urinaire", "Réchauffement", "Canule de trachéotomie"],
       risks: [risk("difficult_airway"), risk("bleeding"), { title: "Échec du lambeau libre", why: "Hypoperfusion, hypothermie, vasoconstriction, compression du pédicule.", prevention: "Normothermie, remplissage guidé, analgésie, pas de pansement compressif sur le pédicule.", conduct: "Lambeau pâle ou congestif : prévenir le chirurgien immédiatement (reprise)." }, { title: "Sevrage alcoolique", why: "Consommation chronique fréquente.", prevention: "Thiamine, benzodiazépines selon le score de sevrage.", conduct: "Agitation, tremblements : score CIWA, benzodiazépines." }],
@@ -476,7 +476,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${MANUAL}, chap. 39 (estomac plein) et 12.`,
     content: content({
       techniques: ["general", "sedation", "superficial_block"],
-      drugs: [propofolInduction(1.5), drug("Kétamine", "induction", "bolus_iv", { perKg: 0.5 }, "mg", "0,5–1 mg/kg : analgésie pour une réduction brève."), drug("Rocuronium (séquence rapide)", "induction", "bolus_iv", { perKg: 1.2 }, "mg", "Estomac plein (traumatisme récent)."), ropivacaineBlock(100, "interscalénique, PENG ou fascia iliaca selon la luxation"), cefazolin("Fracture ouverte : céfazoline sans attendre ; lavage septique : après les prélèvements."), paracetamol()],
+      drugs: [propofolInduction(1.5), drug("Kétamine", "induction", "bolus_iv", { perKg: 0.5 }, "mg", "0,5–1 mg/kg : analgésie pour une réduction brève."), drug("Rocuronium (séquence rapide)", "induction", "bolus_iv", { perKg: 1.2 }, "mg", "Estomac plein (traumatisme récent)."), ropivacaineBlock(100, "interscalénique, PENG ou fascia iliaca selon la luxation"), cefazolin("Fracture ouverte : céfazoline dans l'heure qui suit le traumatisme, sans attendre le bloc ; Gustilo III : + gentamicine 5 mg/kg ; c'est une antibiothérapie (24–72 h), pas une prophylaxie. Lavage septique : après les prélèvements."), paracetamol()],
       targets: ["Traumatisme récent : estomac plein, séquence rapide si AG", "Syndrome des loges : pas de bloc prolongé masquant la douleur"],
       material: [...MONITORING, "Échographe"],
       risks: [risk("aspiration"), { title: "Syndrome des loges", why: "Fracture, reperfusion, plâtre serré.", prevention: "Surveillance clinique, analgésie sans bloc profond prolongé.", conduct: "Douleur disproportionnée : avis chirurgical, mesure des pressions, fasciotomie." }],
@@ -754,7 +754,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     source: `${MANUAL}, chap. 22 ; ESGE/ESAES : sédation en endoscopie.`,
     content: content({
       techniques: ["sedation", "general"],
-      drugs: [sedationPropofol(), sedationRemi(), propofolInduction(), rocuronium(), drug("Céfuroxime (CPRE avec obstacle non drainé)", "antibio", "bolus_iv", { fixed: 1.5 }, "g", "Seulement si obstruction biliaire incomplètement drainée ou kyste pancréatique (ESGE).")],
+      drugs: [sedationPropofol(), sedationRemi(), propofolInduction(), rocuronium(), drug("Céfuroxime (CPRE avec obstacle non drainé)", "antibio", "bolus_iv", { fixed: 1.5 }, "g", "Seulement si drainage biliaire incomplet prévisible (obstacle hilaire, cholangite sclérosante) ou après transplantation hépatique (ESGE) ; ponction de kyste pancréatique : à discuter avec le gastro-entérologue.")],
       targets: ["CPRE en décubitus ventral : AG avec intubation si procédure longue ou estomac plein", "Capnographie sous sédation", "Hémorragie digestive active : AG, séquence rapide"],
       material: ["ECG", "PNI", "SpO₂", "EtCO₂", "Cale-dents", "Masque laryngé ou sonde"],
       risks: [risk("aspiration"), { title: "Dépression respiratoire sous sédation", why: "Sédation profonde, position ventrale.", prevention: "Titration, capnographie.", conduct: "Stimuler, subluxation ; intubation si nécessaire (retourner le patient)." }, { title: "Embolie gazeuse (CPRE, POEM)", why: "Insufflation dans les voies biliaires ou la paroi.", prevention: "Insufflation au CO₂.", conduct: "Chute brutale de l'EtCO₂, collapsus : arrêt de l'insufflation, décubitus latéral gauche, FiO₂ 100 %, réanimation." }],

@@ -43,9 +43,15 @@ describe("Manuel pratique d'anesthésie 2020, chapitres 16–20", () => {
     const c = base({ patient, surgery: { ...emptySurgery(), name: "Colectomie", category: "A" } });
     const abx = points(c).find((p) => p.id === "antibioprophylaxis")!;
     expect(abx.level).toBe("medium");
-    expect(abx.detail).toMatch(/≈ 1950 mg/);
+    // Allergie immédiate à la pénicilline : la céfazoline reste le premier choix (AAAAI 2022, SFAR 2024)
+    expect(abx.detail).toMatch(/céfazoline reste utilisable/);
+    expect(abx.detail).not.toMatch(/gentamicine/);
     expect(abx.detail).toMatch(/3 g/);
-    expect(abx.detail).toMatch(/gentamicine/);
+    expect(abx.detail).toMatch(/métronidazole 1 g/);
+    const cephalo = base({ patient: { ...patient, allergyList: [{ allergenId: "cephalosporins", label: "Céfazoline", timing: "immediate" as const }] }, surgery: { ...emptySurgery(), name: "Colectomie", category: "A" } });
+    const alt = points(cephalo).find((p) => p.id === "antibioprophylaxis")!.detail;
+    expect(alt).toMatch(/≈ 1950 mg/);
+    expect(alt).toMatch(/clindamycine 900 mg \+ gentamicine/);
     const delayed = base({ patient: { ...patient, weightKg: 70, allergyList: [{ allergenId: "betalactams", label: "Pénicilline", timing: "delayed" }] }, surgery: { ...emptySurgery(), name: "Prothèse totale de hanche", category: "K" } });
     expect(points(delayed).find((p) => p.id === "antibioprophylaxis")?.detail).toMatch(/céfazoline utilisable/);
   });

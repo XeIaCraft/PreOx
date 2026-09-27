@@ -31,7 +31,7 @@ let n = 0;
 /** Stable ids: the n-th rule of this file (never reorder existing entries — append). */
 const nextId = () => `5f1c0a10-0002-4000-8000-${String(++n).padStart(12, "0")}`;
 
-function m(p: { title: string; statement: string; conditions: Condition[]; action: RuleAction; quote: string; question: string; explanations?: string[]; chapterTitle?: string }): Proposed {
+function m(p: { title: string; statement: string; conditions: Condition[]; action: RuleAction; quote: string; question: string; explanations?: string[]; chapterTitle?: string; divergences?: Proposed["divergences"] }): Proposed {
   return {
     id: nextId(),
     title: p.title,
@@ -39,7 +39,7 @@ function m(p: { title: string; statement: string; conditions: Condition[]; actio
     conditions: p.conditions,
     action: p.action,
     source: { ...MANUAL, ...(p.chapterTitle ? { title: p.chapterTitle } : {}), quote: p.quote },
-    divergences: [],
+    divergences: p.divergences ?? [],
     explanations: [...(p.explanations ?? []), RECHECK],
     status: "draft",
     version: 1,
@@ -855,10 +855,11 @@ const INFECTIONS: Proposed[] = [
     chapterTitle: CH20,
   }),
   m({
-    title: "Allergie immédiate aux pénicillines : alternative à la céfazoline",
-    statement: "En cas d'allergie de type réaction immédiate aux pénicillines, l'antibioprophylaxie utilise la vancomycine (15–30 mg/kg, max 2 500 mg, en ≥ 60 min) ou la clindamycine (600 mg en 30 min) au lieu de la céfazoline.",
+    title: "Allergie immédiate aux pénicillines : la céfazoline reste utilisable",
+    statement: "Une allergie immédiate aux pénicillines, même une anaphylaxie, n'empêche pas la céfazoline (chaîne latérale propre, pas de réactivité croisée IgE) ; vancomycine ou clindamycine seulement si allergie à la céfazoline ou toxidermie grave aux bêtalactamines.",
     conditions: [{ kind: "allergy", allergen: "betalactams", present: true, label: "Pénicillines / bêtalactamines", penFast: "high" }],
-    action: { type: "info", text: "Antibioprophylaxie sans bêtalactamine : vancomycine 15–30 mg/kg (max 2 500 mg, perfusion ≥ 60 min) ou clindamycine 600 mg (en 30 min).", target: "surgery" },
+    action: { type: "info", text: "Céfazoline utilisable malgré l'allergie à la pénicilline (injection lente, surveillance) ; alternative seulement si allergie à la céfazoline ou toxidermie grave. Proposer un bilan allergologique.", target: "surgery" },
+    divergences: [{ summary: "Le Manuel pratique (2020) remplaçait la céfazoline par la vancomycine ou la clindamycine en cas d'allergie immédiate aux pénicillines : dépassé (AAAAI/ACAAI 2022, PMID 36122788 ; SFAR 2024, PMID 41628822). La clindamycine expose à plus d'infections du site.", source: "Manuel pratique d'anesthésie 2020", level: "book" }],
     quote:
       "En cas d'allergie de type réaction immédiate (urticaire, angiœdème, bronchospasme, anaphylaxie) aux pénicillines ou d'allergie aux céphalosporines, administrer un des antibiotiques ci-dessous : vancomycine 15–30 mg/kg (max 2 500 mg) IV au lieu de céfazoline ou céfuroxime […] ; clindamycine 600 mg IV à perfuser en 30 min au lieu de céfazoline ou céfuroxime.",
     question: Q_ABX,
@@ -869,7 +870,7 @@ const INFECTIONS: Proposed[] = [
     title: "Allergie aux céphalosporines : alternative à la céfazoline",
     statement: "En cas d'allergie aux céphalosporines, l'antibioprophylaxie utilise la vancomycine ou la clindamycine au lieu de la céfazoline ou du céfuroxime.",
     conditions: [{ kind: "allergy", allergen: "cephalosporins", present: true, label: "Céphalosporines" }],
-    action: { type: "info", text: "Antibioprophylaxie sans céphalosporine : vancomycine 15–30 mg/kg (max 2 500 mg, perfusion ≥ 60 min) ou clindamycine 600 mg (en 30 min).", target: "surgery" },
+    action: { type: "info", text: "Antibioprophylaxie sans céphalosporine : vancomycine 15 mg/kg (max 2 500 mg, débutée 60–120 min avant l'incision, ≥ 60 min) ou clindamycine 900 mg en 20–30 min (SFAR 2024). Préciser la molécule en cause : une allergie à une autre céphalosporine n'exclut pas toujours la céfazoline.", target: "surgery" },
     quote: "Les alternatives proposées sont réservées aux patients présentant une allergie de type réaction immédiate […] aux pénicillines ou une allergie aux céphalosporines.",
     question: Q_ABX,
     chapterTitle: CH20,

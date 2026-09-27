@@ -639,7 +639,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Céfazoline",
     words: ["cefazoline", "cefacidal", "kefzol"],
     chapter: "chap. 20",
-    doses: [fx("Antibioprophylaxie (IV lent, dans l'heure avant l'incision)", 2, 2, "g", { note: "3 g au-delà de 120 kg. Seconde dose si > 90 min entre l'injection et l'incision, 3–4 h après la 1re si l'intervention dure, ou si pertes sanguines > 1 500 ml." })],
+    doses: [fx("Antibioprophylaxie (IV lent, 30–60 min avant l'incision)", 2, 2, "g", { note: "3 g à partir de 120 kg (ASHP). Réinjection 1 g toutes les 4 h d'intervention ou si pertes > 1 500 ml ; pas de prolongation après la fermeture (SFAR 2024). Utilisable en cas d'allergie à la pénicilline, même immédiate (chaîne latérale propre, AAAAI 2022)." }), pk("Enfant", 30, 30, "mg", { note: "Maximum 2 g ; réinjection 15 mg/kg toutes les 4 h." })],
     cautions: [],
   },
   {
@@ -653,7 +653,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Métronidazole",
     words: ["metronidazole", "flagyl"],
     chapter: "chap. 20",
-    doses: [fx("Chirurgie du côlon, du rectum ou de l'appendice (en 20 min)", 500, 500, "mg", { note: "Ajouté à la céfazoline ou au céfuroxime ; 2e dose 8 h après si l'intervention dure." })],
+    doses: [fx("Chirurgie du côlon, du rectum ou de l'appendice (en 20 min)", 1000, 1000, "mg", { note: "1 g (SFAR ; 500 mg ASHP), ajouté à la céfazoline ; dose unique (demi-vie ≈ 8–12 h)." }), pk("Enfant", 15, 15, "mg", { note: "Maximum 1 g." })],
     cautions: [],
   },
   {
@@ -661,14 +661,14 @@ export const DRUG_REFERENCES: DrugReference[] = [
     onlyInPlan: true,
     words: ["vancomycine", "vancocin"],
     chapter: "chap. 20",
-    doses: [pk("Antibioprophylaxie, allergie immédiate aux bêtalactamines", 15, 30, "mg", { note: "Maximum 2 500 mg ; perfusion lente (≥ 1 000 mg en 60 min : hypotension par histaminolibération) ; 2e dose 8 h après." })],
+    doses: [pk("Antibioprophylaxie, allergie aux céphalosporines ou SARM", 15, 15, "mg", { note: "Maximum 2 500 mg ; débutée 60–120 min avant l'incision, ≥ 60 min pour 1 g (hypotension, flush par histaminolibération) ; pas de réinjection habituelle." })],
     cautions: [{ conditions: ["ckd", "dialysis"], level: "adapt", text: "insuffisance rénale : seconde dose à discuter (élimination rénale)" }],
   },
   {
     name: "Clindamycine",
     words: ["clindamycine", "dalacin"],
     chapter: "chap. 20",
-    doses: [fx("Antibioprophylaxie, allergie immédiate aux bêtalactamines (en 30 min)", 600, 600, "mg", { note: "2e dose 6 h après si l'intervention dure ; côlon/rectum/appendice : + gentamicine + métronidazole." }), fx("Endocardite, allergie immédiate (PO 1 h avant)", 600, 600)],
+    doses: [fx("Antibioprophylaxie si céfazoline contre-indiquée (en 20–30 min)", 900, 900, "mg", { note: "Réinjection 600 mg à 4 h ; plus d'infections du site qu'avec la céfazoline : réserver aux vraies contre-indications. Digestif, urologie, gynécologie : + gentamicine 5 mg/kg." }), pk("Enfant", 10, 10, "mg", { note: "Maximum 900 mg." })],
     cautions: [],
   },
   {
@@ -676,7 +676,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     onlyInPlan: true,
     words: ["gentamicine", "geomycine"],
     chapter: "chap. 20",
-    doses: [pk("Avec la clindamycine, allergie aux bêtalactamines (en 30 min)", 5, 5)],
+    doses: [pk("Avec la clindamycine, si céfazoline contre-indiquée (en 30 min)", 5, 5, "mg", { note: "Poids ajusté si obésité ; dose unique." })],
     cautions: [
       { conditions: ["ckd", "dialysis"], level: "relative", text: "insuffisance rénale : néphrotoxicité" },
       { conditions: ["myasthenia", "neuromuscular", "lambert_eaton"], level: "relative", text: "potentialise le bloc neuromusculaire" },
