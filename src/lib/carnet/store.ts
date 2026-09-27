@@ -268,8 +268,11 @@ export class CarnetStore {
     this.emit({ syncing: true });
     const rejected: RejectedChange[] = [];
     try {
-      while (this.queue.length > 0) {
-        const batch = this.queue.slice(0, BATCH);
+      // Changes the database can't take yet (migration not applied): kept, skipped for this round.
+      const deferred = new Set<string>();
+      let deferredError: string | null = null;
+      while (this.queue.some((m) => !deferred.has(m.id))) {
+        const batch = this.queue.filter((m) => !deferred.has(m.id)).slice(0, BATCH);
         const { results } = await requestJson<{ results: CarnetMutationResult[] }>("/api/carnet/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -283,6 +286,9 @@ export class CarnetStore {
           if (result.ok) {
             this.base = applyMutation(this.base, mutation);
             done.add(result.id);
+          } else if (result.deferred) {
+            deferred.add(result.id);
+            deferredError = result.error ?? "Base de données à mettre à jour.";
           } else if (!result.retryable) {
             rejected.push({ mutation, error: result.error ?? "Modification refusée par le serveur.", label: describe(mutation) });
             done.add(result.id);
@@ -302,7 +308,7 @@ export class CarnetStore {
       this.lastRefreshAt = Date.now();
       const syncedAt = new Date().toISOString();
       await Promise.all([this.persist(), idbSet([[this.keys.syncedAt, syncedAt]])]);
-      this.emit({ syncing: false, error: null, lastSyncedAt: syncedAt, ready: true });
+      this.emit({ syncing: false, error: deferred.size ? `${deferred.size} modification(s) en attente : ${deferredError}` : null, lastSyncedAt: syncedAt, ready: true });
     } catch (err) {
       this.emit({ syncing: false, error: err instanceof Error ? err.message : "Synchronisation impossible." });
     }

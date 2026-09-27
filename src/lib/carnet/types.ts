@@ -250,6 +250,8 @@ export interface CarnetMutationResult {
   ok: boolean;
   /** Only when !ok: whether retrying later could succeed (network/server trouble) or the change is refused for good (invalid data, constraint). */
   retryable?: boolean;
+  /** Only when !ok: the database is not up to date yet (a migration to apply) — kept on the device, never blocks the other changes. */
+  deferred?: boolean;
   error?: string;
 }
 

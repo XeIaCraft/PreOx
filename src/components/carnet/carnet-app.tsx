@@ -244,6 +244,7 @@ export function CarnetApp() {
           <h1 className="font-serif-display text-3xl font-medium text-foreground">Carnet de stage</h1>
           <SyncBadge />
         </div>
+        {status.error && status.pending > 0 && <p className="text-xs text-accent">{status.error}</p>}
         {data.stages.length > 0 && (
           <div className="flex items-center gap-2">
             <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-foreground-subtle">Stage actif</span>

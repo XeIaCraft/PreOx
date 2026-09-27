@@ -88,6 +88,16 @@ function isPermanent(code: string | undefined): boolean {
   return !!code && (code.startsWith("22") || code.startsWith("23") || code === "42501" || code.startsWith("PGRST1"));
 }
 
+/** A table or column the database does not have yet (migration not applied). */
+function isMissingSchema(code: string | undefined, message: string): boolean {
+  return code === "42P01" || code === "42703" || code === "PGRST204" || code === "PGRST205" || /does not exist|schema cache/i.test(message);
+}
+
+function dbFailure(m: CarnetMutation, error: { code?: string; message: string }): CarnetMutationResult {
+  if (isMissingSchema(error.code, error.message)) return { id: m.id, ok: false, retryable: true, deferred: true, error: "Base de données à mettre à jour (migration à appliquer) — gardé sur l'appareil." };
+  return failure(m, error.message, !isPermanent(error.code));
+}
+
 function failure(m: CarnetMutation, error: string, retryable: boolean): CarnetMutationResult {
   return { id: m.id, ok: false, error, retryable };
 }
@@ -105,7 +115,7 @@ async function applyOne(supabase: Supabase, userId: string, m: CarnetMutation): 
     const parsed = profileSchema.safeParse(upgradeProfile(m.row));
     if (!parsed.success) return failure(m, parsed.error.issues[0]?.message ?? "Profil invalide", false);
     const { error } = await supabase.from("carnet_profiles").upsert({ ...parsed.data, user_id: userId }, { onConflict: "user_id" });
-    return error ? failure(m, error.message, !isPermanent(error.code)) : { id: m.id, ok: true };
+    return error ? dbFailure(m, error) : { id: m.id, ok: true };
   }
 
   const table = TABLES[m.collection];
@@ -116,7 +126,7 @@ async function applyOne(supabase: Supabase, userId: string, m: CarnetMutation): 
     if (!parsed.success) return failure(m, parsed.error.issues[0]?.message ?? "Données invalides", false);
     const onConflict = m.collection === "years" ? "user_id,training_year" : m.collection === "settings" ? "user_id,key" : "id";
     const { error } = await supabase.from(table).upsert({ ...withoutDefaults(m.collection, parsed.data), user_id: userId } as never, { onConflict });
-    return error ? failure(m, error.message, !isPermanent(error.code)) : { id: m.id, ok: true };
+    return error ? dbFailure(m, error) : { id: m.id, ok: true };
   }
 
   if (m.op === "patch") {
@@ -125,12 +135,12 @@ async function applyOne(supabase: Supabase, userId: string, m: CarnetMutation): 
     const patch = withoutDefaults(m.collection, parsed.data);
     if (Object.keys(patch).length === 0) return { id: m.id, ok: true };
     const { error } = await supabase.from(table).update(patch as never).eq("id", m.rowId).eq("user_id", userId);
-    return error ? failure(m, error.message, !isPermanent(error.code)) : { id: m.id, ok: true };
+    return error ? dbFailure(m, error) : { id: m.id, ok: true };
   }
 
   if (m.op === "delete") {
     const { error } = await supabase.from(table).delete().eq("id", m.rowId).eq("user_id", userId);
-    return error ? failure(m, error.message, !isPermanent(error.code)) : { id: m.id, ok: true };
+    return error ? dbFailure(m, error) : { id: m.id, ok: true };
   }
 
   return failure(m, "Opération inconnue", false);
@@ -155,7 +165,8 @@ export async function applyCarnetMutations(userId: string, mutations: CarnetMuta
       result = failure(m, err instanceof Error ? err.message : "Erreur serveur", true);
     }
     results.push(result);
-    if (!result.ok && result.retryable) break;
+    // A change waiting for a migration never holds back the others (a case must sync even if a work day can't yet).
+    if (!result.ok && result.retryable && !result.deferred) break;
   }
   return results;
 }
