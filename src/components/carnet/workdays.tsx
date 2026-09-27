@@ -15,6 +15,7 @@ import {
   PAY_SOURCES,
   WORKDAY_KINDS,
   belgianHolidays,
+  estimateWithholding,
   leaveBalance,
   monthPay,
   paramsOn,
@@ -321,7 +322,24 @@ function PaySettingsEditor({ onClose }: { onClose: () => void }) {
         "Cotisations et impôt",
         <>
           <NumberInput label="Cotisation personnelle ONSS" value={v.personalContributionRate} onChange={(x) => set({ personalContributionRate: x })} unit="%" percent />
-          <NumberInput label="Cotisation spéciale de sécurité sociale / mois" value={v.specialContributionMonthly} onChange={(x) => set({ specialContributionMonthly: x })} unit="€" />
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-foreground-subtle">Cotisation spéciale de sécurité sociale</span>
+            <Select value={v.specialContributionMode} onChange={(e) => set({ specialContributionMode: e.target.value as PayParams["specialContributionMode"] })} className="h-9">
+              <option value="auto">Barème légal</option>
+              <option value="fixed">Montant de ma fiche</option>
+            </Select>
+          </label>
+          {v.specialContributionMode === "fixed" ? (
+            <NumberInput label="Montant / mois (fiche de paie)" value={v.specialContributionMonthly} onChange={(x) => set({ specialContributionMonthly: x })} unit="€" />
+          ) : (
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-foreground-subtle">Situation</span>
+              <Select value={v.specialContributionMax} onChange={(e) => set({ specialContributionMax: Number(e.target.value) })} className="h-9">
+                <option value={60.94}>Isolé ou conjoint sans revenu (max 60,94 €)</option>
+                <option value={51.64}>Conjoint avec revenus (max 51,64 €)</option>
+              </Select>
+            </label>
+          )}
           <label className="block space-y-1">
             <span className="text-xs font-medium text-foreground-subtle">Précompte</span>
             <Select value={v.withholdingMode} onChange={(e) => set({ withholdingMode: e.target.value as PayParams["withholdingMode"] })} className="h-9">
@@ -344,7 +362,7 @@ function PaySettingsEditor({ onClose }: { onClose: () => void }) {
               ))}
             </>
           )}
-          <NumberInput label="Taxe communale (% de l'impôt)" value={v.communalTaxRate} onChange={(x) => set({ communalTaxRate: x })} unit="%" percent />
+          <NumberInput label="Additionnels communaux dans le précompte" value={v.communalTaxRate} onChange={(x) => set({ communalTaxRate: x })} unit="%" percent />
           <NumberInput label="Épargne INAMI (hors paie, an)" value={v.inamiSocialAdvantage} onChange={(x) => set({ inamiSocialAdvantage: x })} unit="€" />
         </>,
         "Statut sui generis : 4,70 % (soins de santé 3,55 % + indemnités 1,15 %) — pas de cotisation pension ni chômage. Le précompte « barème » est une estimation (personne isolée, sans charge) ; le mode « taux » reprend exactement votre fiche."
@@ -427,6 +445,9 @@ export function WorkdaysView({ stage }: { stage: CarnetStage | null }) {
   const balance = leaveBalance(data.workdays, p, month === today.slice(0, 7) ? today : `${month}-15`);
   const holidays = belgianHolidays(Number(month.slice(0, 4))).filter((h) => h.date.slice(0, 7) === month);
   const uncomfortable = pay.hours.night + pay.hours.saturday + pay.hours.sundayHoliday;
+  // What an ordinary employee would get for the same gross (13,07 %) — what online brut-net simulators show.
+  const employeeTaxable = pay.gross * (1 - 0.1307);
+  const employeeNet = employeeTaxable - estimateWithholding(employeeTaxable, { ...p, withholdingMode: "scale" }) - pay.special;
 
   function save() {
     const crosses = !!draft.start_time && !!draft.end_time && draft.end_time <= draft.start_time;
@@ -612,7 +633,7 @@ export function WorkdaysView({ stage }: { stage: CarnetStage | null }) {
               <td className="py-1.5 pr-2">
                 Indemnité de frais
                 <span className="block text-xs text-foreground-subtle">
-                  forfait {eur(p.expenseAllowance)} pour déplacements, téléphone… — ni cotisation ni impôt, versée en plus du salaire ; {pay.expenses > 0 ? "due ce mois" : `pas due ce mois (moins de ${p.expenseMinDays} jours prestés)`}
+                  forfait {eur(p.expenseAllowance)} pour déplacements, téléphone… — ni cotisation ni impôt, versée en plus du salaire ; {pay.expensesProvisional ? `comptée : due si au moins ${p.expenseMinDays} jours prestés dans le mois (${pay.workedDays} encodé(s) pour l'instant)` : pay.expenses > 0 ? "due ce mois" : `pas due : moins de ${p.expenseMinDays} jours prestés ce mois`}
                 </span>
               </td>
               <td className="whitespace-nowrap py-1.5 text-right tabular-nums">+ {eur(pay.expenses)}</td>
@@ -624,8 +645,15 @@ export function WorkdaysView({ stage }: { stage: CarnetStage | null }) {
           </tbody>
         </table>
         <p className="text-xs text-foreground-subtle">
-          Taux horaire de base {eur(pay.hourly)}. Pas de pécule de vacances ni de 13e mois (statut sui generis). La taxe communale n&apos;est pas retenue sur le salaire : elle arrive avec l&apos;avertissement-extrait de rôle l&apos;année suivante — mettez de côté environ {eur(pay.communalProvision)} par mois ({Math.round(p.communalTaxRate * 1000) / 10} % de l&apos;impôt, selon votre commune). Estimation à comparer à votre fiche de paie.
+          Taux horaire de base {eur(pay.hourly)}. Pas de pécule de vacances ni de 13e mois (statut sui generis). Le précompte inclut une taxe communale moyenne de {Math.round(p.communalTaxRate * 1000) / 10} % ; le solde selon votre commune se règle avec l&apos;avertissement-extrait de rôle. Estimation à comparer à votre fiche de paie.
         </p>
+        <details className="text-xs text-foreground-muted">
+          <summary className="cursor-pointer text-primary-strong">Pourquoi plus que les simulateurs en ligne ?</summary>
+          <p className="mt-1.5">
+            Les simulateurs brut-net appliquent la cotisation d&apos;un salarié ordinaire, 13,07 % (dont pension et chômage). Le statut sui generis n&apos;en retient que {(p.personalContributionRate * 100).toLocaleString("fr-BE")} % : au même brut de {eur(pay.gross)}, un salarié toucherait environ{" "}
+            <span className="tabular-nums text-foreground">{eur(employeeNet)}</span>, soit {eur(pay.netSalary - employeeNet)} de moins que vous — la contrepartie : pas de droits à la pension ni au chômage pendant la formation.
+          </p>
+        </details>
       </section>
 
       <section className="space-y-1 rounded-[var(--radius-lg)] border border-dashed border-border bg-surface p-4 text-sm">
@@ -645,7 +673,7 @@ export function WorkdaysView({ stage }: { stage: CarnetStage | null }) {
             Congés : <span className="tabular-nums text-foreground">{balance.used.leave}</span> / {p.leaveDays}
           </li>
           <li>
-            Fériés : <span className="tabular-nums text-foreground">{balance.used.holiday}</span> / {p.publicHolidays}
+            Remplacements pris : <span className="tabular-nums text-foreground">{balance.used.holiday}</span> / {balance.holidays.filter((h) => h.weekend || h.worked).length}
           </li>
           <li>
             Scientifiques : <span className="tabular-nums text-foreground">{balance.used.scientific}</span> / {p.scientificDays}
@@ -654,6 +682,27 @@ export function WorkdaysView({ stage }: { stage: CarnetStage | null }) {
             Maladie : <span className="tabular-nums text-foreground">{balance.used.sick}</span> j
           </li>
         </ul>
+        <div className="space-y-1 pt-2">
+          <p className="text-xs font-medium text-foreground-subtle">Jours fériés légaux belges de la période ({balance.holidays.length})</p>
+          <ul className="space-y-0.5 text-xs">
+            {balance.holidays.map((h) => (
+              <li key={h.date} className="flex flex-wrap items-center gap-x-2">
+                <span className="w-24 tabular-nums text-foreground-muted">{formatDateFr(h.date)}</span>
+                <span className="text-foreground">{h.label}</span>
+                {h.worked ? (
+                  <span className="rounded bg-accent-tint px-1.5 text-[10px] font-medium text-accent">travaillé · 160 % · jour de remplacement</span>
+                ) : h.weekend ? (
+                  <span className="rounded bg-surface-muted px-1.5 text-[10px] text-foreground-muted">week-end · jour de remplacement</span>
+                ) : h.date <= today ? (
+                  <span className="text-[10px] text-foreground-subtle">chômé</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-foreground-subtle">
+            Les fériés sont reconnus automatiquement (heures payées à {Math.round(p.sundayHolidayRate * 100)} %). Un férié travaillé ou tombant un week-end donne un jour de remplacement : encodez-le en « Férié / remplacement » le jour où vous le prenez.
+          </p>
+        </div>
       </section>
     </div>
   );

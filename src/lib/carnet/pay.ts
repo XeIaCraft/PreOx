@@ -89,8 +89,12 @@ export interface PayParams {
   restAfterLongShift: number;
   /** INAMI « statut social » for doctors in training, annual, paid into a pension/income-insurance contract. */
   inamiSocialAdvantage: number;
-  /** Additional communal tax (% of the income tax), not withheld from the salary. */
+  /** Average communal surcharge built into the withholding tax formula (7 %: the employer does not know your commune). */
   communalTaxRate: number;
+  /** Special social security contribution: « auto » = legal monthly scale (single, or spouse with income), « fixed » = amount of your payslip. */
+  specialContributionMode: "auto" | "fixed";
+  /** Monthly cap of the special contribution for a single person (60,94 €) or a spouse with income (51,64 €). */
+  specialContributionMax: number;
 }
 
 /**
@@ -128,8 +132,10 @@ export const DEFAULT_PAY: PayParams = {
   ],
   taxFreeAllowance: 11180,
   professionalExpensesRate: 0.3,
-  professionalExpensesMax: 6070,
+  professionalExpensesMax: 5930,
   specialContributionMonthly: 0,
+  specialContributionMode: "auto",
+  specialContributionMax: 60.94,
   assimilatedDayHours: 9.6,
   leaveDays: 22,
   publicHolidays: 10,
@@ -151,7 +157,8 @@ export const PAY_SOURCES = [
   "Statut sui generis : art. 15bis AR 28/11/1969 — cotisation personnelle 4,70 % (soins de santé 3,55 % + indemnités 1,15 %), pas de pension ni de chômage, pas de pécule de vacances ni de 13e mois.",
   "Temps de travail : loi du 12/12/2010 (48 h en moyenne sur 13 semaines, 60 h maximum ; opting out : 60 h en moyenne, 72 h maximum ; 24 h consécutives au plus ; 12 h de repos après 12–24 h).",
   "Rémunération : conventions collectives de la Commission paritaire nationale médecins-hôpitaux du 19/05/2021 et du 21/12/2023 (heures inconfortables 135 %/160 %, opting out 110 %, forfaits de garde appelable par 12 h, indemnité de frais) ; montants indexés au 1er janvier.",
-  "Précompte : estimation par le barème de l'impôt (revenus 2026) ; pour un chiffre exact, reprenez le taux de votre fiche de paie (mode « taux »).",
+  "Précompte : formule-clé (taux fédéraux majorés de 7 % d'additionnels communaux, frais forfaitaires 30 % plafonnés), estimation pour une personne isolée ; pour un chiffre exact, reprenez le taux de votre fiche de paie (mode « taux »).",
+  "Cotisation spéciale de sécurité sociale : barème mensuel légal (loi du 30/03/1994), régularisée à l'impôt.",
   "Avantage INAMI (statut social) des médecins en formation : versé sur un contrat de pension ou de revenu garanti, hors salaire.",
 ];
 
@@ -345,12 +352,12 @@ export interface MonthPay {
   withholding: number;
   special: number;
   expenses: number;
+  /** Month not over and fewer than 10 days logged yet: the allowance is counted, pending. */
+  expensesProvisional: boolean;
   /** Salary after contribution and withholding tax — without the expense allowance. */
   netSalary: number;
   /** What reaches the bank account: net salary + expense allowance. */
   paid: number;
-  /** Communal tax is not withheld: settled a year later with the tax bill — the monthly amount to set aside. */
-  communalProvision: number;
   alerts: Alert[];
 }
 
@@ -375,7 +382,21 @@ export function estimateWithholding(monthlyTaxable: number, p: PayParams): numbe
   const annual = monthlyTaxable * 12;
   const net = annual - Math.min(annual * p.professionalExpensesRate, p.professionalExpensesMax);
   const tax = progressive(net, p.taxBrackets) - progressive(p.taxFreeAllowance, p.taxBrackets);
-  return round2(Math.max(0, tax) / 12);
+  // The key formula uses the federal rates raised by an average communal surcharge (25 % × 1,07 = 26,75 %…).
+  return round2((Math.max(0, tax) * (1 + p.communalTaxRate)) / 12);
+}
+
+/**
+ * Monthly withholding of the special social security contribution (law of
+ * 30/03/1994): nothing up to 1 945,38 € gross; 7,6 % of the part up to
+ * 2 190,18 €; then 18,60 € + 1,1 % of the part above 2 190,18 €, capped
+ * (60,94 € single or spouse without income, 51,64 € spouse with income).
+ * Settled on the yearly tax bill.
+ */
+export function specialContribution(grossMonthly: number, p: Pick<PayParams, "specialContributionMax">): number {
+  if (grossMonthly <= 1945.38) return 0;
+  if (grossMonthly <= 2190.18) return round2((grossMonthly - 1945.38) * 0.076);
+  return round2(Math.min(p.specialContributionMax, 18.6 + (Math.min(grossMonthly, 6038.82) - 2190.18) * 0.011));
 }
 
 /** Share of the month covered by the contract (base salary prorated by calendar days). */
@@ -482,7 +503,7 @@ export function workTimeAlerts(month: string, days: CarnetWorkday[], settings: P
 const fr = (iso: string) => iso.split("-").reverse().join("/");
 
 /** Everything for one calendar month (YYYY-MM): hours, pay lines, gross to net, legal alerts. */
-export function monthPay(month: string, allDays: CarnetWorkday[], settings: PaySettings): MonthPay {
+export function monthPay(month: string, allDays: CarnetWorkday[], settings: PaySettings, today: string = new Date().toISOString().slice(0, 10)): MonthPay {
   const p = paramsOn(settings, `${month}-01`);
   const days = allDays.filter((w) => w.work_date.slice(0, 7) === month);
   const hourly = p.baseMonthly / p.monthlyReferenceHours;
@@ -530,21 +551,37 @@ export function monthPay(month: string, allDays: CarnetWorkday[], settings: PayS
   const contribution = round2(gross * p.personalContributionRate);
   const taxable = round2(gross - contribution);
   const withholding = estimateWithholding(taxable, p);
-  const special = round2(p.specialContributionMonthly);
-  const expenses = share > 0 && workedDays >= p.expenseMinDays ? round2(p.expenseAllowance * Math.min(1, share)) : 0;
+  const special = p.specialContributionMode === "fixed" ? round2(p.specialContributionMonthly) : specialContribution(gross, p);
+  // Not due for a month with fewer than 10 days worked — judged once the month is over; until then, a full-time month is assumed.
+  const monthOver = today.slice(0, 7) > month;
+  const expensesProvisional = !monthOver && workedDays < p.expenseMinDays;
+  const expenses = share > 0 && (workedDays >= p.expenseMinDays || !monthOver) ? round2(p.expenseAllowance * Math.min(1, share)) : 0;
   const netSalary = round2(taxable - withholding - special);
   const paid = round2(netSalary + expenses);
-  const communalProvision = round2(withholding * p.communalTaxRate);
 
   const alerts = workTimeAlerts(month, allDays, settings);
   if (hours.total > p.maxMonthlyHours) alerts.push({ level: "warning", text: `${h1(hours.total)} ce mois : repos compensatoire dû pour ${h1(hours.total - p.maxMonthlyHours)} (au-delà de ${p.maxMonthlyHours} h).` });
-  if (share > 0 && workedDays < p.expenseMinDays && days.length > 0) alerts.push({ level: "info", text: `${workedDays} jour(s) presté(s) : indemnité de frais non due sous ${p.expenseMinDays} jours (sauf maladie ≤ 30 jours ou congés — à vérifier).` });
+  if (share > 0 && monthOver && workedDays < p.expenseMinDays) alerts.push({ level: "info", text: `${workedDays} jour(s) presté(s) : indemnité de frais non due sous ${p.expenseMinDays} jours (sauf maladie ≤ 30 jours ou congés — à vérifier).` });
 
-  return { month, params: p, hours, countedHours: counted, workedDays, onCall, optingOutHours: opting, hourly, lines, gross, contribution, taxable, withholding, special, expenses, netSalary, paid, communalProvision, alerts };
+  return { month, params: p, hours, countedHours: counted, workedDays, onCall, optingOutHours: opting, hourly, lines, gross, contribution, taxable, withholding, special, expenses, expensesProvisional, netSalary, paid, alerts };
 }
 
 /** Days of leave, holidays and scientific days used over the contract year (or the calendar year without contract dates). */
-export function leaveBalance(days: CarnetWorkday[], p: PayParams, on: string): { from: string; to: string; used: Record<"leave" | "holiday" | "scientific" | "sick" | "course", number> } {
+export interface HolidayStatus {
+  date: string;
+  label: string;
+  /** Worked that day (paid at the Sunday/holiday rate). */
+  worked: boolean;
+  /** Falls on a Saturday or a Sunday: a replacement day is due. */
+  weekend: boolean;
+}
+
+/** Days of leave, public holidays and scientific days over the contract year (or the calendar year without contract dates), and the Belgian public holidays of that period. */
+export function leaveBalance(
+  days: CarnetWorkday[],
+  p: PayParams,
+  on: string
+): { from: string; to: string; used: Record<"leave" | "holiday" | "scientific" | "sick" | "course", number>; holidays: HolidayStatus[] } {
   let from = `${on.slice(0, 4)}-01-01`;
   let to = `${on.slice(0, 4)}-12-31`;
   if (p.contractStart && p.contractStart <= on) {
@@ -554,7 +591,13 @@ export function leaveBalance(days: CarnetWorkday[], p: PayParams, on: string): {
   }
   const used = { leave: 0, holiday: 0, scientific: 0, sick: 0, course: 0 };
   for (const w of days) if (w.work_date >= from && w.work_date <= to && w.kind in used) used[w.kind as keyof typeof used]++;
-  return { from, to, used };
+  const workedOn = new Set(days.filter((w) => workedIntervals(w).worked.length > 0 || w.kind === "on_call").map((w) => w.work_date));
+  const years = [...new Set([Number(from.slice(0, 4)), Number(to.slice(0, 4))])];
+  const holidays = years
+    .flatMap((y) => belgianHolidays(y))
+    .filter((h) => h.date >= from && h.date <= to)
+    .map((h) => ({ ...h, worked: workedOn.has(h.date), weekend: weekday(h.date) % 6 === 0 }));
+  return { from, to, used, holidays };
 }
 
 export const WORKDAY_KINDS: { code: WorkdayKind; label: string; timed: boolean }[] = [
@@ -562,7 +605,7 @@ export const WORKDAY_KINDS: { code: WorkdayKind; label: string; timed: boolean }
   { code: "on_site", label: "Garde sur place", timed: true },
   { code: "on_call", label: "Garde appelable", timed: true },
   { code: "leave", label: "Congé", timed: false },
-  { code: "holiday", label: "Férié", timed: false },
+  { code: "holiday", label: "Férié / remplacement", timed: false },
   { code: "scientific", label: "Journée scientifique", timed: false },
   { code: "course", label: "Cours / examen", timed: false },
   { code: "sick", label: "Maladie", timed: false },

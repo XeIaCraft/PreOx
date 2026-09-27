@@ -61,7 +61,7 @@ describe("rémunération du mois", () => {
     expect(sunday.amount).toBeCloseTo(16 * hourly * 0.6, 1);
     expect(m.contribution).toBeCloseTo(m.gross * 0.047, 1);
     expect(m.expenses).toBe(DEFAULT_PAY.expenseAllowance);
-    expect(m.netSalary).toBeCloseTo(m.taxable - m.withholding, 2);
+    expect(m.netSalary).toBeCloseTo(m.taxable - m.withholding - m.special, 2);
     expect(m.paid).toBeCloseTo(m.netSalary + DEFAULT_PAY.expenseAllowance, 2);
   });
 
@@ -71,7 +71,11 @@ describe("rémunération du mois", () => {
   });
 
   it("pas d'indemnité de frais sous 10 jours prestés", () => {
-    const m = monthPay("2026-12", fullMonth("2026-12").slice(0, 5), settings());
+    const m = monthPay("2026-12", fullMonth("2026-12").slice(0, 5), settings(), "2027-01-10");
+    // En cours de mois : comptée d'office (temps plein), en attente.
+    const now = monthPay("2026-12", fullMonth("2026-12").slice(0, 5), settings(), "2026-12-08");
+    expect(now.expenses).toBe(DEFAULT_PAY.expenseAllowance);
+    expect(now.expensesProvisional).toBe(true);
     expect(m.expenses).toBe(0);
     expect(m.alerts.some((a) => a.text.includes("indemnité de frais"))).toBe(true);
   });
@@ -118,7 +122,7 @@ describe("réglages", () => {
 });
 
 describe("exemple : 8 h–18 h du lundi au vendredi, sans garde", () => {
-  it("brut = base, net salaire ≈ 2 790 €, + frais 165,45 €", () => {
+  it("brut = base, net salaire ≈ 2 690 €, + frais 165,45 € ; un salarié ordinaire (13,07 %) ≈ 2 525 €", () => {
     const days: CarnetWorkday[] = [];
     for (let d = 1; d <= 30; d++) {
       const iso = `2026-11-${String(d).padStart(2, "0")}`;
@@ -130,8 +134,13 @@ describe("exemple : 8 h–18 h du lundi au vendredi, sans garde", () => {
     expect(m.gross).toBe(3813.82);
     expect(m.contribution).toBe(179.25);
     expect(m.taxable).toBe(3634.57);
-    expect(m.withholding).toBeCloseTo(843.06, 1);
-    expect(m.netSalary).toBeCloseTo(2791.51, 1);
-    expect(m.paid).toBeCloseTo(2956.96, 1);
+    // Formule-clé : taux fédéraux × 1,07 (additionnels communaux), frais forfaitaires 30 % plafonnés à 5 930 €.
+    expect(m.withholding).toBeCloseTo(907.69, 1);
+    // Cotisation spéciale : 18,60 € + 1,1 % × (3 813,82 − 2 190,18).
+    expect(m.special).toBeCloseTo(36.46, 2);
+    expect(m.netSalary).toBeCloseTo(2690.42, 1);
+    expect(m.paid).toBeCloseTo(2855.87, 1);
+    const employeeTaxable = m.gross * (1 - 0.1307);
+    expect(employeeTaxable - estimateWithholding(employeeTaxable, DEFAULT_PAY) - m.special).toBeCloseTo(2524.9, 0);
   });
 });
