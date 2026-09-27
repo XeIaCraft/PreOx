@@ -33,18 +33,23 @@ const TABLES = {
   courses: "carnet_courses",
   publications: "carnet_publications",
   years: "carnet_years",
+  workdays: "carnet_workdays",
+  settings: "carnet_settings",
 } as const satisfies Record<CarnetCollection, string>;
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 type Table = (typeof TABLES)[CarnetCollection];
 
 const PAGE = 1000;
+const OPTIONAL_TABLES = new Set<string>([TABLES.workdays, TABLES.settings]);
 
 /** Every row of one of this user's tables, paged past PostgREST's max_rows cap (1000 by default — a few years of cases exceed it). */
 async function selectAll(supabase: Supabase, table: Table, userId: string): Promise<Record<string, unknown>[]> {
   const rows: Record<string, unknown>[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase.from(table).select("*").eq("user_id", userId).order("id").range(from, from + PAGE - 1);
+    // Tables of a migration not applied yet (091: workdays, settings): the rest of the carnet must still load.
+    if (error && OPTIONAL_TABLES.has(table) && (error.code === "42P01" || error.code === "PGRST205" || /does not exist|schema cache/i.test(error.message))) return [];
     if (error) throw new Error(`${table}: ${error.message}`);
     const page = (data ?? []) as Record<string, unknown>[];
     rows.push(...page);
@@ -87,6 +92,14 @@ function failure(m: CarnetMutation, error: string, retryable: boolean): CarnetMu
   return { id: m.id, ok: false, error, retryable };
 }
 
+/** « off_record: false » is the column's default: not sent, so cases still save on a database without migration 091. */
+function withoutDefaults(collection: CarnetCollection, row: Record<string, unknown>): Record<string, unknown> {
+  if (collection !== "cases" || row.off_record !== false) return row;
+  const rest = { ...row };
+  delete rest.off_record;
+  return rest;
+}
+
 async function applyOne(supabase: Supabase, userId: string, m: CarnetMutation): Promise<CarnetMutationResult> {
   if (m.collection === "profile") {
     const parsed = profileSchema.safeParse(upgradeProfile(m.row));
@@ -101,16 +114,17 @@ async function applyOne(supabase: Supabase, userId: string, m: CarnetMutation): 
   if (m.op === "put") {
     const parsed = ROW_SCHEMAS[m.collection].safeParse(upgradeRow(m.collection, m.row));
     if (!parsed.success) return failure(m, parsed.error.issues[0]?.message ?? "Données invalides", false);
-    const onConflict = m.collection === "years" ? "user_id,training_year" : "id";
-    const { error } = await supabase.from(table).upsert({ ...parsed.data, user_id: userId } as never, { onConflict });
+    const onConflict = m.collection === "years" ? "user_id,training_year" : m.collection === "settings" ? "user_id,key" : "id";
+    const { error } = await supabase.from(table).upsert({ ...withoutDefaults(m.collection, parsed.data), user_id: userId } as never, { onConflict });
     return error ? failure(m, error.message, !isPermanent(error.code)) : { id: m.id, ok: true };
   }
 
   if (m.op === "patch") {
     const parsed = PATCH_SCHEMAS[m.collection].safeParse(upgradePatch(m.collection, m.patch));
     if (!parsed.success) return failure(m, parsed.error.issues[0]?.message ?? "Données invalides", false);
-    if (Object.keys(parsed.data).length === 0) return { id: m.id, ok: true };
-    const { error } = await supabase.from(table).update(parsed.data as never).eq("id", m.rowId).eq("user_id", userId);
+    const patch = withoutDefaults(m.collection, parsed.data);
+    if (Object.keys(patch).length === 0) return { id: m.id, ok: true };
+    const { error } = await supabase.from(table).update(patch as never).eq("id", m.rowId).eq("user_id", userId);
     return error ? failure(m, error.message, !isPermanent(error.code)) : { id: m.id, ok: true };
   }
 

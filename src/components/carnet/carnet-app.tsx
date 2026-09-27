@@ -4,7 +4,9 @@ import { useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
+  BarChart3,
   BookUser,
+  Clock3,
   CalendarRange,
   CircleCheck,
   CloudOff,
@@ -35,11 +37,13 @@ import { SupervisorsView } from "@/components/carnet/supervisors";
 import { TrainingView } from "@/components/carnet/training";
 import { YearsView } from "@/components/carnet/years";
 import { ExportView } from "@/components/carnet/export";
+import { StatsView } from "@/components/carnet/stats";
+import { WorkdaysView } from "@/components/carnet/workdays";
 import { localDateIso, pendingSignatureCount, sortStages, stageForDate, stageLabel } from "@/lib/carnet/logic";
 import type { CarnetStage } from "@/lib/carnet/types";
 import { cn } from "@/lib/utils";
 
-type View = "saisie" | "releve" | "gardes" | "signatures" | "stages" | "profil" | "superviseurs" | "formation" | "annees" | "export" | "plus";
+type View = "saisie" | "releve" | "gardes" | "signatures" | "stages" | "profil" | "superviseurs" | "formation" | "annees" | "export" | "stats" | "journees" | "plus";
 
 const NAV: { view: View; label: string; icon: typeof PlusCircle; primary?: boolean }[] = [
   { view: "saisie", label: "Saisie", icon: PlusCircle, primary: true },
@@ -52,6 +56,8 @@ const NAV: { view: View; label: string; icon: typeof PlusCircle; primary?: boole
   { view: "formation", label: "Formation", icon: GraduationCap },
   { view: "annees", label: "Années & rapport", icon: BookUser },
   { view: "export", label: "Export", icon: FileDown },
+  { view: "journees", label: "Journées & paie", icon: Clock3 },
+  { view: "stats", label: "Ce que j'utilise", icon: BarChart3 },
 ];
 
 const ACTIVE_STAGE_KEY = "preox:carnet:active-stage";
@@ -202,6 +208,8 @@ export function CarnetApp() {
   else if (view === "formation") content = <TrainingView />;
   else if (view === "annees") content = <YearsView />;
   else if (view === "export") content = <ExportView />;
+  else if (view === "stats") content = <StatsView />;
+  else if (view === "journees") content = <WorkdaysView stage={activeStage} />;
   else
     content = (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

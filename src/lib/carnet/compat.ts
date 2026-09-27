@@ -33,6 +33,7 @@ function upgradeFields(collection: CarnetCollection, row: Row, full: boolean): R
       if (!next.other_labels || typeof next.other_labels !== "object") next.other_labels = {};
       if (!next.details || typeof next.details !== "object") next.details = {};
       if (typeof next.planned !== "boolean") next.planned = false;
+      if (typeof next.off_record !== "boolean") next.off_record = false;
     }
     return next;
   }
@@ -71,5 +72,8 @@ export function upgradeData(data: CarnetData): CarnetData {
     profile: upgradeProfile(data.profile),
     stages: data.stages.map((s) => upgradeRow("stages", s as unknown as Row) as unknown as CarnetData["stages"][number]),
     cases: data.cases.map((c) => upgradeRow("cases", c as unknown as Row) as unknown as CarnetData["cases"][number]),
+    // Caches written before migration 091.
+    workdays: data.workdays ?? [],
+    settings: data.settings ?? [],
   };
 }

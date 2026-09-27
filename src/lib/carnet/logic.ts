@@ -126,6 +126,11 @@ function byDateThenCreation<T extends { created_at: string }>(dateOf: (row: T) =
   return (a: T, b: T) => dateOf(a).localeCompare(dateOf(b)) || a.created_at.localeCompare(b.created_at);
 }
 
+/** The cases the official carnet counts: neither planned (not done yet) nor « hors carnet » (personal log). */
+export function countedCases(cases: CarnetCase[]): CarnetCase[] {
+  return cases.filter((c) => !c.planned && !c.off_record);
+}
+
 /**
  * The carnet's "N°" column: consecutive per training year (one carnet is
  * sent per year of training), in chronological order. Computed rather than

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  countedCases,
   applyMutation,
   applyMutations,
   caseNumbers,
@@ -39,6 +40,7 @@ function kase(partial: Partial<CarnetCase> = {}): CarnetCase {
     other_labels: {},
     details: {},
     planned: false,
+    off_record: false,
     participation: 2,
     tutor_id: null,
     signature_id: null,
@@ -242,5 +244,19 @@ describe("dates", () => {
   it("shifts local dates across month ends and formats them the Belgian way", () => {
     expect(shiftDateIso("2026-03-01", -1)).toBe("2026-02-28");
     expect(formatDateFr("2026-03-01")).toBe("01/03/2026");
+  });
+});
+
+describe("cas hors carnet", () => {
+  it("ne sont ni numérotés ni comptés : la numérotation du carnet reste continue", () => {
+    const stages = [stage("s1", "2026-01-01", null)];
+    const a = kase({ case_date: "2026-03-01" });
+    const off = kase({ case_date: "2026-03-02", off_record: true });
+    const b = kase({ case_date: "2026-03-03" });
+    const planned = kase({ case_date: "2026-03-02", planned: true });
+    const counted = countedCases([a, off, b, planned]);
+    expect(counted.map((c) => c.id)).toEqual([a.id, b.id]);
+    const n = caseNumbers(counted, stages);
+    expect([n.get(a.id), n.get(b.id), n.get(off.id)]).toEqual([1, 2, undefined]);
   });
 });

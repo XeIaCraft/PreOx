@@ -29,7 +29,7 @@ export function CaseList({ cases, onOpen, showDate = true }: { cases: CarnetCase
       {cases.map((c) => (
         <li key={c.id}>
           <button type="button" onClick={() => onOpen(c)} className="flex w-full items-center gap-3 px-3 py-3 text-left hover:bg-surface-muted">
-            <span className="w-10 shrink-0 text-right font-mono text-xs text-foreground-subtle">{numbers.get(c.id)}</span>
+            <span className="w-10 shrink-0 text-right font-mono text-xs text-foreground-subtle">{c.off_record ? "HC" : numbers.get(c.id)}</span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-foreground">
                 {c.operation}
@@ -41,7 +41,9 @@ export function CaseList({ cases, onOpen, showDate = true }: { cases: CarnetCase
                 {c.tutor_id ? ` · ${supervisorName(supervisors.get(c.tutor_id))}` : " · sans tuteur"}
               </span>
             </span>
-            {c.signature_id ? (
+            {c.off_record ? (
+              <span className="shrink-0 rounded bg-surface-muted px-1.5 py-0.5 text-[10px] text-foreground-subtle">hors carnet</span>
+            ) : c.signature_id ? (
               <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-label="Signé" />
             ) : (
               <Clock className="h-4 w-4 shrink-0 text-accent" aria-label="En attente de signature" />
@@ -195,13 +197,15 @@ function PlannedCases({ date, onDone }: { date: string; onDone: (c: CarnetCase) 
 }
 
 export function EntryView({ stage }: { stage: CarnetStage }) {
-  const { data, commit } = useCarnet();
+  const { data, offRecordCases, commit } = useCarnet();
   const { toast } = useToast();
   const [listDate, setListDate] = useState(localDateIso);
   const [editing, setEditing] = useState<CarnetCase | null>(null);
   const dayCases = data.cases
     .filter((c) => c.stage_id === stage.id && c.case_date === listDate)
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const dayOffRecord = offRecordCases.filter((c) => c.stage_id === stage.id && c.case_date === listDate).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const findCase = (id: string) => data.cases.find((c) => c.id === id) ?? offRecordCases.find((c) => c.id === id);
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -214,7 +218,7 @@ export function EntryView({ stage }: { stage: CarnetStage }) {
             defaultDate={listDate}
             onSaved={(saved) => {
               setListDate(saved.case_date);
-              toast(`Cas enregistré — ${saved.operation}.`, {
+              toast(saved.off_record ? `Gardé hors carnet — ${saved.operation}.` : `Cas enregistré — ${saved.operation}.`, {
                 variant: "success",
                 actionLabel: "Annuler",
                 onAction: () => commit([deleteRow("cases", saved.id)]),
@@ -233,24 +237,30 @@ export function EntryView({ stage }: { stage: CarnetStage }) {
         </div>
         <PlannedCases date={listDate} onDone={setEditing} />
         {dayCases.length === 0 ? <EmptyState title="Aucun cas ce jour-là." /> : <CaseList cases={dayCases} onOpen={setEditing} showDate={false} />}
+        {dayOffRecord.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-foreground-subtle">Hors carnet ({dayOffRecord.length}) — non comptés</p>
+            <CaseList cases={dayOffRecord} onOpen={setEditing} showDate={false} />
+          </div>
+        )}
       </section>
-      {editing && <CaseEditModal kase={data.cases.find((c) => c.id === editing.id) ?? editing} onClose={() => setEditing(null)} />}
+      {editing && <CaseEditModal kase={findCase(editing.id) ?? editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }
 
 /** The full "Relevé des prestations", filterable — to find, correct or check any case. */
 export function CasesView({ stage }: { stage: CarnetStage | null }) {
-  const { data } = useCarnet();
+  const { data, offRecordCases } = useCarnet();
   const [stageFilter, setStageFilter] = useState<string>(stage?.id ?? "all");
-  const [status, setStatus] = useState<"all" | "pending" | "signed">("all");
+  const [status, setStatus] = useState<"all" | "pending" | "signed" | "off_record">("all");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<CarnetCase | null>(null);
 
   const q = query.trim().toLowerCase();
-  const cases = data.cases
+  const cases = (status === "off_record" ? offRecordCases : data.cases)
     .filter((c) => stageFilter === "all" || c.stage_id === stageFilter)
-    .filter((c) => status === "all" || (status === "pending" ? !c.signature_id : !!c.signature_id))
+    .filter((c) => status === "all" || status === "off_record" || (status === "pending" ? !c.signature_id : !!c.signature_id))
     .filter((c) => !q || `${c.operation} ${c.patient_initials} ${caseCode(c)}`.toLowerCase().includes(q))
     .sort((a, b) => b.case_date.localeCompare(a.case_date) || b.created_at.localeCompare(a.created_at));
 
@@ -274,11 +284,14 @@ export function CasesView({ stage }: { stage: CarnetStage | null }) {
           <option value="all">Tous</option>
           <option value="pending">À signer</option>
           <option value="signed">Signés</option>
+          <option value="off_record">Hors carnet ({offRecordCases.length})</option>
         </Select>
       </div>
-      <p className="text-xs text-foreground-subtle">{cases.length} cas</p>
+      <p className="text-xs text-foreground-subtle">
+        {cases.length} cas{status === "off_record" ? " hors carnet — journal personnel, jamais numéroté, compté ni exporté" : ""}
+      </p>
       {cases.length === 0 ? <EmptyState title="Aucun cas ne correspond." /> : <CaseList cases={cases} onOpen={setEditing} />}
-      {editing && <CaseEditModal kase={data.cases.find((c) => c.id === editing.id) ?? editing} onClose={() => setEditing(null)} />}
+      {editing && <CaseEditModal kase={data.cases.find((c) => c.id === editing.id) ?? offRecordCases.find((c) => c.id === editing.id) ?? editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }

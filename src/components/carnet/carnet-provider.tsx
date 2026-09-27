@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { CarnetStore, type CarnetState } from "@/lib/carnet/store";
+import { countedCases } from "@/lib/carnet/logic";
 import type { CarnetCase, CarnetMutation } from "@/lib/carnet/types";
 
 const CarnetContext = createContext<CarnetStore | null>(null);
@@ -47,16 +48,21 @@ export function CarnetProvider({ userId, children }: { userId: string; children:
 
 /**
  * `data.cases` holds only real cases: cases planned in Préop (not yet
- * confirmed as done) are set apart in `plannedCases`, so the relevé, the
+ * confirmed as done) are set apart in `plannedCases`, and « hors carnet »
+ * cases (personal log) in `offRecordCases`, so the relevé, the
  * numbering, the report, the export and the signatures never count them.
  */
-export function useCarnet(): CarnetState & { plannedCases: CarnetCase[]; commit: (mutations: CarnetMutation[]) => void; store: CarnetStore } {
+export function useCarnet(): CarnetState & { plannedCases: CarnetCase[]; offRecordCases: CarnetCase[]; commit: (mutations: CarnetMutation[]) => void; store: CarnetStore } {
   const store = useContext(CarnetContext);
   if (!store) throw new Error("useCarnet must be used within CarnetProvider");
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   const split = useMemo(
-    () => ({ data: { ...state.data, cases: state.data.cases.filter((c) => !c.planned) }, plannedCases: state.data.cases.filter((c) => c.planned) }),
+    () => ({
+      data: { ...state.data, cases: countedCases(state.data.cases) },
+      plannedCases: state.data.cases.filter((c) => c.planned),
+      offRecordCases: state.data.cases.filter((c) => !c.planned && c.off_record),
+    }),
     [state.data]
   );
-  return { status: state.status, data: split.data, plannedCases: split.plannedCases, commit: (mutations) => store.commit(mutations), store };
+  return { status: state.status, data: split.data, plannedCases: split.plannedCases, offRecordCases: split.offRecordCases, commit: (mutations) => store.commit(mutations), store };
 }

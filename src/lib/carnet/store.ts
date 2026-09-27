@@ -111,6 +111,8 @@ const COLLECTION_LABELS: Record<string, string> = {
   courses: "Cours / séminaire",
   publications: "Publication",
   years: "Année de formation",
+  workdays: "Journée de travail",
+  settings: "Réglages",
 };
 
 function describe(m: CarnetMutation): string {
@@ -118,7 +120,7 @@ function describe(m: CarnetMutation): string {
   if (m.op === "delete") return `${kind} (suppression)`;
   const row = (m.op === "put" ? m.row : m.patch) as Record<string, unknown>;
   const name = [row.operation, row.hospital, row.last_name, row.nature, row.subject, row.title].find((v) => typeof v === "string" && v);
-  const date = [row.case_date, row.duty_date, row.start_date].find((v) => typeof v === "string" && v) as string | undefined;
+  const date = [row.case_date, row.duty_date, row.work_date, row.start_date].find((v) => typeof v === "string" && v) as string | undefined;
   return `${kind}${name ? ` « ${name} »` : ""}${date ? ` du ${date.split("-").reverse().join("/")}` : ""}`;
 }
 

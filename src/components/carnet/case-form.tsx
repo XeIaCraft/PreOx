@@ -31,6 +31,8 @@ export interface CaseDraft {
   participation: 1 | 2 | 3 | null;
   tutor_id: string | null;
   notes: string;
+  /** Personal log only: not numbered, not counted, never exported. */
+  off_record: boolean;
 }
 
 function draftFromCase(c: CarnetCase): CaseDraft {
@@ -50,6 +52,7 @@ function draftFromCase(c: CarnetCase): CaseDraft {
     participation: c.participation,
     tutor_id: c.tutor_id,
     notes: c.notes,
+    off_record: c.off_record ?? false,
   };
 }
 
@@ -58,7 +61,7 @@ export function draftProblems(d: CaseDraft): string[] {
   const problems: string[] = [];
   if (!d.operation.trim()) problems.push("l'opération");
   if (!d.operation_category) problems.push("la catégorie");
-  if (!d.general_anesthesia && !d.regional && !d.technical) problems.push("la technique");
+  if (!d.off_record && !d.general_anesthesia && !d.regional && !d.technical) problems.push("la technique");
   if (d.regional && d.regional_types.length === 0) problems.push("le type d'ALR");
   if (d.technical && !d.technical_acts.some((a) => a !== "echo_alr")) problems.push("le type d'acte");
   if (!d.participation) problems.push("le degré de participation");
@@ -145,6 +148,7 @@ export function CaseForm({
       participation: defaultParticipation(data.cases, stage.id),
       tutor_id: defaultTutorId(data.cases, stage.id, date),
       notes: "",
+      off_record: false,
     };
   });
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -191,6 +195,7 @@ export function CaseForm({
       ...savedTechniques(draft),
       details: cleanDetails(draft.details),
       planned: initial?.planned ?? false,
+      off_record: draft.off_record,
       participation: draft.participation!,
       tutor_id: draft.tutor_id,
       signature_id: initial?.signature_id ?? null,
@@ -200,7 +205,7 @@ export function CaseForm({
     commit([putRow("cases", row)]);
     onSaved?.(row, isNew);
     if (isNew) {
-      setDraft((d) => ({ ...d, patient_initials: "", operation: "", pediatric_under_4: false, notes: "", details: {} }));
+      setDraft((d) => ({ ...d, patient_initials: "", operation: "", pediatric_under_4: false, notes: "", details: {}, off_record: false }));
       setTriedSave(false);
       initialsRef.current?.focus();
     }
@@ -377,10 +382,19 @@ export function CaseForm({
         </Field>
       )}
 
+      <label className="flex min-h-9 items-start gap-2 text-xs text-foreground-muted">
+        <Switch checked={draft.off_record} onCheckedChange={(v) => set({ off_record: v })} aria-label="Hors carnet" />
+        <span>
+          <span className="font-medium text-foreground">Hors carnet</span> — à garder pour soi (geste en dehors du stage, cas pour mémoire…) : jamais numéroté, compté, signé ni exporté ; la numérotation du carnet reste continue.
+        </span>
+      </label>
+
       <div className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-10 -mx-1 flex flex-wrap items-center justify-between gap-3 bg-surface/95 px-1 py-3 backdrop-blur sm:static sm:bg-transparent sm:p-0">
         <p className="text-xs text-foreground-subtle">
           {triedSave && problems.length > 0 ? (
             <span className="text-danger">Il manque {problems.join(", ")}.</span>
+          ) : draft.off_record ? (
+            <span className="font-medium text-accent">Hors carnet : journal personnel, ni numéroté ni compté.</span>
           ) : preview ? (
             <>
               Carnet : <span className="font-mono font-medium text-foreground">{preview}</span> · {stage.hospital}

@@ -93,6 +93,8 @@ export interface CarnetCase {
   details: CaseDetails;
   /** Prepared the day before in Préop: not counted anywhere (relevé, report, export, signatures) until confirmed as done. */
   planned: boolean;
+  /** Personal log only (« hors carnet »): never numbered nor counted anywhere in the official carnet (migration 091). */
+  off_record: boolean;
   participation: 1 | 2 | 3;
   tutor_id: string | null;
   signature_id: string | null;
@@ -116,6 +118,39 @@ export interface CaseDetails {
 }
 
 export type DutyType = "on_site" | "on_call";
+
+/** Kind of day in the work log: worked (normal, on-site duty, callable duty) or not (leave, holiday, sick, recovery), or counted as work (scientific day, course). */
+export type WorkdayKind = "work" | "on_site" | "on_call" | "leave" | "holiday" | "sick" | "scientific" | "course" | "recovery";
+
+/** A period actually worked at the hospital during a callable duty. */
+export interface WorkCallout {
+  start: string;
+  end: string;
+  next_day: boolean;
+}
+
+export interface CarnetWorkday {
+  id: string;
+  stage_id: string | null;
+  work_date: string;
+  kind: WorkdayKind;
+  /** « HH:MM », local time; "" for a day without hours (leave, holiday…). */
+  start_time: string;
+  end_time: string;
+  /** The end is the next day (night, 24 h duty). */
+  end_next_day: boolean;
+  break_minutes: number;
+  callouts: WorkCallout[];
+  notes: string;
+  created_at: string;
+}
+
+/** Personal settings stored by key (migration 091): « pay » holds the pay parameters (see pay.ts). */
+export interface CarnetSetting {
+  id: string;
+  key: "pay";
+  value: Record<string, unknown>;
+}
 
 export interface CarnetDuty {
   id: string;
@@ -190,6 +225,8 @@ export interface CarnetData {
   courses: CarnetCourse[];
   publications: CarnetPublication[];
   years: CarnetYear[];
+  workdays: CarnetWorkday[];
+  settings: CarnetSetting[];
 }
 
 /** Collections that are plain lists of rows with an `id` (everything except the singleton profile). */
@@ -229,5 +266,7 @@ export function emptyCarnetData(): CarnetData {
     courses: [],
     publications: [],
     years: [],
+    workdays: [],
+    settings: [],
   };
 }

@@ -105,13 +105,14 @@ const caseBase = z.object({
     details: caseDetailsSchema,
     // Optional so older clients' rows and partial patches never flip it; the column defaults to false.
     planned: z.boolean().optional(),
+    off_record: z.boolean().optional(),
     participation: z.union([z.literal(1), z.literal(2), z.literal(3)]),
     tutor_id: id.nullable(),
     signature_id: id.nullable(),
     notes: text(2000),
     created_at: timestamp,
   });
-const caseSchema = caseBase.refine((c) => c.general_anesthesia || c.regional_types.length > 0 || c.technical_acts.length > 0, "Technique d'anesthésie requise");
+const caseSchema = caseBase.refine((c) => c.off_record || c.general_anesthesia || c.regional_types.length > 0 || c.technical_acts.length > 0, "Technique d'anesthésie requise");
 
 const dutySchema = z.object({
   id,
@@ -162,6 +163,28 @@ const publicationSchema = z.object({
   created_at: timestamp,
 });
 
+const hhmm = z.string().regex(/^(\d{2}:\d{2})?$/, "Heure invalide");
+
+const workdaySchema = z.object({
+  id,
+  stage_id: id.nullable(),
+  work_date: date,
+  kind: z.enum(["work", "on_site", "on_call", "leave", "holiday", "sick", "scientific", "course", "recovery"]),
+  start_time: hhmm,
+  end_time: hhmm,
+  end_next_day: z.boolean(),
+  break_minutes: z.number().int().min(0).max(720),
+  callouts: z.array(z.object({ start: hhmm, end: hhmm, next_day: z.boolean() })).max(20),
+  notes: text(2000),
+  created_at: timestamp,
+});
+
+const settingSchema = z.object({
+  id,
+  key: z.enum(["pay"]),
+  value: z.record(z.string(), z.unknown()).refine((v) => JSON.stringify(v).length < 100_000, "Réglages trop volumineux"),
+});
+
 const yearSchema = z.object({
   id,
   training_year: z.number().int().min(1).max(8),
@@ -181,6 +204,8 @@ export const ROW_SCHEMAS: Record<CarnetCollection, z.ZodType<Record<string, unkn
   courses: courseSchema,
   publications: publicationSchema,
   years: yearSchema,
+  workdays: workdaySchema,
+  settings: settingSchema,
 };
 
 /** Partial schema per collection ("patch") — never allowed to change the id. */
@@ -196,4 +221,6 @@ export const PATCH_SCHEMAS: Record<CarnetCollection, z.ZodType<Record<string, un
   courses: courseSchema.omit({ id: true }).partial(),
   publications: publicationSchema.omit({ id: true }).partial(),
   years: yearSchema.omit({ id: true }).partial(),
+  workdays: workdaySchema.omit({ id: true }).partial(),
+  settings: settingSchema.omit({ id: true }).partial(),
 };

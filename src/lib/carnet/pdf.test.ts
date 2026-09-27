@@ -47,6 +47,7 @@ function sample(): CarnetData {
       other_labels: {},
       details: {},
       planned: false,
+      off_record: false,
       participation: 2,
       tutor_id: "sup1",
       signature_id: i < 10 ? "sig1" : null,

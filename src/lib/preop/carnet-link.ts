@@ -52,6 +52,7 @@ export function plannedCaseFromDossier(d: Dossier, choices: PlanChoices, date: s
     other_labels: {},
     details: { drugs: planDrugsForCarnet(d) },
     planned: true,
+    off_record: false,
     participation: choices.participation,
     tutor_id: choices.tutorId,
     signature_id: null,
