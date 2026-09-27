@@ -89,6 +89,8 @@ export interface PayParams {
   restAfterLongShift: number;
   /** INAMI « statut social » for doctors in training, annual, paid into a pension/income-insurance contract. */
   inamiSocialAdvantage: number;
+  /** Additional communal tax (% of the income tax), not withheld from the salary. */
+  communalTaxRate: number;
 }
 
 /**
@@ -142,6 +144,7 @@ export const DEFAULT_PAY: PayParams = {
   maxShiftHours: 24,
   restAfterLongShift: 12,
   inamiSocialAdvantage: 8403.62,
+  communalTaxRate: 0.07,
 };
 
 export const PAY_SOURCES = [
@@ -342,7 +345,12 @@ export interface MonthPay {
   withholding: number;
   special: number;
   expenses: number;
-  net: number;
+  /** Salary after contribution and withholding tax — without the expense allowance. */
+  netSalary: number;
+  /** What reaches the bank account: net salary + expense allowance. */
+  paid: number;
+  /** Communal tax is not withheld: settled a year later with the tax bill — the monthly amount to set aside. */
+  communalProvision: number;
   alerts: Alert[];
 }
 
@@ -524,13 +532,15 @@ export function monthPay(month: string, allDays: CarnetWorkday[], settings: PayS
   const withholding = estimateWithholding(taxable, p);
   const special = round2(p.specialContributionMonthly);
   const expenses = share > 0 && workedDays >= p.expenseMinDays ? round2(p.expenseAllowance * Math.min(1, share)) : 0;
-  const net = round2(taxable - withholding - special + expenses);
+  const netSalary = round2(taxable - withholding - special);
+  const paid = round2(netSalary + expenses);
+  const communalProvision = round2(withholding * p.communalTaxRate);
 
   const alerts = workTimeAlerts(month, allDays, settings);
   if (hours.total > p.maxMonthlyHours) alerts.push({ level: "warning", text: `${h1(hours.total)} ce mois : repos compensatoire dû pour ${h1(hours.total - p.maxMonthlyHours)} (au-delà de ${p.maxMonthlyHours} h).` });
   if (share > 0 && workedDays < p.expenseMinDays && days.length > 0) alerts.push({ level: "info", text: `${workedDays} jour(s) presté(s) : indemnité de frais non due sous ${p.expenseMinDays} jours (sauf maladie ≤ 30 jours ou congés — à vérifier).` });
 
-  return { month, params: p, hours, countedHours: counted, workedDays, onCall, optingOutHours: opting, hourly, lines, gross, contribution, taxable, withholding, special, expenses, net, alerts };
+  return { month, params: p, hours, countedHours: counted, workedDays, onCall, optingOutHours: opting, hourly, lines, gross, contribution, taxable, withholding, special, expenses, netSalary, paid, communalProvision, alerts };
 }
 
 /** Days of leave, holidays and scientific days used over the contract year (or the calendar year without contract dates). */

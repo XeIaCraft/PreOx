@@ -344,7 +344,8 @@ function PaySettingsEditor({ onClose }: { onClose: () => void }) {
               ))}
             </>
           )}
-          <NumberInput label="Avantage INAMI (statut social, an)" value={v.inamiSocialAdvantage} onChange={(x) => set({ inamiSocialAdvantage: x })} unit="€" />
+          <NumberInput label="Taxe communale (% de l'impôt)" value={v.communalTaxRate} onChange={(x) => set({ communalTaxRate: x })} unit="%" percent />
+          <NumberInput label="Épargne INAMI (hors paie, an)" value={v.inamiSocialAdvantage} onChange={(x) => set({ inamiSocialAdvantage: x })} unit="€" />
         </>,
         "Statut sui generis : 4,70 % (soins de santé 3,55 % + indemnités 1,15 %) — pas de cotisation pension ni chômage. Le précompte « barème » est une estimation (personne isolée, sans charge) ; le mode « taux » reprend exactement votre fiche."
       )}
@@ -504,8 +505,13 @@ export function WorkdaysView({ stage }: { stage: CarnetStage | null }) {
         <Tile label="Heures prestées" value={hours(pay.hours.total)} sub={`${pay.workedDays} jour(s) presté(s)`} />
         <Tile label="Heures inconfortables" value={hours(uncomfortable)} sub={`nuit ${hours(pay.hours.night)} · sam. ${hours(pay.hours.saturday)} · dim./fériés ${hours(pay.hours.sundayHoliday)}`} />
         <Tile label="Brut estimé" value={eur(pay.gross)} sub={pay.onCall.day + pay.onCall.nightWeekend ? `dont ${pay.onCall.day + pay.onCall.nightWeekend} forfait(s) de garde` : undefined} />
-        <Tile label="Net estimé" value={eur(pay.net)} sub="avec l'indemnité de frais" />
+        <Tile label="Salaire net estimé" value={eur(pay.netSalary)} sub={pay.expenses > 0 ? `+ frais ${eur(pay.expenses)} = ${eur(pay.paid)} versés` : "sans indemnité de frais ce mois"} />
       </div>
+      {pay.workedDays < 5 && pay.lines[0].amount > 0 && (
+        <p className="text-xs text-foreground-subtle">
+          La rémunération de base est due pour le mois entier (temps plein), même si les journées ne sont pas encore encodées : les journées ajoutent les heures inconfortables, gardes et opting out.
+        </p>
+      )}
 
       {pay.alerts.length > 0 && (
         <ul className="space-y-1.5" aria-label="Temps de travail">
@@ -598,21 +604,34 @@ export function WorkdaysView({ stage }: { stage: CarnetStage | null }) {
                 <td className="whitespace-nowrap py-1.5 text-right tabular-nums">− {eur(pay.special)}</td>
               </tr>
             )}
+            <tr className="border-t-2 border-border-strong font-medium">
+              <td className="py-1.5">Salaire net</td>
+              <td className="whitespace-nowrap py-1.5 text-right tabular-nums">{eur(pay.netSalary)}</td>
+            </tr>
             <tr>
               <td className="py-1.5 pr-2">
                 Indemnité de frais
-                <span className="block text-xs text-foreground-subtle">non imposable, due à partir de {p.expenseMinDays} jours prestés</span>
+                <span className="block text-xs text-foreground-subtle">
+                  forfait {eur(p.expenseAllowance)} pour déplacements, téléphone… — ni cotisation ni impôt, versée en plus du salaire ; {pay.expenses > 0 ? "due ce mois" : `pas due ce mois (moins de ${p.expenseMinDays} jours prestés)`}
+                </span>
               </td>
               <td className="whitespace-nowrap py-1.5 text-right tabular-nums">+ {eur(pay.expenses)}</td>
             </tr>
-            <tr className="font-medium">
-              <td className="py-1.5">Net estimé</td>
-              <td className="whitespace-nowrap py-1.5 text-right tabular-nums">{eur(pay.net)}</td>
+            <tr className="border-t-2 border-border-strong font-semibold">
+              <td className="py-1.5">Versé sur le compte</td>
+              <td className="whitespace-nowrap py-1.5 text-right tabular-nums">{eur(pay.paid)}</td>
             </tr>
           </tbody>
         </table>
         <p className="text-xs text-foreground-subtle">
-          Taux horaire de base {eur(pay.hourly)}. Pas de pécule de vacances ni de 13e mois (statut sui generis). Avantage INAMI annuel : {eur(p.inamiSocialAdvantage)}, versé sur un contrat de pension, hors salaire. Estimation à comparer à votre fiche de paie.
+          Taux horaire de base {eur(pay.hourly)}. Pas de pécule de vacances ni de 13e mois (statut sui generis). La taxe communale n&apos;est pas retenue sur le salaire : elle arrive avec l&apos;avertissement-extrait de rôle l&apos;année suivante — mettez de côté environ {eur(pay.communalProvision)} par mois ({Math.round(p.communalTaxRate * 1000) / 10} % de l&apos;impôt, selon votre commune). Estimation à comparer à votre fiche de paie.
+        </p>
+      </section>
+
+      <section className="space-y-1 rounded-[var(--radius-lg)] border border-dashed border-border bg-surface p-4 text-sm">
+        <h3 className="font-serif-display text-base font-medium text-foreground">Épargne INAMI (hors paie)</h3>
+        <p className="text-foreground-muted">
+          Avantage social INAMI des médecins en formation : <span className="tabular-nums text-foreground">{eur(p.inamiSocialAdvantage)}</span> par an, versés par l&apos;INAMI (pas par l&apos;hôpital) sur un contrat que vous choisissez (pension complémentaire, revenu garanti) — une épargne, pas une rémunération : il n&apos;apparaît ni dans le brut ni dans le net.
         </p>
       </section>
 

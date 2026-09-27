@@ -61,7 +61,8 @@ describe("rémunération du mois", () => {
     expect(sunday.amount).toBeCloseTo(16 * hourly * 0.6, 1);
     expect(m.contribution).toBeCloseTo(m.gross * 0.047, 1);
     expect(m.expenses).toBe(DEFAULT_PAY.expenseAllowance);
-    expect(m.net).toBeGreaterThan(m.taxable - m.withholding);
+    expect(m.netSalary).toBeCloseTo(m.taxable - m.withholding, 2);
+    expect(m.paid).toBeCloseTo(m.netSalary + DEFAULT_PAY.expenseAllowance, 2);
   });
 
   it("proratise la base au début de la convention", () => {
@@ -113,5 +114,24 @@ describe("réglages", () => {
     const b = leaveBalance(days, settings().versions[0], "2027-02-01");
     expect(b.from).toBe("2026-10-05");
     expect(b.used).toMatchObject({ leave: 1, holiday: 1, scientific: 1 });
+  });
+});
+
+describe("exemple : 8 h–18 h du lundi au vendredi, sans garde", () => {
+  it("brut = base, net salaire ≈ 2 790 €, + frais 165,45 €", () => {
+    const days: CarnetWorkday[] = [];
+    for (let d = 1; d <= 30; d++) {
+      const iso = `2026-11-${String(d).padStart(2, "0")}`;
+      const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
+      if (wd === 0 || wd === 6 || iso === "2026-11-11" || iso === "2026-11-02") continue;
+      days.push(day(iso, "work", "08:00", "18:00", { break_minutes: 30 }));
+    }
+    const m = monthPay("2026-11", days, settings());
+    expect(m.gross).toBe(3813.82);
+    expect(m.contribution).toBe(179.25);
+    expect(m.taxable).toBe(3634.57);
+    expect(m.withholding).toBeCloseTo(843.06, 1);
+    expect(m.netSalary).toBeCloseTo(2791.51, 1);
+    expect(m.paid).toBeCloseTo(2956.96, 1);
   });
 });
