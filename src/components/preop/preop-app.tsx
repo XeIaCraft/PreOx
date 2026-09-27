@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { BookMarked, FolderOpen, Loader2, NotebookTabs, Settings2, Sparkles, Stethoscope } from "lucide-react";
+import { Activity, BookMarked, FolderOpen, Loader2, NotebookTabs, Settings2, Sparkles, Stethoscope } from "lucide-react";
 import { AiSettings } from "@/components/preop/ai-assistant";
 import { ConsultationView } from "@/components/preop/consultation";
 import { DossierList } from "@/components/preop/dossiers";
@@ -18,11 +18,12 @@ import { useToast } from "@/components/ui/toast";
 import { CatalogsProvider } from "@/components/preop/use-catalogs";
 import { SettingsView } from "@/components/preop/settings";
 import { ServicePrefsPanel } from "@/components/preop/service-prefs-panel";
+import { PlanListsSettings } from "@/components/preop/plan-lists-settings";
 import { emptyDossier, withAutoStatus } from "@/lib/preop/dossier";
 import type { QuestionInput } from "@/lib/preop/rules/question";
 import { cn } from "@/lib/utils";
 
-type View = "consultation" | "dossiers" | "dossier" | "protocoles" | "regles" | "nouvelle" | "parametres" | "ia";
+type View = "consultation" | "dossiers" | "dossier" | "protocoles" | "regles" | "nouvelle" | "parametres" | "ia" | "bloc";
 
 const TABS: { view: View; label: string; short: string; icon: typeof Stethoscope }[] = [
   { view: "consultation", label: "Consultation", short: "Consult.", icon: Stethoscope },
@@ -34,11 +35,12 @@ const TABS: { view: View; label: string; short: string; icon: typeof Stethoscope
 const SETTINGS_SECTIONS: { view: View; label: string; icon: typeof Stethoscope }[] = [
   { view: "parametres", label: "Listes et seuils", icon: Settings2 },
   { view: "protocoles", label: "Protocoles", icon: NotebookTabs },
+  { view: "bloc", label: "Plan et bloc", icon: Activity },
   { view: "regles", label: "Règles", icon: BookMarked },
   { view: "ia", label: "Assistant IA", icon: Sparkles },
 ];
 
-const VIEWS: View[] = ["consultation", "dossiers", "dossier", "protocoles", "regles", "nouvelle", "parametres", "ia"];
+const VIEWS: View[] = ["consultation", "dossiers", "dossier", "protocoles", "regles", "nouvelle", "parametres", "ia", "bloc"];
 
 /**
  * The "Préop" module, one client-side app: the consultation (kept only if
@@ -94,7 +96,7 @@ function PreopScreens() {
   };
 
   const dossier = view === "dossier" ? dossierStore.dossiers.find((d) => d.id === dossierId) : undefined;
-  const activeTab: View = view === "dossier" ? "dossiers" : view === "nouvelle" || view === "regles" || view === "protocoles" || view === "ia" ? "parametres" : view;
+  const activeTab: View = view === "dossier" ? "dossiers" : view === "nouvelle" || view === "regles" || view === "protocoles" || view === "ia" || view === "bloc" ? "parametres" : view;
   const settingsSection: View = view === "nouvelle" ? "regles" : view;
 
   return (
@@ -237,6 +239,7 @@ function PreopScreens() {
       {view === "nouvelle" && <RuleWizard key={wizardKey} initial={pendingQuestion} onSave={save} onDone={() => go("regles")} />}
       {view === "parametres" && <SettingsView protocols={protocolLib.protocols} />}
       {view === "ia" && <AiSettings />}
+      {view === "bloc" && <PlanListsSettings />}
     </div>
   );
 }

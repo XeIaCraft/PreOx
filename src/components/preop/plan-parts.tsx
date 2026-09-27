@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChipGroup, ToggleChip } from "@/components/carnet/ui";
@@ -32,7 +32,6 @@ import { cn } from "@/lib/utils";
  */
 export function CatalogChecklist({ groups, value, onChange, placeholder }: { groups: CatalogGroup[]; value: string[]; onChange: (v: string[]) => void; placeholder: string }) {
   const known = new Set(groups.flatMap((g) => g.items.map((i) => i.label)));
-  const own = value.filter((v) => !known.has(v));
   const toggle = (label: string) => onChange(value.includes(label) ? value.filter((v) => v !== label) : [...value, label]);
   const [draft, setDraft] = useState("");
   return (
@@ -50,14 +49,27 @@ export function CatalogChecklist({ groups, value, onChange, placeholder }: { gro
         </div>
       ))}
       <div className="space-y-1">
-        <FieldLabel>Autres</FieldLabel>
-        <div className="flex flex-wrap gap-1.5">
-          {own.map((v) => (
-            <ToggleChip key={v} pressed onChange={() => toggle(v)} className="min-h-8 px-2.5 text-xs">
-              {v} ×
-            </ToggleChip>
+        <FieldLabel>Retenu pour ce plan — modifiable (valeur, précision)</FieldLabel>
+        {value.length === 0 && <p className="text-xs text-foreground-subtle">Rien de coché.</p>}
+        <ul className="space-y-1">
+          {value.map((v, i) => (
+            <li key={`${i}-${v}`} className="flex items-center gap-1.5">
+              <Input
+                className={cn("h-8 text-sm", !known.has(v) && "border-accent/50")}
+                defaultValue={v}
+                aria-label={`Modifier ${v}`}
+                onBlur={(e) => {
+                  const t = e.target.value.trim();
+                  if (!t) onChange(value.filter((_, j) => j !== i));
+                  else if (t !== v) onChange(value.map((x, j) => (j === i ? t : x)));
+                }}
+              />
+              <Button type="button" size="icon" variant="ghost" onClick={() => onChange(value.filter((_, j) => j !== i))} aria-label={`Retirer ${v}`}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </li>
           ))}
-        </div>
+        </ul>
         <form
           className="flex gap-1.5"
           onSubmit={(e) => {

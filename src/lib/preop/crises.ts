@@ -25,9 +25,16 @@ export const CRISIS_CATEGORIES: { code: CrisisCategory; label: string }[] = [
   { code: "neuro", label: "Réveil et neurologie" },
 ];
 
+/** How a dose is computed — kept so that an edited crisis still computes the patient's doses. */
+export type DoseSpec =
+  | { kind: "perKg"; min: number; max: number; unit: string; per?: string }
+  | { kind: "rate"; min: number; max: number; unit: string }
+  | { kind: "fixed"; dose: string };
+
 export interface CrisisDose {
   /** Name logged in the anaesthesia events when « Donné » is tapped. */
   drug: string;
+  spec?: DoseSpec;
   /** Computed for the patient: « 70 mg », « 175–263 mg ». */
   dose: string | null;
   /** How it was computed or the fixed dose: « 1–1,5 mg/kg × 70 kg ». */
@@ -68,16 +75,25 @@ const rng = (a: number, b: number) => (a === b ? f(a) : `${f(a)}–${f(b)}`);
 
 /** A per-kilo dose, computed when the weight is known. */
 function perKg(drug: string, min: number, max: number, unit: string, w: number | undefined, route?: string, per = ""): CrisisDose {
+  const spec: DoseSpec = { kind: "perKg", min, max, unit, ...(per ? { per } : {}) };
   return w
-    ? { drug, dose: `${rng(min * w, max * w)} ${unit}${per}`, how: `${rng(min, max)} ${unit}/kg${per} × ${f(w)} kg`, route }
-    : { drug, dose: null, how: `${rng(min, max)} ${unit}/kg${per} · poids requis`, route };
+    ? { drug, spec, dose: `${rng(min * w, max * w)} ${unit}${per}`, how: `${rng(min, max)} ${unit}/kg${per} × ${f(w)} kg`, route }
+    : { drug, spec, dose: null, how: `${rng(min, max)} ${unit}/kg${per} · poids requis`, route };
 }
-const fixed = (drug: string, dose: string, route?: string): CrisisDose => ({ drug, dose, how: "dose fixe", route });
+const fixed = (drug: string, dose: string, route?: string): CrisisDose => ({ drug, spec: { kind: "fixed", dose }, dose, how: "dose fixe", route });
 /** A rate per kilo per minute shown as a per-kilo rate and per hour for the patient. */
 function ratePerKgMin(drug: string, min: number, max: number, unit: string, w: number | undefined): CrisisDose {
+  const spec: DoseSpec = { kind: "rate", min, max, unit };
   return w
-    ? { drug, dose: `${rng(min * w, max * w)} ${unit}/min`, how: `${rng(min, max)} ${unit}/kg/min × ${f(w)} kg`, route: "IV continu" }
-    : { drug, dose: null, how: `${rng(min, max)} ${unit}/kg/min · poids requis`, route: "IV continu" };
+    ? { drug, spec, dose: `${rng(min * w, max * w)} ${unit}/min`, how: `${rng(min, max)} ${unit}/kg/min × ${f(w)} kg`, route: "IV continu" }
+    : { drug, spec, dose: null, how: `${rng(min, max)} ${unit}/kg/min · poids requis`, route: "IV continu" };
+}
+
+/** A dose recomputed from its formula for this weight (edited crises). */
+export function doseFromSpec(drug: string, spec: DoseSpec, route: string | undefined, w: number | undefined): CrisisDose {
+  if (spec.kind === "fixed") return fixed(drug, spec.dose, route);
+  if (spec.kind === "rate") return { ...ratePerKgMin(drug, spec.min, spec.max, spec.unit, w), ...(route ? { route } : {}) };
+  return perKg(drug, spec.min, spec.max, spec.unit, w, route, spec.per ?? "");
 }
 
 const MANUAL = "Manuel pratique d'anesthésie 2020";

@@ -15,6 +15,7 @@ import { emptyProtocolContent, type Protocol } from "./protocols";
 import { catalogKindSchema, catalogOverridesSchema } from "./catalog-schema";
 import type { AllOverrides } from "./catalog";
 import { DEFAULT_SERVICE_PREFS, servicePrefsSchema, type ServicePrefs } from "./service-prefs";
+import { planListsSchema, type PlanLists } from "./plan-lists";
 import type { Profile } from "@/lib/supabase/types";
 
 export const PREOP_SLUG = "preop";
@@ -102,11 +103,28 @@ export async function listCatalogOverrides(userId: string): Promise<AllOverrides
   const supabase = await createClient();
   const { data, error } = await supabase.from("preop_catalogs").select("kind, overrides").eq("user_id", userId);
   if (error) throw new Error(error.message);
-  return Object.fromEntries((data ?? []).filter((r) => r.kind !== SERVICE_KIND).map((r) => [r.kind, r.overrides])) as AllOverrides;
+  return Object.fromEntries((data ?? []).filter((r) => r.kind !== SERVICE_KIND && r.kind !== LISTS_KIND).map((r) => [r.kind, r.overrides])) as AllOverrides;
 }
 
-// The service's preferences live in the same table, as kind « service ».
+// The service's preferences and the plan/theatre lists live in the same table.
 const SERVICE_KIND = "service";
+const LISTS_KIND = "plan_lists";
+
+export async function getPlanLists(userId: string): Promise<PlanLists> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("preop_catalogs").select("overrides").eq("user_id", userId).eq("kind", LISTS_KIND).maybeSingle();
+  if (error) throw new Error(error.message);
+  const parsed = planListsSchema.safeParse(data?.overrides ?? {});
+  return parsed.success ? (parsed.data as PlanLists) : {};
+}
+
+export async function savePlanLists(userId: string, input: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = planListsSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Listes invalides" };
+  const supabase = await createClient();
+  const { error } = await supabase.from("preop_catalogs").upsert({ user_id: userId, kind: LISTS_KIND, overrides: parsed.data } as never, { onConflict: "user_id,kind" });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
 
 export async function getServicePrefs(userId: string): Promise<ServicePrefs> {
   const supabase = await createClient();

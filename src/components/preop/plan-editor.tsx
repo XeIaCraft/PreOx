@@ -6,7 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, MultiChipGroup } from "@/components/carnet/ui";
 import { Disclosure, FieldLabel, InfoTip, NumberField, Panel, TextArea } from "@/components/preop/ui";
-import { CatalogChecklist, MATERIAL_GROUPS, PostopEditor, RisksEditor, TARGET_GROUPS } from "@/components/preop/plan-parts";
+import { CatalogChecklist, PostopEditor, RisksEditor } from "@/components/preop/plan-parts";
+import { useCatalogs } from "@/components/preop/use-catalogs";
+import { MonitoringCard } from "@/components/preop/monitoring-card";
+import { materialGroupsOf, monitoringOf, targetGroupsOf } from "@/lib/preop/plan-lists";
+import { monitoringFor } from "@/lib/preop/monitoring";
 import type { PostopPatient } from "@/lib/preop/postop";
 import { DRUG_ROUTES, defaultRoute, drugClassOf, drugSuggestions, routeShort } from "@/lib/carnet/pharmaco";
 import {
@@ -272,7 +276,9 @@ export function PlanEditor({
   riskContext?: string;
 }) {
   const [justAdded, setJustAdded] = useState<string | null>(null);
+  const { lists } = useCatalogs();
   const set = (patch: Partial<ProtocolContent>) => onChange({ ...c, ...patch });
+  const cards = monitoringFor([...c.targets, ...c.material], monitoringOf(lists));
   const byPhase = DRUG_PHASES.map((p) => ({ ...p, drugs: c.drugs.filter((d) => d.phase === p.code) })).filter((p) => p.drugs.length > 0);
   const laLoad = localAnaestheticLoad(c.drugs, body?.weightKg, (d) => computeDose(d as ProtocolDrug, body ?? {}));
   const hasLa = laLoad.parts.length + laLoad.unknown.length > 0;
@@ -330,14 +336,23 @@ export function PlanEditor({
       >
         <Disclosure summary={<>Cibles {c.targets.length ? <span className="font-normal text-foreground-subtle">— {c.targets.join(" · ")}</span> : null}</>} initialOpen={c.targets.length === 0} className="rounded-[var(--radius-md)] border border-border" summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground">
           <div className="px-3 pb-3">
-            <CatalogChecklist groups={TARGET_GROUPS} value={c.targets} onChange={(targets) => set({ targets })} placeholder="Autre cible (ex. PAS < 140 mmHg)" />
+            <CatalogChecklist groups={targetGroupsOf(lists)} value={c.targets} onChange={(targets) => set({ targets })} placeholder="Autre cible (ex. PAS < 140 mmHg)" />
           </div>
         </Disclosure>
         <Disclosure summary={<>Monitorage et matériel {c.material.length ? <span className="font-normal text-foreground-subtle">— {c.material.join(" · ")}</span> : null}</>} initialOpen={c.material.length === 0} className="rounded-[var(--radius-md)] border border-border" summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground">
           <div className="px-3 pb-3">
-            <CatalogChecklist groups={MATERIAL_GROUPS} value={c.material} onChange={(material) => set({ material })} placeholder="Autre (ex. matelas coquille)" />
+            <CatalogChecklist groups={materialGroupsOf(lists)} value={c.material} onChange={(material) => set({ material })} placeholder="Autre (ex. matelas coquille)" />
           </div>
         </Disclosure>
+        {cards.length > 0 && (
+          <Disclosure summary={<>Fiches du monitorage retenu <span className="font-normal text-foreground-subtle">— valeurs normales, cibles, à quoi ça sert, comment ça marche ({cards.length})</span></>} className="rounded-[var(--radius-md)] border border-border" summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground">
+            <div className="space-y-2 px-3 pb-3">
+              {cards.map((m) => (
+                <MonitoringCard key={m.id} m={m} />
+              ))}
+            </div>
+          </Disclosure>
+        )}
         {c.techniques.includes("general") && <GasesEditor value={c.gases} age={patient?.age} onChange={(gases) => set({ gases })} />}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <NumberField label="Alerte garrot" unit="min" value={c.tourniquetAlertMin ?? undefined} onChange={(v) => set({ tourniquetAlertMin: v === undefined ? null : Math.round(v) })} />

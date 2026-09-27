@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { mergeCatalogs, type AllOverrides, type CatalogKind, type CatalogOverrides, type Catalogs } from "@/lib/preop/catalog";
 import { DEFAULT_CATALOGS } from "@/lib/preop/catalog-defaults";
 import { DEFAULT_SERVICE_PREFS, type ServicePrefs } from "@/lib/preop/service-prefs";
+import { EMPTY_LISTS, type PlanLists } from "@/lib/preop/plan-lists";
 import { request } from "./api";
 
 // The catalogues of the module (Paramètres): PreOx's defaults merged with
@@ -12,6 +13,7 @@ import { request } from "./api";
 
 const CACHE_KEY = "preox:preop:catalogs";
 const SERVICE_KEY = "preox:preop:service";
+const LISTS_KEY = "preox:preop:plan-lists";
 
 interface CatalogsContextValue {
   catalogs: Catalogs;
@@ -20,6 +22,9 @@ interface CatalogsContextValue {
   /** The service's habits, applied to the protocols (Réglages › Service). */
   service: ServicePrefs;
   saveService: (prefs: ServicePrefs) => Promise<void>;
+  /** Your lists for the plan and the theatre screen (Réglages › Plan et bloc). */
+  lists: PlanLists;
+  saveLists: (lists: PlanLists) => Promise<void>;
 }
 
 const CatalogsContext = createContext<CatalogsContextValue | null>(null);
@@ -50,6 +55,23 @@ function readService(): ServicePrefs | null {
   }
 }
 
+function readJson<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeJson(key: string, v: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(v));
+  } catch {
+    // Storage full or blocked: still works online.
+  }
+}
+
 function writeService(p: ServicePrefs) {
   try {
     localStorage.setItem(SERVICE_KEY, JSON.stringify(p));
@@ -61,11 +83,20 @@ function writeService(p: ServicePrefs) {
 export function CatalogsProvider({ children }: { children: React.ReactNode }) {
   const [overrides, setOverrides] = useState<AllOverrides>({});
   const [service, setService] = useState<ServicePrefs>(DEFAULT_SERVICE_PREFS);
+  const [lists, setLists] = useState<PlanLists>(EMPTY_LISTS);
 
   useEffect(() => {
     const cached = readCache();
     const cachedService = readService();
+    const cachedLists = readJson<PlanLists>(LISTS_KEY);
     const t = setTimeout(() => {
+      if (cachedLists) setLists(cachedLists);
+      request<{ lists: PlanLists }>("/api/preop/lists")
+        .then(({ lists: fresh }) => {
+          setLists(fresh);
+          writeJson(LISTS_KEY, fresh);
+        })
+        .catch(() => undefined);
       if (Object.keys(cached).length) setOverrides(cached);
       if (cachedService) setService(cachedService);
       request<{ prefs: ServicePrefs }>("/api/preop/service")
@@ -99,12 +130,19 @@ export function CatalogsProvider({ children }: { children: React.ReactNode }) {
     writeService(prefs);
   }, []);
 
+  const saveLists = useCallback(async (next: PlanLists) => {
+    // Saved on the device first: the theatre screen works offline.
+    setLists(next);
+    writeJson(LISTS_KEY, next);
+    await request<{ ok: true }>("/api/preop/lists", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lists: next }) });
+  }, []);
+
   const catalogs = useMemo(() => mergeCatalogs(DEFAULT_CATALOGS, overrides), [overrides]);
-  return <CatalogsContext.Provider value={{ catalogs, overrides, save, service, saveService }}>{children}</CatalogsContext.Provider>;
+  return <CatalogsContext.Provider value={{ catalogs, overrides, save, service, saveService, lists, saveLists }}>{children}</CatalogsContext.Provider>;
 }
 
 export function useCatalogs(): CatalogsContextValue {
   const ctx = useContext(CatalogsContext);
   // Outside the provider (tests, previews): the defaults, read-only.
-  return ctx ?? { catalogs: DEFAULT_CATALOGS, overrides: {}, save: async () => undefined, service: DEFAULT_SERVICE_PREFS, saveService: async () => undefined };
+  return ctx ?? { catalogs: DEFAULT_CATALOGS, overrides: {}, save: async () => undefined, service: DEFAULT_SERVICE_PREFS, saveService: async () => undefined, lists: EMPTY_LISTS, saveLists: async () => undefined };
 }

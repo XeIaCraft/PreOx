@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChipGroup } from "@/components/carnet/ui";
 import { FieldLabel, InfoTip, Panel } from "@/components/preop/ui";
-import { CRISIS_CATEGORIES, crises, searchCrises, type Crisis, type CrisisDose } from "@/lib/preop/crises";
+import { CRISIS_CATEGORIES, searchCrises, type Crisis, type CrisisDose } from "@/lib/preop/crises";
+import { crisesOf } from "@/lib/preop/plan-lists";
+import { useCatalogs } from "@/components/preop/use-catalogs";
 import { allergySummary, type CustomTimer, type Dossier, type InsensibleLoss } from "@/lib/preop/dossier";
 import { INSENSIBLE_LOSSES, NORMOVOLAEMIA_SOURCE, fluidPlan, normovolaemia, urineRate } from "@/lib/preop/fluids";
 import { formatMinutes } from "@/lib/preop/intraop";
@@ -219,7 +221,8 @@ export function CrisisPanel({
   onLog?: (c: Crisis) => void;
 }) {
   const p = d.consultation.patient;
-  const list = useMemo(() => crises({ weightKg: p.weightKg, age: p.age }), [p.weightKg, p.age]);
+  const { lists } = useCatalogs();
+  const list = useMemo(() => crisesOf(lists, { weightKg: p.weightKg, age: p.age }), [lists, p.weightKg, p.age]);
   const [q, setQ] = useState("");
   const shown = searchCrises(list, q);
   const open = openId ? list.find((c) => c.id === openId) : undefined;
