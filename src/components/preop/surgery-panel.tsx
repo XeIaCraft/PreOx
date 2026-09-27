@@ -5,7 +5,7 @@ import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { Combobox, FieldLabel, InfoTip, Legend, MiniNumber, Panel } from "@/components/preop/ui";
 import { ARISCAT_LEGEND } from "@/components/preop/legends";
-import { POSITIONS } from "@/lib/preop/plan-catalog";
+import { positionsOf } from "@/lib/preop/plan-lists";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { OPERATION_CATEGORIES } from "@/lib/carnet/referentiel";
 import { RISK_GRADES, URGENCIES, urgencyOf, type RiskGrade, type Surgery } from "@/lib/preop/dossier";
@@ -53,6 +53,8 @@ function PositionPicker({ value, onChange }: { value: string; onChange: (v: stri
     .map((x) => x.trim())
     .filter(Boolean);
   const set = (list: string[]) => onChange(list.join(" → "));
+  const { lists } = useCatalogs();
+  const POSITIONS = positionsOf(lists);
   return (
     <div className="space-y-1">
       <span className="flex items-center gap-1">

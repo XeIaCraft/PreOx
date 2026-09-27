@@ -6,7 +6,8 @@
 // defaults still reach you.
 
 import { z } from "zod";
-import { MATERIAL_GROUPS, TARGET_GROUPS, type CatalogGroup } from "./plan-catalog";
+import { MATERIAL_GROUPS, POSITIONS, RISK_LIBRARY, TARGET_GROUPS, type CatalogGroup, type RiskTemplate } from "./plan-catalog";
+import { DEFAULT_PCEA, DEFAULT_PERINEURAL, type PostopInfusion } from "./postop";
 import { MONITORING, type MonitoringItem } from "./monitoring";
 import { crises, doseFromSpec, type Crisis, type CrisisCategory, type CrisisPatient, type DoseSpec } from "./crises";
 import { COMPLICATION_TYPES } from "./dossier";
@@ -34,8 +35,14 @@ export interface PlanLists {
   targetGroups?: CatalogGroup[];
   materialGroups?: CatalogGroup[];
   monitoring?: Changes<MonitoringItem>;
+  /** The risk library a plan picks its risks from. */
+  risks?: Changes<RiskTemplate>;
   crises?: Changes<CrisisTemplate>;
   complications?: string[];
+  /** Positions proposed for the surgery (replaces PreOx's list when set). */
+  positions?: { label: string; hint: string }[];
+  /** Default settings of the pumps proposed in the post-op orders. */
+  pumps?: { pcea?: PostopInfusion; perineural?: PostopInfusion };
   /** Order of the theatre sections (ids), yours first. */
   theatreOrder?: string[];
 }
@@ -52,6 +59,9 @@ function merge<T extends { id: string }>(defaults: T[], c: Changes<T> | undefine
 export const targetGroupsOf = (l: PlanLists): CatalogGroup[] => l.targetGroups ?? TARGET_GROUPS;
 export const materialGroupsOf = (l: PlanLists): CatalogGroup[] => l.materialGroups ?? MATERIAL_GROUPS;
 export const monitoringOf = (l: PlanLists): MonitoringItem[] => merge(MONITORING, l.monitoring);
+export const riskLibraryOf = (l: PlanLists): RiskTemplate[] => merge(RISK_LIBRARY, l.risks);
+export const positionsOf = (l: PlanLists): { label: string; hint: string }[] => l.positions ?? POSITIONS;
+export const pumpsOf = (l: PlanLists): { pcea: PostopInfusion; perineural: PostopInfusion } => ({ pcea: l.pumps?.pcea ?? DEFAULT_PCEA, perineural: l.pumps?.perineural ?? DEFAULT_PERINEURAL });
 export const complicationsOf = (l: PlanLists): string[] => l.complications ?? [...COMPLICATION_TYPES];
 
 /** A default crisis as an editable template (doses as formulas). */
@@ -115,6 +125,17 @@ const monitoringItem = z.object({
   formulas: z.array(text(300)).max(10).optional(),
   source: text(300).optional(),
 });
+const riskTemplate = z.object({
+  id: text(80),
+  title: text(200),
+  words: z.array(text(60)).max(30),
+  conduct: text(2000),
+  why: text(2000).optional(),
+  prevention: text(2000).optional(),
+  source: text(400).optional(),
+  crisis: text(80).optional(),
+});
+const infusion = z.object({ solution: text(200), rateMlH: z.number().min(0).max(100).nullable(), bolusMl: z.number().min(0).max(100).nullable(), lockoutMin: z.number().int().min(0).max(240).nullable() });
 const spec = z.union([
   z.object({ kind: z.literal("perKg"), min: z.number(), max: z.number(), unit: text(20), per: text(20).optional() }),
   z.object({ kind: z.literal("rate"), min: z.number(), max: z.number(), unit: text(20) }),
@@ -136,7 +157,10 @@ export const planListsSchema = z.object({
   targetGroups: z.array(group).max(30).optional(),
   materialGroups: z.array(group).max(30).optional(),
   monitoring: changes(monitoringItem).optional(),
+  risks: changes(riskTemplate).optional(),
   crises: changes(crisisTemplate).optional(),
   complications: z.array(text(120)).max(100).optional(),
+  positions: z.array(z.object({ label: text(120), hint: text(300) })).max(60).optional(),
+  pumps: z.object({ pcea: infusion.optional(), perineural: infusion.optional() }).optional(),
   theatreOrder: z.array(text(40)).max(40).optional(),
 });

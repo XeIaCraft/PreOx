@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { bodySurface, haemodynamics, monitoringFor } from "./monitoring";
-import { crisesOf, restored, templateOf, withChange, withoutItem, monitoringOf, planListsSchema } from "./plan-lists";
+import { crisesOf, restored, templateOf, withChange, withoutItem, monitoringOf, planListsSchema, positionsOf, pumpsOf, riskLibraryOf } from "./plan-lists";
+import { RISK_LIBRARY } from "./plan-catalog";
+import { suggestedRisks } from "./plan-catalog";
 import { crises } from "./crises";
 import { alarmSettings, predictedWeight, ventilationSettings } from "./ventilation";
 
@@ -53,6 +55,26 @@ describe("listes personnelles", () => {
     // Les doses d'origine au même poids sont retrouvées
     const original = crises({ weightKg: 70 }).find((c) => c.id === "anaphylaxis")!;
     expect(c70.steps.map((s) => s.dose?.dose)).toEqual(original.steps.map((s) => s.dose?.dose));
+  });
+
+  it("bibliothèque de risques : ajout, modification, masquage, proposition", () => {
+    const mine = { id: "u-risk-x", title: "Garrot prolongé", words: ["garrot"], conduct: "Relâcher 10 min toutes les 2 h" };
+    let c = withChange(undefined, mine, false);
+    c = withChange(c, { ...RISK_LIBRARY[0], conduct: "Ma conduite" }, true);
+    c = withoutItem(c, RISK_LIBRARY[1].id, true);
+    const lib = riskLibraryOf({ risks: c });
+    expect(lib.find((r) => r.id === RISK_LIBRARY[0].id)!.conduct).toBe("Ma conduite");
+    expect(lib.some((r) => r.id === RISK_LIBRARY[1].id)).toBe(false);
+    expect(suggestedRisks("prothèse de genou sous garrot", [], lib).map((r) => r.id)).toContain("u-risk-x");
+    expect(planListsSchema.safeParse({ risks: c }).success).toBe(true);
+  });
+
+  it("positions et pompes : défauts de PreOx ou les vôtres", () => {
+    expect(positionsOf({}).length).toBeGreaterThan(5);
+    const pumps = { pcea: { solution: "Ropivacaïne 0,1 % + sufentanil 0,5 µg/mL", rateMlH: 8, bolusMl: 5, lockoutMin: 30 } };
+    expect(pumpsOf({ pumps }).pcea.rateMlH).toBe(8);
+    expect(pumpsOf({ pumps }).perineural.solution).toMatch(/Ropivacaïne/);
+    expect(planListsSchema.safeParse({ positions: [{ label: "Décubitus latéral", hint: "Billot" }], pumps }).success).toBe(true);
   });
 
   it("chaque procédure par défaut passe la validation une fois modifiée", () => {

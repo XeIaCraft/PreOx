@@ -357,9 +357,9 @@ export const RISK_LIBRARY: RiskTemplate[] = [
 ];
 
 /** Risks of the library that look relevant to a plan (by its words). */
-export function suggestedRisks(context: string, already: ProtocolRisk[]): RiskTemplate[] {
+export function suggestedRisks(context: string, already: ProtocolRisk[], library: RiskTemplate[] = RISK_LIBRARY): RiskTemplate[] {
   const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
   const text = fold(context);
   const have = new Set(already.map((r) => fold(r.title)));
-  return RISK_LIBRARY.filter((r) => !have.has(fold(r.title)) && r.words.some((w) => text.includes(fold(w))));
+  return library.filter((r) => !have.has(fold(r.title)) && r.words.some((w) => text.includes(fold(w))));
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, Check, EyeOff, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Copy, EyeOff, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, ToggleChip } from "@/components/carnet/ui";
@@ -9,20 +9,23 @@ import { useToast } from "@/components/ui/toast";
 import { FieldLabel, Panel } from "@/components/preop/ui";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { MonitoringCard } from "@/components/preop/monitoring-card";
-import { MATERIAL_GROUPS, TARGET_GROUPS, type CatalogGroup } from "@/lib/preop/plan-catalog";
+import { InfusionFields } from "@/components/preop/plan-parts";
+import { MATERIAL_GROUPS, POSITIONS, RISK_LIBRARY, TARGET_GROUPS, type CatalogGroup, type RiskTemplate } from "@/lib/preop/plan-catalog";
 import { MONITORING, MONITORING_GROUPS, type MonitoringItem, type MonitoringGroup } from "@/lib/preop/monitoring";
 import { CRISIS_CATEGORIES, crises, type CrisisCategory, type DoseSpec } from "@/lib/preop/crises";
 import { COMPLICATION_TYPES } from "@/lib/preop/dossier";
-import { crisesOf, materialGroupsOf, monitoringOf, restored, targetGroupsOf, templateOf, withChange, withoutItem, type CrisisTemplate, type PlanLists } from "@/lib/preop/plan-lists";
+import { crisesOf, materialGroupsOf, monitoringOf, positionsOf, pumpsOf, restored, riskLibraryOf, targetGroupsOf, templateOf, withChange, withoutItem, type CrisisTemplate, type PlanLists } from "@/lib/preop/plan-lists";
 import { cn } from "@/lib/utils";
 
-type Tab = "targets" | "material" | "monitoring" | "crises" | "complications";
+type Tab = "targets" | "material" | "monitoring" | "risks" | "crises" | "complications" | "positions";
 
 const TABS: { code: Tab; label: string; help: string }[] = [
   { code: "targets", label: "Cibles", help: "Les cibles à cocher dans un protocole ou une préparation : ajoutez les vôtres, changez les valeurs, retirez ce que vous n'utilisez pas." },
   { code: "material", label: "Monitorage et matériel", help: "Le monitorage et le matériel à cocher dans un plan." },
   { code: "monitoring", label: "Fiches de monitorage", help: "Valeurs normales, cibles, à quoi ça sert, comment ça marche, pièges : affichées en préparation et au bloc quand le plan retient ce monitorage." },
+  { code: "risks", label: "Risques", help: "La bibliothèque des risques proposés dans un plan (pourquoi, prévention, conduite à tenir, source) : ajoutez les vôtres, adaptez-les, dupliquez-les. Un risque écrit dans un plan peut aussi y être gardé." },
   { code: "crises", label: "Urgences", help: "Les procédures d'urgence et complications générales du bloc : modifiez les étapes et les doses (par kilo, fixes ou débit : recalculées pour chaque patient), ajoutez les vôtres, retirez celles qui ne servent pas." },
+  { code: "positions", label: "Positions et pompes", help: "Les positions proposées pour l'intervention (une par ligne : « Position | points d'attention ») et les réglages par défaut de la PCEA et du cathéter périnerveux en post-opératoire." },
   { code: "complications", label: "Complications", help: "La liste des complications que l'on note au bloc (et qui partent dans la transmission)." },
 ];
 
@@ -67,6 +70,9 @@ function GroupsEditor({ kind }: { kind: "targets" | "material" }) {
         <div key={g.id} className="space-y-2 rounded-[var(--radius-md)] border border-border p-2.5">
           <div className="flex items-center gap-1.5">
             <Input className="h-9 font-medium" value={g.label} onChange={(e) => setGroup(i, { ...g, label: e.target.value })} aria-label="Nom du groupe" />
+            <Button size="icon" variant="ghost" onClick={() => setDraft([...draft.slice(0, i + 1), { ...structuredClone(g), id: slug(g.label), label: `${g.label} (copie)` }, ...draft.slice(i + 1)])} aria-label={`Dupliquer le groupe ${g.label}`}>
+              <Copy className="h-4 w-4" />
+            </Button>
             <Button size="icon" variant="ghost" onClick={() => setDraft(draft.filter((_, j) => j !== i))} aria-label={`Retirer le groupe ${g.label}`}>
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -245,6 +251,9 @@ function MonitoringEditor() {
                   </div>
                   <Button size="icon" variant="ghost" onClick={() => setEditing({ item: structuredClone(m), isDefault })} aria-label={`Modifier ${m.label}`}>
                     <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={() => setEditing({ item: { ...structuredClone(m), id: slug(m.label), label: `${m.label} (copie)` }, isDefault: false })} aria-label={`Dupliquer ${m.label}`}>
+                    <Copy className="h-4 w-4" />
                   </Button>
                   <Button size="icon" variant="ghost" disabled={busy} onClick={() => void commit({ ...lists, monitoring: withoutItem(lists.monitoring, m.id, isDefault) }, "Fiche retirée.")} aria-label={`Retirer ${m.label}`}>
                     <EyeOff className="h-4 w-4" />
@@ -436,6 +445,17 @@ function CrisesEditor() {
                     <Button size="icon" variant="ghost" onClick={() => setEditing({ t: isDefault && !edited ? templateOf(c) : structuredClone(lists.crises?.edited[c.id] ?? lists.crises!.added.find((a) => a.id === c.id)!), isDefault })} aria-label={`Modifier ${c.title}`}>
                       <Pencil className="h-4 w-4" />
                     </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => {
+                        const t = isDefault && !edited ? templateOf(c) : structuredClone(lists.crises?.edited[c.id] ?? lists.crises!.added.find((a) => a.id === c.id)!);
+                        setEditing({ t: { ...t, id: slug(c.title), title: `${c.title} (copie)` }, isDefault: false });
+                      }}
+                      aria-label={`Dupliquer ${c.title}`}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
                     <Button size="icon" variant="ghost" disabled={busy} onClick={() => void commit({ ...lists, crises: withoutItem(lists.crises, c.id, isDefault) }, "Procédure retirée.")} aria-label={`Retirer ${c.title}`}>
                       <EyeOff className="h-4 w-4" />
                     </Button>
@@ -492,6 +512,187 @@ function ComplicationsEditor() {
   );
 }
 
+function PositionsPumpsEditor() {
+  const { lists, commit, busy } = useSaver();
+  const toText = (ps: { label: string; hint: string }[]) => ps.map((p) => (p.hint ? `${p.label} | ${p.hint}` : p.label)).join("\n");
+  const [text, setText] = useState(toText(positionsOf(lists)));
+  const [pumps, setPumps] = useState(pumpsOf(lists));
+  const parsed = lines(text).map((l) => {
+    const [label, ...hint] = l.split("|");
+    return { label: label.trim(), hint: hint.join("|").trim() };
+  });
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1">
+        <FieldLabel>Positions (« Position | points d&apos;attention »)</FieldLabel>
+        <textarea className="min-h-48 w-full rounded-[var(--radius-md)] border border-border bg-surface px-3 py-2 text-sm" value={text} onChange={(e) => setText(e.target.value)} aria-label="Positions, une par ligne" />
+      </div>
+      <div className="space-y-1 rounded-[var(--radius-md)] border border-border p-2.5">
+        <FieldLabel>PCEA par défaut</FieldLabel>
+        <InfusionFields value={pumps.pcea} onChange={(pcea) => setPumps({ ...pumps, pcea })} />
+      </div>
+      <div className="space-y-1 rounded-[var(--radius-md)] border border-border p-2.5">
+        <FieldLabel>Cathéter périnerveux par défaut</FieldLabel>
+        <InfusionFields value={pumps.perineural} onChange={(perineural) => setPumps({ ...pumps, perineural })} />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={busy} onClick={() => void commit({ ...lists, positions: parsed.length ? parsed : undefined, pumps }, "Positions et pompes enregistrées.")}>
+          <Check className="h-4 w-4" /> Enregistrer
+        </Button>
+        {(lists.positions || lists.pumps) && (
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              setText(toText(POSITIONS));
+              setPumps(pumpsOf({}));
+              void commit({ ...lists, positions: undefined, pumps: undefined }, "Réglages de PreOx rétablis.");
+            }}
+          >
+            <RotateCcw className="h-4 w-4" /> Réglages de PreOx
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RiskForm({ t, onChange }: { t: RiskTemplate; onChange: (t: RiskTemplate) => void }) {
+  const { lists } = useCatalogs();
+  const set = (patch: Partial<RiskTemplate>) => onChange({ ...t, ...patch });
+  const area = (label: string, value: string | undefined, apply: (v: string) => void) => (
+    <label className="block space-y-1">
+      <FieldLabel>{label}</FieldLabel>
+      <textarea className="min-h-16 w-full rounded-[var(--radius-md)] border border-border bg-surface px-3 py-2 text-sm" value={value ?? ""} onChange={(e) => apply(e.target.value)} />
+    </label>
+  );
+  return (
+    <div className="space-y-2">
+      <label className="block space-y-1">
+        <FieldLabel>Risque</FieldLabel>
+        <Input value={t.title} onChange={(e) => set({ title: e.target.value })} />
+      </label>
+      <label className="block space-y-1">
+        <FieldLabel>Proposé quand le plan ou le patient contient (mots, virgules)</FieldLabel>
+        <Input defaultValue={t.words.join(", ")} onChange={(e) => set({ words: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} placeholder="ex. rachi, cesarienne" />
+      </label>
+      {area("Pourquoi (mécanisme, terrain)", t.why, (v) => set({ why: v || undefined }))}
+      {area("Prévention", t.prevention, (v) => set({ prevention: v || undefined }))}
+      {area("Conduite à tenir", t.conduct, (v) => set({ conduct: v }))}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
+        <label className="block space-y-1">
+          <FieldLabel>Source</FieldLabel>
+          <Input value={t.source ?? ""} onChange={(e) => set({ source: e.target.value || undefined })} />
+        </label>
+        <label className="block space-y-1">
+          <FieldLabel>Fiche de crise liée (bloc)</FieldLabel>
+          <Select value={t.crisis ?? ""} onChange={(e) => set({ crisis: e.target.value || undefined })}>
+            <option value="">Aucune</option>
+            {crisesOf(lists).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.title}
+              </option>
+            ))}
+          </Select>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function RisksLibraryEditor() {
+  const { lists, commit, busy } = useSaver();
+  const [editing, setEditing] = useState<{ t: RiskTemplate; isDefault: boolean } | null>(null);
+  const [query, setQuery] = useState("");
+  const fold = (x: string) => x.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  const all = riskLibraryOf(lists);
+  const shown = query.trim() ? all.filter((r) => fold(`${r.title} ${r.words.join(" ")}`).includes(fold(query.trim()))) : all;
+  const hidden = RISK_LIBRARY.filter((r) => lists.risks?.hidden.includes(r.id));
+  if (editing)
+    return (
+      <div className="space-y-3">
+        <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>
+          <ArrowLeft className="h-4 w-4" /> Retour
+        </Button>
+        <RiskForm t={editing.t} onChange={(t) => setEditing({ ...editing, t })} />
+        <div className="flex flex-wrap gap-2">
+          <Button
+            disabled={busy || !editing.t.title.trim()}
+            onClick={async () => {
+              await commit({ ...lists, risks: withChange(lists.risks, { ...editing.t, title: editing.t.title.trim() }, editing.isDefault) }, "Risque enregistré.");
+              setEditing(null);
+            }}
+          >
+            <Check className="h-4 w-4" /> Enregistrer
+          </Button>
+          {editing.isDefault && lists.risks?.edited[editing.t.id] && (
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={async () => {
+                await commit({ ...lists, risks: restored(lists.risks, editing.t.id) }, "Risque de PreOx rétabli.");
+                setEditing(null);
+              }}
+            >
+              <RotateCcw className="h-4 w-4" /> Version de PreOx
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <Input className="min-w-0 flex-1" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Chercher un risque (${all.length})`} />
+        <Button onClick={() => setEditing({ t: { id: slug("risque"), title: "", words: [], conduct: "", source: "Protocole du service" }, isDefault: false })}>
+          <Plus className="h-4 w-4" /> Nouveau risque
+        </Button>
+      </div>
+      <ul className="divide-y divide-border rounded-[var(--radius-md)] border border-border">
+        {shown.map((r) => {
+          const isDefault = RISK_LIBRARY.some((x) => x.id === r.id);
+          const edited = !!lists.risks?.edited[r.id];
+          return (
+            <li key={r.id} className="flex items-center gap-1 px-2.5 py-1.5 text-sm">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">
+                  {r.title}
+                  {(edited || !isDefault) && <span className="ml-1.5 rounded bg-accent-tint px-1 text-[10px] text-accent">{isDefault ? "modifié" : "à vous"}</span>}
+                </span>
+                <span className="block truncate text-[11px] text-foreground-subtle">{r.conduct}</span>
+              </span>
+              <Button size="icon" variant="ghost" onClick={() => setEditing({ t: structuredClone(r), isDefault })} aria-label={`Modifier ${r.title}`}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button size="icon" variant="ghost" onClick={() => setEditing({ t: { ...structuredClone(r), id: slug(r.title), title: `${r.title} (copie)` }, isDefault: false })} aria-label={`Dupliquer ${r.title}`}>
+                <Copy className="h-4 w-4" />
+              </Button>
+              <Button size="icon" variant="ghost" disabled={busy} onClick={() => void commit({ ...lists, risks: withoutItem(lists.risks, r.id, isDefault) }, "Risque retiré de la bibliothèque.")} aria-label={`Retirer ${r.title}`}>
+                <EyeOff className="h-4 w-4" />
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+      {hidden.length > 0 && (
+        <details className="text-sm">
+          <summary className="cursor-pointer text-xs text-primary">Risques retirés ({hidden.length})</summary>
+          <ul className="mt-1 space-y-1">
+            {hidden.map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-2">
+                {r.title}
+                <Button size="sm" variant="ghost" onClick={() => void commit({ ...lists, risks: restored(lists.risks, r.id) }, "Risque remis.")}>
+                  <RotateCcw className="h-3.5 w-3.5" /> Remettre
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
 /** Réglages › Plan et bloc. */
 export function PlanListsSettings() {
   const [tab, setTab] = useState<Tab>("targets");
@@ -514,8 +715,10 @@ export function PlanListsSettings() {
       {tab === "targets" && <GroupsEditor key="targets" kind="targets" />}
       {tab === "material" && <GroupsEditor key="material" kind="material" />}
       {tab === "monitoring" && <MonitoringEditor />}
+      {tab === "risks" && <RisksLibraryEditor />}
       {tab === "crises" && <CrisesEditor />}
       {tab === "complications" && <ComplicationsEditor />}
+      {tab === "positions" && <PositionsPumpsEditor />}
     </Panel>
   );
 }

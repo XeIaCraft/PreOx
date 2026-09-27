@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Check, ClipboardCopy, ExternalLink, Plus, RotateCcw, ShieldCheck, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Check, ClipboardCopy, Copy, ExternalLink, Plus, RotateCcw, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ChipGroup, MultiChipGroup, ToggleChip } from "@/components/carnet/ui";
@@ -69,6 +69,17 @@ function labelOf(kind: CatalogKind, item: AnyItem): string {
   if (kind === "surgeries") return (item as SurgeryItem).name;
   if (kind === "medications") return (item as MedicationItem).name;
   return (item as ConditionItem | AllergenItem | DrugClassItem | ValueCheckItem).label;
+}
+
+/** A copy to adapt: new id, « (copie) » after the name, not marked as checked. */
+function copyOf(kind: CatalogKind, item: AnyItem): AnyItem {
+  const c = structuredClone(item) as AnyItem & { verifiedAt?: unknown };
+  c.id = "";
+  delete c.verifiedAt;
+  const label = `${labelOf(kind, item)} (copie)`;
+  if (kind === "surgeries" || kind === "medications") (c as SurgeryItem | MedicationItem).name = label;
+  else (c as ConditionItem).label = label;
+  return c;
 }
 
 function hintOf(kind: CatalogKind, item: AnyItem): string {
@@ -929,6 +940,11 @@ export function SettingsView({ protocols = [] }: { protocols?: Protocol[] }) {
                 }}
               >
                 <RotateCcw className="h-3.5 w-3.5" /> Valeur par défaut
+              </Button>
+            )}
+            {!editing.isNew && (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditing({ item: copyOf(kind, it), isNew: true })}>
+                <Copy className="h-3.5 w-3.5" /> Dupliquer
               </Button>
             )}
             {!editing.isNew && (

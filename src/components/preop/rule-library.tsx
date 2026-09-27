@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Archive, ArchiveRestore, Check, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Archive, ArchiveRestore, Check, Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -16,7 +16,12 @@ import { ruleMatches } from "@/lib/preop/rules/search";
 import { ruleConflicts } from "@/lib/preop/rules/conflicts";
 import { Input } from "@/components/ui/input";
 
-function RuleEditModal({ rule, onSave, onClose }: { rule: Rule; onSave: (r: RuleDraft) => Promise<Rule>; onClose: () => void }) {
+/** A copy to adapt to your practice: a new draft rule, the original is kept. */
+function copyOfRule(r: Rule): Rule {
+  return { ...structuredClone(r), id: crypto.randomUUID(), title: `${r.title || r.statement} (copie)`, status: "draft", version: 1, verified_at: null, review_at: null };
+}
+
+function RuleEditModal({ rule, copy = false, onSave, onClose }: { rule: Rule; copy?: boolean; onSave: (r: RuleDraft) => Promise<Rule>; onClose: () => void }) {
   const { toast } = useToast();
   const [draft, setDraft] = useState<RuleDraft>(rule);
   const [verified, setVerified] = useState(false);
@@ -30,7 +35,7 @@ function RuleEditModal({ rule, onSave, onClose }: { rule: Rule; onSave: (r: Rule
         ...draft,
         explanations: draft.explanations.map((e) => e.trim()).filter(Boolean),
         // A changed rule is a new version; activating requires a fresh check against the source.
-        version: changed ? rule.version + 1 : rule.version,
+        version: copy ? 1 : changed ? rule.version + 1 : rule.version,
         status: activate ? "active" : draft.status === "active" && !changed ? "active" : "draft",
         verified_at: activate ? new Date().toISOString() : changed ? null : rule.verified_at,
       });
@@ -44,7 +49,7 @@ function RuleEditModal({ rule, onSave, onClose }: { rule: Rule; onSave: (r: Rule
   }
 
   return (
-    <Modal title="Modifier la règle" onClose={onClose} size="lg">
+    <Modal title={copy ? "Nouvelle règle (copie)" : "Modifier la règle"} onClose={onClose} size="lg">
       <div className="space-y-4">
         <RuleEditor value={draft} onChange={setDraft} />
         <label className="flex items-start gap-2 rounded-[var(--radius-md)] border border-border px-3 py-2 text-sm">
@@ -80,6 +85,7 @@ export function RuleLibrary({
   const { toast } = useToast();
   const [status, setStatus] = useState<RuleStatus>("active");
   const [editing, setEditing] = useState<Rule | null>(null);
+  const [copying, setCopying] = useState<Rule | null>(null);
   const today = new Date().toISOString().slice(0, 10);
   const [query, setQuery] = useState("");
   // Title, text, source, and the drugs aimed at (INN and brands), antecedents, allergens.
@@ -255,6 +261,9 @@ export function RuleLibrary({
                 <Button variant="ghost" size="sm" onClick={() => setEditing(rule)}>
                   <Pencil className="h-3.5 w-3.5" /> Modifier
                 </Button>
+                <Button variant="ghost" size="sm" onClick={() => setCopying(copyOfRule(rule))}>
+                  <Copy className="h-3.5 w-3.5" /> Dupliquer
+                </Button>
                 {rule.status === "archived" ? (
                   <Button variant="ghost" size="sm" onClick={() => setRuleStatus(rule, "draft")}>
                     <ArchiveRestore className="h-3.5 w-3.5" /> Restaurer
@@ -286,6 +295,7 @@ export function RuleLibrary({
       )}
 
       {editing && <RuleEditModal rule={editing} onSave={onSave} onClose={() => setEditing(null)} />}
+      {copying && <RuleEditModal rule={copying} copy onSave={onSave} onClose={() => setCopying(null)} />}
     </div>
   );
 }

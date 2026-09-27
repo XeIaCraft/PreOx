@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, ChevronDown, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, BookmarkPlus, ChevronDown, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { ChipGroup, ToggleChip } from "@/components/carnet/ui";
 import { Combobox, FieldLabel, InfoTip, NumberField, Panel, TextArea } from "@/components/preop/ui";
-import { MATERIAL_GROUPS, RISK_LIBRARY, TARGET_GROUPS, suggestedRisks, type CatalogGroup } from "@/lib/preop/plan-catalog";
+import { MATERIAL_GROUPS, TARGET_GROUPS, suggestedRisks, type CatalogGroup } from "@/lib/preop/plan-catalog";
+import { pumpsOf, riskLibraryOf, withChange } from "@/lib/preop/plan-lists";
+import { useCatalogs } from "@/components/preop/use-catalogs";
 import {
-  DEFAULT_PCEA,
-  DEFAULT_PERINEURAL,
   POSTOP_ANALGESIA,
   POSTOP_DESTINATIONS,
   POSTOP_SOURCE,
@@ -90,7 +91,7 @@ export function CatalogChecklist({ groups, value, onChange, placeholder }: { gro
 }
 
 /** One risk: title, then why, prevention and what to do — collapsed to its title once written. */
-function RiskCard({ r, onChange, onRemove, startOpen }: { r: ProtocolRisk; onChange: (r: ProtocolRisk) => void; onRemove: () => void; startOpen: boolean }) {
+function RiskCard({ r, onChange, onRemove, startOpen, onKeep }: { r: ProtocolRisk; onChange: (r: ProtocolRisk) => void; onRemove: () => void; startOpen: boolean; onKeep?: { label: string; run: () => void } }) {
   const [open, setOpen] = useState(startOpen);
   return (
     <li className="rounded-[var(--radius-md)] border border-border">
@@ -115,22 +116,43 @@ function RiskCard({ r, onChange, onRemove, startOpen }: { r: ProtocolRisk; onCha
           <TextArea label="Conduite à tenir" value={r.conduct} onChange={(conduct) => onChange({ ...r, conduct })} />
           {r.source && <p className="text-[11px] text-foreground-subtle">Source : {r.source}</p>}
           {r.crisis && <p className="text-[11px] text-primary">Fiche de crise complète dans l&apos;onglet Bloc.</p>}
+          {onKeep && r.title.trim() && (
+            <Button size="sm" variant="ghost" onClick={onKeep.run}>
+              <BookmarkPlus className="h-3.5 w-3.5" /> {onKeep.label}
+            </Button>
+          )}
         </div>
       )}
     </li>
   );
 }
 
+const newRiskId = () => `u-risk-${Math.random().toString(36).slice(2, 8)}`;
+
 /** Frequent risks with what to know, proposed from the plan and the patient, or picked from the library. */
 export function RisksEditor({ risks, onChange, context }: { risks: ProtocolRisk[]; onChange: (r: ProtocolRisk[]) => void; context: string }) {
   const [justAdded, setJustAdded] = useState<number | null>(null);
-  const suggestions = suggestedRisks(context, risks);
+  const { lists, saveLists } = useCatalogs();
+  const { toast } = useToast();
+  const library = riskLibraryOf(lists);
+  const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
+  const inLibrary = (r: ProtocolRisk) => library.find((t) => fold(t.title) === fold(r.title));
+  const keep = (r: ProtocolRisk) => {
+    const known = inLibrary(r);
+    const isDefault = !!known && !lists.risks?.added.some((a) => a.id === known.id);
+    const id = known?.id ?? newRiskId();
+    saveLists({ ...lists, risks: withChange(lists.risks, { ...r, id, words: known?.words ?? r.title.split(/\s+/).filter((w) => w.length > 3).slice(0, 4) }, isDefault) }).then(
+      () => toast(known ? "Risque mis à jour dans votre bibliothèque." : "Risque gardé dans votre bibliothèque.", { variant: "success" }),
+      () => toast("Gardé sur cet appareil (synchronisation impossible).", { variant: "error" })
+    );
+  };
+  const suggestions = suggestedRisks(context, risks, library);
   const add = (r: ProtocolRisk) => {
     onChange([...risks, r]);
     setJustAdded(null);
   };
   const fromLibrary = (id: string) => {
-    const t = RISK_LIBRARY.find((x) => x.id === id);
+    const t = library.find((x) => x.id === id);
     if (t) add({ title: t.title, why: t.why, prevention: t.prevention, conduct: t.conduct, source: t.source, crisis: t.crisis });
   };
   return (
@@ -172,10 +194,10 @@ export function RisksEditor({ risks, onChange, context }: { risks: ProtocolRisk[
       )}
       <Combobox
         placeholder="Ajouter un risque de la bibliothèque (hypothermie, inhalation…)"
-        onEmpty={() => RISK_LIBRARY.filter((t) => !risks.some((r) => r.title === t.title)).map((t) => ({ key: t.id, label: t.title }))}
+        onEmpty={() => library.filter((t) => !risks.some((r) => r.title === t.title)).map((t) => ({ key: t.id, label: t.title }))}
         search={(q) => {
           const f = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-          return RISK_LIBRARY.filter((t) => f(t.title).includes(f(q)) || t.words.some((w) => f(w).includes(f(q)))).map((t) => ({ key: t.id, label: t.title }));
+          return library.filter((t) => f(t.title).includes(f(q)) || t.words.some((w) => f(w).includes(f(q)))).map((t) => ({ key: t.id, label: t.title }));
         }}
         onPick={(o) => fromLibrary(o.key)}
         onFree={(q) => add({ title: q, conduct: "" })}
@@ -184,14 +206,14 @@ export function RisksEditor({ risks, onChange, context }: { risks: ProtocolRisk[
       {risks.length === 0 && <p className="text-sm text-foreground-subtle">Aucun risque dans ce plan.</p>}
       <ul className="space-y-1.5">
         {risks.map((r, i) => (
-          <RiskCard key={`${i}-${risks.length}-${r.title}`} r={r} startOpen={justAdded === i} onChange={(next) => onChange(risks.map((x, j) => (j === i ? next : x)))} onRemove={() => onChange(risks.filter((_, j) => j !== i))} />
+          <RiskCard key={`${i}-${risks.length}-${r.title}`} r={r} startOpen={justAdded === i} onKeep={{ label: inLibrary(r) ? "Mettre à jour dans ma bibliothèque" : "Garder dans ma bibliothèque de risques", run: () => keep(r) }} onChange={(next) => onChange(risks.map((x, j) => (j === i ? next : x)))} onRemove={() => onChange(risks.filter((_, j) => j !== i))} />
         ))}
       </ul>
     </Panel>
   );
 }
 
-function InfusionFields({ value, onChange }: { value: PostopInfusion; onChange: (v: PostopInfusion) => void }) {
+export function InfusionFields({ value, onChange }: { value: PostopInfusion; onChange: (v: PostopInfusion) => void }) {
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       <label className="col-span-2 block space-y-1 sm:col-span-4">
@@ -213,6 +235,8 @@ function InfusionFields({ value, onChange }: { value: PostopInfusion; onChange: 
  */
 export function PostopEditor({ plan, onChange, lines, onLines, patient }: { plan: PostopPlan | undefined; onChange: (p: PostopPlan) => void; lines: string[]; onLines: (l: string[]) => void; patient?: PostopPatient }) {
   const p = plan ?? emptyPostopPlan();
+  const { lists } = useCatalogs();
+  const pumps = pumpsOf(lists);
   const set = (patch: Partial<PostopPlan>) => onChange({ ...p, ...patch });
   const toggle = <T extends string>(list: T[], code: T) => (list.includes(code) ? list.filter((x) => x !== code) : [...list, code]);
   const computed = postopLines(p, patient);
@@ -237,7 +261,7 @@ export function PostopEditor({ plan, onChange, lines, onLines, patient }: { plan
         {(["base", "opioid", "regional", "adjuvant"] as const).map((g) => (
           <div key={g} className="flex flex-wrap gap-1.5">
             {group(g).map((a) => (
-              <ToggleChip key={a.code} pressed={p.analgesia.includes(a.code)} onChange={() => set({ analgesia: toggle(p.analgesia, a.code) })} className="min-h-8 px-2.5 text-xs">
+              <ToggleChip key={a.code} pressed={p.analgesia.includes(a.code)} onChange={() => set({ analgesia: toggle(p.analgesia, a.code), ...(a.code === "pcea" && !p.pcea ? { pcea: pumps.pcea } : {}), ...(a.code === "perineural" && !p.perineural ? { perineural: pumps.perineural } : {}) })} className="min-h-8 px-2.5 text-xs">
                 {a.label}
               </ToggleChip>
             ))}
@@ -247,13 +271,13 @@ export function PostopEditor({ plan, onChange, lines, onLines, patient }: { plan
       {p.analgesia.includes("pcea") && (
         <div className="space-y-1 rounded-[var(--radius-md)] border border-border p-2.5">
           <FieldLabel>Réglages de la PCEA</FieldLabel>
-          <InfusionFields value={p.pcea ?? DEFAULT_PCEA} onChange={(pcea) => set({ pcea })} />
+          <InfusionFields value={p.pcea ?? pumps.pcea} onChange={(pcea) => set({ pcea })} />
         </div>
       )}
       {p.analgesia.includes("perineural") && (
         <div className="space-y-1 rounded-[var(--radius-md)] border border-border p-2.5">
           <FieldLabel>Réglages du cathéter périnerveux</FieldLabel>
-          <InfusionFields value={p.perineural ?? DEFAULT_PERINEURAL} onChange={(perineural) => set({ perineural })} />
+          <InfusionFields value={p.perineural ?? pumps.perineural} onChange={(perineural) => set({ perineural })} />
         </div>
       )}
       <div className="grid grid-cols-[minmax(0,1fr)] items-end gap-2 sm:grid-cols-[minmax(0,1fr)_8rem]">
