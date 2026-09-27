@@ -37,4 +37,23 @@ describe("classes of the interventions", () => {
     const fam = (f: string) => new Set(SURGERY_CATALOG.filter((s) => s.family === f && /colectomie|sigmoidectomie|hemicolectomie|resection du rectum/.test(fold(s.name))).map((s) => s.bleedingRisk));
     expect([...fam("colectomie")]).toEqual(["high"]);
   });
+  it("EHRA 2021 / ESGE 2021: high bleeding risk examples are high", () => {
+    const HIGH = /^(lithotritie extracorporelle|resection transuretrale|cpre|gastrostomie endoscopique|mucosectomie|tips|nephrostomie|drainage biliaire|blood patch|ponction-biopsie|radiofrequence|craniotomie|embolisation d'anevrisme|prothese totale|lobectomie|pneumonectomie|chirurgie du pneumothorax|segmentectomie|thymectomie|pleurectomie|arthrodese (rachidienne|lombaire|cervicale|pour scoliose)|chirurgie cardiaque|hysterectomie)/;
+    expect(wrong(HIGH, (s) => s.bleedingRisk === "high")).toEqual([]);
+  });
+  it("EHRA 2021: minimal bleeding risk examples are minimal", () => {
+    const MIN = /^(cataracte$|extractions dentaires|extraction des dents de sagesse|coloscopie|gastroscopie|injections intravitreennes)/;
+    expect(wrong(MIN, (s) => s.bleedingRisk === "minimal")).toEqual([]);
+  });
+  it("ESC 2022: gynaecological minor surgery is low risk", () => {
+    expect(wrong(/^(coelioscopie gynecologique|grossesse extra-uterine|hysteroscopie|kystectomie ovarienne)/, (s) => s.cardiacRisk === "low")).toEqual([]);
+  });
+  it("the same operation in a child has the adult's grade", () => {
+    const pairs: [RegExp, RegExp][] = [
+      [/^chirurgie du strabisme$/, /^chirurgie du strabisme de l'enfant$/],
+      [/^cataracte$/, /^cataracte de l'enfant$/],
+      [/^cure de hernie inguinale$/, /^cure de hernie inguinale de l'enfant$/],
+    ];
+    for (const [a, b] of pairs) expect(byName(b)[0]?.grade, byName(b)[0]?.name).toBe(byName(a)[0]?.grade);
+  });
 });

@@ -116,8 +116,8 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Exérèse cutanée", "A", "minor", "low", "minimal", false, "peripheral", "Selon la localisation", ["kyste", "lipome", "naevus"]),
   // Vasculaire
   s("Chirurgie aortique ouverte", "A", "major", "high", "high", true, "upper_abdominal", "Décubitus dorsal", ["anévrisme aorte", "pontage aorto-bifémoral"]),
-  s("Endoprothèse aortique", "A", "intermediate", "intermediate", "high", false, "peripheral", "Décubitus dorsal", ["EVAR"]),
-  s("Endartériectomie carotidienne", "A", "intermediate", "intermediate", "high", false, "peripheral", "Décubitus dorsal, tête tournée", ["carotide"]),
+  s("Endoprothèse aortique", "A", "intermediate", "intermediate", "high", true, "peripheral", "Décubitus dorsal", ["EVAR"]),
+  s("Endartériectomie carotidienne", "A", "intermediate", "intermediate", "high", true, "peripheral", "Décubitus dorsal, tête tournée", ["carotide"]),
   s("Revascularisation ouverte du membre inférieur", "A", "major", "high", "high", false, "peripheral", "Décubitus dorsal", ["pontage fémoro-poplité"]),
   s("Amputation de membre inférieur", "A", "major", "high", "high", false, "peripheral", "Décubitus dorsal", ["amputation"]),
   s("Fistule artério-veineuse", "A", "minor", "low", "low", false, "peripheral", "Décubitus dorsal, bras sur table", ["FAV"]),
@@ -130,7 +130,7 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Urétéroscopie", "J2", "minor", "low", "minimal", false, "peripheral", "Lithotomie", ["URS", "lithiase"]),
   // Gynécologie, obstétrique
   s("Hystérectomie", "J1", "major", "intermediate", "high", true, "peripheral", "Décubitus dorsal ou lithotomie, Trendelenburg", ["hystérectomie"]),
-  s("Cœlioscopie gynécologique", "J1", "intermediate", "intermediate", "low", true, "peripheral", "Lithotomie, Trendelenburg", ["kystectomie ovarienne", "annexectomie", "endométriose"]),
+  s("Cœlioscopie gynécologique", "J1", "intermediate", "low", "low", true, "peripheral", "Lithotomie, Trendelenburg", ["kystectomie ovarienne", "annexectomie", "endométriose"]),
   s("Hystéroscopie", "J1", "minor", "low", "minimal", false, "peripheral", "Lithotomie", ["résection endométriale", "polype utérin", "myome sous-muqueux"]),
   s("Césarienne", "B", "major", "low", "high", true, "peripheral", "Décubitus dorsal, inclinaison latérale gauche"),
   // ORL, ophtalmo, stomato
@@ -181,7 +181,7 @@ export const SURGERY_CATALOG: CatalogSurgery[] = [
   s("Cystoscopie / sonde JJ", "J2", "minor", "low", "minimal", false, "peripheral", "Lithotomie", ["cystoscopie", "sonde double J", "JJ"]),
   s("Bandelette sous-urétrale", "J1", "minor", "low", "low", false, "peripheral", "Lithotomie", ["TVT", "TOT", "incontinence urinaire"]),
   // Gynécologie, obstétrique
-  s("Myomectomie", "J1", "intermediate", "intermediate", "high", true, "peripheral", "Décubitus dorsal ou lithotomie", ["fibrome", "myome"]),
+  s("Myomectomie", "J1", "major", "intermediate", "high", true, "peripheral", "Décubitus dorsal ou lithotomie", ["fibrome", "myome"]),
   s("Cure de prolapsus", "J1", "intermediate", "intermediate", "low", true, "peripheral", "Lithotomie, Trendelenburg", ["promontofixation", "prolapsus"]),
   s("Ponction ovocytaire", "J1", "minor", "low", "minimal", false, "peripheral", "Lithotomie", ["FIV", "PMA"]),
   s("Aspiration endo-utérine", "J1", "minor", "low", "low", false, "peripheral", "Lithotomie", ["fausse couche", "aspiration", "rétention"]),
