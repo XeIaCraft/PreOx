@@ -8,6 +8,7 @@
 import { z } from "zod";
 import { MATERIAL_GROUPS, POSITIONS, RISK_LIBRARY, TARGET_GROUPS, type CatalogGroup, type RiskTemplate } from "./plan-catalog";
 import { DEFAULT_PCEA, DEFAULT_PERINEURAL, type PostopInfusion } from "./postop";
+import { DEFAULT_CHECKLIST, type ChecklistLists } from "./checklist";
 import { MONITORING, type MonitoringItem } from "./monitoring";
 import { crises, doseFromSpec, type Crisis, type CrisisCategory, type CrisisPatient, type DoseSpec } from "./crises";
 import { COMPLICATION_TYPES } from "./dossier";
@@ -43,6 +44,8 @@ export interface PlanLists {
   positions?: { label: string; hint: string }[];
   /** Default settings of the pumps proposed in the post-op orders. */
   pumps?: { pcea?: PostopInfusion; perineural?: PostopInfusion };
+  /** Pre-anaesthesia checklist (replaces PreOx's when set). */
+  checklist?: ChecklistLists;
   /** Order of the theatre sections (ids), yours first. */
   theatreOrder?: string[];
 }
@@ -62,6 +65,7 @@ export const monitoringOf = (l: PlanLists): MonitoringItem[] => merge(MONITORING
 export const riskLibraryOf = (l: PlanLists): RiskTemplate[] => merge(RISK_LIBRARY, l.risks);
 export const positionsOf = (l: PlanLists): { label: string; hint: string }[] => l.positions ?? POSITIONS;
 export const pumpsOf = (l: PlanLists): { pcea: PostopInfusion; perineural: PostopInfusion } => ({ pcea: l.pumps?.pcea ?? DEFAULT_PCEA, perineural: l.pumps?.perineural ?? DEFAULT_PERINEURAL });
+export const checklistOf = (l: PlanLists): ChecklistLists => l.checklist ?? DEFAULT_CHECKLIST;
 export const complicationsOf = (l: PlanLists): string[] => l.complications ?? [...COMPLICATION_TYPES];
 
 /** A default crisis as an editable template (doses as formulas). */
@@ -162,5 +166,6 @@ export const planListsSchema = z.object({
   complications: z.array(text(120)).max(100).optional(),
   positions: z.array(z.object({ label: text(120), hint: text(300) })).max(60).optional(),
   pumps: z.object({ pcea: infusion.optional(), perineural: infusion.optional() }).optional(),
+  checklist: z.object({ daily: z.array(z.object({ id: text(60), label: text(400) })).max(40), perCase: z.array(z.object({ id: text(60), label: text(400) })).max(40) }).optional(),
   theatreOrder: z.array(text(40)).max(40).optional(),
 });

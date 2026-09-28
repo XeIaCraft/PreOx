@@ -292,3 +292,112 @@ export function isbarText(d: Dossier, sections: IsbarSection[]): string {
 }
 
 export { COMPLICATION_TYPES };
+
+/** The steps said aloud, ticked in the handover screen. */
+export const RECOVERY_STEPS = {
+  urgent: "Tâches urgentes faites avant de parler (installation, monitorage, O₂)",
+  ready: "Receveur identifié et prêt à écouter",
+  bracelet: "Identité vérifiée sur le bracelet",
+  questions: "« Avez-vous des questions ? »",
+  loop: "Boucle fermée : le receveur a reformulé",
+} as const;
+
+const PHASE_LABEL: Record<string, string> = { analgesia: "Analgésie", ponv: "Nausées-vomissements", antibio: "Antibiotiques" };
+
+/**
+ * The handover to the recovery room in the order used by the university
+ * hospitals: urgent tasks first, who takes over, ready?, stable or not,
+ * then patient, procedure, drugs (done / to do), other (labs, anticipated
+ * concerns), questions, loop closed by the receiver.
+ */
+export function buildRecovery(d: Dossier, now: string, evaluation?: EvaluationResult, catalogs?: Catalogs): IsbarSection[] {
+  const c = d.consultation;
+  const p = c.patient;
+  const t = d.transmission;
+  const steps = t.steps ?? {};
+  const scores = consultationScores(c, { plan: d.plan, catalogs });
+  const summary = consultationSummary(c, scores);
+  const tick = (k: keyof typeof RECOVERY_STEPS) => (steps[k] ? "✓ " : "☐ ") + RECOVERY_STEPS[k];
+
+  const s1: IsbarSection = { key: "1", title: "Avant de parler", lines: [tick("urgent")], missing: [] };
+  const s2: IsbarSection = { key: "2", title: "Qui prend le patient en charge ?", lines: [], missing: [] };
+  if (t.receiver?.trim()) s2.lines.push(t.receiver.trim());
+  else s2.missing.push("Receveur");
+  const s3: IsbarSection = { key: "3", title: "Êtes-vous prêt à recevoir les informations ?", lines: [tick("ready")], missing: [] };
+
+  const s4: IsbarSection = { key: "4", title: "État clinique général", lines: [], missing: [] };
+  if (t.stability) s4.lines.push(t.stability === "stable" ? "Patient stable" : "Patient INSTABLE");
+  else s4.missing.push("Stable / instable");
+  if (d.intraop.lastVitals.trim()) s4.lines.push(`Constantes : ${d.intraop.lastVitals.trim()}`);
+  else s4.missing.push("Dernières constantes");
+
+  const s5: IsbarSection = { key: "5", title: "Patient", lines: [], missing: [] };
+  s5.lines.push(`${[d.initials, p.sex === "M" ? "homme" : p.sex === "F" ? "femme" : "", p.age !== undefined ? `${p.age} ans` : "", p.weightKg ? `${p.weightKg} kg` : ""].filter(Boolean).join(", ")} — ${tick("bracelet")}`);
+  if (t.precautions?.trim()) s5.lines.push(`Précautions additionnelles : ${t.precautions.trim()}`);
+  if (scores.asa) s5.lines.push(`ASA ${scores.asa}`);
+  else s5.missing.push("Score ASA");
+  const allergies = allergySummary(p);
+  if (allergies) s5.lines.push(`Allergies : ${allergies}`);
+  else s5.missing.push("Allergies");
+  const conditions = conditionsSummary(scores.conditions, scores.catalogs.conditions);
+  if (conditions || p.history?.trim()) s5.lines.push(`Antécédents : ${[conditions, p.history?.trim()].filter(Boolean).join(" ; ")}`);
+  if (c.treatments.length) s5.lines.push(`Traitement habituel : ${c.treatments.map((x) => x.name).join(", ")}`);
+  const sg = c.surgery;
+  if (sg.name) s5.lines.push(`Chirurgie : ${sg.name}${sg.side ? `, côté ${sg.side}` : ""}`);
+  else s5.missing.push("Type de chirurgie et côté");
+  const techniques = d.plan.techniques.length ? d.plan.techniques : c.techniques;
+  if (techniques.length) s5.lines.push(`Anesthésie : ${techniques.map((x) => TECHNIQUES.find((y) => y.code === x)?.label.split(" (")[0] ?? x).join(" + ")}${d.plan.gases && techniques.includes("general") ? ` (${gasesShort(d.plan.gases, p.age)})` : ""}`);
+  else s5.missing.push("Type d'anesthésie");
+
+  const s6: IsbarSection = { key: "6", title: "Procédure", lines: [], missing: [] };
+  if (sg.position) s6.lines.push(`Position : ${sg.position}`);
+  const airway = [d.intraop.airwayDevice, d.intraop.cormack ? `Cormack ${d.intraop.cormack}` : "", d.intraop.airwayNote].filter(Boolean).join(", ");
+  if (airway) s6.lines.push(`Voies aériennes : ${airway}`);
+  else if (techniques.includes("general")) s6.missing.push("Gestion des voies aériennes");
+  const access = d.plan.material.filter((m) => /cath[eé]ter|voie|kt|picc|art[eé]riel/i.test(m));
+  if (access.length) s6.lines.push(`Accès vasculaires : ${access.join(", ")}`);
+  const fb = fluidBalance(d);
+  if (d.intraop.fluids.length) {
+    const blood = fb.byCategory.blood ?? 0;
+    s6.lines.push(`Volémie : entrées ${fb.inMl} mL${blood ? ` dont produits sanguins ${blood} mL` : ""}, pertes sanguines ${fb.byCategory.blood_loss ?? 0} mL, diurèse ${fb.byCategory.urine ?? 0} mL, bilan ${fb.balanceMl >= 0 ? "+" : ""}${fb.balanceMl} mL`);
+  } else s6.missing.push("Gestion volémique");
+  if (d.intraop.complications.length) s6.lines.push(`Événements : ${d.intraop.complications.map((x) => `${x.type} (${SEVERITY[x.severity]})${x.management ? ` : ${x.management}` : ""}`).join(" ; ")}`);
+  else s6.lines.push("Pas d'événement peropératoire");
+  for (const note of theatreNotes(d)) s6.lines.push(note);
+
+  const s7: IsbarSection = { key: "7", title: "Médicaments", lines: [], missing: [] };
+  const given = [...d.intraop.given].sort((a, b) => a.at.localeCompare(b.at));
+  const byPhase = (phases: string[], re?: RegExp) => given.filter((g) => phases.includes(g.phase) || (re && re.test(g.name)));
+  const postop = planPostop(d, scores);
+  const groups: { label: string; done: string[]; todo: string[] }[] = [
+    { label: PHASE_LABEL.analgesia, done: byPhase(["analgesia"], /morphin|piritramid|dipidolor|oxycod|paracetamol|ketorolac|diclofenac/i).map((g) => `${g.name}${g.dose ? ` ${g.dose}` : ""} (${hhmm(g.at)})`), todo: postop.filter((l) => /analg|pca|pcea|morphin|paracetamol|ains|cath[eé]ter|piritram/i.test(l)) },
+    { label: PHASE_LABEL.ponv, done: byPhase(["ponv"]).map((g) => `${g.name}${g.dose ? ` ${g.dose}` : ""} (${hhmm(g.at)})`), todo: postop.filter((l) => /nvpo|naus|vomis/i.test(l)) },
+    {
+      label: "Bloc neuromusculaire",
+      done: given.filter((g) => /rocuronium|cisatracurium|atracurium|succinylcholine|mivacurium|sugammadex|neostigmine|bridion/i.test(g.name)).map((g) => `${g.name}${g.dose ? ` ${g.dose}` : ""} (${hhmm(g.at)})`),
+      todo: [],
+    },
+    { label: PHASE_LABEL.antibio, done: byPhase(["antibio"]).map((g) => `${g.name}${g.dose ? ` ${g.dose}` : ""} (${hhmm(g.at)})`), todo: redoseTimers(d, now).filter((r) => r.dueAt).map((r) => `${r.name} à ${hhmm(r.dueAt!)}`) },
+  ];
+  for (const g of groups) s7.lines.push(`${g.label} — fait : ${g.done.length ? g.done.join(", ") : "rien"}${g.todo.length ? ` ; à faire : ${g.todo.join(", ")}` : ""}`);
+  const nmbGiven = groups[2].done.some((x) => /rocuronium|cisatracurium|atracurium|mivacurium/i.test(x));
+  if (nmbGiven && !groups[2].done.some((x) => /sugammadex|neostigmine|bridion/i.test(x))) s7.missing.push("Décurarisation vérifiée (TOF ≥ 0,9) ou antagonisation");
+
+  const s8: IsbarSection = { key: "8", title: "Autre", lines: [], missing: [] };
+  const labs = [p.hb !== undefined ? `Hb ${p.hb}` : "", p.potassium !== undefined ? `K⁺ ${p.potassium}` : "", p.glucose !== undefined ? `glycémie ${p.glucose}` : "", p.platelets !== undefined ? `plaquettes ${p.platelets}` : "", p.inr !== undefined ? `INR ${p.inr}` : ""].filter(Boolean);
+  if (labs.length) s8.lines.push(`Biologie préopératoire : ${labs.join(", ")}`);
+  if (t.labsToFollow?.trim()) s8.lines.push(`À suivre : ${t.labsToFollow.trim()}`);
+  const vigilance = attentionPoints(c, scores, d.plan).filter((x) => x.level === "high");
+  if (vigilance.length) s8.lines.push(`Préoccupations postopératoires : ${vigilance.map((x) => lowerFirst(x.title)).join(", ")}`);
+  if (t.callCriteria.trim()) s8.lines.push(`Appeler si : ${t.callCriteria.trim().replace(/\n+/g, " ; ")}`);
+  const dest = destinationOf(d);
+  if (dest) s8.lines.push(`Destination : ${dest}`);
+  for (const f of evaluation?.findings ?? [])
+    for (const o of f.outcomes)
+      if (o.kind === "resume_after" && o.resumeFrom) s8.lines.push(`Reprise ${o.treatment?.name ?? ""} au plus tôt le ${new Date(o.resumeFrom).toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`.replace("  ", " "));
+  if (summary.airway) s8.lines.push(`Voies aériennes (consultation) : ${summary.airway}`);
+
+  const s9: IsbarSection = { key: "9", title: "Avez-vous des questions ?", lines: [tick("questions")], missing: [] };
+  const s10: IsbarSection = { key: "10", title: "Fermeture de la boucle par le receveur", lines: [tick("loop")], missing: [] };
+  return [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10];
+}

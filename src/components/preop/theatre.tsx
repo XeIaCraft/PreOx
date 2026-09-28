@@ -21,7 +21,8 @@ import { tciDrugOf, tciSummary } from "@/lib/preop/tci";
 import { CrisisPanel, CustomTimers, FluidStatus, PlanCard, minutesBetween } from "@/components/preop/theatre-parts";
 import { MonitoringPanel, RisksDetail, TheatreSections, VentilationPanel, type TheatreSection } from "@/components/preop/theatre-sections";
 import { useCatalogs } from "@/components/preop/use-catalogs";
-import { complicationsOf } from "@/lib/preop/plan-lists";
+import { checklistOf, complicationsOf } from "@/lib/preop/plan-lists";
+import { AirwayPlanPanel, ChecklistPanel, IsobolePanel, KineticsPanel } from "@/components/preop/theatre-pharmaco";
 
 const nowIso = () => new Date().toISOString();
 
@@ -111,7 +112,12 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
 
   const eventButtons = EVENT_TYPES.filter((e) => e.code !== "note" && !(e.code === "tourniquet_on" && tourniquetOn) && !(e.code === "tourniquet_off" && !tourniquetOn));
 
+  const checklist = checklistOf(lists);
+  const checklistTotal = checklist.daily.length + checklist.perCase.length;
+  const checklistDone = [...checklist.daily, ...checklist.perCase].filter((i) => io.checklist?.[i.id]).length;
   const sections: TheatreSection[] = [
+    { id: "checklist", title: "Check-list préanesthésique", badge: `${checklistDone}/${checklistTotal}`, node: <ChecklistPanel d={d} onChange={setIo} /> },
+    { id: "airway", title: "Plan voies aériennes", node: <AirwayPlanPanel d={d} /> },
     {
       id: "events",
       title: "Repères et minuteurs",
@@ -416,6 +422,8 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
         </div>
       ),
     },
+    { id: "pharmaco", title: "Pharmacocinétique : délais, durées, réveil estimé", node: <KineticsPanel d={d} now={now} /> },
+    { id: "isoboles", title: "Isoboles : moins d'hypnotique, plus de morphinique", node: <IsobolePanel age={d.consultation.patient.age} /> },
     {
       id: "tci",
       title: "AIVOC : réglages de la pompe",

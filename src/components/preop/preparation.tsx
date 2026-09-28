@@ -1,5 +1,6 @@
 "use client";
 
+import { AirwayPlanView, airwayPlanOf } from "@/components/preop/theatre-pharmaco";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BookmarkPlus, CalendarCheck2, CalendarPlus, CalendarX2, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -367,6 +368,9 @@ export function PreparationView({
             setPlanKey((k) => k + 1);
           }}
         />
+        <Panel title="Plan voies aériennes">
+          <AirwayPlanView plan={airwayPlanOf(d, scores)} compact />
+        </Panel>
         <FluidPlanPanel d={d} />
         <RuleReminders d={d} rules={rules} />
         {toRequest.length > 0 && (

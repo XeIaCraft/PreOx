@@ -300,3 +300,51 @@ export function tivaMaintenance(age: number | undefined, frail = false): { drug:
   };
   return [pick("propofol", /Entretien avec opioïde/), pick("remifentanil", /Entretien/), ...(p.age >= 16 ? [pick("propofol", /Réveil/)] : [])];
 }
+
+// ─── Awakening ─────────────────────────────────────────────────────────────
+
+/** Effect-site concentration at which patients usually wake up / breathe (usual ranges, adults). */
+export const WAKE_CE: Record<TciDrug, { range: [number, number]; what: string }> = {
+  propofol: { range: [1, 1.5], what: "ouverture des yeux (plus bas avec un morphinique, plus haut sans)" },
+  remifentanil: { range: [1, 2], what: "reprise d'une ventilation spontanée efficace" },
+  sufentanil: { range: [0.15, 0.25], what: "reprise d'une ventilation spontanée efficace" },
+};
+
+/**
+ * Minutes after stopping for the effect-site concentration to fall from the
+ * maintenance target to `toCe`, after `durationMin` at that target (plasma
+ * held constant, as a TCI pump does): a context-sensitive decrement time,
+ * simulated on the patient's model. Null when no valid model.
+ */
+export function decrementTime(drug: TciDrug, patient: TciPatient, targetCe: number, durationMin: number, toCe: number): { minutes: number; model: string } | null {
+  const { age, sex, weightKg, heightCm } = patient;
+  if (age === undefined || !sex || !weightKg || !heightCm || toCe >= targetCe) return null;
+  const p = { age, sex, weightKg, heightCm };
+  const plan = tciPlan(drug, p)?.find((x) => x.valid && x.model !== "eleveld");
+  if (!plan) return null;
+  const pk = pkOf(plan.model, p, plan.model === "marsh" && bmi(weightKg, heightCm) >= 30 ? adjustedBodyWeight(sex, weightKg, heightCm) : weightKg);
+  if (!pk) return null;
+  const dt = 0.05;
+  // Maintenance: central amount held at V1·target, peripheral compartments fill.
+  const a1 = pk.v1 * targetCe;
+  let a2 = 0;
+  let a3 = 0;
+  for (let t = 0; t < durationMin; t += dt) {
+    a2 += (pk.k12 * a1 - pk.k21 * a2) * dt;
+    a3 += (pk.k13 * a1 - pk.k31 * a3) * dt;
+  }
+  // Stop: free decay, the effect site following the plasma.
+  let c1 = a1;
+  let ce = targetCe;
+  for (let t = 0; t < 24 * 60; t += dt) {
+    const d1 = -(pk.k10 + pk.k12 + pk.k13) * c1 + pk.k21 * a2 + pk.k31 * a3;
+    const d2 = pk.k12 * c1 - pk.k21 * a2;
+    const d3 = pk.k13 * c1 - pk.k31 * a3;
+    c1 += d1 * dt;
+    a2 += d2 * dt;
+    a3 += d3 * dt;
+    ce += pk.ke0 * (c1 / pk.v1 - ce) * dt;
+    if (ce <= toCe) return { minutes: Math.round(t), model: plan.label };
+  }
+  return null;
+}

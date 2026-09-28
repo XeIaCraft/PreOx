@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CircleAlert, ClipboardCopy, FileDown } from "lucide-react";
+import { Check, CircleAlert, ClipboardCopy, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChipGroup } from "@/components/carnet/ui";
@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/toast";
 import { FieldLabel, Panel, TextArea } from "@/components/preop/ui";
 import { evaluateConsultation } from "@/components/preop/consultation";
 import { useCatalogs } from "@/components/preop/use-catalogs";
-import { buildBrief, buildIsbar, isbarText, suggestedCallCriteria } from "@/lib/preop/isbar";
+import { RECOVERY_STEPS, buildBrief, buildIsbar, buildRecovery, isbarText, suggestedCallCriteria } from "@/lib/preop/isbar";
 import type { Dossier, Transmission } from "@/lib/preop/dossier";
 import type { Rule } from "@/lib/preop/rules/types";
 
@@ -46,8 +46,9 @@ export function HandoverView({ d, onChange, rules }: { d: Dossier; onChange: (d:
   const evaluation = useMemo(() => evaluateConsultation(rules, { ...d.consultation, techniques: d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques }, catalogs), [rules, d.consultation, d.plan.techniques, catalogs]);
   // Recomputed at each render: the durations run until « Sortie de salle ».
   const now = new Date().toISOString();
-  const [format, setFormat] = useState<"brief" | "isbar">("brief");
-  const sections = format === "brief" ? buildBrief(d, now, evaluation, catalogs) : buildIsbar(d, now, evaluation, catalogs);
+  const [format, setFormat] = useState<"brief" | "isbar" | "recovery">("brief");
+  const sections = format === "brief" ? buildBrief(d, now, evaluation, catalogs) : format === "recovery" ? buildRecovery(d, now, evaluation, catalogs) : buildIsbar(d, now, evaluation, catalogs);
+  const steps = t.steps ?? {};
   const missing = sections.reduce((n, s) => n + s.missing.length, 0);
   const text = isbarText(d, sections);
 
@@ -60,6 +61,38 @@ export function HandoverView({ d, onChange, rules }: { d: Dossier; onChange: (d:
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-start">
       <Panel title="À compléter">
+        {format === "recovery" && (
+          <div className="space-y-3 rounded-[var(--radius-md)] bg-surface-muted p-3">
+            <label className="block space-y-1">
+              <FieldLabel>Qui prend le patient en charge ?</FieldLabel>
+              <Input defaultValue={t.receiver ?? ""} onChange={(e) => set({ receiver: e.target.value })} placeholder="ex. infirmier(ère) SSPI, anesthésiste de la salle de réveil" />
+            </label>
+            <div className="space-y-1.5">
+              <FieldLabel>État clinique général</FieldLabel>
+              <ChipGroup
+                size="sm"
+                options={[
+                  { code: "stable" as const, label: "Stable" },
+                  { code: "unstable" as const, label: "Instable" },
+                ]}
+                value={t.stability || null}
+                onChange={(v) => set({ stability: v ?? "" })}
+                allowClear
+              />
+            </div>
+            <TextArea label="Précautions additionnelles" value={t.precautions ?? ""} onChange={(precautions) => set({ precautions })} placeholder="ex. isolement contact (BMR), risque de chute, prothèse dentaire" />
+            <TextArea label="Examens à suivre" value={t.labsToFollow ?? ""} onChange={(labsToFollow) => set({ labsToFollow })} placeholder="ex. Hb à 2 h, K⁺ au retour en chambre, glycémie capillaire /2 h" />
+            <div className="space-y-1">
+              <FieldLabel>Étapes dites</FieldLabel>
+              {(Object.keys(RECOVERY_STEPS) as (keyof typeof RECOVERY_STEPS)[]).map((k) => (
+                <button key={k} type="button" aria-pressed={!!steps[k]} onClick={() => set({ steps: { ...steps, [k]: !steps[k] } })} className="flex min-h-10 w-full items-start gap-2 rounded-[var(--radius-md)] px-1.5 py-1 text-left hover:bg-surface">
+                  <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${steps[k] ? "border-primary bg-primary text-primary-foreground" : "border-border bg-surface"}`}>{steps[k] && <Check className="h-3.5 w-3.5" />}</span>
+                  <span className="text-sm text-foreground">{RECOVERY_STEPS[k]}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="space-y-1.5">
           <FieldLabel>Destination</FieldLabel>
           <ChipGroup size="sm" options={DESTINATIONS} value={t.destination || null} onChange={(v) => set({ destination: v ?? "" })} allowClear />
@@ -93,6 +126,7 @@ export function HandoverView({ d, onChange, rules }: { d: Dossier; onChange: (d:
             options={[
               { code: "brief" as const, label: "Transmission" },
               { code: "isbar" as const, label: "ISBAR complet" },
+              { code: "recovery" as const, label: "SSPI (10 étapes)" },
             ]}
             value={format}
             onChange={(v) => v && setFormat(v)}

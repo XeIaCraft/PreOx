@@ -1,5 +1,6 @@
 "use client";
 
+import { DEFAULT_CHECKLIST, type ChecklistItem } from "@/lib/preop/checklist";
 import { useState } from "react";
 import { ArrowLeft, Check, Copy, EyeOff, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,10 +15,10 @@ import { MATERIAL_GROUPS, POSITIONS, RISK_LIBRARY, TARGET_GROUPS, type CatalogGr
 import { MONITORING, MONITORING_GROUPS, type MonitoringItem, type MonitoringGroup } from "@/lib/preop/monitoring";
 import { CRISIS_CATEGORIES, crises, type CrisisCategory, type DoseSpec } from "@/lib/preop/crises";
 import { COMPLICATION_TYPES } from "@/lib/preop/dossier";
-import { crisesOf, materialGroupsOf, monitoringOf, positionsOf, pumpsOf, restored, riskLibraryOf, targetGroupsOf, templateOf, withChange, withoutItem, type CrisisTemplate, type PlanLists } from "@/lib/preop/plan-lists";
+import { checklistOf, crisesOf, materialGroupsOf, monitoringOf, positionsOf, pumpsOf, restored, riskLibraryOf, targetGroupsOf, templateOf, withChange, withoutItem, type CrisisTemplate, type PlanLists } from "@/lib/preop/plan-lists";
 import { cn } from "@/lib/utils";
 
-type Tab = "targets" | "material" | "monitoring" | "risks" | "crises" | "complications" | "positions";
+type Tab = "targets" | "material" | "monitoring" | "risks" | "crises" | "complications" | "positions" | "checklist";
 
 const TABS: { code: Tab; label: string; help: string }[] = [
   { code: "targets", label: "Cibles", help: "Les cibles à cocher dans un protocole ou une préparation : ajoutez les vôtres, changez les valeurs, retirez ce que vous n'utilisez pas." },
@@ -27,6 +28,7 @@ const TABS: { code: Tab; label: string; help: string }[] = [
   { code: "crises", label: "Urgences", help: "Les procédures d'urgence et complications générales du bloc : modifiez les étapes et les doses (par kilo, fixes ou débit : recalculées pour chaque patient), ajoutez les vôtres, retirez celles qui ne servent pas." },
   { code: "positions", label: "Positions et pompes", help: "Les positions proposées pour l'intervention (une par ligne : « Position | points d'attention ») et les réglages par défaut de la PCEA et du cathéter périnerveux en post-opératoire." },
   { code: "complications", label: "Complications", help: "La liste des complications que l'on note au bloc (et qui partent dans la transmission)." },
+  { code: "checklist", label: "Check-list", help: "La check-list préanesthésique cochée au bloc : une vérification par ligne, chaque jour (ou après un déplacement de la machine) et avant chaque patient." },
 ];
 
 const lines = (v: string) =>
@@ -512,6 +514,45 @@ function ComplicationsEditor() {
   );
 }
 
+function ChecklistEditor() {
+  const { lists, commit, busy } = useSaver();
+  const current = checklistOf(lists);
+  const [daily, setDaily] = useState(current.daily.map((i) => i.label).join("\n"));
+  const [perCase, setPerCase] = useState(current.perCase.map((i) => i.label).join("\n"));
+  // A line kept as it was keeps its id (and the ticks already given in open dossiers).
+  const toItems = (text: string, before: ChecklistItem[]) => [...new Set(lines(text))].map((label) => ({ id: before.find((i) => i.label === label)?.id ?? slug(label), label }));
+  return (
+    <div className="space-y-3">
+      <label className="block space-y-1">
+        <FieldLabel>Chaque jour (ou après un déplacement de la machine, un changement d&apos;évaporateur)</FieldLabel>
+        <textarea className="min-h-48 w-full rounded-[var(--radius-md)] border border-border bg-surface px-3 py-2 text-sm" value={daily} onChange={(e) => setDaily(e.target.value)} />
+      </label>
+      <label className="block space-y-1">
+        <FieldLabel>Avant chaque patient</FieldLabel>
+        <textarea className="min-h-48 w-full rounded-[var(--radius-md)] border border-border bg-surface px-3 py-2 text-sm" value={perCase} onChange={(e) => setPerCase(e.target.value)} />
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={busy} onClick={() => void commit({ ...lists, checklist: { daily: toItems(daily, current.daily), perCase: toItems(perCase, current.perCase) } }, "Check-list enregistrée.")}>
+          <Check className="h-4 w-4" /> Enregistrer
+        </Button>
+        {lists.checklist && (
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              setDaily(DEFAULT_CHECKLIST.daily.map((i) => i.label).join("\n"));
+              setPerCase(DEFAULT_CHECKLIST.perCase.map((i) => i.label).join("\n"));
+              void commit({ ...lists, checklist: undefined }, "Check-list de PreOx rétablie.");
+            }}
+          >
+            <RotateCcw className="h-4 w-4" /> Liste de PreOx
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PositionsPumpsEditor() {
   const { lists, commit, busy } = useSaver();
   const toText = (ps: { label: string; hint: string }[]) => ps.map((p) => (p.hint ? `${p.label} | ${p.hint}` : p.label)).join("\n");
@@ -719,6 +760,7 @@ export function PlanListsSettings() {
       {tab === "crises" && <CrisesEditor />}
       {tab === "complications" && <ComplicationsEditor />}
       {tab === "positions" && <PositionsPumpsEditor />}
+      {tab === "checklist" && <ChecklistEditor />}
     </Panel>
   );
 }

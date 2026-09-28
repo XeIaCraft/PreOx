@@ -472,6 +472,8 @@ export interface Intraop {
   insensibleLoss?: InsensibleLoss;
   /** Your own timers: a start time and, for a countdown, its length. */
   timers?: CustomTimer[];
+  /** Pre-anaesthesia checklist: item id → ISO time it was ticked. */
+  checklist?: Record<string, string>;
 }
 
 export type InsensibleLoss = "surface" | "digestive" | "major";
@@ -491,6 +493,14 @@ export interface Transmission {
   callCriteria: string;
   contact: string;
   notes: string;
+  /** Recovery-room handover (optional fields, added later). */
+  receiver?: string;
+  stability?: "stable" | "unstable" | "";
+  precautions?: string;
+  /** Labs to follow after the handover. */
+  labsToFollow?: string;
+  /** Steps said: urgent tasks done, receiver ready, bracelet checked, questions asked, loop closed. */
+  steps?: Record<string, boolean>;
 }
 
 export type DossierStatus = "consultation" | "prepared" | "done" | "cancelled";
