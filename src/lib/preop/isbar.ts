@@ -2,6 +2,7 @@
 // log) in the ISBAR structure. Each section lists what's missing so
 // nothing is forgotten when handing over to the PACU or the ICU.
 
+import { chronicPainRisk } from "./chronic-pain";
 import { gasesShort } from "./gases";
 import { consultationScores, consultationSummary } from "./consultation-scores";
 import { attentionPoints } from "./attention";
@@ -189,6 +190,7 @@ export function suggestedCallCriteria(d: Dossier): string[] {
     techs.has("neuraxial") ? "bloc moteur non levé 6 h après la rachianesthésie" : "",
     techs.has("deep_block") ? "bloc moteur non levé 24 h après le bloc plexique ou tronculaire" : "",
     "EVA > 3 malgré le traitement, nausées ou vomissements persistants",
+    "douleur disproportionnée par rapport à l'intervention (chercher une complication : loges, hématome, ischémie, infection, avant d'augmenter les antalgiques)",
   ].filter(Boolean);
 }
 
@@ -389,6 +391,8 @@ export function buildRecovery(d: Dossier, now: string, evaluation?: EvaluationRe
   if (t.labsToFollow?.trim()) s8.lines.push(`À suivre : ${t.labsToFollow.trim()}`);
   const vigilance = attentionPoints(c, scores, d.plan).filter((x) => x.level === "high");
   if (vigilance.length) s8.lines.push(`Préoccupations postopératoires : ${vigilance.map((x) => lowerFirst(x.title)).join(", ")}`);
+  const pain = chronicPainRisk(c);
+  if (pain.level === "high") s8.lines.push(`Risque de douleur chronique (drapeaux : ${pain.flags.filter((f) => f.present).map((f) => lowerFirst(f.flag.label)).join(", ")}) : traiter vite la douleur aiguë, réévaluer à 1 et 3 mois`);
   if (t.callCriteria.trim()) s8.lines.push(`Appeler si : ${t.callCriteria.trim().replace(/\n+/g, " ; ")}`);
   const dest = destinationOf(d);
   if (dest) s8.lines.push(`Destination : ${dest}`);

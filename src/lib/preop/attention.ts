@@ -6,6 +6,7 @@
 // of well-established precautions, not prescriptions — no dose, no timing
 // that belongs to a guideline (those come from your rules).
 
+import { CHRONIC_PAIN_SOURCES, chronicPainRisk } from "./chronic-pain";
 import { QUALIFIER_LABELS, anyOf, has } from "./history";
 import { DRUG_REFERENCES, DRUG_REFERENCE_SOURCE, cautionsFor, drugReferenceFor, localAnaestheticLoad, morphineEquivalents } from "./drug-reference";
 import { computeDose, type ProtocolDrug } from "./protocols";
@@ -895,16 +896,18 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         why: analgesia.map((x) => x.split(" : ")[0]).join(" ; "),
         source: `${MANUAL}, chap. 25 (cas particuliers)`,
       });
-    const chronic = [has(cond, "chronic_pain") ? "douleur chronique préopératoire" : "", /thoracotom|mastectom|amputation/.test(name) ? surgeryName : ""].filter(Boolean);
-    if (chronic.length)
+    const pain = chronicPainRisk(c);
+    if (pain.level !== "low") {
+      const present = pain.flags.filter((f) => f.present);
       add({
         id: "chronic-postop-pain",
-        level: "info",
-        title: "Risque de douleur chronique postopératoire",
-        detail: `Douleur persistante à 3 mois dans 5 à 50 % des cas selon l'intervention (sévère dans 2 à 10 %). Analgésie multimodale et ALR pour limiter la douleur aiguë, suivie de l'EVA au repos et à la mobilisation (objectif ≤ 3).${/amputation/.test(name) ? " Amputation : douleurs fantômes jusqu'à 70 % en postopératoire immédiat." : ""}`,
-        why: chronic.join(" ; "),
-        source: `${MANUAL}, chap. 25 (douleur chronique postopératoire)`,
+        level: pain.level === "high" ? "medium" : "info",
+        title: `Risque de douleur chronique postopératoire${pain.level === "high" ? " élevé" : ""}`,
+        detail: `Douleur persistante à 3 mois après 10 à 50 % des interventions (sévère dans 2 à 10 %)${pain.surgeryRate ? ` ; ${pain.surgeryRate}` : ""}. ${pain.prevention.join(" ")}${/amputation/.test(name) ? " Amputation : douleurs fantômes jusqu'à 70 % en postopératoire immédiat." : ""}`,
+        why: `Drapeaux rouges ${pain.red}, jaunes ${pain.yellow} : ${present.map((f) => f.deduced ?? f.flag.label).join(" ; ")}`,
+        source: CHRONIC_PAIN_SOURCES,
       });
+    }
   }
 
   // --- Specialities: day case, heart, vessels, thorax, neuro, digestive (manual, chapters 26–30) -----

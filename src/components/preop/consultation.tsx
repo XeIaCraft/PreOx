@@ -1,5 +1,6 @@
 "use client";
 
+import { CHRONIC_PAIN_SOURCES, chronicPainRisk } from "@/lib/preop/chronic-pain";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, CircleHelp, ClipboardCopy, ExternalLink, FolderPlus, MessageSquareQuote, Plus, Printer, Search, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -639,6 +640,8 @@ function EvaluationStep({ s, set, onChange, scores }: { s: ConsultationState; se
         )}
       </Panel>
 
+      <PainFlagsPanel s={s} set={set} />
+
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <ScoreTile name="Lee (RCRI)" value={`${r.rcri.value}`} label={r.rcri.label} level={r.rcri.level} missing={r.rcri.missing} info={RCRI_LEGEND} infoLabel="Indice de Lee (RCRI)" />
         <ScoreTile name="STOP-BANG" value={`${r.stopBang.value}/8`} label={r.stopBang.label} level={r.stopBang.level} missing={r.stopBang.missing} info={STOP_BANG_LEGEND} infoLabel="STOP-BANG (apnée du sommeil)" />
@@ -691,6 +694,48 @@ function EvaluationStep({ s, set, onChange, scores }: { s: ConsultationState; se
         </div>
       </details>
     </div>
+  );
+}
+
+/** Red (biomedical) and yellow (psychosocial) flags of chronic post-surgical pain: deduced ones ticked, the rest asked. */
+export function PainFlagsPanel({ s, set }: { s: ConsultationState; set: (p: Partial<ConsultationState>) => void }) {
+  const risk = chronicPainRisk(s);
+  const toggle = (id: string, v: boolean) => set({ painFlags: { ...s.painFlags, [id]: v } });
+  const group = (kind: "red" | "yellow", title: string) => (
+    <div className="space-y-1.5">
+      <p className={cn("text-xs font-semibold uppercase tracking-wide", kind === "red" ? "text-danger" : "text-accent")}>{title}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {risk.flags
+          .filter((f) => f.flag.kind === kind)
+          .map((f) => (
+            <YesNoChip key={f.flag.id} label={f.flag.label} value={f.present} byDefault={false} onChange={(v) => toggle(f.flag.id, v)} />
+          ))}
+      </div>
+      {risk.flags.some((f) => f.flag.kind === kind && f.deduced) && (
+        <p className="text-[11px] text-foreground-subtle">
+          Déduit : {risk.flags.filter((f) => f.flag.kind === kind && f.deduced).map((f) => f.deduced).join(" ; ")}
+        </p>
+      )}
+    </div>
+  );
+  return (
+    <Panel
+      title={<span className="flex items-center gap-1">Douleur chronique postopératoire <InfoTip label="Drapeaux rouges et jaunes">{CHRONIC_PAIN_SOURCES}</InfoTip></span>}
+      actions={<RiskPill level={risk.level === "high" ? "high" : risk.level === "intermediate" ? "intermediate" : "low"}>{risk.level === "high" ? "Risque élevé" : risk.level === "intermediate" ? "À surveiller" : "Pas de drapeau"}</RiskPill>}
+    >
+      <p className="text-[11px] text-foreground-subtle">À repérer en préopératoire pour prévenir la chronicisation. Ce que la consultation montre déjà est coché ; touchez le reste si présent.{risk.surgeryRate ? ` Taux attendu : ${risk.surgeryRate}.` : ""}</p>
+      {group("red", "Drapeaux rouges · biomédicaux")}
+      {group("yellow", "Drapeaux jaunes · psychosociaux")}
+      {risk.level !== "low" && (
+        <Disclosure summary="Que faire" summaryClassName="cursor-pointer text-sm font-medium text-primary-strong">
+          <ul className="list-disc space-y-0.5 pl-4 pt-1 text-sm text-foreground">
+            {risk.prevention.map((x) => (
+              <li key={x}>{x}</li>
+            ))}
+          </ul>
+        </Disclosure>
+      )}
+    </Panel>
   );
 }
 

@@ -210,6 +210,8 @@ export interface ConsultationState {
   cha: { heartFailure?: boolean; hypertension?: boolean; diabetes?: boolean; strokeTiaThromboembolism?: boolean; vascularDisease?: boolean };
   hasBled: YesNo<keyof typeof HAS_BLED_ITEMS>;
   treatments: PatientTreatment[];
+  /** Chronic post-surgical pain flags ticked or unticked by hand (the others are deduced). */
+  painFlags?: Record<string, boolean>;
   /** « Aucun traitement » confirmed. */
   noTreatment?: boolean;
   techniques: Technique[];
