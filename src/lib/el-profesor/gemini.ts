@@ -376,7 +376,7 @@ export interface GeminiRotationConfig {
   models: string[];
 }
 
-function isQuotaOrCapacityError(err: unknown): boolean {
+export function isQuotaOrCapacityError(err: unknown): boolean {
   return err instanceof GeminiError && /\((429|503)\)/.test(err.message);
 }
 

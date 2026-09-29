@@ -6,10 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import {
   deleteGeminiFile,
-  extractChapterContentWithRotation,
-  extractChapterContentFromTextWithRotation,
   extractComplementaryContentWithRotation,
-  verifyExtraction,
   generateMnemonic,
   BLOCK_TYPES,
 } from "@/lib/el-profesor/gemini";
@@ -21,8 +18,9 @@ import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
 import { extractPdfPageTextsWithOcr } from "@/lib/el-profesor/pdf-ocr";
 import { parseClozeText } from "@/lib/el-profesor/cloze";
-import { buildExtractionPrompt, buildTextExtractionPrompt, buildComplementaryPrompt } from "@/lib/el-profesor/prompts";
+import { buildComplementaryPrompt } from "@/lib/el-profesor/prompts";
 import { insertExtractionJob } from "@/lib/el-profesor/extraction-jobs";
+import { runGeminiChapterExtraction } from "@/lib/el-profesor/gemini-run";
 import {
   allNeedReviewFlags,
   persistExtraction,
@@ -37,7 +35,6 @@ import type {
   ExtractedSubEntity,
   ExtractedFicheBlock,
   ExtractedFlashcard,
-  VerificationFlag,
   Citation,
   BlockContent,
   FlashcardSide,
@@ -79,144 +76,19 @@ export async function extractChapter(chapterId: string): Promise<ActionState> {
     }
   }
 
-  await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
-
-  let geminiFileName: string | null = null;
-  let apiKey = "";
-  // Captured as soon as each path gets its response back, so the catch
-  // block below can still log a useful request/response pair even when the
-  // failure is the "zero sub-entities" throw right after — mirrors the
-  // .debug pattern batch-poll.ts already uses for the Claude batch path
-  // (extractionFailure), which this synchronous Gemini path didn't have:
-  // without it, a recoverable-looking-but-empty response (e.g. the
-  // double-encoded-JSON bug fixed in coerceArray) was lost, leaving nothing
-  // for the "réessayer depuis cette réponse" button to work from.
-  let debugRequestPrompt: string | null = null;
-  let debugRawResponse: string | null = null;
-
-  try {
-    let extraction: ExtractionResult;
-    let flags: VerificationFlag[];
-    let verificationFailed = false;
-
-    if (chapter.source_kind !== "pdf") {
-      // Word/PowerPoint source (item 5 of the backlog): no file to attach,
-      // no page ground-truth to verify against, so this always goes through
-      // Gemini's text-only path regardless of the configured provider — no
-      // Claude batch path exists for a source with no PDF to attach.
-      const config = await getElProfesorGeminiConfig();
-      const { extraction: textExtraction, model: textModel, rawResponseText: textRawResponse } = await extractChapterContentFromTextWithRotation(
-        config,
-        chapter.title,
-        chapter.source_text ?? ""
-      );
-      extraction = textExtraction;
-      const textRequestPrompt = buildTextExtractionPrompt(chapter.title, chapter.source_text ?? "");
-      debugRequestPrompt = textRequestPrompt;
-      debugRawResponse = textRawResponse;
-      if (extraction.sub_entities.length === 0) {
-        // A real chapter always has something extractable — an empty result
-        // here means the call silently produced nothing usable (found
-        // 2026-08-25: a report of an "empty generation" with no error shown,
-        // on a chapter confirmed to have real text via manual selection).
-        // Surfacing it as a failure is far safer than "succeeding" with an
-        // empty chapter the admin has no reason to notice or retry.
-        throw new GeminiError("Extraction vide — aucune sous-entité produite. Réessayez, ou vérifiez que le document contient bien du contenu.");
-      }
-      flags = allNeedReviewFlags(extraction);
-
-      await persistExtraction(supabase, chapterId, extraction, flags);
-      await insertExtractionJob(supabase, {
-        chapterId,
-        status: "succeeded",
-        rawOutput: extraction,
-        provider: "gemini",
-        model: textModel,
-        requestPrompt: textRequestPrompt,
-        rawResponse: textRawResponse,
-      });
-      await supabase
-        .from("el_profesor_chapters")
-        .update({ status: "draft_ready", estimated_remaining_passes: extraction.estimated_remaining_passes })
-        .eq("id", chapterId);
-
-      revalidatePath("/apps/el-profesor");
-      return {
-        success:
-          "Extraction terminée. Relisez le contenu généré avant publication. Chaque élément est marqué « à vérifier » (pas de document source à vérifier automatiquement pour un import Word/PowerPoint).",
-      };
-    }
-
-    // PDF chapter, Gemini provider (Claude was already routed to the batch path above).
-    const config = await getElProfesorGeminiConfig();
-    const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
-    const [{ extraction: geminiExtraction, apiKey: winningKey, model, file, rawResponseText: pdfRawResponse }, pageTexts] = await Promise.all([
-      extractChapterContentWithRotation(config, bytes, chapter.title, chapter.title),
-      extractPdfPageTextsWithOcr(bytes, chapter.title).catch(() => null),
-    ]);
-    extraction = geminiExtraction;
-    apiKey = winningKey;
-    geminiFileName = file.name;
-    const pdfRequestPrompt = buildExtractionPrompt(chapter.title);
-    debugRequestPrompt = pdfRequestPrompt;
-    debugRawResponse = pdfRawResponse;
-
-    if (extraction.sub_entities.length === 0) {
-      // Same reasoning as the Word/PowerPoint path above — a chapter with
-      // real content should never produce zero sub-entities.
-      throw new GeminiError("Extraction vide — aucune sous-entité produite. Réessayez, ou vérifiez que le PDF contient bien du contenu extractible.");
-    }
-
-    // Ground-truth-corrects citation pages against the PDF's actual text
-    // when possible (best-effort — null on a malformed/unparseable file, in
-    // which case citations are left exactly as the model produced them).
-    if (pageTexts) correctExtractionCitations(extraction, pageTexts);
-
-    const verification = await verifyExtraction(apiKey, model, file, extraction).catch(() => {
-      verificationFailed = true;
-      return { flags: [] as VerificationFlag[] };
-    });
-    flags = verification.flags;
-
-    await persistExtraction(supabase, chapterId, extraction, flags);
-
-    await insertExtractionJob(supabase, {
-      chapterId,
-      status: "succeeded",
-      rawOutput: extraction,
-      provider: "gemini",
-      model,
-      requestPrompt: pdfRequestPrompt,
-      rawResponse: pdfRawResponse,
-    });
-    await supabase
-      .from("el_profesor_chapters")
-      .update({ status: "draft_ready", estimated_remaining_passes: extraction.estimated_remaining_passes })
-      .eq("id", chapterId);
-
-    revalidatePath("/apps/el-profesor");
+  const result = await runGeminiChapterExtraction(supabase, chapter);
+  revalidatePath("/apps/el-profesor");
+  if (!result.ok) return { error: result.message };
+  if (result.textSource)
     return {
       success:
-        "Extraction terminée. Relisez le contenu généré avant publication." +
-        (verificationFailed
-          ? " Attention : la passe de vérification des citations a échoué et n'a pas pu tourner — relecture manuelle recommandée."
-          : ""),
+        "Extraction terminée. Relisez le contenu généré avant publication. Chaque élément est marqué « à vérifier » (pas de document source à vérifier automatiquement pour un import Word/PowerPoint).",
     };
-  } catch (err) {
-    const message = err instanceof GeminiError ? err.message : "Échec de l'extraction du chapitre.";
-    await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
-    await insertExtractionJob(supabase, {
-      chapterId,
-      status: "failed",
-      error: message,
-      provider: "gemini",
-      requestPrompt: debugRequestPrompt,
-      rawResponse: debugRawResponse,
-    });
-    return { error: message };
-  } finally {
-    if (geminiFileName) await deleteGeminiFile(apiKey, geminiFileName);
-  }
+  return {
+    success:
+      "Extraction terminée. Relisez le contenu généré avant publication." +
+      (result.verificationFailed ? " Attention : la passe de vérification des citations a échoué et n'a pas pu tourner — relecture manuelle recommandée." : ""),
+  };
 }
 
 // How long a chapter can sit in "extracting" before it's offered as
@@ -274,6 +146,15 @@ export async function resetStuckExtraction(chapterId: string): Promise<ActionSta
   }
 
   if (chapter.status === "queued") {
+    // Gemini queue (server-side): take it out of the queue.
+    const { data: queued } = await supabase.from("el_profesor_gemini_queue").select("status").eq("chapter_id", chapterId).maybeSingle();
+    if (queued) {
+      if (queued.status === "running") return { error: "Extraction Gemini en cours pour ce chapitre — attendez quelques minutes." };
+      await supabase.from("el_profesor_gemini_queue").delete().eq("chapter_id", chapterId);
+      await supabase.from("el_profesor_chapters").update({ status: "pending", extraction_error: null }).eq("id", chapterId);
+      revalidatePath("/apps/el-profesor");
+      return { success: "Chapitre retiré de la file Gemini — vous pouvez relancer l'extraction." };
+    }
     const { data: item } = await supabase
       .from("el_profesor_batch_items")
       .select("status, error")

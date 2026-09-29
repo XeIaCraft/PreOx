@@ -79,6 +79,7 @@ import { setElProfesorPreviewAsUser } from "@/app/apps/el-profesor/actions/previ
 import { fetchAiConfigData } from "@/lib/el-profesor/sync-api";
 import { extractChapter, extractChapterComplementary, resetStuckExtraction, resetChapterContent } from "@/app/apps/el-profesor/actions/extraction";
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
+import { enqueueGeminiChapters, runGeminiQueueNow, removeFromGeminiQueue } from "@/app/apps/el-profesor/actions/gemini-queue";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
 import { ExtractionHistoryDialog } from "@/components/el-profesor/dialogs/extraction-history-dialog";
 import { exportBookArchive, archiveBook } from "@/app/apps/el-profesor/actions/archive";
@@ -296,7 +297,7 @@ function isStuckQueued(updatedAt: string): boolean {
 
 const STATUS_LABEL: Record<ChapterStatus, string> = {
   pending: "PDF importé",
-  queued: "En file (lot Claude)",
+  queued: "En file",
   extracting: "Extraction en cours…",
   draft_ready: "Brouillon à relire",
   published: "Publié",
@@ -651,6 +652,9 @@ export function ElProfesorBoard({
   const bulkSelectableChapterIds =
     isAdmin && aiProvider === "claude" ? books.flatMap((b) => b.chapters.filter((c) => c.sourceKind === "pdf").map((c) => c.id)) : [];
 
+  // Gemini queue: the chapters still to extract.
+  const geminiQueueableIds = isAdmin && aiProvider === "gemini" ? books.flatMap((b) => b.chapters.filter((c) => c.status === "pending" || c.status === "failed").map((c) => c.id)) : [];
+
   const selectedChapters = books
     .flatMap((b) => b.chapters)
     .filter((c) => selectedChapterIds.has(c.id))
@@ -728,6 +732,33 @@ export function ElProfesorBoard({
         toast(result.success ?? "Lot soumis.", { variant: "success" });
         setSelectedChapterIds(new Set());
       }
+    });
+  }
+
+  function handleBulkGeminiQueue() {
+    const ids = [...selectedChapterIds];
+    startBulkTransition(async () => {
+      const result = await enqueueGeminiChapters(ids);
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      toast(result.success ?? "Mis en file.", { variant: "success" });
+      setSelectedChapterIds(new Set());
+      // Starts right away while the window is open; the server scheduler carries on otherwise.
+      void runGeminiQueueNow()
+        .then((r) => r.success && toast(r.success, { variant: "success" }))
+        .catch(() => undefined);
+    });
+  }
+
+  function handleRemoveFromQueue(chapterId: string) {
+    setPendingId(chapterId);
+    startTransition(async () => {
+      const result = await removeFromGeminiQueue(chapterId);
+      setPendingId(null);
+      if (result.error) toast(result.error, { variant: "error" });
+      else toast(result.success ?? "Retiré.", { variant: "success" });
     });
   }
 
@@ -1116,6 +1147,16 @@ export function ElProfesorBoard({
         </button>
       )}
 
+      {viewMode === "book" && geminiQueueableIds.length > 0 && selectedChapterIds.size === 0 && (
+        <button
+          type="button"
+          onClick={() => setSelectedChapterIds(new Set(geminiQueueableIds))}
+          className="mt-4 text-xs text-foreground-subtle underline hover:text-foreground"
+        >
+          Sélectionner tous les chapitres encore à extraire ({geminiQueueableIds.length}) pour les mettre en file Gemini
+        </button>
+      )}
+
       {selectedChapterIds.size > 0 && (
         <div className="sticky top-2 z-10 mt-6 flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] border border-primary bg-surface p-3 shadow-md">
           <span className="text-sm font-medium text-foreground">
@@ -1137,6 +1178,16 @@ export function ElProfesorBoard({
                 <Zap className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Compléter jusqu'à couverture"}
               </Button>
             </>
+          )}
+          {aiProvider === "gemini" && (
+            <Button
+              size="sm"
+              onClick={handleBulkGeminiQueue}
+              disabled={isBulkPending}
+              title="Extrait les chapitres sélectionnés l'un après l'autre côté serveur, même fenêtre fermée ; un quota gratuit atteint reporte simplement l'essai"
+            >
+              <Sparkles className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Mettre en file (Gemini)"}
+            </Button>
           )}
           <Button
             variant="secondary"
@@ -1423,6 +1474,12 @@ export function ElProfesorBoard({
                         <Badge variant={STATUS_VARIANT[chapter.status]}>{STATUS_LABEL[chapter.status]}</Badge>
                       </div>
                     </div>
+                    {chapter.status === "queued" && chapter.extractionError && <p className="mt-1.5 text-xs text-foreground-muted">{chapter.extractionError}</p>}
+                    {isAdmin && aiProvider === "gemini" && chapter.status === "queued" && (
+                      <button type="button" onClick={() => handleRemoveFromQueue(chapter.id)} disabled={busy} className="mt-1 text-xs text-foreground-subtle underline hover:text-foreground">
+                        Retirer de la file
+                      </button>
+                    )}
                     {chapter.status === "failed" && chapter.extractionError && (
                       <p className="mt-1.5 text-xs text-danger">{chapter.extractionError}</p>
                     )}

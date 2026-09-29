@@ -229,6 +229,17 @@ export type ElProfesorBatchJobRow = {
   candidates_tokens: number | null;
 };
 
+export type ElProfesorGeminiQueueRow = {
+  chapter_id: string;
+  status: "waiting" | "running" | "failed";
+  attempts: number;
+  next_attempt_at: string;
+  started_at: string | null;
+  last_error: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
 export type ElProfesorBatchItemRow = {
   id: string;
   batch_job_id: string;
@@ -906,6 +917,12 @@ export type Database = {
         Row: ElProfesorBatchJobRow;
         Insert: Partial<ElProfesorBatchJobRow> & { anthropic_batch_id: string; kind: ElProfesorBatchJobKind };
         Update: Partial<ElProfesorBatchJobRow>;
+        Relationships: [];
+      };
+      el_profesor_gemini_queue: {
+        Row: ElProfesorGeminiQueueRow;
+        Insert: Partial<ElProfesorGeminiQueueRow> & { chapter_id: string };
+        Update: Partial<ElProfesorGeminiQueueRow>;
         Relationships: [];
       };
       el_profesor_batch_items: {
