@@ -1,6 +1,8 @@
 "use server";
 
 import { z } from "zod";
+import { MUST_CHANGE_PASSWORD, passwordSchema } from "@/lib/auth/password";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
@@ -127,13 +129,7 @@ export async function requestPasswordReset(
 
 // No expiration policy (by design — forced periodic rotation is no longer
 // considered good practice), but classic strength criteria on creation.
-const passwordSchema = z
-  .string()
-  .min(10, { message: "10 caractères minimum." })
-  .regex(/[a-z]/, { message: "Au moins une minuscule." })
-  .regex(/[A-Z]/, { message: "Au moins une majuscule." })
-  .regex(/[0-9]/, { message: "Au moins un chiffre." })
-  .regex(/[^a-zA-Z0-9]/, { message: "Au moins un caractère spécial." });
+
 
 export async function updatePassword(
   _prevState: ActionState,
@@ -165,6 +161,11 @@ export async function updatePassword(
 
   if (error) {
     return { error: "Impossible de mettre à jour le mot de passe." };
+  }
+
+  // A temporary password set by an admin is now replaced: lift the obligation.
+  if (user.app_metadata?.[MUST_CHANGE_PASSWORD]) {
+    await createAdminClient().auth.admin.updateUserById(user.id, { app_metadata: { [MUST_CHANGE_PASSWORD]: false } });
   }
 
   const next = formData.get("next");

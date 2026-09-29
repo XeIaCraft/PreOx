@@ -1,5 +1,6 @@
 "use server";
 
+import { MUST_CHANGE_PASSWORD, passwordSchema } from "@/lib/auth/password";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/dal";
@@ -23,8 +24,62 @@ const inviteSchema = z.object({
   role: z.enum(["admin", "user"]),
 });
 
+const createWithPasswordSchema = inviteSchema.extend({ password: passwordSchema });
+
+/**
+ * Creates the account directly with a temporary password (no e-mail link
+ * needed): the e-mail is marked confirmed and the person must choose their
+ * own password at the first login.
+ */
+async function createUserWithPassword(formData: FormData, adminId: string): Promise<ActionState> {
+  const parsed = createWithPasswordSchema.safeParse({
+    email: formData.get("email"),
+    fullName: formData.get("fullName"),
+    role: formData.get("role"),
+    password: formData.get("password"),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Formulaire invalide." };
+  const { email, fullName, role, password } = parsed.data;
+
+  const { data, error } = await createAdminClient().auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: fullName },
+    app_metadata: { [MUST_CHANGE_PASSWORD]: true },
+  });
+  if (error || !data.user) {
+    const alreadyExists = error?.message?.toLowerCase().includes("already");
+    return { error: alreadyExists ? "Un utilisateur avec cette adresse existe déjà." : "Impossible de créer ce compte pour le moment." };
+  }
+  if (role === "admin") {
+    const supabase = await createClient();
+    await supabase.from("profiles").update({ role: "admin" }).eq("id", data.user.id);
+  }
+  await logActivity(adminId, "create_user_with_password", email, { role });
+  revalidatePath("/admin/users");
+  revalidatePath("/admin");
+  return { success: `Compte créé pour ${email}. Transmettez-lui le mot de passe provisoire : il devra le changer à la première connexion.` };
+}
+
+/** Replaces the password of an existing account with a temporary one, to be changed at the next login. */
+export async function setTemporaryPassword(userId: string, password: string): Promise<ActionState> {
+  const admin = await requireAdmin();
+  const parsed = passwordSchema.safeParse(password);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Mot de passe invalide." };
+  const { error } = await createAdminClient().auth.admin.updateUserById(userId, {
+    password: parsed.data,
+    email_confirm: true,
+    app_metadata: { [MUST_CHANGE_PASSWORD]: userId !== admin.id },
+  });
+  if (error) return { error: "Impossible de définir ce mot de passe." };
+  await logActivity(admin.id, "set_temporary_password", userId, {});
+  return { success: userId === admin.id ? "Mot de passe modifié." : "Mot de passe provisoire défini : la personne devra le changer à sa prochaine connexion." };
+}
+
 export async function inviteUser(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   const admin = await requireAdmin();
+  if (formData.get("mode") === "password") return createUserWithPassword(formData, admin.id);
 
   const parsed = inviteSchema.safeParse({
     email: formData.get("email"),

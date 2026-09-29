@@ -3,8 +3,9 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Trash2, Save, Eye } from "lucide-react";
-import { updateUserRole, updateUserName, setAppAccess, deleteUser } from "@/app/actions/admin";
+import { Trash2, Save, Eye, KeyRound, RefreshCw } from "lucide-react";
+import { updateUserRole, updateUserName, setAppAccess, deleteUser, setTemporaryPassword } from "@/app/actions/admin";
+import { generateTemporaryPassword } from "@/lib/auth/temp-password";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -30,6 +31,7 @@ export function UserDetailPanel({ user, apps, grantedAppIds, groupGrantedAppName
   const [granted, setGranted] = useState(new Set(grantedAppIds));
   const [message, setMessage] = useState<{ type: "success" | "danger"; text: string } | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [tempPassword, setTempPassword] = useState("");
 
   function notify(result: { error?: string; success?: string }) {
     if (result.error) setMessage({ type: "danger", text: result.error });
@@ -233,6 +235,39 @@ export function UserDetailPanel({ user, apps, grantedAppIds, groupGrantedAppName
           )}
         </CardContent>
       </Card>
+
+      {!isSelf && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Mot de passe provisoire</CardTitle>
+            <CardDescription>
+              Si l&apos;e-mail d&apos;invitation n&apos;est pas arrivé ou que la personne a perdu son mot de passe : définissez-en un provisoire, transmettez-le lui ; elle devra le changer à sa prochaine connexion.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <Input value={tempPassword} onChange={(e) => setTempPassword(e.target.value)} placeholder="Tapez-en un ou « Générer »" className="min-w-0 flex-1 font-mono" autoComplete="off" aria-label="Mot de passe provisoire" />
+              <Button type="button" variant="secondary" onClick={() => setTempPassword(generateTemporaryPassword())}>
+                <RefreshCw className="h-4 w-4" /> Générer
+              </Button>
+              <Button
+                type="button"
+                disabled={isPending || !tempPassword}
+                onClick={() =>
+                  startTransition(async () => {
+                    const result = await setTemporaryPassword(user.id, tempPassword);
+                    notify(result);
+                    if (result.success) await navigator.clipboard.writeText(tempPassword).catch(() => undefined);
+                  })
+                }
+              >
+                <KeyRound className="h-4 w-4" /> Définir
+              </Button>
+            </div>
+            <p className="text-xs text-foreground-subtle">Copié dans le presse-papiers une fois défini. 10 caractères minimum, avec majuscule, minuscule, chiffre et caractère spécial.</p>
+          </CardContent>
+        </Card>
+      )}
 
       {!isSelf && (
         <Card className="border-danger/20">

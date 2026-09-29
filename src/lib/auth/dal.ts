@@ -4,6 +4,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/supabase/types";
+import { MUST_CHANGE_PASSWORD } from "@/lib/auth/password";
 
 /**
  * Data Access Layer: every server-side authorization decision funnels
@@ -67,6 +68,8 @@ export async function requireProfile(): Promise<Profile> {
   // off every page behind this, on every navigation (getCurrentProfile()
   // re-derives the user too, but that's memoized by getCurrentUser's own
   // cache(), so it's free).
+  // Account created with a temporary password: choose your own before anything else.
+  if (user.app_metadata?.[MUST_CHANGE_PASSWORD]) redirect("/set-password?next=/apps");
   const [, profile] = await Promise.all([checkMfaOrRedirect(), getCurrentProfile()]);
   if (!profile) redirect("/login");
   return profile;
