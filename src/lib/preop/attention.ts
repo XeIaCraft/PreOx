@@ -7,6 +7,7 @@
 // that belongs to a guideline (those come from your rules).
 
 import { CHRONIC_PAIN_SOURCES, chronicPainRisk } from "./chronic-pain";
+import { INTENSITY_LABEL, POSTOP_PAIN_SOURCE, analgesiaFor, expectedPostopPain } from "./postop-pain";
 import { QUALIFIER_LABELS, anyOf, has } from "./history";
 import { DRUG_REFERENCES, DRUG_REFERENCE_SOURCE, cautionsFor, drugReferenceFor, localAnaestheticLoad, morphineEquivalents } from "./drug-reference";
 import { computeDose, type ProtocolDrug } from "./protocols";
@@ -895,6 +896,16 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         detail: analgesia.map((x) => x.charAt(0).toUpperCase() + x.slice(1)).join(". ") + ".",
         why: analgesia.map((x) => x.split(" : ")[0]).join(" ; "),
         source: `${MANUAL}, chap. 25 (cas particuliers)`,
+      });
+    const acute = expectedPostopPain(c.surgery.name);
+    if (acute)
+      add({
+        id: "expected-postop-pain",
+        level: acute.intensity === "strong" ? "medium" : "info",
+        title: `Douleur postopératoire attendue : ${INTENSITY_LABEL[acute.intensity]}, ${acute.long ? "plus de 48 h" : "moins de 48 h"}`,
+        detail: analgesiaFor(acute).join(" "),
+        why: `Intervention : ${c.surgery.name} (${acute.matched})`,
+        source: POSTOP_PAIN_SOURCE,
       });
     const pain = chronicPainRisk(c);
     if (pain.level !== "low") {
