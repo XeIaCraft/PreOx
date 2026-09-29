@@ -22,6 +22,7 @@ import { CrisisPanel, CustomTimers, FluidStatus, PlanCard, minutesBetween } from
 import { MonitoringPanel, RisksDetail, TheatreSections, VentilationPanel, type TheatreSection } from "@/components/preop/theatre-sections";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { checklistOf, complicationsOf } from "@/lib/preop/plan-lists";
+import { HaemoProfilePanel } from "@/components/preop/haemo-panel";
 import { AirwayPlanPanel, ChecklistPanel, IsobolePanel, KineticsPanel } from "@/components/preop/theatre-pharmaco";
 
 const nowIso = () => new Date().toISOString();
@@ -422,6 +423,7 @@ export function TheatreView({ d, onChange, carnetEnabled }: { d: Dossier; onChan
         </div>
       ),
     },
+    { id: "haemo", title: "Hémodynamique du patient : volume sanguin, pertes tolérées, débit", node: <HaemoProfilePanel d={d} /> },
     { id: "pharmaco", title: "Pharmacocinétique : délais, durées, réveil estimé", node: <KineticsPanel d={d} now={now} /> },
     { id: "isoboles", title: "Isoboles : moins d'hypnotique, plus de morphinique", node: <IsobolePanel age={d.consultation.patient.age} /> },
     {

@@ -1,5 +1,6 @@
 "use client";
 
+import { HaemoProfilePanel } from "@/components/preop/haemo-panel";
 import { AirwayPlanView, airwayPlanOf } from "@/components/preop/theatre-pharmaco";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BookmarkPlus, CalendarCheck2, CalendarPlus, CalendarX2, Copy } from "lucide-react";
@@ -370,6 +371,9 @@ export function PreparationView({
         />
         <Panel title="Plan voies aériennes">
           <AirwayPlanView plan={airwayPlanOf(d, scores)} compact />
+        </Panel>
+        <Panel title="Hémodynamique du patient">
+          <HaemoProfilePanel d={d} compact />
         </Panel>
         <FluidPlanPanel d={d} />
         <RuleReminders d={d} rules={rules} />

@@ -25,7 +25,7 @@ export interface TheatreSection {
 }
 
 /** Default order of the theatre sections (the summary stays on top, always open). */
-export const THEATRE_ORDER = ["checklist", "events", "drugs", "airway", "crises", "risks", "pharmaco", "isoboles", "ventilation", "monitoring", "fluids", "complications", "tci", "syringe", "handover", "finish"];
+export const THEATRE_ORDER = ["checklist", "events", "drugs", "airway", "crises", "risks", "pharmaco", "isoboles", "ventilation", "monitoring", "haemo", "fluids", "complications", "tci", "syringe", "handover", "finish"];
 
 /** The sections in your order (new ones appended), each folded until opened; the order is yours to change. */
 export function TheatreSections({ sections, open, onToggle }: { sections: TheatreSection[]; open: Set<string>; onToggle: (id: string) => void }) {
