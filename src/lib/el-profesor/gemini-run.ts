@@ -26,7 +26,8 @@ import {
 } from "@/lib/el-profesor/extraction-persist";
 import type { ExtractionResult, VerificationFlag } from "@/lib/el-profesor/types";
 
-const NEIGHBOUR_TEXT_CHARS = 1500;
+// Enough to hold the end of a paragraph cut by the split (the part where it starts must finish it).
+const NEIGHBOUR_TEXT_CHARS = 2500;
 const NEIGHBOUR_MAX_NAMES = 40;
 
 /**

@@ -66,8 +66,10 @@ Contexte des parties voisines du livre (le document fourni est une portion déco
 
 ${neighbourContext.trim()}
 
-Règles liées à ce découpage :
-- Si le document commence ou finit au milieu d'une phrase ou d'un paragraphe, sers-toi du texte voisin ci-dessus pour comprendre le passage et extrais-le quand même en entier s'il est majoritairement dans le document fourni — ne saute jamais une page ou un paragraphe parce qu'il est coupé.
+Règles liées à ce découpage — un paragraphe coupé appartient TOUJOURS à la partie où il commence :
+- Si le document FINIT au milieu d'une phrase ou d'un paragraphe : c'est à toi de le traiter en entier. Lis sa suite dans le « Début de son texte » de la partie suivante ci-dessus et intègre ce contenu à ta fiche (la citation reste le passage présent dans le document fourni, qui en contient le début).
+- Si le document COMMENCE au milieu d'une phrase ou d'un paragraphe : ce morceau de tête appartient à la partie précédente, qui le traite avec son début — ne l'extrais pas, commence à la première phrase ou au premier titre complet.
+- Ne saute jamais une page ou un paragraphe entier pour autant : seul le fragment de tête, suite d'un paragraphe commencé dans la partie précédente, est laissé à celle-ci.
 - Ne recrée pas une notion déjà couverte par les fiches des parties voisines listées ci-dessus (même sous un autre nom) ; si le document apporte un complément réel à une de ces notions, crée une fiche à part qui ne contient que ce complément.
 - Les citations ("quote") viennent toujours du document fourni, jamais du texte voisin (sinon la page citée serait fausse).
 `.trim();
