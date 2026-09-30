@@ -3,7 +3,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { GEMINI_QUEUE_NOTE, runGeminiChapterExtraction, runGeminiComplement } from "@/lib/el-profesor/gemini-run";
 import { getGeminiPassSettings } from "@/lib/el-profesor/dal";
-import { plannedGeminiPasses } from "@/lib/el-profesor/gemini-passes";
+import { complementWindows } from "@/lib/el-profesor/gemini-passes";
 
 // Server-side queue of Gemini extractions, so the admin can queue a whole
 // book on the free tier and close the window: pg_cron calls the queue route
@@ -82,15 +82,20 @@ export async function processGeminiQueue({ budgetMs = 240_000, startBeforeMs = 1
     const attempts = next.attempts + 1;
 
     if (next.mode === "complementary") {
-      // One pass per turn (a pass takes 1–2 min): the item comes back for the next pass while coverage isn't complete.
-      const result = await runGeminiComplement(supabase, chapter, false, () => createAdminClient(), next.original_status as typeof chapter.status | null);
+      // « Jusqu'à couverture »: sweep the chapter page window by page window (one window per turn);
+      // a single « Compléter » (target 1) re-reads the whole chapter.
+      const windows = next.target_passes === 1 ? [] : complementWindows(chapter.pdf_page_count, passSettings);
+      const window = windows[next.passes_done] ?? null;
+      const result = await runGeminiComplement(supabase, chapter, false, () => createAdminClient(), next.original_status as typeof chapter.status | null, window);
       if (result.ok) {
         const passesDone = next.passes_done + 1;
-        // Passes planned from the page count (Réglages IA), not from the model's own estimate: it says « complete » far too early.
-        const target = next.target_passes ?? (next.until_complete ? Math.max(1, plannedGeminiPasses(chapter.pdf_page_count, passSettings) - 1) : 1);
-        if (passesDone < target && result.added >= passSettings.minAddedPerPass) {
+        if (passesDone < windows.length) {
+          const upcoming = windows[passesDone];
           await supabase.from("el_profesor_gemini_queue").update({ status: "waiting", attempts: 0, passes_done: passesDone, next_attempt_at: new Date().toISOString(), started_at: null, last_error: null }).eq("chapter_id", chapter.id);
-          await supabase.from("el_profesor_chapters").update({ extraction_error: `${GEMINI_QUEUE_NOTE} : complément ${passesDone + 1}/${target} à venir (${result.added} ajout(s) à la dernière passe).` }).eq("id", chapter.id);
+          await supabase
+            .from("el_profesor_chapters")
+            .update({ extraction_error: `${GEMINI_QUEUE_NOTE} : complément ${passesDone + 1}/${windows.length} (pages ${upcoming.from}–${upcoming.to}) à venir ; ${result.added} ajout(s) à la passe précédente.` })
+            .eq("id", chapter.id);
         } else {
           summary.succeeded++;
           await supabase.from("el_profesor_gemini_queue").delete().eq("chapter_id", chapter.id);
@@ -120,13 +125,13 @@ export async function processGeminiQueue({ budgetMs = 240_000, startBeforeMs = 1
     if (result.ok) {
       summary.succeeded++;
       // A long chapter gets its complement passes right after (one per N pages, Réglages IA).
-      const complements = chapter.source_kind === "pdf" ? plannedGeminiPasses(chapter.pdf_page_count, passSettings) - 1 : 0;
-      if (complements > 0) {
+      const windows = chapter.source_kind === "pdf" ? complementWindows(chapter.pdf_page_count, passSettings) : [];
+      if (windows.length > 0) {
         await supabase
           .from("el_profesor_gemini_queue")
-          .update({ status: "waiting", mode: "complementary", until_complete: true, target_passes: complements, passes_done: 0, original_status: "draft_ready", attempts: 0, next_attempt_at: new Date().toISOString(), started_at: null, last_error: null })
+          .update({ status: "waiting", mode: "complementary", until_complete: true, target_passes: null, passes_done: 0, original_status: "draft_ready", attempts: 0, next_attempt_at: new Date().toISOString(), started_at: null, last_error: null })
           .eq("chapter_id", chapter.id);
-        await supabase.from("el_profesor_chapters").update({ extraction_error: `${GEMINI_QUEUE_NOTE} : complément 1/${complements} à venir.` }).eq("id", chapter.id);
+        await supabase.from("el_profesor_chapters").update({ extraction_error: `${GEMINI_QUEUE_NOTE} : complément 1/${windows.length} (pages ${windows[0].from}–${windows[0].to}) à venir.` }).eq("id", chapter.id);
       } else await supabase.from("el_profesor_gemini_queue").delete().eq("chapter_id", chapter.id);
       continue;
     }

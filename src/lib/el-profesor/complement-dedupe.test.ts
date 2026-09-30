@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dedupeComplementary, similarity } from "./complement-dedupe";
-import { plannedGeminiPasses } from "./gemini-passes";
+import { complementWindows, plannedGeminiPasses } from "./gemini-passes";
 import type { ComplementaryResult } from "./types";
 
 const card = (front: string) => ({ front, back: "x", citations: [{ page: 1, quote: "q" }] });
@@ -61,5 +61,22 @@ describe("nombre de passes Gemini selon les pages", () => {
     expect(plannedGeminiPasses(40)).toBe(8);
     expect(plannedGeminiPasses(12, { pagesPerPass: 6, maxPasses: 8, minAddedPerPass: 3 })).toBe(2);
     expect(plannedGeminiPasses(null)).toBe(1);
+  });
+});
+
+describe("tranches de pages des passes de complément", () => {
+  it("couvre toutes les pages, une tranche par 3 pages, élargies au-delà du plafond", () => {
+    expect(complementWindows(13)).toEqual([
+      { from: 1, to: 3 },
+      { from: 4, to: 6 },
+      { from: 7, to: 9 },
+      { from: 10, to: 12 },
+      { from: 13, to: 13 },
+    ]);
+    const long = complementWindows(40);
+    expect(long).toHaveLength(7);
+    expect(long.at(-1)!.to).toBe(40);
+    expect(complementWindows(2)).toEqual([{ from: 1, to: 2 }]);
+    expect(complementWindows(null)).toEqual([]);
   });
 });

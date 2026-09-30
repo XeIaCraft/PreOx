@@ -173,7 +173,9 @@ export async function runGeminiComplement(
   chapter: ElProfesorChapterRow,
   untilComplete: boolean,
   freshClient: () => SupabaseClient<Database>,
-  statusToRestore?: ElProfesorChapterRow["status"] | null
+  statusToRestore?: ElProfesorChapterRow["status"] | null,
+  /** Page window this pass must sweep (queue), instead of the whole chapter. */
+  focus?: { from: number; to: number } | null
 ): Promise<GeminiComplementResult> {
   const chapterId = chapter.id;
   const originalStatus = statusToRestore ?? (chapter.status === "extracting" || chapter.status === "queued" ? "draft_ready" : chapter.status);
@@ -198,7 +200,8 @@ export async function runGeminiComplement(
       let geminiFileName: string | null = null;
       let apiKey = "";
       try {
-        const result = await extractComplementaryContentWithRotation(config, bytes, chapter.title, chapter.title, coverageSummary, neighbourContext);
+        const focusPages = focus ? { ...focus, total: chapter.pdf_page_count ?? pageTexts?.length ?? focus.to } : undefined;
+        const result = await extractComplementaryContentWithRotation(config, bytes, chapter.title, chapter.title, coverageSummary, neighbourContext, focusPages);
         apiKey = result.apiKey;
         geminiFileName = result.file.name;
         if (pageTexts) correctComplementaryCitations(result.complementary, pageTexts);
@@ -209,7 +212,7 @@ export async function runGeminiComplement(
           rawOutput: result.complementary,
           provider: "gemini",
           model: result.model,
-          requestPrompt: buildComplementaryPrompt(chapter.title, coverageSummary, neighbourContext),
+          requestPrompt: buildComplementaryPrompt(chapter.title, coverageSummary, neighbourContext, focusPages),
           rawResponse: result.rawResponseText,
         });
         added += count;

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { readGeminiPassSettings, updateGeminiPassSettings } from "@/app/apps/el-profesor/actions/settings";
-import { DEFAULT_GEMINI_PASS_SETTINGS, plannedGeminiPasses } from "@/lib/el-profesor/gemini-passes";
+import { DEFAULT_GEMINI_PASS_SETTINGS, complementWindows } from "@/lib/el-profesor/gemini-passes";
 
 const num = (s: string) => Number(s.replace(",", "."));
 
@@ -28,23 +28,19 @@ export function GeminiPassSettingsSection() {
   }, []);
 
   const current = { pagesPerPass: num(pagesPerPass), maxPasses: Math.round(num(maxPasses)), minAddedPerPass: Math.round(num(minAdded)) };
-  const example = [5, 12, 25].map((p) => `${p} p. → ${plannedGeminiPasses(p, current)}`).join(" · ");
+  const example = [5, 12, 25].map((p) => `${p} p. → 1 + ${complementWindows(p, current).length}`).join(" · ");
 
   return (
     <div className="mt-5 space-y-2 border-t border-border pt-4">
       <Label>Passes Gemini selon le nombre de pages</Label>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <label className="space-y-1">
-          <span className="text-xs text-foreground-subtle">1 passe par … pages</span>
+          <span className="text-xs text-foreground-subtle">1 tranche de complément par … pages</span>
           <Input inputMode="decimal" value={pagesPerPass} onChange={(e) => setPagesPerPass(e.target.value)} />
         </label>
         <label className="space-y-1">
-          <span className="text-xs text-foreground-subtle">Passes max</span>
+          <span className="text-xs text-foreground-subtle">Passes max (extraction comprise)</span>
           <Input inputMode="numeric" value={maxPasses} onChange={(e) => setMaxPasses(e.target.value)} />
-        </label>
-        <label className="space-y-1">
-          <span className="text-xs text-foreground-subtle">Arrêt si &lt; … ajouts</span>
-          <Input inputMode="numeric" value={minAdded} onChange={(e) => setMinAdded(e.target.value)} />
         </label>
       </div>
       <Button
@@ -61,8 +57,7 @@ export function GeminiPassSettingsSection() {
         {isPending ? "…" : "Enregistrer"}
       </Button>
       <p className="text-xs text-foreground-subtle">
-        Dans la file Gemini, une extraction est suivie de passes de complément jusqu&apos;à ce total (extraction comprise) : {example}. La série s&apos;arrête plus tôt si une passe ajoute moins
-        d&apos;éléments nouveaux que le seuil (doublons retirés). Réglage par défaut (1 passe / 3 pages) calé sur « Le livre de l&apos;interne » : Gemini lite rend ≈ 25–30 éléments par appel, Claude ≈ 8 par page.
+        Dans la file Gemini, une extraction est suivie d&apos;un balayage du chapitre par tranches de pages : chaque passe de complément doit extraire tout ce qui manque sur sa tranche (pages 1–3, puis 4–6…). Exemples (extraction + compléments) : {example}. Doublons retirés à l&apos;enregistrement. Réglage par défaut calé sur « Le livre de l&apos;interne » : invité à « chercher ce qui manque » dans tout le chapitre, Gemini lite répondait « rien » ; sur une tranche imposée, il extrait.
       </p>
     </div>
   );

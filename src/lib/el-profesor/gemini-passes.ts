@@ -22,3 +22,24 @@ export function plannedGeminiPasses(pages: number | null | undefined, s: GeminiP
   if (!pages || pages <= 0 || !(s.pagesPerPass > 0)) return 1;
   return Math.max(1, Math.min(Math.max(1, Math.round(s.maxPasses)), Math.ceil(pages / s.pagesPerPass)));
 }
+
+export interface PageWindow {
+  from: number;
+  to: number;
+}
+
+/**
+ * Page windows swept by the complement passes after the first extraction:
+ * one window per `pagesPerPass` pages, at most `maxPasses - 1` windows (the
+ * windows then widen to still cover every page). Asking Gemini lite to
+ * « find what's missing in the whole chapter » gets an empty answer; asking
+ * it to extract everything from pages 4–6 works.
+ */
+export function complementWindows(pages: number | null | undefined, s: GeminiPassSettings = DEFAULT_GEMINI_PASS_SETTINGS): PageWindow[] {
+  if (!pages || pages <= 0 || !(s.pagesPerPass > 0)) return [];
+  const count = Math.max(1, Math.min(Math.max(1, Math.round(s.maxPasses) - 1), Math.ceil(pages / s.pagesPerPass)));
+  const size = Math.ceil(pages / count);
+  const out: PageWindow[] = [];
+  for (let from = 1; from <= pages; from += size) out.push({ from, to: Math.min(pages, from + size - 1) });
+  return out;
+}

@@ -214,11 +214,30 @@ export function buildExternalImportPrompt(chapterTitle: string): string {
   return `${base}\n\n${EXTERNAL_IMPORT_JSON_SCHEMA_DOC}`;
 }
 
-export function buildComplementaryPrompt(chapterTitle: string, coverageSummaryJson: string, neighbourContext?: string): string {
+/**
+ * A complement pass focused on a page window (Gemini queue sweep): the model
+ * must extract everything from those pages that the summary doesn't hold,
+ * instead of being free to answer « nothing missing » for the whole chapter.
+ */
+export function focusPagesBlock(focus?: { from: number; to: number; total: number }): string {
+  if (!focus) return "";
+  const range = focus.from === focus.to ? `la page ${focus.from}` : `les pages ${focus.from} à ${focus.to}`;
+  return `
+CETTE PASSE PORTE UNIQUEMENT SUR ${range.toUpperCase()} du document fourni (position dans le fichier, sur ${focus.total} pages ; ignore les numéros imprimés).
+- Lis ces pages ligne par ligne, y compris tableaux, encadrés, listes et légendes de figures.
+- Pour chaque information testable de ces pages (définition, mécanisme, valeur, seuil, posologie, indication, contre-indication, conduite à tenir, piège), vérifie si elle figure DÉJÀ dans le résumé ci-dessous. Si elle n'y figure pas, ajoute-la (bloc et/ou flashcard) — c'est le but de cette passe.
+- Une page de texte médical contient presque toujours plusieurs faits testables : vise au moins 2 à 4 flashcards nouvelles par page de texte, sauf si tout y est réellement déjà couvert. Ne réponds avec des tableaux vides que si ces pages sont vides, ne contiennent que des références bibliographiques, ou sont intégralement couvertes — et dans ce cas seulement.
+- Ne traite pas les autres pages dans cette passe (elles ont leur propre passe).
+`.trim();
+}
+
+export function buildComplementaryPrompt(chapterTitle: string, coverageSummaryJson: string, neighbourContext?: string, focus?: { from: number; to: number; total: number }): string {
   return `
 Tu es le même assistant d'extraction que précédemment, sur le même chapitre « ${chapterTitle} ». Une première extraction a déjà été faite.
 
 ${neighbourContextBlock(neighbourContext)}
+
+${focusPagesBlock(focus)}
 
 ${EXPERT_READER_CONTEXT}
 

@@ -596,9 +596,10 @@ export async function extractComplementaryContent(
   chapterTitle: string,
   coverageSummaryJson: string,
   onRawResponse?: (text: string) => void,
-  neighbourContext?: string
+  neighbourContext?: string,
+  focus?: { from: number; to: number; total: number }
 ): Promise<ComplementaryResult> {
-  const prompt = buildComplementaryPrompt(chapterTitle, coverageSummaryJson, neighbourContext);
+  const prompt = buildComplementaryPrompt(chapterTitle, coverageSummaryJson, neighbourContext, focus);
   const result = await callGeminiWithFile(apiKey, model, file, prompt, COMPLEMENTARY_RESPONSE_SCHEMA, onRawResponse);
   return normalizeComplementaryResult(result);
 }
@@ -686,7 +687,8 @@ export async function extractComplementaryContentWithRotation(
   displayName: string,
   chapterTitle: string,
   coverageSummaryJson: string,
-  neighbourContext?: string
+  neighbourContext?: string,
+  focus?: { from: number; to: number; total: number }
 ): Promise<{ complementary: ComplementaryResult; apiKey: string; model: string; file: UploadedGeminiFile; rawResponseText: string | null }> {
   let rawResponseText: string | null = null;
   const { result, apiKey, model, file } = await withFileRotation(config, bytes, displayName, (key, m, file) =>
@@ -699,7 +701,8 @@ export async function extractComplementaryContentWithRotation(
       (text) => {
         rawResponseText = text;
       },
-      neighbourContext
+      neighbourContext,
+      focus
     )
   );
   return { complementary: result, apiKey, model, file, rawResponseText };
