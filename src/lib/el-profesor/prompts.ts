@@ -59,6 +59,9 @@ Niveau attendu — des "items de maîtrise", pas du simple savoir : chaque fois 
  * what their fiches already cover), for a chapter cut by hand — possibly in
  * the middle of a sentence. Empty when there is nothing around.
  */
+/** A block inserted only when present, so a prompt without it stays byte-identical to before (Claude's prompts). */
+const optionalBlock = (block: string) => (block ? `\n${block}\n` : "");
+
 export function neighbourContextBlock(neighbourContext?: string): string {
   if (!neighbourContext?.trim()) return "";
   return `
@@ -78,9 +81,7 @@ Règles liées à ce découpage — un paragraphe coupé appartient TOUJOURS à 
 export function buildExtractionPrompt(chapterTitle: string, neighbourContext?: string): string {
   return `
 Tu es un assistant d'extraction pour du matériel pédagogique médical de haut niveau (anesthésie/médecine). Le document fourni est un chapitre de livre intitulé « ${chapterTitle} ». Certaines pages sont du texte natif propre, d'autres sont des scans/photos — lis-les comme des images si besoin.
-
-${neighbourContextBlock(neighbourContext)}
-
+${optionalBlock(neighbourContextBlock(neighbourContext))}
 ${EXPERT_READER_CONTEXT}
 
 ${LANGUAGE_RULE}
@@ -234,11 +235,7 @@ CETTE PASSE PORTE UNIQUEMENT SUR ${range.toUpperCase()} du document fourni (posi
 export function buildComplementaryPrompt(chapterTitle: string, coverageSummaryJson: string, neighbourContext?: string, focus?: { from: number; to: number; total: number }): string {
   return `
 Tu es le même assistant d'extraction que précédemment, sur le même chapitre « ${chapterTitle} ». Une première extraction a déjà été faite.
-
-${neighbourContextBlock(neighbourContext)}
-
-${focusPagesBlock(focus)}
-
+${optionalBlock(neighbourContextBlock(neighbourContext))}${optionalBlock(focusPagesBlock(focus))}
 ${EXPERT_READER_CONTEXT}
 
 ${LANGUAGE_RULE}
