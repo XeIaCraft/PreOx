@@ -403,7 +403,7 @@ export async function importChapterContent(chapterId: string, rawJson: string): 
       : "";
     return { success: `Contenu importé. Chaque élément est marqué « à vérifier » — relisez-le avant publication.${truncationNote}` };
   } catch (err) {
-    const message = err instanceof GeminiError ? err.message : "Échec de l'import.";
+    const message = err instanceof GeminiError ? err.message : `Échec de l'import : ${err instanceof Error ? err.message : String(err)}`;
     await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
     await insertExtractionJob(supabase, { chapterId, status: "failed", error: message, provider: "external" });
     return { error: message };
@@ -498,7 +498,7 @@ export async function importComplementaryContent(chapterId: string, rawJson: str
       success: `${addedCount} élément(s) ajouté(s). Chaque ajout est marqué « à vérifier » — relisez-le avant publication.${truncationNote}${skippedNote}`,
     };
   } catch (err) {
-    const message = err instanceof GeminiError ? err.message : "Échec de l'import.";
+    const message = err instanceof GeminiError ? err.message : `Échec de l'import : ${err instanceof Error ? err.message : String(err)}`;
     return { error: message };
   }
 }
@@ -624,7 +624,7 @@ export async function extractChapterComplementary(chapterId: string, options?: {
         (stillRemaining ? " Du contenu reste probablement à combler (limite de passes automatiques atteinte)." : ""),
     };
   } catch (err) {
-    const message = err instanceof GeminiError ? err.message : "Échec de la génération complémentaire.";
+    const message = err instanceof GeminiError ? err.message : `Échec de la génération complémentaire : ${err instanceof Error ? err.message : String(err)}`;
     await supabase.from("el_profesor_chapters").update({ status: originalStatus, extraction_error: message }).eq("id", chapterId);
     await insertExtractionJob(supabase, { chapterId, status: "failed", error: message, provider: "gemini" });
     return { error: message };

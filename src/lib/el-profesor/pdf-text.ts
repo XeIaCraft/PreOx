@@ -10,7 +10,10 @@ import type { Citation, ComplementaryResult, ExtractionResult } from "./types";
  */
 export async function extractPdfPageTexts(bytes: Uint8Array): Promise<string[]> {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const doc = await pdfjsLib.getDocument({ data: bytes, useWorkerFetch: false, isEvalSupported: false }).promise;
+  // pdf.js transfers (detaches) the buffer it is given: hand it a copy, or
+  // the caller's bytes are emptied — which broke every Gemini PDF extraction,
+  // run in parallel with this, with a detached-ArrayBuffer TypeError.
+  const doc = await pdfjsLib.getDocument({ data: bytes.slice(), useWorkerFetch: false, isEvalSupported: false }).promise;
   const pages: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);

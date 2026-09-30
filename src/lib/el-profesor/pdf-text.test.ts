@@ -96,3 +96,30 @@ describe("correctComplementaryCitations", () => {
     expect(result.new_sub_entities[0].fiche.flashcards[0].citations[0].page).toBe(2);
   });
 });
+
+describe("extractPdfPageTexts", () => {
+  it("laisse intacts les octets de l'appelant (pdf.js transfère le buffer qu'on lui donne)", async () => {
+    const { extractPdfPageTexts } = await import("./pdf-text");
+    const content = "BT /F1 24 Tf 72 700 Td (Hello PreOx) Tj ET";
+    const objs = [
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ];
+    let pdf = "%PDF-1.4\n";
+    const offsets: number[] = [];
+    objs.forEach((o, i) => {
+      offsets.push(pdf.length);
+      pdf += `${i + 1} 0 obj\n${o}\nendobj\n`;
+    });
+    const xref = pdf.length;
+    pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    const bytes = new TextEncoder().encode(pdf);
+    const size = bytes.byteLength;
+    expect(await extractPdfPageTexts(bytes)).toEqual(["Hello PreOx"]);
+    expect(bytes.byteLength).toBe(size);
+    expect(() => new Blob([bytes as unknown as BlobPart])).not.toThrow();
+  });
+});

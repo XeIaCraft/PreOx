@@ -94,7 +94,8 @@ export async function runGeminiChapterExtraction(supabase: SupabaseClient<Databa
     await supabase.from("el_profesor_chapters").update({ status: "draft_ready", estimated_remaining_passes: extraction.estimated_remaining_passes }).eq("id", chapterId);
     return { ok: true, verificationFailed, textSource: false };
   } catch (err) {
-    const message = err instanceof GeminiError ? err.message : "Échec de l'extraction du chapitre.";
+    // Unexpected errors keep their own message, so the attempt history says what actually broke.
+    const message = err instanceof GeminiError ? err.message : `Échec de l'extraction du chapitre : ${err instanceof Error ? err.message : String(err)}`;
     await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: message }).eq("id", chapterId);
     await insertExtractionJob(supabase, { chapterId, status: "failed", error: message, provider: "gemini", requestPrompt: debugRequestPrompt, rawResponse: debugRawResponse });
     return { ok: false, message, quota: isQuotaOrCapacityError(err) };
