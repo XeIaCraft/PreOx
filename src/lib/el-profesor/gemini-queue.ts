@@ -1,7 +1,8 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { runGeminiChapterExtraction } from "@/lib/el-profesor/gemini-run";
+import { GEMINI_QUEUE_NOTE, runGeminiChapterExtraction, runGeminiComplement } from "@/lib/el-profesor/gemini-run";
+import { MAX_AUTO_COMPLEMENTARY_PASSES } from "@/lib/el-profesor/extraction-persist";
 
 // Server-side queue of Gemini extractions, so the admin can queue a whole
 // book on the free tier and close the window: pg_cron calls the queue route
@@ -51,7 +52,7 @@ export async function processGeminiQueue({ budgetMs = 240_000, startBeforeMs = 1
   while (Date.now() - started < Math.min(budgetMs, startBeforeMs)) {
     const { data: next } = await supabase
       .from("el_profesor_gemini_queue")
-      .select("chapter_id, attempts")
+      .select("chapter_id, attempts, mode, until_complete, passes_done, original_status")
       .eq("status", "waiting")
       .lte("next_attempt_at", new Date().toISOString())
       .order("created_at", { ascending: true })
@@ -76,8 +77,43 @@ export async function processGeminiQueue({ budgetMs = 240_000, startBeforeMs = 1
     }
 
     summary.processed++;
-    const result = await runGeminiChapterExtraction(supabase, chapter);
     const attempts = next.attempts + 1;
+
+    if (next.mode === "complementary") {
+      // One pass per turn (a pass takes 1–2 min): the item comes back for the next pass while coverage isn't complete.
+      const result = await runGeminiComplement(supabase, chapter, false, () => createAdminClient(), next.original_status as typeof chapter.status | null);
+      if (result.ok) {
+        const passesDone = next.passes_done + 1;
+        const again = next.until_complete && result.added > 0 && passesDone < MAX_AUTO_COMPLEMENTARY_PASSES;
+        const { data: fresh } = await supabase.from("el_profesor_chapters").select("estimated_remaining_passes").eq("id", chapter.id).maybeSingle();
+        if (again && (fresh?.estimated_remaining_passes ?? 0) > 0) {
+          await supabase.from("el_profesor_gemini_queue").update({ status: "waiting", attempts: 0, passes_done: passesDone, next_attempt_at: new Date().toISOString(), started_at: null, last_error: null }).eq("chapter_id", chapter.id);
+          await supabase.from("el_profesor_chapters").update({ extraction_error: `${GEMINI_QUEUE_NOTE} : passe de complément ${passesDone + 1} à venir (${passesDone} faite(s)).` }).eq("id", chapter.id);
+        } else {
+          summary.succeeded++;
+          await supabase.from("el_profesor_gemini_queue").delete().eq("chapter_id", chapter.id);
+        }
+        continue;
+      }
+      const retry = result.quota ? attempts < MAX_QUOTA_ATTEMPTS : attempts < MAX_OTHER_ATTEMPTS;
+      if (retry) {
+        const at = new Date(Date.now() + (result.quota ? quotaBackoffMinutes(attempts) : 10) * 60_000);
+        summary.postponed++;
+        await supabase.from("el_profesor_gemini_queue").update({ status: "waiting", attempts, next_attempt_at: at.toISOString(), started_at: null, last_error: result.message }).eq("chapter_id", chapter.id);
+        // The chapter keeps its status (a published chapter stays visible): only the note says it's waiting.
+        await supabase
+          .from("el_profesor_chapters")
+          .update({ extraction_error: `${GEMINI_QUEUE_NOTE} : complément reporté (${result.quota ? "quota gratuit atteint" : "erreur"}), nouvel essai vers ${hhmm(at)}.` })
+          .eq("id", chapter.id);
+        if (result.quota) break;
+      } else {
+        summary.failed++;
+        await supabase.from("el_profesor_gemini_queue").update({ status: "failed", attempts, started_at: null, last_error: result.message }).eq("chapter_id", chapter.id);
+      }
+      continue;
+    }
+
+    const result = await runGeminiChapterExtraction(supabase, chapter);
 
     if (result.ok) {
       summary.succeeded++;

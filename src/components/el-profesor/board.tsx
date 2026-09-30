@@ -80,6 +80,7 @@ import { fetchAiConfigData } from "@/lib/el-profesor/sync-api";
 import { extractChapter, extractChapterComplementary, resetStuckExtraction, resetChapterContent } from "@/app/apps/el-profesor/actions/extraction";
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
 import { enqueueGeminiChapters, runGeminiQueueNow, removeFromGeminiQueue } from "@/app/apps/el-profesor/actions/gemini-queue";
+import { GEMINI_QUEUE_NOTE } from "@/lib/el-profesor/gemini-queue-note";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
 import { ExtractionHistoryDialog } from "@/components/el-profesor/dialogs/extraction-history-dialog";
 import { exportBookArchive, archiveBook } from "@/app/apps/el-profesor/actions/archive";
@@ -680,7 +681,28 @@ export function ElProfesorBoard({
     });
   }
 
+  /** Gemini: every run goes through the server-side queue (a long call in the page times out, especially on a phone). */
+  function queueGemini(ids: string[], options: { mode?: "extraction" | "complementary"; untilComplete?: boolean }, onQueued?: () => void) {
+    startBulkTransition(async () => {
+      const result = await enqueueGeminiChapters(ids, options);
+      if (result.error) {
+        toast(result.error, { variant: "error" });
+        return;
+      }
+      toast(result.success ?? "Mis en file.", { variant: "success" });
+      onQueued?.();
+      // Starts right away while the window is open; the server scheduler carries on otherwise.
+      void runGeminiQueueNow()
+        .then((r) => r.success && toast(r.success, { variant: "success" }))
+        .catch(() => undefined);
+    });
+  }
+
   function handleExtract(chapterId: string) {
+    if (aiProvider === "gemini") {
+      queueGemini([chapterId], { mode: "extraction" });
+      return;
+    }
     setPendingId(chapterId);
     setPendingStartedAt(() => Date.now());
     startTransition(async () => {
@@ -703,6 +725,10 @@ export function ElProfesorBoard({
   }
 
   function handleComplement(chapterId: string, untilComplete?: boolean) {
+    if (aiProvider === "gemini") {
+      queueGemini([chapterId], { mode: "complementary", untilComplete });
+      return;
+    }
     setPendingId(chapterId);
     setPendingStartedAt(() => Date.now());
     startTransition(async () => {
@@ -735,21 +761,8 @@ export function ElProfesorBoard({
     });
   }
 
-  function handleBulkGeminiQueue() {
-    const ids = [...selectedChapterIds];
-    startBulkTransition(async () => {
-      const result = await enqueueGeminiChapters(ids);
-      if (result.error) {
-        toast(result.error, { variant: "error" });
-        return;
-      }
-      toast(result.success ?? "Mis en file.", { variant: "success" });
-      setSelectedChapterIds(new Set());
-      // Starts right away while the window is open; the server scheduler carries on otherwise.
-      void runGeminiQueueNow()
-        .then((r) => r.success && toast(r.success, { variant: "success" }))
-        .catch(() => undefined);
-    });
+  function handleBulkGeminiQueue(mode: "extraction" | "complementary") {
+    queueGemini([...selectedChapterIds], { mode, untilComplete: mode === "complementary" }, () => setSelectedChapterIds(new Set()));
   }
 
   function handleRemoveFromQueue(chapterId: string) {
@@ -1180,14 +1193,25 @@ export function ElProfesorBoard({
             </>
           )}
           {aiProvider === "gemini" && (
-            <Button
-              size="sm"
-              onClick={handleBulkGeminiQueue}
-              disabled={isBulkPending}
-              title="Extrait les chapitres sélectionnés l'un après l'autre côté serveur, même fenêtre fermée ; un quota gratuit atteint reporte simplement l'essai"
-            >
-              <Sparkles className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Mettre en file (Gemini)"}
-            </Button>
+            <>
+              <Button
+                size="sm"
+                onClick={() => handleBulkGeminiQueue("extraction")}
+                disabled={isBulkPending}
+                title="Extrait les chapitres sélectionnés pas encore extraits, l'un après l'autre côté serveur, même fenêtre fermée ; un quota gratuit atteint reporte simplement l'essai"
+              >
+                <Sparkles className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Extraire en file (Gemini)"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleBulkGeminiQueue("complementary")}
+                disabled={isBulkPending}
+                title="Complète les chapitres sélectionnés déjà extraits, passe après passe jusqu'à couverture, côté serveur"
+              >
+                <Zap className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Compléter en file (Gemini)"}
+              </Button>
+            </>
           )}
           <Button
             variant="secondary"
@@ -1474,8 +1498,10 @@ export function ElProfesorBoard({
                         <Badge variant={STATUS_VARIANT[chapter.status]}>{STATUS_LABEL[chapter.status]}</Badge>
                       </div>
                     </div>
-                    {chapter.status === "queued" && chapter.extractionError && <p className="mt-1.5 text-xs text-foreground-muted">{chapter.extractionError}</p>}
-                    {isAdmin && aiProvider === "gemini" && chapter.status === "queued" && (
+                    {(chapter.status === "queued" || ((chapter.status === "draft_ready" || chapter.status === "published") && chapter.extractionError?.startsWith(GEMINI_QUEUE_NOTE))) && chapter.extractionError && (
+                      <p className="mt-1.5 text-xs text-foreground-muted">{chapter.extractionError}</p>
+                    )}
+                    {isAdmin && aiProvider === "gemini" && (chapter.status === "queued" || chapter.extractionError?.startsWith(GEMINI_QUEUE_NOTE)) && (
                       <button type="button" onClick={() => handleRemoveFromQueue(chapter.id)} disabled={busy} className="mt-1 text-xs text-foreground-subtle underline hover:text-foreground">
                         Retirer de la file
                       </button>

@@ -2,21 +2,28 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, ElProfesorChapterRow } from "@/lib/supabase/types";
-import { getElProfesorGeminiConfig } from "@/lib/el-profesor/dal";
+import { getElProfesorGeminiConfig, getChapterContent } from "@/lib/el-profesor/dal";
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import {
   deleteGeminiFile,
   extractChapterContentWithRotation,
   extractChapterContentFromTextWithRotation,
+  extractComplementaryContentWithRotation,
   isQuotaOrCapacityError,
   verifyExtraction,
 } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
-import { correctExtractionCitations } from "@/lib/el-profesor/pdf-text";
+import { correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
 import { extractPdfPageTextsWithOcr } from "@/lib/el-profesor/pdf-ocr";
-import { buildExtractionPrompt, buildTextExtractionPrompt } from "@/lib/el-profesor/prompts";
+import { buildComplementaryPrompt, buildExtractionPrompt, buildTextExtractionPrompt } from "@/lib/el-profesor/prompts";
 import { insertExtractionJob } from "@/lib/el-profesor/extraction-jobs";
-import { allNeedReviewFlags, persistExtraction } from "@/lib/el-profesor/extraction-persist";
+import {
+  allNeedReviewFlags,
+  buildCoverageSummary,
+  MAX_AUTO_COMPLEMENTARY_PASSES,
+  persistComplementaryAdditions,
+  persistExtraction,
+} from "@/lib/el-profesor/extraction-persist";
 import type { ExtractionResult, VerificationFlag } from "@/lib/el-profesor/types";
 
 export type GeminiRunResult =
@@ -101,5 +108,80 @@ export async function runGeminiChapterExtraction(supabase: SupabaseClient<Databa
     return { ok: false, message, quota: isQuotaOrCapacityError(err) };
   } finally {
     if (geminiFileName) await deleteGeminiFile(apiKey, geminiFileName);
+  }
+}
+
+export { GEMINI_QUEUE_NOTE } from "@/lib/el-profesor/gemini-queue-note";
+
+export type GeminiComplementResult =
+  | { ok: true; added: number; passes: number; stillRemaining: boolean }
+  | { ok: false; message: string; quota: boolean };
+
+/**
+ * Gap-fill pass(es) of an already-extracted PDF chapter with Gemini — one
+ * pass, or passes until the model reports full coverage (capped). Shared by
+ * the « Compléter » button and the server-side queue. The chapter is shown
+ * « extracting » while it runs, then gets its previous status back.
+ */
+export async function runGeminiComplement(
+  supabase: SupabaseClient<Database>,
+  chapter: ElProfesorChapterRow,
+  untilComplete: boolean,
+  freshClient: () => SupabaseClient<Database>,
+  statusToRestore?: ElProfesorChapterRow["status"] | null
+): Promise<GeminiComplementResult> {
+  const chapterId = chapter.id;
+  const originalStatus = statusToRestore ?? (chapter.status === "extracting" || chapter.status === "queued" ? "draft_ready" : chapter.status);
+  await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
+
+  try {
+    const config = await getElProfesorGeminiConfig();
+    const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
+    // Extracted once and reused by every pass.
+    const pageTexts = await extractPdfPageTextsWithOcr(bytes, chapter.title).catch(() => null);
+
+    let added = 0;
+    let passes = 0;
+    let remaining: number | null = null;
+    const maxPasses = untilComplete ? MAX_AUTO_COMPLEMENTARY_PASSES : 1;
+
+    do {
+      // A fresh client each pass: getChapterContent is memoised per arguments, and each pass must see the previous one's additions.
+      const existingContent = await getChapterContent(chapterId, true, freshClient());
+      const coverageSummary = buildCoverageSummary(existingContent);
+      let geminiFileName: string | null = null;
+      let apiKey = "";
+      try {
+        const result = await extractComplementaryContentWithRotation(config, bytes, chapter.title, chapter.title, coverageSummary);
+        apiKey = result.apiKey;
+        geminiFileName = result.file.name;
+        if (pageTexts) correctComplementaryCitations(result.complementary, pageTexts);
+        const count = await persistComplementaryAdditions(supabase, chapterId, result.complementary, existingContent);
+        await insertExtractionJob(supabase, {
+          chapterId,
+          status: "succeeded",
+          rawOutput: result.complementary,
+          provider: "gemini",
+          model: result.model,
+          requestPrompt: buildComplementaryPrompt(chapter.title, coverageSummary),
+          rawResponse: result.rawResponseText,
+        });
+        added += count;
+        passes += 1;
+        remaining = result.complementary.estimated_remaining_passes;
+        await supabase.from("el_profesor_chapters").update({ estimated_remaining_passes: remaining }).eq("id", chapterId);
+        if (count === 0) break; // no progress: further passes won't help
+      } finally {
+        if (geminiFileName) await deleteGeminiFile(apiKey, geminiFileName);
+      }
+    } while (untilComplete && (remaining ?? 0) > 0 && passes < maxPasses);
+
+    await supabase.from("el_profesor_chapters").update({ status: originalStatus, extraction_error: null }).eq("id", chapterId);
+    return { ok: true, added, passes, stillRemaining: untilComplete && (remaining ?? 0) > 0 && passes >= maxPasses };
+  } catch (err) {
+    const message = err instanceof GeminiError ? err.message : `Échec de la génération complémentaire : ${err instanceof Error ? err.message : String(err)}`;
+    await supabase.from("el_profesor_chapters").update({ status: originalStatus, extraction_error: message }).eq("id", chapterId);
+    await insertExtractionJob(supabase, { chapterId, status: "failed", error: message, provider: "gemini" });
+    return { ok: false, message, quota: isQuotaOrCapacityError(err) };
   }
 }

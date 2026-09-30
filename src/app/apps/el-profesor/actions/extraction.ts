@@ -5,8 +5,6 @@ import { requireElProfesorAdmin, getElProfesorGeminiConfig, getElProfesorAiProvi
 import { createClient } from "@/lib/supabase/server";
 import { downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import {
-  deleteGeminiFile,
-  extractComplementaryContentWithRotation,
   generateMnemonic,
   BLOCK_TYPES,
 } from "@/lib/el-profesor/gemini";
@@ -18,15 +16,13 @@ import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
 import { extractPdfPageTextsWithOcr } from "@/lib/el-profesor/pdf-ocr";
 import { parseClozeText } from "@/lib/el-profesor/cloze";
-import { buildComplementaryPrompt } from "@/lib/el-profesor/prompts";
 import { insertExtractionJob } from "@/lib/el-profesor/extraction-jobs";
-import { runGeminiChapterExtraction } from "@/lib/el-profesor/gemini-run";
+import { runGeminiChapterExtraction, runGeminiComplement } from "@/lib/el-profesor/gemini-run";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   allNeedReviewFlags,
   persistExtraction,
   persistComplementaryAdditions,
-  buildCoverageSummary,
-  MAX_AUTO_COMPLEMENTARY_PASSES,
 } from "@/lib/el-profesor/extraction-persist";
 import { submitExtractionBatch, submitComplementaryBatch } from "./batches";
 import type {
@@ -504,57 +500,9 @@ export async function importComplementaryContent(chapterId: string, rawJson: str
 }
 
 /**
- * Gap-fill pass: re-reads the chapter's PDF alongside a summary of what's
- * already extracted, and asks Gemini to generate only what's missing —
- * never a duplicate of already-covered content. New content lands as
- * `draft`/`needs_review` under the existing sub-entities (or as new
- * sub-entities), and goes through the same admin review before publication.
- * Gemini-only: with Claude, extractChapterComplementary below routes to the
- * batch path instead (see submitComplementaryBatch in actions/batches.ts) —
- * there's no way to know how many more passes are needed until an async
- * batch's results come back, so the untilComplete auto-loop doesn't apply.
- */
-/** Runs exactly one complementary pass. Throws on API/persist failure — caller handles status/job bookkeeping. */
-async function runOneComplementaryPass(
-  chapterId: string,
-  chapter: { title: string },
-  config: Awaited<ReturnType<typeof getElProfesorGeminiConfig>>,
-  bytes: Uint8Array,
-  existingContent: Awaited<ReturnType<typeof getChapterContent>>,
-  pageTexts: string[] | null
-): Promise<{ addedCount: number; estimatedRemainingPasses: number | null }> {
-  const coverageSummary = buildCoverageSummary(existingContent);
-  const supabase = await createClient();
-  let geminiFileName: string | null = null;
-  let apiKey = "";
-  try {
-    const result = await extractComplementaryContentWithRotation(config, bytes, chapter.title, chapter.title, coverageSummary);
-    const complementary = result.complementary;
-    apiKey = result.apiKey;
-    geminiFileName = result.file.name;
-
-    if (pageTexts) correctComplementaryCitations(complementary, pageTexts);
-    // persistComplementaryAdditions marks every gap-fill addition needs_review unconditionally.
-    const addedCount = await persistComplementaryAdditions(supabase, chapterId, complementary, existingContent);
-
-    await insertExtractionJob(supabase, {
-      chapterId,
-      status: "succeeded",
-      rawOutput: complementary,
-      provider: "gemini",
-      model: result.model,
-      requestPrompt: buildComplementaryPrompt(chapter.title, coverageSummary),
-      rawResponse: result.rawResponseText,
-    });
-
-    return { addedCount, estimatedRemainingPasses: complementary.estimated_remaining_passes };
-  } finally {
-    if (geminiFileName) await deleteGeminiFile(apiKey, geminiFileName);
-  }
-}
-
-/**
- * Gap-fill pass(es). With Gemini, runs a single pass by default, or loops
+ * Gap-fill pass(es): re-reads the PDF with a summary of what's already
+ * extracted and adds only what's missing (runGeminiComplement in
+ * lib/el-profesor/gemini-run.ts). With Gemini, runs a single pass by default, or loops
  * automatically with `untilComplete: true` — re-downloading the latest
  * persisted content between passes — until the model reports no remaining
  * gaps, a pass adds nothing new, or the safety cap is hit. With Claude,
@@ -585,50 +533,15 @@ export async function extractChapterComplementary(chapterId: string, options?: {
     return submitComplementaryBatch([chapterId], { untilComplete: options?.untilComplete });
   }
 
-  const originalStatus = chapter.status;
-  await supabase.from("el_profesor_chapters").update({ status: "extracting", extraction_error: null }).eq("id", chapterId);
-
-  try {
-    const config = await getElProfesorGeminiConfig();
-    const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
-    // Extracted once and reused across every auto-run pass (see below) rather than per pass.
-    const pageTexts = await extractPdfPageTextsWithOcr(bytes, chapter.title).catch(() => null);
-
-    let totalAdded = 0;
-    let passesRun = 0;
-    let estimatedRemainingPasses: number | null = null;
-    const maxPasses = options?.untilComplete ? MAX_AUTO_COMPLEMENTARY_PASSES : 1;
-
-    do {
-      const existingContent = await getChapterContent(chapterId, true);
-      const pass = await runOneComplementaryPass(chapterId, chapter, config, bytes, existingContent, pageTexts);
-      totalAdded += pass.addedCount;
-      passesRun += 1;
-      estimatedRemainingPasses = pass.estimatedRemainingPasses;
-      await supabase.from("el_profesor_chapters").update({ estimated_remaining_passes: estimatedRemainingPasses }).eq("id", chapterId);
-
-      if (pass.addedCount === 0) break; // no progress this pass — further passes won't help
-    } while (options?.untilComplete && (estimatedRemainingPasses ?? 0) > 0 && passesRun < maxPasses);
-
-    await supabase.from("el_profesor_chapters").update({ status: originalStatus }).eq("id", chapterId);
-    revalidatePath("/apps/el-profesor");
-
-    if (totalAdded === 0) {
-      return { success: "Aucun trou détecté : l'extraction semble déjà complète." };
-    }
-    const passSuffix = passesRun > 1 ? ` en ${passesRun} passes` : "";
-    const stillRemaining = options?.untilComplete && (estimatedRemainingPasses ?? 0) > 0 && passesRun >= maxPasses;
-    return {
-      success:
-        `${totalAdded} élément(s) complémentaire(s) ajouté(s)${passSuffix} — à relire avant publication.` +
-        (stillRemaining ? " Du contenu reste probablement à combler (limite de passes automatiques atteinte)." : ""),
-    };
-  } catch (err) {
-    const message = err instanceof GeminiError ? err.message : `Échec de la génération complémentaire : ${err instanceof Error ? err.message : String(err)}`;
-    await supabase.from("el_profesor_chapters").update({ status: originalStatus, extraction_error: message }).eq("id", chapterId);
-    await insertExtractionJob(supabase, { chapterId, status: "failed", error: message, provider: "gemini" });
-    return { error: message };
-  }
+  const result = await runGeminiComplement(supabase, chapter, !!options?.untilComplete, () => createAdminClient());
+  revalidatePath("/apps/el-profesor");
+  if (!result.ok) return { error: result.message };
+  if (result.added === 0) return { success: "Aucun trou détecté : l'extraction semble déjà complète." };
+  return {
+    success:
+      `${result.added} élément(s) complémentaire(s) ajouté(s)${result.passes > 1 ? ` en ${result.passes} passes` : ""} — à relire avant publication.` +
+      (result.stillRemaining ? " Du contenu reste probablement à combler (limite de passes automatiques atteinte)." : ""),
+  };
 }
 
 /**

@@ -4,40 +4,73 @@ import { revalidatePath } from "next/cache";
 import { requireElProfesorAdmin } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { processGeminiQueue } from "@/lib/el-profesor/gemini-queue";
+import { GEMINI_QUEUE_NOTE } from "@/lib/el-profesor/gemini-run";
 
 export interface ActionState {
   error?: string;
   success?: string;
 }
 
-/** Queues chapters for a server-side Gemini extraction, one after the other — the window can be closed. */
-export async function enqueueGeminiChapters(chapterIds: string[]): Promise<ActionState> {
+/**
+ * Queues chapters for a server-side Gemini run — the window can be closed.
+ * mode « extraction »: first extraction of chapters not yet extracted.
+ * mode « complementary »: fill the gaps of chapters already extracted (one
+ * pass, or passes until full coverage); their status doesn't change while
+ * they wait, only a note says so.
+ */
+export async function enqueueGeminiChapters(chapterIds: string[], options: { mode?: "extraction" | "complementary"; untilComplete?: boolean } = {}): Promise<ActionState> {
   const profile = await requireElProfesorAdmin();
   if (chapterIds.length === 0) return { error: "Aucun chapitre sélectionné." };
+  const mode = options.mode ?? "extraction";
   const supabase = await createClient();
 
   const { data: chapters } = await supabase.from("el_profesor_chapters").select("id, status, source_kind, pdf_storage_path, source_text").in("id", chapterIds);
-  const eligible = (chapters ?? []).filter(
-    (c) => c.status !== "extracting" && c.status !== "queued" && c.status !== "draft_ready" && c.status !== "published" && (c.source_kind === "pdf" ? !!c.pdf_storage_path : !!c.source_text)
-  );
-  if (eligible.length === 0) return { error: "Aucun chapitre à extraire dans la sélection (déjà extraits, en cours ou en file)." };
+  const { data: alreadyQueued } = await supabase.from("el_profesor_gemini_queue").select("chapter_id").in("chapter_id", chapterIds).neq("status", "failed");
+  const queued = new Set((alreadyQueued ?? []).map((q) => q.chapter_id));
+  const eligible = (chapters ?? []).filter((c) => {
+    if (queued.has(c.id) || c.status === "extracting" || c.status === "queued") return false;
+    if (mode === "complementary") return c.source_kind === "pdf" && !!c.pdf_storage_path && (c.status === "draft_ready" || c.status === "published");
+    return c.status !== "draft_ready" && c.status !== "published" && (c.source_kind === "pdf" ? !!c.pdf_storage_path : !!c.source_text);
+  });
+  if (eligible.length === 0)
+    return {
+      error:
+        mode === "complementary"
+          ? "Aucun chapitre à compléter dans la sélection (il faut un chapitre PDF déjà extrait, pas déjà en file)."
+          : "Aucun chapitre à extraire dans la sélection (déjà extraits, en cours ou en file).",
+    };
 
   const { error } = await supabase.from("el_profesor_gemini_queue").upsert(
-    eligible.map((c) => ({ chapter_id: c.id, status: "waiting" as const, attempts: 0, next_attempt_at: new Date().toISOString(), started_at: null, last_error: null, created_by: profile.id }))
+    eligible.map((c) => ({
+      chapter_id: c.id,
+      status: "waiting" as const,
+      mode,
+      until_complete: !!options.untilComplete,
+      passes_done: 0,
+      original_status: mode === "complementary" ? c.status : null,
+      attempts: 0,
+      next_attempt_at: new Date().toISOString(),
+      started_at: null,
+      last_error: null,
+      created_by: profile.id,
+    }))
   );
-  if (error) return { error: "Impossible de mettre ces chapitres en file (la migration 092 est-elle appliquée ?)." };
-  await supabase
-    .from("el_profesor_chapters")
-    .update({ status: "queued", extraction_error: null })
-    .in(
-      "id",
-      eligible.map((c) => c.id)
-    );
+  if (error) return { error: "Impossible de mettre ces chapitres en file (les migrations 092 et 093 sont-elles appliquées ?)." };
+  const ids = eligible.map((c) => c.id);
+  if (mode === "complementary") {
+    await supabase
+      .from("el_profesor_chapters")
+      .update({ extraction_error: `${GEMINI_QUEUE_NOTE} : complément${options.untilComplete ? " jusqu'à couverture" : ""} en attente.` })
+      .in("id", ids);
+  } else {
+    await supabase.from("el_profesor_chapters").update({ status: "queued", extraction_error: null }).in("id", ids);
+  }
 
   revalidatePath("/apps/el-profesor");
   const skipped = chapterIds.length - eligible.length;
+  const what = mode === "complementary" ? "à compléter" : "à extraire";
   return {
-    success: `${eligible.length} chapitre(s) en file Gemini : extraction l'un après l'autre, même fenêtre fermée ; en cas de quota gratuit atteint, nouvel essai automatique plus tard.${skipped ? ` ${skipped} ignoré(s) (déjà extraits, en cours ou en file).` : ""}`,
+    success: `${eligible.length} chapitre(s) ${what} en file Gemini : traitement côté serveur, même fenêtre fermée ; si le quota gratuit est atteint, nouvel essai automatique plus tard.${skipped ? ` ${skipped} ignoré(s).` : ""}`,
   };
 }
 
@@ -56,11 +89,12 @@ export async function runGeminiQueueNow(): Promise<ActionState> {
 export async function removeFromGeminiQueue(chapterId: string): Promise<ActionState> {
   await requireElProfesorAdmin();
   const supabase = await createClient();
-  const { data: item } = await supabase.from("el_profesor_gemini_queue").select("status").eq("chapter_id", chapterId).maybeSingle();
+  const { data: item } = await supabase.from("el_profesor_gemini_queue").select("status, mode").eq("chapter_id", chapterId).maybeSingle();
   if (!item) return { error: "Ce chapitre n'est pas dans la file Gemini." };
-  if (item.status === "running") return { error: "Extraction en cours pour ce chapitre : attendez qu'elle se termine." };
+  if (item.status === "running") return { error: "Traitement en cours pour ce chapitre : attendez qu'il se termine." };
   await supabase.from("el_profesor_gemini_queue").delete().eq("chapter_id", chapterId);
-  await supabase.from("el_profesor_chapters").update({ status: "pending", extraction_error: null }).eq("id", chapterId).eq("status", "queued");
+  if (item.mode === "complementary") await supabase.from("el_profesor_chapters").update({ extraction_error: null }).eq("id", chapterId);
+  else await supabase.from("el_profesor_chapters").update({ status: "pending", extraction_error: null }).eq("id", chapterId).eq("status", "queued");
   revalidatePath("/apps/el-profesor");
   return { success: "Retiré de la file." };
 }
