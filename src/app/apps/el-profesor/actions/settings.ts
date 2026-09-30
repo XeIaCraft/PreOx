@@ -1,5 +1,7 @@
 "use server";
 
+import { getGeminiPassSettings } from "@/lib/el-profesor/dal";
+import type { GeminiPassSettings } from "@/lib/el-profesor/gemini-passes";
 import { revalidatePath } from "next/cache";
 import { requireElProfesorAdmin } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
@@ -194,4 +196,28 @@ export async function updateGeminiFallbackModel(model: string): Promise<ActionSt
 
   revalidatePath("/apps/el-profesor");
   return { success: trimmed ? "Modèle de secours enregistré." : "Modèle de secours retiré." };
+}
+
+/** Réglages IA › passes Gemini selon les pages (lecture pour la fenêtre de réglages). */
+export async function readGeminiPassSettings(): Promise<GeminiPassSettings> {
+  await requireElProfesorAdmin();
+  return getGeminiPassSettings();
+}
+
+/** Passes Gemini : une par N pages, plafond, arrêt quand une passe ajoute trop peu. */
+export async function updateGeminiPassSettings(settings: GeminiPassSettings): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const { pagesPerPass, maxPasses, minAddedPerPass } = settings;
+  if (!(pagesPerPass >= 0.5 && pagesPerPass <= 50)) return { error: "Pages par passe : entre 0,5 et 50." };
+  if (!(Number.isInteger(maxPasses) && maxPasses >= 1 && maxPasses <= 20)) return { error: "Passes maximum : un entier entre 1 et 20." };
+  if (!(Number.isInteger(minAddedPerPass) && minAddedPerPass >= 0 && minAddedPerPass <= 50)) return { error: "Seuil d'arrêt : un entier entre 0 et 50." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_settings")
+    .update({ gemini_pages_per_pass: pagesPerPass, gemini_max_passes: maxPasses, gemini_min_added_per_pass: minAddedPerPass, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) return { error: "Impossible d'enregistrer (la migration 094 est-elle appliquée ?)." };
+  revalidatePath("/apps/el-profesor");
+  return { success: "Réglage des passes Gemini enregistré." };
 }

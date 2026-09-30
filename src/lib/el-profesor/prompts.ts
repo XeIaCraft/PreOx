@@ -54,9 +54,30 @@ Niveau attendu — des "items de maîtrise", pas du simple savoir : chaque fois 
 - erreur classique, piège fréquent ou point qui fait la différence à l'oral
 `.trim();
 
-export function buildExtractionPrompt(chapterTitle: string): string {
+/**
+ * Context of the neighbouring parts of the book (text at the boundaries and
+ * what their fiches already cover), for a chapter cut by hand — possibly in
+ * the middle of a sentence. Empty when there is nothing around.
+ */
+export function neighbourContextBlock(neighbourContext?: string): string {
+  if (!neighbourContext?.trim()) return "";
+  return `
+Contexte des parties voisines du livre (le document fourni est une portion découpée du livre : il peut commencer ou finir au milieu d'une phrase ou d'un paragraphe) :
+
+${neighbourContext.trim()}
+
+Règles liées à ce découpage :
+- Si le document commence ou finit au milieu d'une phrase ou d'un paragraphe, sers-toi du texte voisin ci-dessus pour comprendre le passage et extrais-le quand même en entier s'il est majoritairement dans le document fourni — ne saute jamais une page ou un paragraphe parce qu'il est coupé.
+- Ne recrée pas une notion déjà couverte par les fiches des parties voisines listées ci-dessus (même sous un autre nom) ; si le document apporte un complément réel à une de ces notions, crée une fiche à part qui ne contient que ce complément.
+- Les citations ("quote") viennent toujours du document fourni, jamais du texte voisin (sinon la page citée serait fausse).
+`.trim();
+}
+
+export function buildExtractionPrompt(chapterTitle: string, neighbourContext?: string): string {
   return `
 Tu es un assistant d'extraction pour du matériel pédagogique médical de haut niveau (anesthésie/médecine). Le document fourni est un chapitre de livre intitulé « ${chapterTitle} ». Certaines pages sont du texte natif propre, d'autres sont des scans/photos — lis-les comme des images si besoin.
+
+${neighbourContextBlock(neighbourContext)}
 
 ${EXPERT_READER_CONTEXT}
 
@@ -191,9 +212,11 @@ export function buildExternalImportPrompt(chapterTitle: string): string {
   return `${base}\n\n${EXTERNAL_IMPORT_JSON_SCHEMA_DOC}`;
 }
 
-export function buildComplementaryPrompt(chapterTitle: string, coverageSummaryJson: string): string {
+export function buildComplementaryPrompt(chapterTitle: string, coverageSummaryJson: string, neighbourContext?: string): string {
   return `
 Tu es le même assistant d'extraction que précédemment, sur le même chapitre « ${chapterTitle} ». Une première extraction a déjà été faite.
+
+${neighbourContextBlock(neighbourContext)}
 
 ${EXPERT_READER_CONTEXT}
 

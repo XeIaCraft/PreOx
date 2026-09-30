@@ -13,7 +13,7 @@ import {
   verifyExtraction,
 } from "@/lib/el-profesor/gemini";
 import { GeminiError } from "@/lib/gemini-shared";
-import { correctExtractionCitations, correctComplementaryCitations } from "@/lib/el-profesor/pdf-text";
+import { correctExtractionCitations, correctComplementaryCitations, extractPdfPageTexts } from "@/lib/el-profesor/pdf-text";
 import { extractPdfPageTextsWithOcr } from "@/lib/el-profesor/pdf-ocr";
 import { buildComplementaryPrompt, buildExtractionPrompt, buildTextExtractionPrompt } from "@/lib/el-profesor/prompts";
 import { insertExtractionJob } from "@/lib/el-profesor/extraction-jobs";
@@ -25,6 +25,49 @@ import {
   persistExtraction,
 } from "@/lib/el-profesor/extraction-persist";
 import type { ExtractionResult, VerificationFlag } from "@/lib/el-profesor/types";
+
+const NEIGHBOUR_TEXT_CHARS = 1500;
+const NEIGHBOUR_MAX_NAMES = 40;
+
+/**
+ * What surrounds a chapter in its book — the end of the previous part and
+ * the start of the next one (a hand-made split can cut a sentence in two),
+ * plus the notions their fiches already cover, so Gemini neither skips a
+ * cut paragraph nor re-extracts what a neighbour already has. Best-effort:
+ * empty on any failure.
+ */
+export async function buildNeighbourContext(supabase: SupabaseClient<Database>, chapter: ElProfesorChapterRow): Promise<string> {
+  try {
+    const { data: siblings } = await supabase
+      .from("el_profesor_chapters")
+      .select("id, title, order_index, source_kind, pdf_storage_path")
+      .eq("book_id", chapter.book_id)
+      .order("order_index", { ascending: true });
+    const list = siblings ?? [];
+    const i = list.findIndex((c) => c.id === chapter.id);
+    if (i < 0) return "";
+    const parts: string[] = [];
+    for (const [neighbour, where] of [
+      [list[i - 1], "précédente"],
+      [list[i + 1], "suivante"],
+    ] as const) {
+      if (!neighbour) continue;
+      const lines = [`Partie ${where} : « ${neighbour.title} »`];
+      if (neighbour.source_kind === "pdf" && neighbour.pdf_storage_path) {
+        const pages = await extractPdfPageTexts(await downloadChapterPdfBytes(neighbour.pdf_storage_path)).catch(() => null);
+        const text = (where === "précédente" ? pages?.at(-1) : pages?.[0])?.replace(/\s+/g, " ").trim();
+        if (text) lines.push(where === "précédente" ? `Fin de son texte : « …${text.slice(-NEIGHBOUR_TEXT_CHARS)} »` : `Début de son texte : « ${text.slice(0, NEIGHBOUR_TEXT_CHARS)}… »`);
+      }
+      const covered = await getChapterContent(neighbour.id, true, supabase).catch(() => []);
+      const names = covered.map((s) => s.name).slice(0, NEIGHBOUR_MAX_NAMES);
+      if (names.length) lines.push(`Notions déjà couvertes par ses fiches : ${names.join(" ; ")}`);
+      if (lines.length > 1) parts.push(lines.join("\n"));
+    }
+    return parts.join("\n\n");
+  } catch {
+    return "";
+  }
+}
 
 export type GeminiRunResult =
   | { ok: true; verificationFailed: boolean; textSource: boolean }
@@ -73,14 +116,15 @@ export async function runGeminiChapterExtraction(supabase: SupabaseClient<Databa
 
     const config = await getElProfesorGeminiConfig();
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
+    const neighbourContext = await buildNeighbourContext(supabase, chapter);
     const [{ extraction: geminiExtraction, apiKey: winningKey, model, file, rawResponseText }, pageTexts] = await Promise.all([
-      extractChapterContentWithRotation(config, bytes, chapter.title, chapter.title),
+      extractChapterContentWithRotation(config, bytes, chapter.title, chapter.title, neighbourContext),
       extractPdfPageTextsWithOcr(bytes, chapter.title).catch(() => null),
     ]);
     extraction = geminiExtraction;
     apiKey = winningKey;
     geminiFileName = file.name;
-    debugRequestPrompt = buildExtractionPrompt(chapter.title);
+    debugRequestPrompt = buildExtractionPrompt(chapter.title, neighbourContext);
     debugRawResponse = rawResponseText;
 
     if (extraction.sub_entities.length === 0) {
@@ -139,6 +183,7 @@ export async function runGeminiComplement(
     const bytes = await downloadChapterPdfBytes(chapter.pdf_storage_path!);
     // Extracted once and reused by every pass.
     const pageTexts = await extractPdfPageTextsWithOcr(bytes, chapter.title).catch(() => null);
+    const neighbourContext = await buildNeighbourContext(supabase, chapter);
 
     let added = 0;
     let passes = 0;
@@ -152,7 +197,7 @@ export async function runGeminiComplement(
       let geminiFileName: string | null = null;
       let apiKey = "";
       try {
-        const result = await extractComplementaryContentWithRotation(config, bytes, chapter.title, chapter.title, coverageSummary);
+        const result = await extractComplementaryContentWithRotation(config, bytes, chapter.title, chapter.title, coverageSummary, neighbourContext);
         apiKey = result.apiKey;
         geminiFileName = result.file.name;
         if (pageTexts) correctComplementaryCitations(result.complementary, pageTexts);
@@ -163,7 +208,7 @@ export async function runGeminiComplement(
           rawOutput: result.complementary,
           provider: "gemini",
           model: result.model,
-          requestPrompt: buildComplementaryPrompt(chapter.title, coverageSummary),
+          requestPrompt: buildComplementaryPrompt(chapter.title, coverageSummary, neighbourContext),
           rawResponse: result.rawResponseText,
         });
         added += count;

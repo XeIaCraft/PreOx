@@ -581,9 +581,10 @@ export async function extractChapterContent(
   model: string,
   file: UploadedGeminiFile,
   chapterTitle: string,
-  onRawResponse?: (text: string) => void
+  onRawResponse?: (text: string) => void,
+  neighbourContext?: string
 ): Promise<ExtractionResult> {
-  const result = await callGeminiWithFile(apiKey, model, file, buildExtractionPrompt(chapterTitle), EXTRACTION_RESPONSE_SCHEMA, onRawResponse);
+  const result = await callGeminiWithFile(apiKey, model, file, buildExtractionPrompt(chapterTitle, neighbourContext), EXTRACTION_RESPONSE_SCHEMA, onRawResponse);
   return normalizeExtractionResult(result);
 }
 
@@ -594,9 +595,10 @@ export async function extractComplementaryContent(
   file: UploadedGeminiFile,
   chapterTitle: string,
   coverageSummaryJson: string,
-  onRawResponse?: (text: string) => void
+  onRawResponse?: (text: string) => void,
+  neighbourContext?: string
 ): Promise<ComplementaryResult> {
-  const prompt = buildComplementaryPrompt(chapterTitle, coverageSummaryJson);
+  const prompt = buildComplementaryPrompt(chapterTitle, coverageSummaryJson, neighbourContext);
   const result = await callGeminiWithFile(apiKey, model, file, prompt, COMPLEMENTARY_RESPONSE_SCHEMA, onRawResponse);
   return normalizeComplementaryResult(result);
 }
@@ -658,13 +660,21 @@ export async function extractChapterContentWithRotation(
   config: GeminiRotationConfig,
   bytes: Uint8Array,
   displayName: string,
-  chapterTitle: string
+  chapterTitle: string,
+  neighbourContext?: string
 ): Promise<{ extraction: ExtractionResult; apiKey: string; model: string; file: UploadedGeminiFile; rawResponseText: string | null }> {
   let rawResponseText: string | null = null;
   const { result, apiKey, model, file } = await withFileRotation(config, bytes, displayName, (key, m, file) =>
-    extractChapterContent(key, m, file, chapterTitle, (text) => {
-      rawResponseText = text;
-    })
+    extractChapterContent(
+      key,
+      m,
+      file,
+      chapterTitle,
+      (text) => {
+        rawResponseText = text;
+      },
+      neighbourContext
+    )
   );
   return { extraction: result, apiKey, model, file, rawResponseText };
 }
@@ -675,13 +685,22 @@ export async function extractComplementaryContentWithRotation(
   bytes: Uint8Array,
   displayName: string,
   chapterTitle: string,
-  coverageSummaryJson: string
+  coverageSummaryJson: string,
+  neighbourContext?: string
 ): Promise<{ complementary: ComplementaryResult; apiKey: string; model: string; file: UploadedGeminiFile; rawResponseText: string | null }> {
   let rawResponseText: string | null = null;
   const { result, apiKey, model, file } = await withFileRotation(config, bytes, displayName, (key, m, file) =>
-    extractComplementaryContent(key, m, file, chapterTitle, coverageSummaryJson, (text) => {
-      rawResponseText = text;
-    })
+    extractComplementaryContent(
+      key,
+      m,
+      file,
+      chapterTitle,
+      coverageSummaryJson,
+      (text) => {
+        rawResponseText = text;
+      },
+      neighbourContext
+    )
   );
   return { complementary: result, apiKey, model, file, rawResponseText };
 }

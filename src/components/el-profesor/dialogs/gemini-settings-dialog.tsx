@@ -20,6 +20,7 @@ import {
 import { pollClaudeBatchesNow } from "@/app/apps/el-profesor/actions/batches";
 import { useToast } from "@/components/ui/toast";
 import { RefreshCw } from "lucide-react";
+import { GeminiPassSettingsSection } from "@/components/el-profesor/dialogs/gemini-pass-settings";
 import type { GeminiUsageStats, ElProfesorAiProvider } from "@/lib/el-profesor/dal";
 import type { ElProfesorBatchJobRow, ElProfesorBatchJobKind } from "@/lib/supabase/types";
 import { estimateCostUsd, formatUsd } from "@/lib/el-profesor/ai-pricing";
@@ -369,6 +370,8 @@ export function GeminiSettingsDialog({
           Essayé (avec chaque clé) si le modèle principal échoue encore après avoir épuisé toutes les clés.
         </p>
       </div>
+
+      <GeminiPassSettingsSection />
 
       <div className="mt-5 space-y-1.5 border-t border-border pt-4">
         <Label htmlFor="claude-api-key">Clé API Claude</Label>

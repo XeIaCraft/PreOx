@@ -46,6 +46,8 @@ export async function enqueueGeminiChapters(chapterIds: string[], options: { mod
       status: "waiting" as const,
       mode,
       until_complete: !!options.untilComplete,
+      // « Compléter » = one pass ; « jusqu'à couverture » = as many as the page count calls for (null).
+      target_passes: mode === "complementary" && !options.untilComplete ? 1 : null,
       passes_done: 0,
       original_status: mode === "complementary" ? c.status : null,
       attempts: 0,
@@ -55,7 +57,7 @@ export async function enqueueGeminiChapters(chapterIds: string[], options: { mod
       created_by: profile.id,
     }))
   );
-  if (error) return { error: "Impossible de mettre ces chapitres en file (les migrations 092 et 093 sont-elles appliquées ?)." };
+  if (error) return { error: "Impossible de mettre ces chapitres en file (les migrations 092 à 094 sont-elles appliquées ?)." };
   const ids = eligible.map((c) => c.id);
   if (mode === "complementary") {
     await supabase

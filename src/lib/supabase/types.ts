@@ -236,6 +236,7 @@ export type ElProfesorGeminiQueueRow = {
   until_complete: boolean;
   passes_done: number;
   original_status: string | null;
+  target_passes: number | null;
   attempts: number;
   next_attempt_at: string;
   started_at: string | null;
@@ -482,6 +483,9 @@ export type ElProfesorSettingsRow = {
   ai_provider: "gemini" | "claude";
   claude_model: string;
   ai_spend_cap_usd: number | null;
+  gemini_pages_per_pass: number;
+  gemini_max_passes: number;
+  gemini_min_added_per_pass: number;
   updated_at: string;
 };
 

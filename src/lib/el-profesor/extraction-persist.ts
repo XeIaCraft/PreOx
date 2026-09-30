@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { GeminiError } from "@/lib/gemini-shared";
 import type { Database } from "@/lib/supabase/types";
 import type { getChapterContent } from "./dal";
+import { dedupeComplementary } from "./complement-dedupe";
 import type {
   ExtractionResult,
   ComplementaryResult,
@@ -184,6 +185,13 @@ export async function persistComplementaryAdditions(
   existingContent: Awaited<ReturnType<typeof getChapterContent>>
 ): Promise<number> {
   let added = 0;
+  // Drop what the chapter already has (reworded questions, restated blocks, a known notion under another name).
+  result = dedupeComplementary(
+    result,
+    existingContent
+      .filter((s) => s.fiche)
+      .map((s) => ({ name: s.name, blocks: s.fiche!.blocks.map((b) => ({ blockType: b.blockType, content: b.content })), flashcardFronts: s.fiche!.flashcards.map((c) => c.front.text) }))
+  ).result;
 
   const subEntityByName = new Map(existingContent.filter((s) => s.fiche).map((s) => [s.name.trim().toLowerCase(), s]));
   const nextOrder = existingContent.reduce((max, s) => Math.max(max, s.orderIndex), -1) + 1;

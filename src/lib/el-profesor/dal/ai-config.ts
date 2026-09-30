@@ -1,3 +1,4 @@
+import { DEFAULT_GEMINI_PASS_SETTINGS, type GeminiPassSettings } from "../gemini-passes";
 import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
@@ -73,6 +74,18 @@ export async function getElProfesorGeminiConfig(): Promise<{ apiKeys: string[]; 
   }
 
   return { apiKeys, models };
+}
+
+/** Réglages IA › passes Gemini selon les pages (defaults until migration 094 is applied). */
+export async function getGeminiPassSettings(): Promise<GeminiPassSettings> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("el_profesor_settings").select("gemini_pages_per_pass, gemini_max_passes, gemini_min_added_per_pass").eq("id", true).maybeSingle();
+  if (error || !data) return DEFAULT_GEMINI_PASS_SETTINGS;
+  return {
+    pagesPerPass: Number(data.gemini_pages_per_pass) || DEFAULT_GEMINI_PASS_SETTINGS.pagesPerPass,
+    maxPasses: data.gemini_max_passes || DEFAULT_GEMINI_PASS_SETTINGS.maxPasses,
+    minAddedPerPass: data.gemini_min_added_per_pass ?? DEFAULT_GEMINI_PASS_SETTINGS.minAddedPerPass,
+  };
 }
 
 export type ElProfesorAiProvider = "gemini" | "claude";
