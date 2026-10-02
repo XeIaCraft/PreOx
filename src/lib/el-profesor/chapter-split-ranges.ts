@@ -34,3 +34,20 @@ export function validateChapterSplitRanges(ranges: ChapterSplitRangeInput[], pag
   }
   return null;
 }
+
+/**
+ * Turns AI-suggested split points (first page of each part) into an exact
+ * partition of 1..pageCount — same rule as the « Diviser » dialog: each part
+ * runs until the page before the next one, titled « <chapter> (partie N) ».
+ * Out-of-range and duplicate points are ignored and the first part always
+ * starts at page 1. Fewer than 2 parts → empty (nothing to split).
+ */
+export function rangesFromSplitPoints(chapterTitle: string, startPages: number[], pageCount: number): ChapterSplitRangeInput[] {
+  const starts = [...new Set([1, ...startPages.filter((p) => Number.isInteger(p) && p >= 1 && p <= pageCount)])].sort((a, b) => a - b);
+  if (starts.length < 2) return [];
+  return starts.map((start, i) => ({
+    title: `${chapterTitle} (partie ${i + 1})`,
+    startPage: start,
+    endPage: i + 1 < starts.length ? starts[i + 1] - 1 : pageCount,
+  }));
+}

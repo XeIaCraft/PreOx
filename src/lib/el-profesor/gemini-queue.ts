@@ -4,6 +4,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { GEMINI_QUEUE_NOTE, runGeminiChapterExtraction, runGeminiComplement } from "@/lib/el-profesor/gemini-run";
 import { getGeminiPassSettings } from "@/lib/el-profesor/dal";
 import { complementWindows } from "@/lib/el-profesor/gemini-passes";
+import { applyChapterSplit, suggestSplitRanges } from "@/lib/el-profesor/chapter-split-run";
+import { isQuotaOrCapacityError } from "@/lib/el-profesor/gemini";
+import { GeminiError } from "@/lib/gemini-shared";
 
 // Server-side queue of Gemini extractions, so the admin can queue a whole
 // book on the free tier and close the window: pg_cron calls the queue route
@@ -80,6 +83,46 @@ export async function processGeminiQueue({ budgetMs = 240_000, startBeforeMs = 1
 
     summary.processed++;
     const attempts = next.attempts + 1;
+
+    if (next.mode === "split") {
+      // Split with the AI-suggested cut points, then (optionally) queue the parts for extraction.
+      let error: string | null = null;
+      let quota = false;
+      let newIds: string[] = [];
+      try {
+        const ranges = await suggestSplitRanges(chapter);
+        const outcome = await applyChapterSplit(supabase, chapter.id, ranges);
+        if (outcome.ok) newIds = outcome.newChapterIds;
+        else error = outcome.error;
+      } catch (err) {
+        error = err instanceof GeminiError ? err.message : `Échec de la division : ${err instanceof Error ? err.message : String(err)}`;
+        quota = isQuotaOrCapacityError(err);
+      }
+      if (!error) {
+        summary.succeeded++;
+        // The original chapter (and its queue row) is gone; its parts follow if asked.
+        if (next.until_complete && newIds.length) {
+          await supabase.from("el_profesor_gemini_queue").upsert(
+            newIds.map((id) => ({ chapter_id: id, status: "waiting" as const, mode: "extraction" as const, until_complete: true, target_passes: null, passes_done: 0, original_status: null, attempts: 0, next_attempt_at: new Date().toISOString(), started_at: null, last_error: null }))
+          );
+          await supabase.from("el_profesor_chapters").update({ status: "queued", extraction_error: null }).in("id", newIds);
+        }
+        continue;
+      }
+      const retry = quota ? attempts < MAX_QUOTA_ATTEMPTS : attempts < MAX_OTHER_ATTEMPTS;
+      if (retry) {
+        const at = new Date(Date.now() + (quota ? quotaBackoffMinutes(attempts) : 10) * 60_000);
+        summary.postponed++;
+        await supabase.from("el_profesor_gemini_queue").update({ status: "waiting", attempts, next_attempt_at: at.toISOString(), started_at: null, last_error: error }).eq("chapter_id", chapter.id);
+        await supabase.from("el_profesor_chapters").update({ status: "queued", extraction_error: `Division reportée (${quota ? "quota gratuit atteint" : error}) — nouvel essai vers ${hhmm(at)}.` }).eq("id", chapter.id);
+        if (quota) break;
+      } else {
+        summary.failed++;
+        await supabase.from("el_profesor_gemini_queue").update({ status: "failed", attempts, started_at: null, last_error: error }).eq("chapter_id", chapter.id);
+        await supabase.from("el_profesor_chapters").update({ status: "failed", extraction_error: `Division impossible : ${error}` }).eq("id", chapter.id);
+      }
+      continue;
+    }
 
     if (next.mode === "complementary") {
       // « Jusqu'à couverture »: sweep the chapter page window by page window (one window per turn);

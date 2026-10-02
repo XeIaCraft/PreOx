@@ -232,7 +232,7 @@ export type ElProfesorBatchJobRow = {
 export type ElProfesorGeminiQueueRow = {
   chapter_id: string;
   status: "waiting" | "running" | "failed";
-  mode: "extraction" | "complementary";
+  mode: "extraction" | "complementary" | "split";
   until_complete: boolean;
   passes_done: number;
   original_status: string | null;

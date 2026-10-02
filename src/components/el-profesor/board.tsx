@@ -682,7 +682,7 @@ export function ElProfesorBoard({
   }
 
   /** Gemini: every run goes through the server-side queue (a long call in the page times out, especially on a phone). */
-  function queueGemini(ids: string[], options: { mode?: "extraction" | "complementary"; untilComplete?: boolean }, onQueued?: () => void) {
+  function queueGemini(ids: string[], options: { mode?: "extraction" | "complementary" | "split"; untilComplete?: boolean }, onQueued?: () => void) {
     startBulkTransition(async () => {
       const result = await enqueueGeminiChapters(ids, options);
       if (result.error) {
@@ -761,8 +761,8 @@ export function ElProfesorBoard({
     });
   }
 
-  function handleBulkGeminiQueue(mode: "extraction" | "complementary") {
-    queueGemini([...selectedChapterIds], { mode, untilComplete: mode === "complementary" }, () => setSelectedChapterIds(new Set()));
+  function handleBulkGeminiQueue(mode: "extraction" | "complementary" | "split", thenExtract = false) {
+    queueGemini([...selectedChapterIds], { mode, untilComplete: mode === "complementary" || thenExtract }, () => setSelectedChapterIds(new Set()));
   }
 
   function handleRemoveFromQueue(chapterId: string) {
@@ -1201,6 +1201,24 @@ export function ElProfesorBoard({
                 title="Extrait les chapitres sélectionnés pas encore extraits, l'un après l'autre côté serveur, même fenêtre fermée ; un quota gratuit atteint reporte simplement l'essai"
               >
                 <Sparkles className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Extraire en file (Gemini)"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleBulkGeminiQueue("split", true)}
+                disabled={isBulkPending}
+                title="Divise les chapitres sélectionnés pas encore extraits (≥ 8 pages) aux coupures suggérées par Gemini, sans relecture, puis met les parties en file d'extraction"
+              >
+                <Scissors className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Diviser puis extraire (Gemini)"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleBulkGeminiQueue("split")}
+                disabled={isBulkPending}
+                title="Divise seulement : les parties restent « PDF importé », à vérifier et extraire ensuite"
+              >
+                <Scissors className="h-3.5 w-3.5" /> {isBulkPending ? "…" : "Diviser seulement"}
               </Button>
               <Button
                 variant="secondary"

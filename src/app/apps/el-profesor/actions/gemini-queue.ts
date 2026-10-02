@@ -5,6 +5,7 @@ import { requireElProfesorAdmin } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { processGeminiQueue } from "@/lib/el-profesor/gemini-queue";
 import { GEMINI_QUEUE_NOTE } from "@/lib/el-profesor/gemini-run";
+import { MIN_PAGES_TO_SPLIT } from "@/lib/el-profesor/chapter-quality";
 
 export interface ActionState {
   error?: string;
@@ -18,18 +19,20 @@ export interface ActionState {
  * pass, or passes until full coverage); their status doesn't change while
  * they wait, only a note says so.
  */
-export async function enqueueGeminiChapters(chapterIds: string[], options: { mode?: "extraction" | "complementary"; untilComplete?: boolean } = {}): Promise<ActionState> {
+export async function enqueueGeminiChapters(chapterIds: string[], options: { mode?: "extraction" | "complementary" | "split"; untilComplete?: boolean } = {}): Promise<ActionState> {
   const profile = await requireElProfesorAdmin();
   if (chapterIds.length === 0) return { error: "Aucun chapitre sélectionné." };
   const mode = options.mode ?? "extraction";
   const supabase = await createClient();
 
-  const { data: chapters } = await supabase.from("el_profesor_chapters").select("id, status, source_kind, pdf_storage_path, source_text").in("id", chapterIds);
+  const { data: chapters } = await supabase.from("el_profesor_chapters").select("id, status, source_kind, pdf_storage_path, source_text, pdf_page_count").in("id", chapterIds);
   const { data: alreadyQueued } = await supabase.from("el_profesor_gemini_queue").select("chapter_id").in("chapter_id", chapterIds).neq("status", "failed");
   const queued = new Set((alreadyQueued ?? []).map((q) => q.chapter_id));
   const eligible = (chapters ?? []).filter((c) => {
     if (queued.has(c.id) || c.status === "extracting" || c.status === "queued") return false;
     if (mode === "complementary") return c.source_kind === "pdf" && !!c.pdf_storage_path && (c.status === "draft_ready" || c.status === "published");
+    // Splitting replaces the chapter: only chapters with no content yet, long enough to be worth it.
+    if (mode === "split") return c.source_kind === "pdf" && !!c.pdf_storage_path && (c.status === "pending" || c.status === "failed") && (c.pdf_page_count ?? 0) >= MIN_PAGES_TO_SPLIT;
     return c.status !== "draft_ready" && c.status !== "published" && (c.source_kind === "pdf" ? !!c.pdf_storage_path : !!c.source_text);
   });
   if (eligible.length === 0)
@@ -37,7 +40,9 @@ export async function enqueueGeminiChapters(chapterIds: string[], options: { mod
       error:
         mode === "complementary"
           ? "Aucun chapitre à compléter dans la sélection (il faut un chapitre PDF déjà extrait, pas déjà en file)."
-          : "Aucun chapitre à extraire dans la sélection (déjà extraits, en cours ou en file).",
+          : mode === "split"
+            ? `Aucun chapitre à diviser dans la sélection (il faut un chapitre PDF pas encore extrait, d'au moins ${MIN_PAGES_TO_SPLIT} pages, pas déjà en file).`
+            : "Aucun chapitre à extraire dans la sélection (déjà extraits, en cours ou en file).",
     };
 
   const { error } = await supabase.from("el_profesor_gemini_queue").upsert(
@@ -65,12 +70,15 @@ export async function enqueueGeminiChapters(chapterIds: string[], options: { mod
       .update({ extraction_error: `${GEMINI_QUEUE_NOTE} : complément${options.untilComplete ? " jusqu'à couverture" : ""} en attente.` })
       .in("id", ids);
   } else {
-    await supabase.from("el_profesor_chapters").update({ status: "queued", extraction_error: null }).in("id", ids);
+    await supabase
+      .from("el_profesor_chapters")
+      .update({ status: "queued", extraction_error: mode === "split" ? `Division en file${options.untilComplete ? ", puis extraction des parties" : ""}.` : null })
+      .in("id", ids);
   }
 
   revalidatePath("/apps/el-profesor");
   const skipped = chapterIds.length - eligible.length;
-  const what = mode === "complementary" ? "à compléter" : "à extraire";
+  const what = mode === "complementary" ? "à compléter" : mode === "split" ? `à diviser${options.untilComplete ? " puis extraire" : ""}` : "à extraire";
   return {
     success: `${eligible.length} chapitre(s) ${what} en file Gemini : traitement côté serveur, même fenêtre fermée ; si le quota gratuit est atteint, nouvel essai automatique plus tard.${skipped ? ` ${skipped} ignoré(s).` : ""}`,
   };
