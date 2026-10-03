@@ -18,6 +18,7 @@ import type {
   NotionsPageSnapshot,
   ChapterContentSnapshot,
 } from "./dashboard-types";
+import type { AiActivity } from "./ai-activity-types";
 import type { PendingWrite } from "./local-db";
 import type { FlushResult } from "./flush-writes";
 
@@ -53,6 +54,7 @@ export const fetchReviewHistory = (since: string | null) => request<ReviewHistor
 export const fetchDashboardExtras = () => request<DashboardExtras>("extras");
 export const fetchNotionViewData = () => request<DashboardNotionViewData>("notion-view");
 export const fetchAiConfigData = (timeoutMs?: number) => request<DashboardAiConfigData | null>("ai-config", {}, timeoutMs);
+export const fetchAiActivity = () => request<AiActivity | null>("ai-activity", {}, 20_000);
 export const fetchNotionsPageData = () => request<NotionsPageSnapshot | null>("notions-page");
 export const fetchChapterContentBatch = (chapterIds: string[]) => postJson<Record<string, ChapterContentSnapshot>>("chapters", { chapterIds });
 export const postPendingWrites = (writes: PendingWrite[]) => postJson<{ results: FlushResult[] }>("flush", { writes });

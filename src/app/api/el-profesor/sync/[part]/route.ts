@@ -11,6 +11,7 @@ import {
   getElProfesorNotionsPageData,
   getElProfesorChapterContentBatch,
 } from "@/lib/el-profesor/sync-data";
+import { loadAiActivity } from "@/lib/el-profesor/ai-activity";
 import { applyPendingWritesOnServer, MAX_WRITES_PER_FLUSH } from "@/lib/el-profesor/flush-writes";
 
 // Every read the El Profesor local cache syncs, and the write queue's flush
@@ -65,6 +66,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return run(part, () => loadNotionViewData(ctx.profileId));
     case "ai-config":
       return run(part, async () => (ctx.isAdmin ? loadAiConfigData() : null));
+    case "ai-activity":
+      return run(part, async () => (ctx.isAdmin ? loadAiActivity() : null));
     case "notions-page":
       return run(part, async () => (ctx.isAdmin ? getElProfesorNotionsPageData() : null));
     default:

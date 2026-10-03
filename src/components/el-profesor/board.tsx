@@ -81,6 +81,7 @@ import { extractChapter, extractChapterComplementary, resetStuckExtraction, rese
 import { submitExtractionBatch, submitComplementaryBatch } from "@/app/apps/el-profesor/actions/batches";
 import { enqueueGeminiChapters, runGeminiQueueNow, removeFromGeminiQueue } from "@/app/apps/el-profesor/actions/gemini-queue";
 import { GEMINI_QUEUE_NOTE } from "@/lib/el-profesor/gemini-queue-note";
+import { AiTasksButton } from "@/components/el-profesor/ai-tasks-panel";
 import { ImportContentDialog } from "@/components/el-profesor/dialogs/import-content-dialog";
 import { ExtractionHistoryDialog } from "@/components/el-profesor/dialogs/extraction-history-dialog";
 import { exportBookArchive, archiveBook } from "@/app/apps/el-profesor/actions/archive";
@@ -604,6 +605,8 @@ export function ElProfesorBoard({
   // call by hand doesn't apply (Gemini stays synchronous, one chapter at a time).
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [isBulkPending, startBulkTransition] = useTransition();
+  // Bumped after queueing, so the « Tâches IA » counter updates right away.
+  const [aiTasksKey, setAiTasksKey] = useState(0);
   const [isTogglingPreview, startPreviewTransition] = useTransition();
   // Lazy initializer (client-only read), same pattern used elsewhere for
   // one-time localStorage reads — null on the server, resolved on mount.
@@ -691,6 +694,7 @@ export function ElProfesorBoard({
       }
       toast(result.success ?? "Mis en file.", { variant: "success" });
       onQueued?.();
+      setAiTasksKey((k) => k + 1);
       // Starts right away while the window is open; the server scheduler carries on otherwise.
       void runGeminiQueueNow()
         .then((r) => r.success && toast(r.success, { variant: "success" }))
@@ -994,6 +998,8 @@ export function ElProfesorBoard({
               {previewingAsUser ? "Vue utilisateur" : "Vue admin"}
             </button>
           )}
+
+          {isAdmin && <AiTasksButton refreshKey={aiTasksKey} />}
 
           {/* Desktop: full icon row, unchanged. Collapsed into HeaderMenu below sm — see that component's doc comment. */}
           <div className="hidden items-center gap-2 sm:flex">
