@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Baby, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { OPERATION_CATEGORIES, REGIONAL_TYPES, TECHNICAL_ACTS, PARTICIPATION_DEG
 import { defaultParticipation, defaultTutorId, drugHistory, formatDateFr, localDateIso, operationSuggestions, shiftDateIso } from "@/lib/carnet/logic";
 import { putRow } from "@/lib/carnet/mutations";
 import type { CarnetCase, CarnetStage, CaseDetails } from "@/lib/carnet/types";
+import type { SurgeryItem } from "@/lib/preop/catalog";
 
 export interface CaseDraft {
   case_date: string;
@@ -156,6 +157,24 @@ export function CaseForm({
   const initialsRef = useRef<HTMLInputElement>(null);
 
   const suggestions = useMemo(() => operationSuggestions(data.cases, draft.operation), [data.cases, draft.operation]);
+  // The Préop catalogue of interventions, loaded the first time the field is used.
+  const [catalog, setCatalog] = useState<{ items: SurgeryItem[]; search: (items: SurgeryItem[], q: string) => SurgeryItem[]; fields: typeof import("@/lib/carnet/operation-catalog").caseFieldsFromSurgery } | null>(null);
+  useEffect(() => {
+    if (!showSuggestions || catalog) return;
+    let cancelled = false;
+    import("@/lib/carnet/operation-catalog")
+      .then((m) => !cancelled && setCatalog({ items: m.loadOperationCatalog(), search: (items, q) => m.searchOperations(items, q), fields: m.caseFieldsFromSurgery }))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [showSuggestions, catalog]);
+  const catalogMatches = useMemo(() => {
+    if (!catalog || draft.operation.trim().length < 2) return [];
+    const known = new Set(suggestions.map((x) => x.operation.trim().toLowerCase()));
+    const typed = draft.operation.trim().toLowerCase();
+    return catalog.search(catalog.items, draft.operation).filter((x) => !known.has(x.name.toLowerCase()) && x.name.toLowerCase() !== typed);
+  }, [catalog, draft.operation, suggestions]);
   const history = useMemo(() => drugHistory(data.cases), [data.cases]);
   // The protocol offered for copy: the last case with the same operation, else the last one entered on this stage.
   const previous = useMemo(() => {
@@ -277,8 +296,9 @@ export function CaseForm({
             autoComplete="off"
             className="h-11"
           />
-          {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface shadow-lg">
+          {showSuggestions && (suggestions.length > 0 || catalogMatches.length > 0) && (
+            <div className="absolute z-20 mt-1 max-h-80 w-full overflow-y-auto rounded-[var(--radius-md)] border border-border bg-surface shadow-lg">
+              {suggestions.length > 0 && catalogMatches.length > 0 && <p className="px-3 pt-2 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">Mes opérations</p>}
               {suggestions.map((s) => (
                 <button
                   key={s.operation}
@@ -305,6 +325,26 @@ export function CaseForm({
                   </span>
                 </button>
               ))}
+              {catalogMatches.length > 0 && (
+                <>
+                  <p className="border-t border-border px-3 pt-2 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle first:border-t-0">Catalogue des interventions</p>
+                  {catalogMatches.map((x) => (
+                    <button
+                      key={x.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        set(catalog!.fields(x));
+                        setShowSuggestions(false);
+                      }}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-surface-muted"
+                    >
+                      <span className="truncate text-foreground">{x.name}</span>
+                      <span className="shrink-0 text-xs text-foreground-subtle">{x.category}</span>
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </div>
