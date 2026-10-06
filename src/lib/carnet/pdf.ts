@@ -16,6 +16,7 @@
 import type { PDFDocument, PDFEmbeddedPage, PDFFont, PDFImage, PDFPage } from "pdf-lib";
 import { caseCode, supervisorName } from "./referentiel";
 import { activityReport, caseNumbers, formatDateFr, localDateIso, REPORT_YEARS, sortStages } from "./logic";
+import { personFor, type SignerRole } from "./signing";
 import type { CarnetCourse, CarnetData, CarnetRelatedActivity, CarnetStage } from "./types";
 
 export const TEMPLATE_URL = "/carnet/modele-carnet-de-stage.pdf";
@@ -530,17 +531,96 @@ function inRange(date: string | null, from: string, to: string): boolean {
   return !date || (date >= from && date <= to);
 }
 
+export interface CaseRecordOptions {
+  /** Leave the signature columns empty (the record is printed and signed by hand). */
+  blankSignatures?: boolean;
+  /** Whose name fills the « tuteur » column (default: the supervisor of the day). */
+  nameShown?: SignerRole;
+}
+
+/** Record of cases and days of duty, with each signature (unless printed to be signed by hand). */
+async function fillCaseRecord(ctx: Ctx, template: PDFDocument, data: CarnetData, stageIds: Set<string>, options: CaseRecordOptions) {
+  const stageById = new Map(data.stages.map((s) => [s.id, s]));
+  const supervisors = new Map(data.supervisors.map((s) => [s.id, s]));
+  const signatures = new Map(data.signatures.map((s) => [s.id, s]));
+  const shown = personFor(options.nameShown ?? "day", stageById);
+
+  // --- Record of cases (with each tutor's signature) -----------------------------------------------------------
+  const numbers = caseNumbers(data.cases, data.stages);
+  const cases = data.cases
+    .filter((c) => stageIds.has(c.stage_id))
+    .sort(
+      (a, b) =>
+        (stageById.get(a.stage_id)?.training_year ?? 0) - (stageById.get(b.stage_id)?.training_year ?? 0) ||
+        a.case_date.localeCompare(b.case_date) ||
+        a.created_at.localeCompare(b.created_at)
+    );
+  for (const [pageIndex, group] of chunk(cases, CASES_TABLE.rows).entries()) {
+    const page = await addTemplatePage(ctx, template, pageIndex === 0 ? TPL.casesFirst : TPL.cases);
+    const t = CASES_TABLE;
+    for (const [i, c] of group.entries()) {
+      const top = t.top + i * t.rowHeight;
+      const bottom = top + t.rowHeight;
+      const col = (n: number) => [t.cols[n], top, t.cols[n + 1], bottom] as const;
+      const where = `Relevé des prestations — cas n° ${numbers.get(c.id)} du ${formatDateFr(c.case_date)}`;
+      page.cell(String(numbers.get(c.id) ?? ""), ...col(0), { size: 10, align: "center" });
+      page.cell(formatDateFr(c.case_date), ...col(1), { size: 10 });
+      page.cell(stageById.get(c.stage_id)?.hospital, ...col(2), { size: 9.5, minSize: 7, where });
+      page.cell(c.patient_initials, ...col(3), { size: 10 });
+      page.cell(c.operation, ...col(4), { size: 9.5, minSize: 7, where });
+      page.cell(caseCode(c), ...col(5), { size: 11, align: "center" });
+      page.cell(supervisorName(supervisors.get(shown.case(c) ?? "")), ...col(6), { size: 9.5, minSize: 7 });
+      const signature = c.signature_id && !options.blankSignatures ? signatures.get(c.signature_id) : undefined;
+      const image = signature ? await signatureImage(ctx, signature.id, signature.image) : undefined;
+      if (image) page.image(image, t.cols[7] + 4, top + 2, t.cols[8] - 4, bottom - 2);
+    }
+  }
+
+  // --- Days of duty --------------------------------------------------------------------------------------------
+  const duties = data.duties.filter((d) => stageIds.has(d.stage_id)).sort((a, b) => a.duty_date.localeCompare(b.duty_date) || a.created_at.localeCompare(b.created_at));
+  for (const group of chunk(duties, DUTIES_TABLE.rows)) {
+    const page = await addTemplatePage(ctx, template, TPL.duties);
+    const t = DUTIES_TABLE;
+    for (const [i, d] of group.entries()) {
+      const top = t.top + i * t.rowHeight;
+      const bottom = top + t.rowHeight;
+      page.cell(`${formatDateFr(d.duty_date)}\n${d.duty_type === "on_site" ? "sur place" : "à domicile (rappelable)"}`, t.cols[0], top, t.cols[1], bottom, { size: 9.5, minSize: 7.5 });
+      page.cell(d.city, t.cols[1], top, t.cols[2], bottom, { size: 10, minSize: 7 });
+      page.cell(d.institution, t.cols[2], top, t.cols[3], bottom, { size: 10, minSize: 7 });
+      page.cell(d.head_of_department, t.cols[3], top, t.cols[4], bottom, { size: 10, minSize: 7 });
+      const signature = d.signature_id && !options.blankSignatures ? signatures.get(d.signature_id) : undefined;
+      const image = signature ? await signatureImage(ctx, signature.id, signature.image) : undefined;
+      if (image) page.image(image, t.cols[4] + 4, top + 2, t.cols[5] - 4, bottom - 2);
+    }
+  }
+
+}
+
+/** Only the record of cases and the days of duty, e.g. to have the maître de stage sign it by hand. */
+export async function buildCaseRecordPdf(data: CarnetData, trainingYear: number | "all", options: CaseRecordOptions = {}, assets?: CarnetPdfAssets): Promise<Uint8Array> {
+  const { ctx, template } = await createCtx(assets ?? (await loadCarnetPdfAssets()), "Relevé des prestations", [TPL.casesFirst, TPL.cases, TPL.duties]);
+  const stageIds = new Set(data.stages.filter((s) => trainingYear === "all" || s.training_year === trainingYear).map((s) => s.id));
+  await fillCaseRecord(ctx, template, data, stageIds, options);
+  addAnnex(ctx);
+  return ctx.doc.save();
+}
+
+export async function downloadCaseRecord(data: CarnetData, trainingYear: number | "all", options: CaseRecordOptions = {}): Promise<void> {
+  const name = fullName(data);
+  downloadPdf(await buildCaseRecordPdf(data, trainingYear, options), `releve-prestations-${trainingYear === "all" ? "complet" : `annee-${trainingYear}`}${name ? `-${slug(name)}` : ""}.pdf`);
+}
+
 /**
  * The whole carnet, for one training year (the carnet is sent yearly) or
  * for the whole training. The activity report and the absence summary
  * always cover every year, as the official form asks.
  */
-export async function downloadCarnet(data: CarnetData, trainingYear: number | "all"): Promise<void> {
+export async function downloadCarnet(data: CarnetData, trainingYear: number | "all", options: CaseRecordOptions = {}): Promise<void> {
   const name = fullName(data);
-  downloadPdf(await buildCarnetPdf(data, trainingYear), `carnet-de-stage-${trainingYear === "all" ? "complet" : `annee-${trainingYear}`}${name ? `-${slug(name)}` : ""}.pdf`);
+  downloadPdf(await buildCarnetPdf(data, trainingYear, undefined, options), `carnet-de-stage-${trainingYear === "all" ? "complet" : `annee-${trainingYear}`}${name ? `-${slug(name)}` : ""}.pdf`);
 }
 
-export async function buildCarnetPdf(data: CarnetData, trainingYear: number | "all", assets?: CarnetPdfAssets): Promise<Uint8Array> {
+export async function buildCarnetPdf(data: CarnetData, trainingYear: number | "all", assets?: CarnetPdfAssets, options: CaseRecordOptions = {}): Promise<Uint8Array> {
   const { ctx, template } = await createCtx(
     assets ?? (await loadCarnetPdfAssets()),
     "Carnet de stage — Anesthésie-Réanimation",
@@ -550,11 +630,9 @@ export async function buildCarnetPdf(data: CarnetData, trainingYear: number | "a
     .reverse()
     .filter((s) => trainingYear === "all" || s.training_year === trainingYear);
   const stageIds = new Set(stages.map((s) => s.id));
-  const stageById = new Map(data.stages.map((s) => [s.id, s]));
   const from = stages[0]?.start_date ?? "0000-01-01";
   const to = stages.reduce((max, s) => (s.end_date && s.end_date > max ? s.end_date : max), stages.at(-1)?.end_date ?? "9999-12-31");
   const supervisors = new Map(data.supervisors.map((s) => [s.id, s]));
-  const signatures = new Map(data.signatures.map((s) => [s.id, s]));
   const p = data.profile;
   const today = formatDateFr(localDateIso());
   const candidateSignature = await signatureImage(ctx, "candidate", p?.signature);
@@ -660,54 +738,7 @@ export async function buildCarnetPdf(data: CarnetData, trainingYear: number | "a
 
   await addTemplatePage(ctx, template, TPL.legend);
 
-  // --- Record of cases (with each tutor's signature) -----------------------------------------------------------
-  const numbers = caseNumbers(data.cases, data.stages);
-  const cases = data.cases
-    .filter((c) => stageIds.has(c.stage_id))
-    .sort(
-      (a, b) =>
-        (stageById.get(a.stage_id)?.training_year ?? 0) - (stageById.get(b.stage_id)?.training_year ?? 0) ||
-        a.case_date.localeCompare(b.case_date) ||
-        a.created_at.localeCompare(b.created_at)
-    );
-  for (const [pageIndex, group] of chunk(cases, CASES_TABLE.rows).entries()) {
-    const page = await addTemplatePage(ctx, template, pageIndex === 0 ? TPL.casesFirst : TPL.cases);
-    const t = CASES_TABLE;
-    for (const [i, c] of group.entries()) {
-      const top = t.top + i * t.rowHeight;
-      const bottom = top + t.rowHeight;
-      const col = (n: number) => [t.cols[n], top, t.cols[n + 1], bottom] as const;
-      const where = `Relevé des prestations — cas n° ${numbers.get(c.id)} du ${formatDateFr(c.case_date)}`;
-      page.cell(String(numbers.get(c.id) ?? ""), ...col(0), { size: 10, align: "center" });
-      page.cell(formatDateFr(c.case_date), ...col(1), { size: 10 });
-      page.cell(stageById.get(c.stage_id)?.hospital, ...col(2), { size: 9.5, minSize: 7, where });
-      page.cell(c.patient_initials, ...col(3), { size: 10 });
-      page.cell(c.operation, ...col(4), { size: 9.5, minSize: 7, where });
-      page.cell(caseCode(c), ...col(5), { size: 11, align: "center" });
-      page.cell(supervisorName(supervisors.get(c.tutor_id ?? "")), ...col(6), { size: 9.5, minSize: 7 });
-      const signature = c.signature_id ? signatures.get(c.signature_id) : undefined;
-      const image = signature ? await signatureImage(ctx, signature.id, signature.image) : undefined;
-      if (image) page.image(image, t.cols[7] + 4, top + 2, t.cols[8] - 4, bottom - 2);
-    }
-  }
-
-  // --- Days of duty --------------------------------------------------------------------------------------------
-  const duties = data.duties.filter((d) => stageIds.has(d.stage_id)).sort((a, b) => a.duty_date.localeCompare(b.duty_date) || a.created_at.localeCompare(b.created_at));
-  for (const group of chunk(duties, DUTIES_TABLE.rows)) {
-    const page = await addTemplatePage(ctx, template, TPL.duties);
-    const t = DUTIES_TABLE;
-    for (const [i, d] of group.entries()) {
-      const top = t.top + i * t.rowHeight;
-      const bottom = top + t.rowHeight;
-      page.cell(`${formatDateFr(d.duty_date)}\n${d.duty_type === "on_site" ? "sur place" : "à domicile (rappelable)"}`, t.cols[0], top, t.cols[1], bottom, { size: 9.5, minSize: 7.5 });
-      page.cell(d.city, t.cols[1], top, t.cols[2], bottom, { size: 10, minSize: 7 });
-      page.cell(d.institution, t.cols[2], top, t.cols[3], bottom, { size: 10, minSize: 7 });
-      page.cell(d.head_of_department, t.cols[3], top, t.cols[4], bottom, { size: 10, minSize: 7 });
-      const signature = d.signature_id ? signatures.get(d.signature_id) : undefined;
-      const image = signature ? await signatureImage(ctx, signature.id, signature.image) : undefined;
-      if (image) page.image(image, t.cols[4] + 4, top + 2, t.cols[5] - 4, bottom - 2);
-    }
-  }
+  await fillCaseRecord(ctx, template, data, stageIds, options);
 
   // --- Activity report (whole training) ------------------------------------------------------------------------------
   const reportPages: Sheet[] = [];

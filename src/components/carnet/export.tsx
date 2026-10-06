@@ -8,6 +8,7 @@ import { useCarnet } from "@/components/carnet/carnet-provider";
 import { ChipGroup, SectionTitle } from "@/components/carnet/ui";
 import { pendingSignatureCount } from "@/lib/carnet/logic";
 import { localDateIso } from "@/lib/carnet/logic";
+import { signingSettingsFrom } from "@/lib/carnet/signing";
 
 /** Final export: the official carnet as a PDF (per training year, or the whole training), plus a raw backup of everything. */
 export function ExportView() {
@@ -16,6 +17,7 @@ export function ExportView() {
   const years = [...new Set(data.stages.map((s) => s.training_year))].sort((a, b) => a - b);
   const [year, setYear] = useState<number | "all">(years.at(-1) ?? "all");
   const [busy, setBusy] = useState(false);
+  const [blankSignatures, setBlankSignatures] = useState(false);
   // Fetch the blank form now (the service worker keeps it), so the export also works offline later.
   useEffect(() => {
     import("@/lib/carnet/pdf")
@@ -32,7 +34,7 @@ export function ExportView() {
     setBusy(true);
     try {
       const { downloadCarnet } = await import("@/lib/carnet/pdf");
-      await downloadCarnet(data, year);
+      await downloadCarnet(data, year, { blankSignatures, nameShown: signingSettingsFrom(data.settings).nameShown });
     } catch (err) {
       console.error(err);
       toast("La génération du PDF a échoué.", { variant: "error" });
@@ -70,12 +72,16 @@ export function ExportView() {
           value={year}
           onChange={(v) => v !== null && setYear(v)}
         />
-        {pending > 0 && (
+        {pending > 0 && !blankSignatures && (
           <p className="rounded-[var(--radius-md)] bg-accent-tint px-3 py-2 text-sm text-accent">
             {pending} prestation{pending > 1 ? "s" : ""} de cette période {pending > 1 ? "ne sont" : "n'est"} pas encore signée{pending > 1 ? "s" : ""} — elle
             {pending > 1 ? "s" : ""} apparaîtr{pending > 1 ? "ont" : "a"} sans signature.
           </p>
         )}
+        <label className="flex min-h-10 items-center gap-2 text-sm text-foreground">
+          <input type="checkbox" className="h-4 w-4 accent-[var(--primary)]" checked={blankSignatures} onChange={(e) => setBlankSignatures(e.target.checked)} />
+          Laisser les signatures vides (le maître de stage signe le relevé imprimé à la main)
+        </label>
         <Button onClick={exportPdf} disabled={busy || data.stages.length === 0} size="lg">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} Télécharger le carnet
         </Button>

@@ -17,6 +17,7 @@ import {
   formatDateFr,
 } from "./logic";
 import { caseCode } from "./referentiel";
+import { personFor, signingSettingsFrom } from "./signing";
 import { emptyCarnetData, type CarnetCase, type CarnetDuty, type CarnetStage, type CarnetMutation } from "./types";
 
 function stage(id: string, start: string, end: string | null, year = 1): CarnetStage {
@@ -170,6 +171,25 @@ describe("pending signatures", () => {
       ["2026-03-11", 1, 0],
     ]);
     expect(pendingSignatureCount(data)).toBe(5);
+  });
+
+  it("groups everything under the stage's maître de stage when they sign", () => {
+    const s1 = { ...stage("s1", "2026-03-01", null), supervisor_id: "ms" };
+    const s2 = stage("s2", "2026-04-01", null);
+    const data = {
+      cases: [kase({ tutor_id: "t1" }), kase({ tutor_id: "t2", case_date: "2026-03-12" }), kase({ stage_id: "s2", tutor_id: "t1" })],
+      duties: [duty({ supervisor_id: "t1" })],
+    };
+    const groups = pendingSignatureGroups(data, personFor("stage_master", new Map([s1, s2].map((s) => [s.id, s]))));
+    expect(groups.map((g) => [g.supervisorId, g.total])).toEqual([
+      ["ms", 3],
+      [null, 1],
+    ]);
+  });
+
+  it("reads the signing settings with defaults", () => {
+    expect(signingSettingsFrom([])).toEqual({ signer: "stage_master", nameShown: "day" });
+    expect(signingSettingsFrom([{ id: "x", key: "signing", value: { signer: "day", nameShown: "bogus" } }])).toEqual({ signer: "day", nameShown: "day" });
   });
 });
 

@@ -181,7 +181,7 @@ const workdaySchema = z.object({
 
 const settingSchema = z.object({
   id,
-  key: z.enum(["pay"]),
+  key: z.enum(["pay", "signing"]),
   value: z.record(z.string(), z.unknown()).refine((v) => JSON.stringify(v).length < 100_000, "Réglages trop volumineux"),
 });
 

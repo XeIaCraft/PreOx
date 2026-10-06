@@ -237,11 +237,14 @@ export interface PendingGroup {
 }
 
 /**
- * Everything not yet signed, grouped by supervisor (a case's tutor, a
- * duty's supervisor), then by day (oldest first) — the unit a supervisor
+ * Everything not yet signed, grouped by signer (by default a case's tutor,
+ * a duty's supervisor — or the stage's maître de stage, see signing.ts), then by day (oldest first) — the unit a supervisor
  * reviews and signs in one go. The group without a supervisor comes last.
  */
-export function pendingSignatureGroups(data: Pick<CarnetData, "cases" | "duties">): PendingGroup[] {
+export function pendingSignatureGroups(
+  data: Pick<CarnetData, "cases" | "duties">,
+  signerOf: { case: (c: CarnetCase) => string | null; duty: (d: CarnetDuty) => string | null } = { case: (c) => c.tutor_id, duty: (d) => d.supervisor_id }
+): PendingGroup[] {
   const groups = new Map<string, Map<string, PendingDay>>();
   function dayOf(supervisorId: string | null, date: string): PendingDay {
     const key = supervisorId ?? "";
@@ -251,8 +254,8 @@ export function pendingSignatureGroups(data: Pick<CarnetData, "cases" | "duties"
     if (!day) days.set(date, (day = { date, cases: [], duties: [] }));
     return day;
   }
-  for (const c of data.cases) if (!c.signature_id) dayOf(c.tutor_id, c.case_date).cases.push(c);
-  for (const d of data.duties) if (!d.signature_id) dayOf(d.supervisor_id, d.duty_date).duties.push(d);
+  for (const c of data.cases) if (!c.signature_id) dayOf(signerOf.case(c), c.case_date).cases.push(c);
+  for (const d of data.duties) if (!d.signature_id) dayOf(signerOf.duty(d), d.duty_date).duties.push(d);
 
   const result: PendingGroup[] = [...groups.entries()].map(([key, days]) => {
     const sortedDays = [...days.values()].sort((a, b) => a.date.localeCompare(b.date));

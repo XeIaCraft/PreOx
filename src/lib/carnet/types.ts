@@ -145,10 +145,10 @@ export interface CarnetWorkday {
   created_at: string;
 }
 
-/** Personal settings stored by key (migration 091): « pay » holds the pay parameters (see pay.ts). */
+/** Personal settings stored by key (migrations 091, 096): « pay » holds the pay parameters (see pay.ts), « signing » who signs the record (signing.ts). */
 export interface CarnetSetting {
   id: string;
-  key: "pay";
+  key: "pay" | "signing";
   value: Record<string, unknown>;
 }
 

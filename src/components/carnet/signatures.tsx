@@ -1,15 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, PenTool, Undo2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Loader2, PenTool, Printer, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { useCarnet } from "@/components/carnet/carnet-provider";
 import { SignaturePad } from "@/components/carnet/signature-pad";
 import { CaseEditModal } from "@/components/carnet/cases";
-import { EmptyState, SectionTitle } from "@/components/carnet/ui";
-import { deleteRow, patchRow, putRow } from "@/lib/carnet/mutations";
+import { ChipGroup, EmptyState, SectionTitle } from "@/components/carnet/ui";
+import { deleteRow, newId, patchRow, putRow } from "@/lib/carnet/mutations";
+import { personFor, SIGNER_LABEL, signingSettingsFrom, type SignerRole, type SigningSettings } from "@/lib/carnet/signing";
 import { caseCode, supervisorName } from "@/lib/carnet/referentiel";
 import { caseNumbers, formatDateFr, pendingSignatureGroups, type PendingDay, type PendingGroup } from "@/lib/carnet/logic";
 import type { CarnetCase, CarnetSignature, CarnetSupervisor } from "@/lib/carnet/types";
@@ -57,7 +58,7 @@ function Recap({ days, numbers }: { days: PendingDay[]; numbers: Map<string, num
   );
 }
 
-function SignModal({ supervisor, days, onClose }: { supervisor: CarnetSupervisor; days: PendingDay[]; onClose: () => void }) {
+function SignModal({ supervisor, days, signer, onClose }: { supervisor: CarnetSupervisor; days: PendingDay[]; signer: SignerRole; onClose: () => void }) {
   const { data, commit } = useCarnet();
   const { toast } = useToast();
   const numbers = useMemo(() => caseNumbers(data.cases, data.stages), [data.cases, data.stages]);
@@ -89,7 +90,9 @@ function SignModal({ supervisor, days, onClose }: { supervisor: CarnetSupervisor
       <div className="space-y-4">
         <Recap days={days} numbers={numbers} />
         <p className="text-sm text-foreground">
-          En signant, {supervisorName(supervisor)} atteste avoir supervisé les prestations ci-dessus{supervisor.role ? ` en qualité de ${supervisor.role.toLowerCase()}` : ""}.
+          {signer === "stage_master"
+            ? `En signant, ${supervisorName(supervisor)}, maître de stage, atteste l'exactitude des prestations ci-dessus.`
+            : `En signant, ${supervisorName(supervisor)} atteste avoir supervisé les prestations ci-dessus${supervisor.role ? ` en qualité de ${supervisor.role.toLowerCase()}` : ""}.`}
         </p>
         <SignaturePad onChange={setImage} />
         <div className="flex justify-end gap-2">
@@ -105,7 +108,7 @@ function SignModal({ supervisor, days, onClose }: { supervisor: CarnetSupervisor
   );
 }
 
-function GroupCard({ group, supervisor, onSign, onOpenCase }: { group: PendingGroup; supervisor: CarnetSupervisor | null; onSign: (days: PendingDay[]) => void; onOpenCase: (c: CarnetCase) => void }) {
+function GroupCard({ group, supervisor, signer, onSign, onOpenCase }: { group: PendingGroup; supervisor: CarnetSupervisor | null; signer: SignerRole; onSign: (days: PendingDay[]) => void; onOpenCase: (c: CarnetCase) => void }) {
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState(false);
   const selectedDays = group.days.filter((d) => !excluded.has(d.date));
@@ -115,9 +118,11 @@ function GroupCard({ group, supervisor, onSign, onOpenCase }: { group: PendingGr
     return (
       <div className="rounded-[var(--radius-lg)] border border-accent/40 bg-accent-tint p-4">
         <p className="flex items-center gap-1.5 text-sm font-medium text-accent">
-          <AlertTriangle className="h-4 w-4" /> {group.total} prestation{group.total > 1 ? "s" : ""} sans tuteur
+          <AlertTriangle className="h-4 w-4" /> {group.total} prestation{group.total > 1 ? "s" : ""} {signer === "stage_master" ? "sans maître de stage" : "sans tuteur"}
         </p>
-        <p className="mt-1 text-xs text-foreground-muted">Indiquez un tuteur pour pouvoir les faire signer.</p>
+        <p className="mt-1 text-xs text-foreground-muted">
+          {signer === "stage_master" ? "Indiquez le maître de stage du stage (onglet Stages) pour pouvoir les faire signer." : "Indiquez un tuteur pour pouvoir les faire signer."}
+        </p>
         <ul className="mt-2 space-y-1">
           {group.days.flatMap((d) =>
             d.cases.map((c) => (
@@ -129,7 +134,9 @@ function GroupCard({ group, supervisor, onSign, onOpenCase }: { group: PendingGr
             ))
           )}
         </ul>
-        {group.days.some((d) => d.duties.length > 0) && <p className="mt-2 text-xs text-foreground-muted">Des gardes sans superviseur sont aussi en attente (onglet Gardes).</p>}
+        {group.days.some((d) => d.duties.length > 0) && (
+          <p className="mt-2 text-xs text-foreground-muted">Des gardes {signer === "stage_master" ? "sans maître de stage" : "sans superviseur"} sont aussi en attente{signer === "stage_master" ? "" : " (onglet Gardes)"}.</p>
+        )}
       </div>
     );
   }
@@ -185,6 +192,71 @@ function GroupCard({ group, supervisor, onSign, onOpenCase }: { group: PendingGr
 }
 
 /**
+ * Who signs the record (supervisor of the day, or the stage's maître de
+ * stage who signs everything at once), whose name the carnet shows, and the
+ * record printed alone with empty signature boxes, to be signed by hand.
+ */
+function SigningSettingsCard({ settings }: { settings: SigningSettings }) {
+  const { data, commit } = useCarnet();
+  const { toast } = useToast();
+  const years = [...new Set(data.stages.map((s) => s.training_year))].sort((a, b) => a - b);
+  const [year, setYear] = useState<number | "all">(years.at(-1) ?? "all");
+  const [busy, setBusy] = useState(false);
+  const row = data.settings.find((s) => s.key === "signing");
+
+  function save(next: Partial<SigningSettings>) {
+    commit([putRow("settings", { id: row?.id ?? newId(), key: "signing", value: { ...settings, ...next } as unknown as Record<string, unknown> })]);
+  }
+
+  async function print() {
+    setBusy(true);
+    try {
+      const { downloadCaseRecord } = await import("@/lib/carnet/pdf");
+      await downloadCaseRecord(data, year, { blankSignatures: true, nameShown: settings.nameShown });
+    } catch (err) {
+      console.error(err);
+      toast("La génération du PDF a échoué.", { variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const roles = (["stage_master", "day"] as const).map((code) => ({ code, label: SIGNER_LABEL[code] }));
+  return (
+    <section className="space-y-4 rounded-[var(--radius-lg)] border border-border bg-surface p-4 sm:p-5">
+      <div className="space-y-1.5">
+        <p className="text-sm font-medium text-foreground">Qui signe le relevé des cas et les gardes ?</p>
+        <ChipGroup size="sm" options={roles} value={settings.signer} onChange={(v) => v && save({ signer: v })} />
+        <p className="text-xs text-foreground-subtle">
+          {settings.signer === "stage_master"
+            ? "Les prestations sont regroupées par maître de stage (celui du stage, onglet Stages) : il signe tout d'un coup, à la fin du stage par exemple."
+            : "Les prestations sont regroupées par superviseur du jour (tuteur du cas, superviseur de la garde)."}
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        <p className="text-sm font-medium text-foreground">Nom dans la colonne « tuteur » du relevé (PDF)</p>
+        <ChipGroup size="sm" options={roles} value={settings.nameShown} onChange={(v) => v && save({ nameShown: v })} />
+      </div>
+      <div className="space-y-2 border-t border-border pt-4">
+        <p className="text-sm font-medium text-foreground">Imprimer le relevé à signer à la main</p>
+        <p className="text-xs text-foreground-subtle">Le relevé des prestations et les jours de garde du formulaire officiel, colonnes de signature laissées vides.</p>
+        {years.length > 1 && (
+          <ChipGroup
+            size="sm"
+            options={[...years.map((y) => ({ code: y as number | "all", label: `Année ${y}` })), { code: "all", label: "Toute la formation" }]}
+            value={year}
+            onChange={(v) => v !== null && setYear(v)}
+          />
+        )}
+        <Button variant="secondary" onClick={print} disabled={busy || data.cases.length + data.duties.length === 0}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />} Télécharger le relevé à imprimer
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+/**
  * "En attente de signature": everything unsigned, grouped by supervisor then
  * day — at the end of the day, or later to catch up. Each group is signed
  * once, after the supervisor has read the recap; the same signature is
@@ -194,9 +266,10 @@ function GroupCard({ group, supervisor, onSign, onOpenCase }: { group: PendingGr
 export function SignaturesView() {
   const { data, commit } = useCarnet();
   const { toast } = useToast();
-  const groups = useMemo(() => pendingSignatureGroups(data), [data]);
+  const signing = useMemo(() => signingSettingsFrom(data.settings), [data.settings]);
+  const groups = useMemo(() => pendingSignatureGroups(data, personFor(signing.signer, new Map(data.stages.map((st) => [st.id, st])))), [data, signing.signer]);
   const supervisors = useMemo(() => new Map(data.supervisors.map((s) => [s.id, s])), [data.supervisors]);
-  const [signing, setSigning] = useState<{ supervisor: CarnetSupervisor; days: PendingDay[] } | null>(null);
+  const [signingFor, setSigningFor] = useState<{ supervisor: CarnetSupervisor; days: PendingDay[] } | null>(null);
   const [openCase, setOpenCase] = useState<CarnetCase | null>(null);
   const history = [...data.signatures].sort((a, b) => b.signed_at.localeCompare(a.signed_at));
   const itemsBySignature = useMemo(() => {
@@ -208,6 +281,7 @@ export function SignaturesView() {
 
   return (
     <div className="space-y-8">
+      <SigningSettingsCard settings={signing} />
       <section className="space-y-3">
         <SectionTitle>En attente de signature</SectionTitle>
         {groups.length === 0 ? (
@@ -222,7 +296,8 @@ export function SignaturesView() {
                   group={group}
                   supervisor={supervisor}
                   onOpenCase={setOpenCase}
-                  onSign={(days) => supervisor && setSigning({ supervisor, days })}
+                  signer={signing.signer}
+                  onSign={(days) => supervisor && setSigningFor({ supervisor, days })}
                 />
               );
             })}
@@ -266,7 +341,7 @@ export function SignaturesView() {
         )}
       </section>
 
-      {signing && <SignModal supervisor={signing.supervisor} days={signing.days} onClose={() => setSigning(null)} />}
+      {signingFor && <SignModal supervisor={signingFor.supervisor} days={signingFor.days} signer={signing.signer} onClose={() => setSigningFor(null)} />}
       {openCase && <CaseEditModal kase={data.cases.find((c) => c.id === openCase.id) ?? openCase} onClose={() => setOpenCase(null)} />}
     </div>
   );
