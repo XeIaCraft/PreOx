@@ -6,7 +6,7 @@
 // (its "source" field): the user's, or those of the reference protocols
 // (reference-protocols.ts), imported only on request.
 
-import { protocolCovers } from "./protocol-coverage";
+import { protocolCovers, protocolExcludes } from "./protocol-coverage";
 import { adjustedBodyWeight, idealBodyWeight, leanBodyWeight, type Sex } from "./scores";
 import type { Technique } from "./rules/types";
 import type { PostopPlan } from "./postop";
@@ -262,6 +262,7 @@ export function matchProtocol(protocols: Protocol[], surgery: { name: string; ca
     const covered = protocolCovers(p.id, item);
     // Most of what the intervention is must be in the protocol, unless it is written for a variant of it.
     if (!sameItem && !sameFamily && !covered && shared / target.size <= 0.5) continue;
+    if (!sameItem && protocolExcludes(p.id, item)) continue;
     // A protocol written or listed for another technique (a spinal for a laparoscopy) does not apply.
     if (!sameItem && !protocolFitsTechniques(p.content.techniques, item)) continue;
     const forChild = CHILD_TERMS.test(text) || written?.population === "child" || written?.population === "neonate";

@@ -42,6 +42,7 @@ import type { ReferenceProtocol } from "./reference-protocol-kit";
 import { DEFAULT_PCEA } from "./postop";
 import { MORE_REFERENCE_PROTOCOLS } from "./reference-protocols-more";
 import { CHILDREN_AND_OTHER_PROTOCOLS } from "./reference-protocols-children";
+import { EXTRA_REFERENCE_PROTOCOLS } from "./reference-protocols-extra";
 
 export type { ReferenceProtocol };
 
@@ -783,7 +784,7 @@ const INDUCTION_CHOICES: Record<number, RegExp> = {
   92: /^(Kétamine|Propofol)$/,
 };
 
-export const REFERENCE_PROTOCOLS: ReferenceProtocol[] = [...FIRST_REFERENCE_PROTOCOLS, ...MORE_REFERENCE_PROTOCOLS, ...CHILDREN_AND_OTHER_PROTOCOLS].map((p) => {
+export const REFERENCE_PROTOCOLS: ReferenceProtocol[] = [...FIRST_REFERENCE_PROTOCOLS, ...MORE_REFERENCE_PROTOCOLS, ...CHILDREN_AND_OTHER_PROTOCOLS, ...EXTRA_REFERENCE_PROTOCOLS].map((p) => {
   const n = Number(p.id.slice(-12));
   const choice = INDUCTION_CHOICES[n];
   const drugs = choice ? p.content.drugs.map((d) => (d.phase === "induction" && choice.test(d.name) ? { ...d, choice: "induction" } : d)) : p.content.drugs;

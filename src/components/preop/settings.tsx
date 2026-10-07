@@ -363,7 +363,7 @@ const SETTINGS: { code: CareSetting; label: string }[] = [
   { code: "icu", label: "Soins intensifs" },
 ];
 
-function SurgeryForm({ item, onChange, protocols }: { item: SurgeryItem; onChange: (i: SurgeryItem) => void; protocols: Protocol[] }) {
+export function SurgeryForm({ item, onChange, protocols }: { item: SurgeryItem; onChange: (i: SurgeryItem) => void; protocols: Protocol[] }) {
   const set = (patch: Partial<SurgeryItem>) => onChange({ ...item, ...patch });
   return (
     <div className="space-y-3">

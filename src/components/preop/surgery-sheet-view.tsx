@@ -1,11 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Printer, X } from "lucide-react";
+import { Copy, Pencil, Plus, Printer, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Combobox, Panel } from "@/components/preop/ui";
 import { useCatalogs } from "@/components/preop/use-catalogs";
-import { fold, type SurgeryItem } from "@/lib/preop/catalog";
+import { SurgeryForm } from "@/components/preop/settings";
+import { useToast } from "@/components/ui/toast";
+import { DEFAULT_CATALOGS } from "@/lib/preop/catalog-defaults";
+import { emptyOverrides, fold, type CatalogOverrides, type SurgeryItem } from "@/lib/preop/catalog";
 import { RISK_GRADES } from "@/lib/preop/dossier";
 import { matchProtocol, type Protocol } from "@/lib/preop/protocols";
 import { POSTOP_ANALGESIA, POSTOP_DESTINATIONS, POSTOP_THROMBO } from "@/lib/preop/postop";
@@ -31,17 +34,38 @@ function hint(x: SurgeryItem): string {
     .join(" · ");
 }
 
+const newSurgeryId = (name: string) => `u-${fold(name).replace(/[^a-z0-9]+/g, "-").slice(0, 40)}-${Math.random().toString(36).slice(2, 6)}`;
+
+function blankSurgery(name: string): SurgeryItem {
+  return { id: "", name, category: "", grade: "intermediate", cardiacRisk: "low", bleedingRisk: "low", rcriHighRisk: false, incision: "peripheral" };
+}
+
 export function SurgerySheetView({ protocols }: { protocols: Protocol[] }) {
   const { catalogs } = useCatalogs();
   const [id, setId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ item: SurgeryItem; isNew: boolean } | null>(null);
   const surgery = id ? catalogs.surgeries.find((x) => x.id === id) : undefined;
+
+  if (editing)
+    return (
+      <SurgeryEditor
+        item={editing.item}
+        isNew={editing.isNew}
+        protocols={protocols}
+        onChange={(item) => setEditing({ ...editing, item })}
+        onDone={(savedId) => {
+          setEditing(null);
+          if (savedId) setId(savedId);
+        }}
+      />
+    );
 
   return (
     <div className="space-y-4">
       <Panel title="Fiche par intervention">
         <p className="text-sm text-foreground-muted">
           Choisissez une intervention : examens à demander et leurs conditions, destination après l&apos;intervention, risque hémorragique et protocole, sans
-          patient.
+          patient. Tout se corrige avec « Modifier » (enregistré pour vous, comme dans Paramètres › Interventions).
         </p>
         {surgery ? (
           <div className="flex items-start gap-2 rounded-[var(--radius-md)] bg-surface-muted/60 px-3 py-2">
@@ -49,6 +73,9 @@ export function SurgerySheetView({ protocols }: { protocols: Protocol[] }) {
               <p className="text-sm font-medium text-foreground">{surgery.name}</p>
               <p className="text-xs text-foreground-subtle">{hint(surgery)}</p>
             </div>
+            <Button variant="secondary" size="sm" onClick={() => setEditing({ item: structuredClone(surgery), isNew: false })} className="print:hidden">
+              <Pencil className="h-3.5 w-3.5" /> Modifier
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => window.print()} className="print:hidden" title="Imprimer la fiche">
               <Printer className="h-4 w-4" />
             </Button>
@@ -63,11 +90,93 @@ export function SurgerySheetView({ protocols }: { protocols: Protocol[] }) {
             placeholder="Intervention (PTG, colectomie cœlio, néphrectomie partielle robot…)"
             search={(q) => searchSurgeries(catalogs.surgeries, q).map((x) => ({ key: x.id, label: x.name, hint: hint(x) }))}
             onPick={(o) => setId(o.key)}
+            onFree={(q) => setEditing({ item: blankSurgery(q), isNew: true })}
+            freeLabel={(q) => `Créer « ${q} »`}
           />
         )}
         {surgery && <Variants surgery={surgery} items={catalogs.surgeries} onPick={setId} />}
       </Panel>
-      {surgery && <Sheet key={surgery.id} surgery={surgery} protocol={matchProtocol(protocols, { name: surgery.name, category: surgery.category, catalogId: surgery.id }, "", catalogs.surgeries)} />}
+      {surgery && (
+        <Sheet
+          key={surgery.id}
+          surgery={surgery}
+          protocol={matchProtocol(protocols, { name: surgery.name, category: surgery.category, catalogId: surgery.id }, "", catalogs.surgeries)}
+          onEdit={() => setEditing({ item: structuredClone(surgery), isNew: false })}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Edit an intervention of the catalogue from its sheet: same form and same storage as Paramètres › Interventions. */
+function SurgeryEditor({ item, isNew, protocols, onChange, onDone }: { item: SurgeryItem; isNew: boolean; protocols: Protocol[]; onChange: (i: SurgeryItem) => void; onDone: (savedId?: string) => void }) {
+  const { overrides, save } = useCatalogs();
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  const o = (overrides.surgeries ?? emptyOverrides()) as CatalogOverrides<SurgeryItem>;
+  const isDefault = DEFAULT_CATALOGS.surgeries.some((d) => d.id === item.id);
+
+  async function commit(next: CatalogOverrides<SurgeryItem>, message: string, savedId?: string) {
+    setBusy(true);
+    try {
+      await save("surgeries", next);
+      toast(message, { variant: "success" });
+      onDone(savedId);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Enregistrement impossible.", { variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function submit() {
+    // A variant made here has no id yet: it is added, the original stays.
+    const creating = isNew || !item.id;
+    const it = { ...item, id: item.id || newSurgeryId(item.name) };
+    if (creating) void commit({ ...o, added: [...o.added, it] }, "Intervention ajoutée.", it.id);
+    else if (isDefault) void commit({ ...o, edited: { ...o.edited, [it.id]: it } }, "Fiche enregistrée.", it.id);
+    else void commit({ ...o, added: o.added.map((a) => (a.id === it.id ? it : a)) }, "Fiche enregistrée.", it.id);
+  }
+
+  return (
+    <div className="space-y-4">
+      <Panel
+        title={isNew ? "Nouvelle intervention" : `Modifier — ${item.name}`}
+        actions={
+          <>
+            {!isNew && isDefault && o.edited[item.id] && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  const edited = { ...o.edited };
+                  delete edited[item.id];
+                  void commit({ ...o, edited }, "Valeurs par défaut rétablies.", item.id);
+                }}
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Valeurs par défaut
+              </Button>
+            )}
+            {!isNew && (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => onChange({ ...structuredClone(item), id: "", name: `${item.name} (variante)` })} title="Garder l'original et créer une variante (autre hôpital, autre technique)">
+                <Copy className="h-3.5 w-3.5" /> Variante
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDone()}>
+              Annuler
+            </Button>
+            <Button size="sm" disabled={busy || !item.name.trim() || !item.category} onClick={submit}>
+              {item.id ? "Enregistrer" : <><Plus className="h-3.5 w-3.5" /> Ajouter</>}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-xs text-foreground-subtle">
+          Grade, risques, technique habituelle, position, durée, destination et protocole lié : la fiche, la consultation et la préparation suivent ces valeurs.
+        </p>
+        <SurgeryForm item={item} onChange={onChange} protocols={protocols} />
+      </Panel>
     </div>
   );
 }
@@ -95,7 +204,7 @@ function Fact({ label, value, tone }: { label: string; value: React.ReactNode; t
   );
 }
 
-function Sheet({ surgery: s, protocol }: { surgery: SurgeryItem; protocol: Protocol | null }) {
+function Sheet({ surgery: s, protocol, onEdit }: { surgery: SurgeryItem; protocol: Protocol | null; onEdit: () => void }) {
   const sheet = useMemo(() => surgerySheet(s), [s]);
   const bleeding = BLEEDING_RISKS.find((b) => b.code === s.bleedingRisk);
   const plan = protocol?.content;
@@ -172,8 +281,18 @@ function Sheet({ surgery: s, protocol }: { surgery: SurgeryItem; protocol: Proto
         </ul>
       </Panel>
 
+      {!plan && (
+        <Panel title="Protocole">
+          <p className="text-sm text-foreground-muted">
+            Aucun protocole de référence ne correspond à cette intervention.{" "}
+            <button type="button" onClick={onEdit} className="font-medium text-primary hover:underline print:hidden">
+              Lier un protocole
+            </button>
+          </p>
+        </Panel>
+      )}
       {plan && (
-        <Panel title={`Protocole : ${protocol.name}`}>
+        <Panel title={`Protocole : ${protocol.name}`} actions={<Button size="sm" variant="ghost" onClick={onEdit} className="print:hidden">Changer</Button>}>
           {(techniquesDiffer || destinationDiffers) && (
             <p className="text-xs text-foreground-muted">
               Protocole commun à plusieurs interventions : il prévoit

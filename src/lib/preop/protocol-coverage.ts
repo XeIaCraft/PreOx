@@ -30,14 +30,22 @@ const young = (s: CoverageItem) => s.population === "child" || s.population === 
 
 /** Protocol number → what it covers. Population defaults to adults (no child entry). */
 const COVERAGE: Record<number, Rule[]> = {
-  1: [{ re: /prothese totale de hanche|prothese intermediaire de hanche|arthroscopie de hanche/ }],
+  1: [{ re: /prothese totale de hanche|prothese intermediaire de hanche/ }],
   2: [{ re: /prothese totale de genou|prothese unicompartimentale/ }],
-  3: [{ re: /col du femur|osteosynthese de la hanche|enclouage du femur|fracture du bassin|cotyle|fracture peri-?prothetique/ }],
+  3: [{ re: /col du femur|osteosynthese de la hanche|enclouage du femur|fracture peri-?prothetique/ }],
   4: [{ re: /arthroscopie de l'epaule|butee de l'epaule|luxation acromio/ }],
-  5: [{ re: /^cesarienne( programmee)?$|version par manoeuvre externe|cerclage/ }],
-  6: [{ re: /cholecystectomie|voies biliaires|anastomose bilio/ }],
+  5: [{ re: /^cesarienne( programmee)?$/ }],
+  6: [{ re: /cholecystectomie/, not: /laparotomie/ }],
   7: [{ re: /colectomie|hemicolectomie|sigmoidectomie|retablissement de continuite|^stomie|resection de l'intestin grele|rectopexie/, not: /laparotomie|hartmann|volvulus/ }],
   8: [{ re: /hernie (inguinale|crurale|ombilicale)$|cure de hernie inguinale$|cure de hernie ombilicale$/ }],
+  112: [{ re: /^amygdalectomie$|parotidectomie|glande sous-maxillaire/ }],
+  113: [{ re: /tracheotomie/ }],
+  114: [{ re: /paupieres|blepharoplastie|voies lacrymales/ }],
+  115: [{ re: /angioplastie peripherique|stenting carotidien/ }],
+  116: [{ re: /arthroscopie de hanche/ }],
+  117: [{ re: /gastrostomie chirurgicale/ }],
+  118: [{ re: /prostatectomie radicale par voie ouverte/ }],
+  119: [{ re: /^chirurgie plastique ou reconstructrice$/ }],
   111: [{ re: /hernie inguinale par c|cure de hernie inguinale robot|cure de hernie ombilicale par c/ }],
   9: [{ re: /amygdalectomie/, population: "child" }],
   10: [{ re: /thyroidectomie|lobo-isthmectomie|parathyroidectomie|cervicotomie/ }],
@@ -48,12 +56,12 @@ const COVERAGE: Record<number, Rule[]> = {
   15: [{ re: /arthroscopie du genou|arthroscopie de cheville/ }],
   16: [{ re: /chirurgie de la main|canal carpien|nerf ulnaire|dupuytren|kyste synovial|rhizarthrose/ }],
   17: [{ re: /hysteroscopie|curetage|aspiration endo-uterine|interruption volontaire|ponction ovocytaire|myomectomie par hysteroscopie|conisation/ }],
-  18: [{ re: /^endoscopie digestive$|coloscopie|gastroscopie|hemorragie digestive : endoscopie|gastrostomie endoscopique/ }],
+  18: [{ re: /^endoscopie digestive$|coloscopie|gastroscopie|gastrostomie endoscopique/ }],
   19: [{ re: /chirurgie du sein|mastectomie|tumorectomie mammaire|curage axillaire/ }],
   20: [{ re: /appendicectomie/ }],
   21: [{ re: /colectomie par laparotomie|hartmann|colectomie totale|amputation abdomino-perineale/ }],
-  22: [{ re: /hepatectomie|resection hepatique|kyste hydatique|prelevement de foie/ }],
-  23: [{ re: /prostatectomie radicale|adenomectomie prostatique robot/ }],
+  22: [{ re: /hepatectomie|resection hepatique|kyste hydatique|prelevement de foie|voies biliaires|anastomose bilio|cholecystectomie par laparotomie/ }],
+  23: [{ re: /prostatectomie radicale|adenomectomie prostatique robot/, not: /voie ouverte/ }],
   24: [{ re: /lobectomie pulmonaire|lobectomie robot|segmentectomie ou wedge par thoracoscopie|pneumonectomie par thoracoscopie|thymectomie par thoracoscopie|resection de bulles|reduction de volume pulmonaire/ }],
   25: [{ re: /thoracotomie|^pneumonectomie$|decortication pleurale|chirurgie de la paroi thoracique|^lobectomie par/ }],
   26: [{ re: /^craniotomie( pour tumeur)?$|fosse posterieure|anevrisme cerebral|chirurgie de l'epilepsie|decompression microvasculaire|chiari|hypophyse|base du crane|cranioplastie|tumeur intramedullaire/ }],
@@ -67,7 +75,7 @@ const COVERAGE: Record<number, Rule[]> = {
   34: [{ re: /proctologie|fissure anale|fistule ou abces anal|sinus pilonidal|condylomes|prolapsus rectal/ }],
   35: [{ re: /eventration/ }],
   36: [{ re: /occlusion|peritonite|perforation|ulcere perfore|ischemie mesenterique|volvulus|hernie etranglee|laparotomie exploratrice|laparoscopie exploratrice|fasciite necrosante/ }],
-  37: [{ re: /^gastrectomie|gastrostomie chirurgicale/, not: /longitudinale/ }],
+  37: [{ re: /^gastrectomie/, not: /longitudinale/ }],
   38: [{ re: /oesophagectomie/ }],
   39: [{ re: /fundoplicature|heller|splenectomie|^surrenalectomie par|surrenalectomie robot/ }],
   40: [{ re: /pancreat|duodenopancreatectomie|necrosectomie/ }],
@@ -78,8 +86,8 @@ const COVERAGE: Record<number, Rule[]> = {
   45: [{ re: /transplantation (hepatique|pancreatique)/ }],
   46: [{ re: /aortique ouverte|anevrisme aortique rompu|pontage aorto|artere renale ou digestive/ }],
   47: [{ re: /endoprothese/ }],
-  48: [{ re: /carotid/ }],
-  49: [{ re: /pontage femoro|pontage axillo|endarteriectomie femorale|embolectomie|anevrisme poplite|angioplastie peripherique|revascularisation ouverte/ }],
+  48: [{ re: /carotid/, not: /stenting/ }],
+  49: [{ re: /pontage femoro|pontage axillo|endarteriectomie femorale|embolectomie|anevrisme poplite|revascularisation ouverte/ }],
   50: [{ re: /amputation (au-dessus|de membre inferieur|d'orteil)|pied diabetique/ }],
   51: [{ re: /fistule arterio-veineuse|desobstruction de fav/ }],
   52: [{ re: /varices/ }],
@@ -94,40 +102,40 @@ const COVERAGE: Record<number, Rule[]> = {
   61: [{ re: /hysterectomie vaginale|prolapsus|bandelette|vulvectomie|bartholin|fistule vesico-vaginale/, not: /rectal/ }],
   62: [{ re: /coelioscopie gynecologique|annexectomie|grossesse extra|kystectomie ovarienne|salpingectomie|torsion d'annexe|sterilisation tubaire|^myomectomie$/ }],
   63: [{ re: /cesarienne en urgence|hysterectomie d'hemostase|hemorragie du post-partum/ }],
-  64: [{ re: /analgesie peridurale du travail|revision uterine|dechirure perineale|extraction instrumentale/ }],
+  64: [{ re: /analgesie peridurale du travail|revision uterine|dechirure perineale|extraction instrumentale|cerclage|version par manoeuvre externe/ }],
   65: [{ re: /pendant la grossesse/ }],
-  66: [{ re: /endonasale|sinus|septoplastie|rhinoplastie|epistaxis|os propres du nez|ronflement|^amygdalectomie$/ }],
+  66: [{ re: /endonasale|sinus|septoplastie|rhinoplastie|epistaxis|os propres du nez|ronflement/ }],
   67: [{ re: /oreille|tympanoplastie|mastoidectomie|stapedotomie|implant cochleaire|otoplastie/, population: "any" }],
   68: [{ re: /microchirurgie laryngee|laser laryngo|laser larynge|panendoscopie|zenker|bronchoscopie rigide/ }],
-  69: [{ re: /carcinologique tete et cou|laryngectomie|pharyngectomie|curage ganglionnaire cervical|glossectomie|transorale|tracheotomie|parotidectomie|sous-maxillaire/ }],
+  69: [{ re: /carcinologique tete et cou|laryngectomie|pharyngectomie|curage ganglionnaire cervical|glossectomie|transorale/ }],
   70: [{ re: /aerateurs|frein de langue|adenoidectomie|tractus thyreoglosse|laryngomalacie|stenose sous-glottique|corps etranger bronchique/, population: "child" }],
   71: [{ re: /abces peri-amygdalien|hemorragie apres amygdalectomie|cellulite ou abces dentaire/, population: "any" }],
   72: [{ re: /dent|maxillo-faciale|mandibule|temporo-mandibulaire|osteotomie bimaxillaire|genioplastie|le fort/ }],
-  73: [{ re: /vitrectomie|decollement de retine|glaucome|keratoplastie|voies lacrymales|paupieres|blepharoplastie/, not: /congenital/ }],
+  73: [{ re: /vitrectomie|decollement de retine|glaucome|keratoplastie/, not: /congenital/ }],
   74: [{ re: /strabisme|plaie du globe|enucleation ou evisceration|orbite/, population: "any" }, { re: /cataracte de l'enfant|glaucome congenital|retinopathie du premature/, population: "child" }],
   75: [{ re: /cervicale|laminoplastie/, categories: ["D", "K"] }],
   76: [{ re: /hematome (extradural|sous-dural)|derivation ventriculaire externe/ }],
   77: [{ re: /thrombectomie cerebrale|embolisation d'anevrisme/ }],
-  78: [{ re: /craniotomie eveillee/ }],
-  79: [{ re: /derivation (ventriculo|lombo)|ventriculocisternostomie|stimulation cerebrale|neurostimulateur|pompe intrathecale|stereotax|radiochirurgie/ }],
+  78: [{ re: /craniotomie eveillee|stimulation cerebrale profonde/ }],
+  79: [{ re: /derivation (ventriculo|lombo)|ventriculocisternostomie|neurostimulateur|pompe intrathecale|stereotax|radiochirurgie/ }],
   80: [{ re: /mediastin|^thymectomie$|thymectomie par sternotomie/ }],
   81: [{ re: /tavi|mitraclip|auricule|fermeture percutanee/ }],
   82: [{ re: /ablation de fibrillation|ablation par catheter|pacemaker|sondes de stimulation|cardioversion|echographie transoesophagienne|coronarographie/ }],
   83: [{ re: /pneumothorax|talcage|drain thoracique|pleurectomie|hyperhidrose|defile thoraco/ }],
-  84: [{ re: /poignet|avant-bras|coude|olecrane|scaphoide|membre superieur|chirurgie du poignet et de la main|reimplantation/ }],
+  84: [{ re: /poignet|avant-bras|coude|olecrane|scaphoide|membre superieur|chirurgie du poignet et de la main/ }],
   85: [{ re: /prothese d'epaule|humerus|clavicule/ }],
   86: [{ re: /ligamentoplastie|rotule|plateau tibial|enclouage du tibia|osteotomie tibiale|^osteotomie$|stabilisation de rotule|osteosynthese de membre|fixateur externe/ }],
   87: [{ re: /cheville|calcaneum|achille|arthrodese de cheville|chirurgie du pied/ }],
-  88: [{ re: /reprise de prothese|infection de prothese|metastases osseuses|sarcome/ }],
+  88: [{ re: /reprise de prothese|infection de prothese|metastases osseuses|sarcome|fracture du bassin|cotyle/ }],
   89: [{ re: /lavage articulaire|syndrome des loges|reduction de luxation|bursectomie/ }],
   90: [{ re: /augmentation mammaire|plastie mammaire|protheses mammaires|reconstruction mammaire par prothese|gynecomastie|lipofilling/ }],
-  91: [{ re: /lambeau libre|lambeau pour escarre|lambeau pedicule ou libre|chirurgie plastique ou reconstructrice|affirmation de genre/ }],
+  91: [{ re: /lambeau libre|lambeau pour escarre|lambeau pedicule ou libre|affirmation de genre|reimplantation/ }],
   92: [{ re: /brule|brulure/ }],
   93: [{ re: /abdominoplastie|liposuccion|amaigrissement massif|lifting/ }],
   94: [{ re: /hernie (inguinale|ombilicale)|circoncision|phimosis|orchidopexie|hypospade|hydrocele|torsion/, population: "child" }],
   95: [{ re: /pylor|invagination/, population: "child" }],
-  96: [{ re: /atresie|hernie diaphragmatique|laparoschisis|omphalocele|enterocolite|malformation anorectale|myelomeningocele|valves de l'uretre/, population: "child" }],
-  97: [{ re: /nephrectomie de l'enfant|pyeloplastie de l'enfant|reimplantation ureterale|hirschsprung|appendicectomie/, population: "child" }],
+  96: [{ re: /atresie|hernie diaphragmatique|laparoschisis|omphalocele|enterocolite|malformation anorectale|myelomeningocele/, population: "child" }],
+  97: [{ re: /nephrectomie de l'enfant|pyeloplastie de l'enfant|reimplantation ureterale|hirschsprung|appendicectomie|valves de l'uretre/, population: "child" }],
   98: [{ re: /./, population: "child", categories: ["K", "L"], not: /scoliose|fente/ }],
   99: [{ re: /scoliose/, population: "child" }],
   100: [{ re: /./, population: "child", categories: ["X"], not: /catheterisme cardiaque/ }],
@@ -135,7 +143,7 @@ const COVERAGE: Record<number, Rule[]> = {
   102: [{ re: /pectus|malformation pulmonaire congenitale/, population: "child" }],
   103: [{ re: /cardiopathies congenitales de l'enfant|catheterisme cardiaque de l'enfant|canal arteriel/, population: "child" }],
   104: [{ re: /bronchoscopie souple|endoscopie bronchique|valves endobronchiques/ }],
-  105: [{ re: /cpre|echo-endoscopie|mucosectomie|poem/ }],
+  105: [{ re: /cpre|echo-endoscopie|mucosectomie|poem|hemorragie digestive : endoscopie/ }],
   106: [{ re: /radiologie interventionnelle|chimio-embolisation|radiofrequence|ponction-biopsie|tips|drainage biliaire|filtre cave|embolisation uterine|biopsie hepatique|vertebroplastie|imagerie sous anesthesie|prelevement de moelle/ }],
   107: [{ re: /electroconvulsivo/ }],
   108: [{ re: /prelevement d'organes/ }],
@@ -159,6 +167,43 @@ export function protocolCovers(protocolId: string, item: CoverageItem | undefine
     if (r.not && r.not.test(name)) return false;
     return r.re ? r.re.test(name) : true;
   });
+}
+
+/**
+ * Interventions a reference protocol must not be chosen for, even when the
+ * names share words: another technique, another site, another severity
+ * (an adult tonsillectomy is not sinus surgery, a cerclage is not a
+ * caesarean). Leaves the intervention without a protocol, or to the one
+ * that covers it above.
+ */
+const EXCLUDED: Record<number, RegExp> = {
+  1: /arthroscopie de hanche/,
+  3: /bassin|cotyle/,
+  5: /cerclage|version par manoeuvre/,
+  6: /laparotomie|voies biliaires|anastomose/,
+  18: /hemorragie digestive/,
+  23: /voie ouverte/,
+  37: /gastrostomie/,
+  48: /stenting/,
+  49: /angioplastie/,
+  66: /amygdalectomie/,
+  69: /tracheotomie|parotidectomie|sous-maxillaire/,
+  72: /cellulite|abces dentaire/,
+  73: /paupieres|blepharoplastie|voies lacrymales/,
+  79: /stimulation cerebrale profonde/,
+  84: /reimplantation/,
+  88: /arthroscopie/,
+  54: /cholecystectomie/,
+  91: /^chirurgie plastique ou reconstructrice$/,
+  96: /valves de l'uretre/,
+};
+const EXCLUSIONS = new Map(Object.entries(EXCLUDED).map(([n, re]) => [pid(Number(n)), re]));
+
+/** Is this reference protocol ruled out for this intervention? */
+export function protocolExcludes(protocolId: string, item: CoverageItem | undefined): boolean {
+  if (!item?.name) return false;
+  const re = EXCLUSIONS.get(protocolId);
+  return !!re && re.test(fold(item.name));
 }
 
 /** Protocol ids the coverage names — to check they are reference protocols. */

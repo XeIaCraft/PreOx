@@ -300,7 +300,7 @@ const EMERGENCY_NAME = /perfor|étrangl|occlusion|rompu|plaie|abcès|fasciite|vo
 
 /** Short but usually followed by a night or more in hospital (drain, infection, surveillance, pain, trauma). */
 const NOT_AMBULATORY =
-  /trachéotomie|thoracoscopie|drain thoracique|pleuroscopie|invagination|pylorotomie|appendicectomie|fasciotomie|arthrite septique|ostéomyélite|fémur|pendant la grossesse|péridurale du travail|déchirure périnéale|corps étranger bronchique|laryngotrachéoplastie|POEM|chimio-embolisation|radiofréquence|embolisation utérine|ostéosynthèse percutanée|épiphysiolyse|réimplantation urétérale|pyéloplastie|fente labio-palatine|enclouage|plateau tibial|calcanéum|amputation|vulvectomie|curage inguinal|glande sous-maxillaire|thyréoglosse|thyroïd|fixateur externe|défilé thoraco-brachial|néphrostomie|drainage biliaire|valves endobronchiques|sphincter urinaire|prolapsus|zenker|luxation congénitale|fermeture percutanée/i;
+  /trachéotomie|thoracoscopie|drain thoracique|pleuroscopie|invagination|pylorotomie|appendicectomie|fasciotomie|arthrite septique|ostéomyélite|fémur|pendant la grossesse|péridurale du travail|déchirure périnéale|corps étranger bronchique|laryngotrachéoplastie|POEM|chimio-embolisation|radiofréquence|embolisation utérine|ostéosynthèse percutanée|épiphysiolyse|réimplantation urétérale|pyéloplastie|fente labio-palatine|enclouage|plateau tibial|calcanéum|amputation|vulvectomie|curage inguinal|glande sous-maxillaire|thyréoglosse|thyroïd|fixateur externe|défilé thoraco-brachial|néphrostomie|drainage biliaire|valves endobronchiques|sphincter urinaire|prolapsus|zenker|luxation congénitale|fermeture percutanée|supracondylienne/i;
 
 /**
  * Where the patient usually goes after the intervention — a pre-fill, always
@@ -311,6 +311,8 @@ const NOT_AMBULATORY =
  */
 function usualSetting(s: (typeof SURGERY_CATALOG)[number]): SurgeryItem["setting"] {
   if (ICU_AFTER.test(s.name)) return "icu";
+  // A newborn after major or cardiac surgery goes to (neonatal) intensive care.
+  if (s.population === "neonate" && (s.grade === "major" || s.category === "F")) return "icu";
   if (HDU_AFTER.test(s.name) && s.population !== "neonate") return "hdu";
   const ambulatory =
     s.grade !== "major" &&
