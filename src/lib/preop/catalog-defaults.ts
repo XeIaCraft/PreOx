@@ -291,22 +291,27 @@ const MEDICATION_EXTRAS: Record<string, Partial<MedicationItem>> = {
 const ICU_AFTER =
   /sous CEC|à cœur battant|remplacement valvulaire|valve mitrale|valve tricuspide|valvulaire mini-invasive|aorte thoracique|chirurgie aortique ouverte|aorto-bifémoral|anévrisme aortique rompu|transplantation (cardiaque|pulmonaire|hépatique|pancréatique)|cardiopathies congénitales|assistance ventriculaire|ECMO|tamponnade|œsophagectomie|duodénopancréatectomie|pancréatectomie totale|nécrosectomie|cytoréduction|thrombo-endartériectomie pulmonaire|résection trachéale|pneumonectomie|péritonite|ischémie mésentérique|brûlés étendus|hernie diaphragmatique congénitale|atrésie de l'œsophage|entérocolite|laparoschisis|scoliose neuromusculaire|craniosténose|hématome extradural|pharyngectomie|laryngectomie totale/i;
 
+/** Interventions usually followed by a night of continuous monitoring (soins intermédiaires, surveillance continue) — the custom varies: editable. */
+const HDU_AFTER =
+  /craniotomie|fosse postérieure|clippage|chirurgie de l'épilepsie|tumeur intramédullaire|malformation de chiari|lobectomie|tumeur du médiastin|thymectomie par sternotomie|réduction de volume pulmonaire|bulles d'emphysème|décortication|hépatectomie majeure|hépatectomie par laparotomie|(?<!cholé)cystectomie|cystoprostatectomie|exentération|endoprothèse fenêtrée|artère rénale ou digestive|axillo-fémoral|hystérectomie d'hémostase|hémorragie du post-partum|carcinologique tête et cou|lambeau libre|lambeau pédiculé ou libre|scoliose de l'adolescent|arthrodèse lombaire étendue|pectus|surrénalectomie|kasai/i;
+
 /** Not planned surgery: never proposed as ambulatory. */
 const EMERGENCY_NAME = /perfor|étrangl|occlusion|rompu|plaie|abcès|fasciite|volvulus|grossesse extra-utérine|hématome|torsion/i;
 
 /** Short but usually followed by a night or more in hospital (drain, infection, surveillance, pain, trauma). */
 const NOT_AMBULATORY =
-  /trachéotomie|thoracoscopie|drain thoracique|pleuroscopie|invagination|pylorotomie|appendicectomie|fasciotomie|arthrite septique|ostéomyélite|fémur|pendant la grossesse|péridurale du travail|déchirure périnéale|corps étranger bronchique|laryngotrachéoplastie|POEM|chimio-embolisation|radiofréquence|embolisation utérine|ostéosynthèse percutanée|épiphysiolyse|réimplantation urétérale|pyéloplastie|fente labio-palatine|enclouage|plateau tibial|calcanéum|amputation|vulvectomie|curage inguinal|glande sous-maxillaire|thyréoglosse|thyroïd|fixateur externe|défilé thoraco-brachial|néphrostomie|drainage biliaire/i;
+  /trachéotomie|thoracoscopie|drain thoracique|pleuroscopie|invagination|pylorotomie|appendicectomie|fasciotomie|arthrite septique|ostéomyélite|fémur|pendant la grossesse|péridurale du travail|déchirure périnéale|corps étranger bronchique|laryngotrachéoplastie|POEM|chimio-embolisation|radiofréquence|embolisation utérine|ostéosynthèse percutanée|épiphysiolyse|réimplantation urétérale|pyéloplastie|fente labio-palatine|enclouage|plateau tibial|calcanéum|amputation|vulvectomie|curage inguinal|glande sous-maxillaire|thyréoglosse|thyroïd|fixateur externe|défilé thoraco-brachial|néphrostomie|drainage biliaire|valves endobronchiques|sphincter urinaire|prolapsus|zenker|luxation congénitale|fermeture percutanée/i;
 
 /**
  * Where the patient usually goes after the intervention — a pre-fill, always
  * editable: ambulatory for minor or intermediate surgery with a low bleeding
  * and cardiac risk, lasting 1 h 30 or less (the day-case criterion of the attention points), in an adult or a child (not a
- * newborn), outside emergencies; intensive care after the operations listed
- * above; hospitalisation otherwise.
+ * newborn), outside emergencies; intensive care or continuous monitoring
+ * after the operations listed above; hospitalisation otherwise.
  */
 function usualSetting(s: (typeof SURGERY_CATALOG)[number]): SurgeryItem["setting"] {
   if (ICU_AFTER.test(s.name)) return "icu";
+  if (HDU_AFTER.test(s.name) && s.population !== "neonate") return "hdu";
   const ambulatory =
     s.grade !== "major" &&
     (s.bleedingRisk === "minimal" || s.bleedingRisk === "low") &&

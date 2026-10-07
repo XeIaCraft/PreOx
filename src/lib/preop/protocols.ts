@@ -198,6 +198,19 @@ export interface ProtocolMatchItem {
   family?: string;
   approach?: string;
   population?: string;
+  }
+
+/** Approaches that need a general anaesthesia (pneumoperitoneum, robot, one-lung ventilation). */
+const GENERAL_ONLY_APPROACHES = new Set(["laparoscopic", "robotic", "thoracoscopic"]);
+
+/** Whether a protocol's techniques can fit the intervention: a spinal-only protocol can't for a laparoscopy. */
+export function protocolFitsTechniques(techniques: string[], item: Pick<ProtocolMatchItem, "approach" | "category"> | undefined): boolean {
+  if (!item || techniques.length === 0) return true;
+  // Another technique is often a valid alternative (spinal or general for an open hernia): only a
+  // laparoscopy, a robot or a thoracoscopy rules out a protocol without general anaesthesia.
+  // Robot-assisted orthopaedics (knee, hip) has no pneumoperitoneum.
+  const generalOnly = item.approach && GENERAL_ONLY_APPROACHES.has(item.approach) && !(item.approach === "robotic" && item.category === "K");
+  return !generalOnly || techniques.includes("general");
 }
 
 // Words that name an approach or a population in a protocol's name.
@@ -249,6 +262,8 @@ export function matchProtocol(protocols: Protocol[], surgery: { name: string; ca
     const covered = protocolCovers(p.id, item);
     // Most of what the intervention is must be in the protocol, unless it is written for a variant of it.
     if (!sameItem && !sameFamily && !covered && shared / target.size <= 0.5) continue;
+    // A protocol written or listed for another technique (a spinal for a laparoscopy) does not apply.
+    if (!sameItem && !protocolFitsTechniques(p.content.techniques, item)) continue;
     const forChild = CHILD_TERMS.test(text) || written?.population === "child" || written?.population === "neonate";
     let score = shared / target.size;
     if (sameItem) score += 2;
@@ -260,7 +275,9 @@ export function matchProtocol(protocols: Protocol[], surgery: { name: string; ca
       if (approach === item.approach || named.includes(item.approach)) score += 0.3;
       else if (named.length > 0 || (approach && sameFamily)) score -= 0.3;
     }
-    if (item && forChild) score += child ? 0.5 : -1;
+    // A children's protocol never applies to an adult intervention of the catalogue.
+    if (item && forChild && !child && !covered && !sameItem) continue;
+    if (item && forChild) score += 0.5;
     else if (child && !forChild) score -= 0.6;
     score += (p.hospital && h ? 0.5 : 0) + (p.operation_category && p.operation_category === surgery.category ? 0.1 : 0);
     if (!best || score > best.score) best = { p, score };

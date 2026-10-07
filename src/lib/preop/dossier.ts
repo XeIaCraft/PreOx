@@ -317,7 +317,7 @@ export interface Surgery {
   position: string;
   /** Catalogue entry it was picked from (Paramètres › Interventions): its protocol and usual technique. */
   catalogId?: string;
-  setting?: "ambulatory" | "inpatient" | "icu";
+  setting?: "ambulatory" | "inpatient" | "hdu" | "icu";
   tourniquet?: boolean;
 }
 

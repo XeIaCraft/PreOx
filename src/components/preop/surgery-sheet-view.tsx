@@ -20,7 +20,9 @@ import { cn } from "@/lib/utils";
 // the conditions that call for them, where the patient goes after, the
 // bleeding risk and what it implies, and the protocol that applies.
 
-const SETTING_LABEL = { ambulatory: "Ambulatoire", inpatient: "Hospitalisation", icu: "Soins intensifs" } as const;
+const SETTING_LABEL = { ambulatory: "Ambulatoire", inpatient: "Hospitalisation", hdu: "Soins intermédiaires", icu: "Soins intensifs" } as const;
+/** The protocol's post-operative destination, in the catalogue's terms. */
+const DESTINATION_SETTING = { ambulatory: "ambulatory", ward: "inpatient", hdu: "hdu", icu: "icu" } as const;
 
 function hint(x: SurgeryItem): string {
   const approach = x.approach ? APPROACHES.find((a) => a.code === x.approach)?.short : "";
@@ -97,8 +99,14 @@ function Sheet({ surgery: s, protocol }: { surgery: SurgeryItem; protocol: Proto
   const sheet = useMemo(() => surgerySheet(s), [s]);
   const bleeding = BLEEDING_RISKS.find((b) => b.code === s.bleedingRisk);
   const plan = protocol?.content;
-  const destination = plan?.postopPlan?.destination ? POSTOP_DESTINATIONS.find((d) => d.code === plan.postopPlan!.destination)?.label : s.setting ? SETTING_LABEL[s.setting] : undefined;
-  const techniques = (plan?.techniques.length ? plan.techniques : (s.techniques ?? [])).map((t) => TECHNIQUES.find((x) => x.code === t)?.label ?? t);
+  // The intervention's own usual technique and destination (Paramètres › Interventions) come first:
+  // a protocol often covers a whole family (open and laparoscopic, day case or not).
+  const destination = s.setting ? SETTING_LABEL[s.setting] : undefined;
+  const techniqueLabel = (t: string) => TECHNIQUES.find((x) => x.code === t)?.label ?? t;
+  const techniques = (s.techniques?.length ? s.techniques : (plan?.techniques ?? [])).map(techniqueLabel);
+  const planDestination = plan?.postopPlan?.destination;
+  const destinationDiffers = !!planDestination && !!s.setting && DESTINATION_SETTING[planDestination] !== s.setting;
+  const techniquesDiffer = !!plan?.techniques.length && !!s.techniques?.length && plan.techniques.slice().sort().join() !== s.techniques.slice().sort().join();
   const antibio = plan?.drugs.filter((d) => d.phase === "antibio") ?? [];
   const specifics = [...(s.specifics ?? []), ...(s.approach ? (APPROACH_SPECIFICS[s.approach] ?? []) : [])];
   const always = sheet.exams.filter((e) => e.always);
@@ -110,7 +118,7 @@ function Sheet({ surgery: s, protocol }: { surgery: SurgeryItem; protocol: Proto
         <Fact label="Grade (KCE)" value={SURGERY_GRADES.find((g) => g.code === s.grade)?.label ?? "—"} />
         <Fact label="Risque cardiaque (ESC)" value={RISK_GRADES.find((r) => r.code === s.cardiacRisk)?.label ?? "—"} tone={s.cardiacRisk === "high" ? "danger" : undefined} />
         <Fact label="Risque hémorragique" value={bleeding?.label ?? "—"} tone={s.bleedingRisk === "high" ? "danger" : undefined} />
-        <Fact label="Destination" value={destination ?? "Selon le patient"} tone={destination === "Soins intensifs" || destination === "Soins intermédiaires" ? "accent" : undefined} />
+        <Fact label="Destination" value={destination ?? (planDestination ? POSTOP_DESTINATIONS.find((d) => d.code === planDestination)?.label : "Selon le patient")} tone={s.setting === "icu" || s.setting === "hdu" ? "accent" : undefined} />
         {s.durationHours !== undefined && <Fact label="Durée indicative" value={`${String(s.durationHours).replace(".", ",")} h`} />}
         {s.position && <Fact label="Position" value={s.position} />}
         {techniques.length > 0 && <Fact label="Technique" value={techniques.join(", ")} />}
@@ -166,6 +174,14 @@ function Sheet({ surgery: s, protocol }: { surgery: SurgeryItem; protocol: Proto
 
       {plan && (
         <Panel title={`Protocole : ${protocol.name}`}>
+          {(techniquesDiffer || destinationDiffers) && (
+            <p className="text-xs text-foreground-muted">
+              Protocole commun à plusieurs interventions : il prévoit
+              {techniquesDiffer ? ` ${plan.techniques.map(techniqueLabel).join(" ou ").toLowerCase()}` : ""}
+              {techniquesDiffer && destinationDiffers ? " et" : ""}
+              {destinationDiffers ? ` une sortie en ${POSTOP_DESTINATIONS.find((d) => d.code === planDestination)?.label.toLowerCase()}` : ""} — la fiche suit l&apos;intervention.
+            </p>
+          )}
           <dl className="grid gap-2 text-sm sm:grid-cols-2">
             {antibio.length > 0 && (
               <div>

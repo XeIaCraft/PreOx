@@ -104,7 +104,8 @@ export interface AllergenItem extends Verifiable {
 
 export type BleedingRisk = "minimal" | "low" | "high";
 
-export type CareSetting = "ambulatory" | "inpatient" | "icu";
+/** Where the patient goes after: day case, ward, high-dependency unit (soins intermédiaires, surveillance continue), intensive care. */
+export type CareSetting = "ambulatory" | "inpatient" | "hdu" | "icu";
 
 export interface SurgeryItem extends Verifiable {
   id: string;

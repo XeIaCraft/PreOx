@@ -359,7 +359,8 @@ function AllergenForm({ item, onChange }: { item: AllergenItem; onChange: (i: Al
 const SETTINGS: { code: CareSetting; label: string }[] = [
   { code: "ambulatory", label: "Ambulatoire" },
   { code: "inpatient", label: "Hospitalisation" },
-  { code: "icu", label: "Soins intensifs après" },
+  { code: "hdu", label: "Soins intermédiaires" },
+  { code: "icu", label: "Soins intensifs" },
 ];
 
 function SurgeryForm({ item, onChange, protocols }: { item: SurgeryItem; onChange: (i: SurgeryItem) => void; protocols: Protocol[] }) {

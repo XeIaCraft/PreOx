@@ -119,7 +119,7 @@ export function surgerySheet(s: SurgeryItem): SurgerySheet {
   // --- Whatever the grid ---------------------------------------------------------------
   add("haemostasis", "consider", "Trouble de l'hémostase connu, ou patient anticoagulé (effet selon la molécule)", KCE_280);
   add("hba1c", "recommended", "Diabétique sans HbA1c dans les 3 derniers mois (jamais chez le non-diabétique)", KCE_280);
-  if (s.sex !== "M") add("pregnancy", "consider", "Femme de 12 à 55 ans : proposer, avec son accord", NICE_NG45);
+  if (s.sex !== "M" && s.population !== "neonate") add("pregnancy", "consider", "Femme de 12 à 55 ans : proposer, avec son accord", NICE_NG45);
 
   // --- ESC 2022 (non-cardiac surgery) ------------------------------------------------------
   if (!cardiac && (s.cardiacRisk === "intermediate" || s.cardiacRisk === "high")) {

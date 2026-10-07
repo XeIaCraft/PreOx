@@ -54,7 +54,7 @@ const surgery = z.object({
   durationHours: z.number().min(0).max(48).optional(),
   techniques: z.array(z.enum(["neuraxial", "deep_block", "superficial_block", "general", "sedation"])).max(5).optional(),
   protocolId: z.uuid().optional(),
-  setting: z.enum(["ambulatory", "inpatient", "icu"]).optional(),
+  setting: z.enum(["ambulatory", "inpatient", "hdu", "icu"]).optional(),
   tourniquet: z.boolean().optional(),
   closedSpace: z.boolean().optional(),
   examProfile: z
