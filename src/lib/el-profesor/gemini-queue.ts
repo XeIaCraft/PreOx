@@ -21,6 +21,27 @@ const MAX_QUOTA_ATTEMPTS = 20;
 /** Attempts for any other error. */
 const MAX_OTHER_ATTEMPTS = 2;
 
+/**
+ * After a quota or capacity answer, the whole queue waits before trying
+ * again — 10 min, then 30, then 60 as refusals pile up. Before this, every
+ * tick (every 5 min) still downloaded a chapter's PDFs from Supabase only to
+ * be refused by Gemini: thousands of wasted downloads, the project's storage
+ * egress over its free quota.
+ */
+async function quotaPauseUntil(supabase: ReturnType<typeof createAdminClient>): Promise<Date | null> {
+  const { data } = await supabase.from("el_profesor_gemini_usage_log").select("called_at, success, status_code").order("called_at", { ascending: false }).limit(60);
+  const calls = data ?? [];
+  let streak = 0;
+  for (const c of calls) {
+    if (c.success || (c.status_code !== 429 && c.status_code !== 503)) break;
+    streak++;
+  }
+  if (streak === 0) return null;
+  const minutes = streak < 5 ? 10 : streak < 30 ? 30 : 60;
+  const until = new Date(new Date(calls[0].called_at).getTime() + minutes * 60_000);
+  return until.getTime() > Date.now() ? until : null;
+}
+
 /** Minutes before the next try after `attempts` quota refusals: 15, 30, 60, then every 3 h. */
 export function quotaBackoffMinutes(attempts: number): number {
   return attempts <= 1 ? 15 : attempts === 2 ? 30 : attempts === 3 ? 60 : 180;
@@ -34,6 +55,8 @@ export interface GeminiQueueRunSummary {
   postponed: number;
   failed: number;
   remaining: number;
+  /** Set when the run was skipped because Gemini answered « quota » just before: when it resumes. */
+  pausedUntil?: string;
 }
 
 /**
@@ -53,6 +76,12 @@ export async function processGeminiQueue({ budgetMs = 240_000, startBeforeMs = 1
     .update({ status: "waiting", started_at: null })
     .eq("status", "running")
     .lt("started_at", new Date(Date.now() - STUCK_RUNNING_MS).toISOString());
+
+  const pause = await quotaPauseUntil(supabase);
+  if (pause) {
+    const { count } = await supabase.from("el_profesor_gemini_queue").select("chapter_id", { count: "exact", head: true }).neq("status", "failed");
+    return { ...summary, remaining: count ?? 0, pausedUntil: pause.toISOString() };
+  }
 
   while (Date.now() - started < Math.min(budgetMs, startBeforeMs)) {
     const { data: next } = await supabase

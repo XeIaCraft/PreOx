@@ -90,6 +90,10 @@ export async function runGeminiQueueNow(): Promise<ActionState> {
   await requireElProfesorAdmin();
   const summary = await processGeminiQueue({ budgetMs: 240_000, startBeforeMs: 120_000 });
   revalidatePath("/apps/el-profesor");
+  if (summary.pausedUntil)
+    return {
+      success: `Quota Gemini atteint : la file est en pause jusque vers ${new Date(summary.pausedUntil).toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Brussels" })} (rien n'est téléchargé en attendant). ${summary.remaining} chapitre(s) en file.`,
+    };
   if (summary.processed === 0) return { success: summary.remaining ? `${summary.remaining} chapitre(s) en attente du prochain essai.` : "File vide." };
   return {
     success: `File Gemini : ${summary.succeeded} extrait(s)${summary.postponed ? `, ${summary.postponed} reporté(s)` : ""}${summary.failed ? `, ${summary.failed} en échec` : ""}${summary.remaining ? ` ; ${summary.remaining} encore en file (suite automatique)` : ""}.`,

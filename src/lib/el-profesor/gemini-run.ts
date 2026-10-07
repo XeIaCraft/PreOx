@@ -55,8 +55,8 @@ export async function buildNeighbourContext(supabase: SupabaseClient<Database>, 
       if (!neighbour) continue;
       const lines = [`Partie ${where} : « ${neighbour.title} »`];
       if (neighbour.source_kind === "pdf" && neighbour.pdf_storage_path) {
-        const pages = await extractPdfPageTexts(await downloadChapterPdfBytes(neighbour.pdf_storage_path)).catch(() => null);
-        const text = (where === "précédente" ? pages?.at(-1) : pages?.[0])?.replace(/\s+/g, " ").trim();
+        const edges = await chapterTextEdges(supabase, neighbour.id, neighbour.pdf_storage_path);
+        const text = where === "précédente" ? edges?.tail : edges?.head;
         if (text) lines.push(where === "précédente" ? `Fin de son texte : « …${text.slice(-NEIGHBOUR_TEXT_CHARS)} »` : `Début de son texte : « ${text.slice(0, NEIGHBOUR_TEXT_CHARS)}… »`);
       }
       const covered = await getChapterContent(neighbour.id, true, supabase).catch(() => []);
@@ -68,6 +68,24 @@ export async function buildNeighbourContext(supabase: SupabaseClient<Database>, 
   } catch {
     return "";
   }
+}
+
+/**
+ * The start and end of a PDF chapter's text, kept on the chapter row
+ * (migration 097) so the neighbour context of the queue doesn't download two
+ * PDFs on every pass — that was most of the project's storage egress. Read
+ * from the row when there; else extracted once from the PDF and stored.
+ * Works without the migration too (then it downloads, as before).
+ */
+async function chapterTextEdges(supabase: SupabaseClient<Database>, chapterId: string, storagePath: string): Promise<{ head: string; tail: string } | null> {
+  const { data: cached, error } = await supabase.from("el_profesor_chapters").select("text_head, text_tail").eq("id", chapterId).maybeSingle();
+  if (!error && cached?.text_head != null && cached.text_tail != null) return { head: cached.text_head, tail: cached.text_tail };
+  const pages = await extractPdfPageTexts(await downloadChapterPdfBytes(storagePath)).catch(() => null);
+  if (!pages?.length) return null;
+  const clean = (t: string | undefined) => (t ?? "").replace(/\s+/g, " ").trim();
+  const edges = { head: clean(pages[0]).slice(0, NEIGHBOUR_TEXT_CHARS), tail: clean(pages.at(-1)).slice(-NEIGHBOUR_TEXT_CHARS) };
+  if (!error) await supabase.from("el_profesor_chapters").update({ text_head: edges.head, text_tail: edges.tail }).eq("id", chapterId);
+  return edges;
 }
 
 export type GeminiRunResult =

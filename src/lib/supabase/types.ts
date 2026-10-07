@@ -305,6 +305,9 @@ export type ElProfesorChapterRow = {
   estimated_remaining_passes: number | null;
   source_kind: ElProfesorChapterSourceKind;
   source_text: string | null;
+  /** Start and end of a PDF chapter's text (migration 097), for the neighbour context of the Gemini queue. */
+  text_head?: string | null;
+  text_tail?: string | null;
   created_at: string;
   updated_at: string;
 };

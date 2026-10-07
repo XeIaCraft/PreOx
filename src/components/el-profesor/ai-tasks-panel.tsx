@@ -14,7 +14,8 @@ import type { AiActivity, AiTaskItem, AiTaskKind } from "@/lib/el-profesor/ai-ac
 // processed or waiting, and errors — and a panel listing them, with
 // « Relancer » for what failed or came out of the queue. Read live from the
 // server (fetch, not a Server Action, so it never waits behind a long queue
-// run) every 30 s while the page is visible, every 8 s while the panel is open.
+// run) every 2 min while the page is visible, every 20 s while the panel is open
+// (each check is a few database requests: kept rare for the free quota).
 
 const KIND_LABEL: Record<AiTaskKind, string> = { extraction: "Extraction", complementary: "Complément", split: "Division" };
 const BATCH_KIND_LABEL: Record<string, string> = {
@@ -24,8 +25,8 @@ const BATCH_KIND_LABEL: Record<string, string> = {
   contradiction_check: "Détection de contradictions",
   notion_update_check: "Mise à jour depuis une source externe",
 };
-const POLL_MS = 30_000;
-const POLL_OPEN_MS = 8_000;
+const POLL_MS = 120_000;
+const POLL_OPEN_MS = 20_000;
 
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
