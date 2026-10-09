@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Activity, BookMarked, ClipboardList, FolderOpen, Loader2, NotebookTabs, Settings2, Sparkles, Stethoscope } from "lucide-react";
+import { Activity, BookMarked, ClipboardList, FolderOpen, Loader2, NotebookTabs, Pill, Settings2, Sparkles, Stethoscope } from "lucide-react";
 import { AiSettings } from "@/components/preop/ai-assistant";
 import { ConsultationView } from "@/components/preop/consultation";
 import { DossierList } from "@/components/preop/dossiers";
@@ -20,16 +20,18 @@ import { SettingsView } from "@/components/preop/settings";
 import { ServicePrefsPanel } from "@/components/preop/service-prefs-panel";
 import { PlanListsSettings } from "@/components/preop/plan-lists-settings";
 import { SurgerySheetView } from "@/components/preop/surgery-sheet-view";
+import { TreatmentsGuideView } from "@/components/preop/treatments-guide-view";
 import { emptyDossier, withAutoStatus } from "@/lib/preop/dossier";
 import type { QuestionInput } from "@/lib/preop/rules/question";
 import { cn } from "@/lib/utils";
 
-type View = "consultation" | "dossiers" | "dossier" | "fiches" | "protocoles" | "regles" | "nouvelle" | "parametres" | "ia" | "bloc";
+type View = "consultation" | "dossiers" | "dossier" | "fiches" | "traitements" | "protocoles" | "regles" | "nouvelle" | "parametres" | "ia" | "bloc";
 
 const TABS: { view: View; label: string; short: string; icon: typeof Stethoscope }[] = [
   { view: "consultation", label: "Consultation", short: "Consult.", icon: Stethoscope },
   { view: "dossiers", label: "Dossiers", short: "Dossiers", icon: FolderOpen },
   { view: "fiches", label: "Fiches interventions", short: "Fiches", icon: ClipboardList },
+  { view: "traitements", label: "Traitements", short: "Trait.", icon: Pill },
   { view: "parametres", label: "Paramètres", short: "Réglages", icon: Settings2 },
 ];
 
@@ -42,7 +44,7 @@ const SETTINGS_SECTIONS: { view: View; label: string; icon: typeof Stethoscope }
   { view: "ia", label: "Assistant IA", icon: Sparkles },
 ];
 
-const VIEWS: View[] = ["consultation", "dossiers", "dossier", "fiches", "protocoles", "regles", "nouvelle", "parametres", "ia", "bloc"];
+const VIEWS: View[] = ["consultation", "dossiers", "dossier", "fiches", "traitements", "protocoles", "regles", "nouvelle", "parametres", "ia", "bloc"];
 
 /**
  * The "Préop" module, one client-side app: the consultation (kept only if
@@ -111,7 +113,7 @@ function PreopScreens() {
             {error ? <span className="text-danger">{error}</span> : `${rules.filter((r) => r.status === "active").length} règle(s) · ${protocolLib.protocols.length} protocole(s)`}
           </span>
         </div>
-        <nav className="grid grid-cols-4 gap-1 sm:flex" aria-label="Sections">
+        <nav className="grid grid-cols-5 gap-1 sm:flex" aria-label="Sections">
           {TABS.map((t) => (
             <button
               key={t.view}
@@ -199,6 +201,7 @@ function PreopScreens() {
         ))}
 
       {view === "fiches" && <SurgerySheetView protocols={protocolLib.protocols} />}
+      {view === "traitements" && <TreatmentsGuideView rules={rules} />}
 
       {activeTab === "parametres" && (
         <nav className="flex gap-1 overflow-x-auto border-b border-border pb-2" aria-label="Paramètres">
