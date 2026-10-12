@@ -147,6 +147,8 @@ export interface SheetPhase {
   recommendations: SheetLine[];
   patients: ProfileNote[];
   cards: CiCard[];
+  /** What is recommended for the chosen technique and is not already in the protocol. */
+  recommended: SheetDrug[];
 }
 
 // ---------------------------------------------------------------------------
@@ -644,7 +646,7 @@ function fallbackInduction(c: Ctx): SheetLine {
 
 function phaseInduction(c: Ctx, drugs: ProtocolDrug[]): SheetPhase | null {
   if (!c.general && !c.sedation && !drugs.length && !c.gaFallback) return null;
-  const lines: SheetLine[] = c.gaFallback ? [fallbackInduction(c)] : c.gaManual ? [{ ...fallbackInduction(c), text: fallbackInduction(c).text.replace(/^Si AG : /, "Pas d'AG dans le protocole, doses du manuel : ") }] : [];
+  const lines: SheetLine[] = c.gaFallback ? [fallbackInduction(c)] : [];
   const recommendations: SheetLine[] = [
     c.child
       ? { text: "Jeûne de l'enfant : liquides clairs jusqu'à 1 h, lait maternel 3 h (ESAIC 2022) ; lait artificiel, autres laits et solides 6 h (manuel) ; un petit-déjeuner léger bien encadré semble bien toléré.", refs: ["fastingChildren2022", "manual"], chapter: "chap. 37" }
@@ -660,7 +662,6 @@ function phaseInduction(c: Ctx, drugs: ProtocolDrug[]): SheetPhase | null {
 function phaseMaintenance(c: Ctx, drugs: ProtocolDrug[]): SheetPhase | null {
   if (!c.general && !c.sedation && !drugs.length && !c.gaFallback) return null;
   const lines: SheetLine[] = [];
-  if (c.gaManual) lines.push({ text: "Sévoflurane autour de 1 CAM corrigée pour l'âge ou AIVOC propofol–rémifentanil.", refs: ["manual"], chapter: "chap. 4 et 22" });
   if (c.gaFallback)
     lines.push({ text: "Si AG : sévoflurane autour de 1 CAM corrigée pour l'âge ou AIVOC propofol–rémifentanil ; mêmes cibles hémodynamiques ; sans ALR, prévoir l'épargne morphinique (ou un bloc périphérique).", refs: ["manual"], chapter: "chap. 4 et 22" });
   const gases = c.plan?.gases;
@@ -812,6 +813,7 @@ function phase(code: PhaseCode, summary: string, parts: Partial<Omit<SheetPhase,
     recommendations: parts.recommendations ?? [],
     patients: parts.patients ?? [],
     cards: parts.cards ?? [],
+    recommended: parts.recommended ?? [],
   };
 }
 
@@ -827,6 +829,102 @@ function relevant(n: ProfileNote, c: Ctx): boolean {
 }
 
 /** The anaesthesia of a procedure, phase by phase — with its protocol when one applies. */
+// ---------------------------------------------------------------------------
+// What is recommended for the technique (when the protocol does not say)
+// ---------------------------------------------------------------------------
+
+type Rec = { name: string; dose: string; note?: string; route?: string; ref?: string };
+
+function recommendedFor(c: Ctx, code: PhaseCode): Rec[] {
+  const child = c.child;
+  const elderly = " ; 1–1,5 mg/kg chez la personne âgée ou fragile";
+  const sedation: Rec[] = [
+    { name: "Propofol (sédation)", dose: child ? "0,5–1 mg/kg titré" : "bolus de 10–20 mg ou AIVOC 0,5–1,5 µg/ml", note: "Sédation si besoin : patient réveillable, capnographie.", route: "aivoc", ref: "Propofol" },
+    { name: "Midazolam", dose: child ? "0,05–0,1 mg/kg" : "0,5–1 mg, à répéter (prudence chez l'âgé)", note: "Anxiolyse ; éviter chez l'âgé fragile (délirium).", ref: "Midazolam" },
+    { name: "Dexmédétomidine", dose: "0,2–0,7 µg/kg/h (± charge 0,5–1 µg/kg en 10 min)", note: "Sédation sans dépression respiratoire ; bradycardie, hypotension.", route: "pse", ref: "Dexmédétomidine" },
+  ];
+  const vaso: Rec[] = [
+    { name: "Phényléphrine", dose: "bolus 50–100 µg ou perfusion", note: "Hypotension après la rachianesthésie (fréquence normale ou rapide).", ref: "Phényléphrine" },
+    { name: "Éphédrine", dose: "bolus 3–9 mg", note: "Hypotension avec bradycardie.", ref: "Éphédrine" },
+  ];
+  if (code === "technique") {
+    if (c.neuraxial && !c.general)
+      return [
+        { name: "Bupivacaïne 0,5 % hyperbare", dose: "dose selon le niveau recherché et la durée (voir le manuel)", note: "Rachianesthésie en ponction unique ; aiguille pointe-crayon 25–27 G.", route: "intrathecal", ref: "Bupivacaïne" },
+        { name: "Sufentanil intrathécal", dose: "2,5–5 µg", note: "Adjuvant : meilleure qualité du bloc, sans prolonger le bloc moteur." },
+        { name: "Morphine intrathécale", dose: child ? "4–5 µg/kg" : "100 µg (50–150)", note: "Chirurgie douloureuse : analgésie 12–24 h ; surveillance respiratoire 24 h.", route: "intrathecal", ref: "Morphine" },
+      ];
+    if ((c.deepBlock || c.superficialBlock) && !c.general)
+      return [
+        { name: "Ropivacaïne", dose: "0,5–0,75 % pour l'anesthésie, 0,2 % pour l'analgésie ; dose maximale 3 mg/kg", note: "Bloc échoguidé, aspiration et injection fractionnée.", route: "perinerveux", ref: "Ropivacaïne" },
+        { name: "Dexaméthasone (périnerveuse ou IV)", dose: "4 mg périnerveux ou 0,1–0,2 mg/kg IV", note: "Prolonge le bloc d'environ 8 h.", ref: "Dexaméthasone" },
+      ];
+    return [];
+  }
+  if (code === "induction") {
+    if (!c.general) return [];
+    const airway = c.airway;
+    const out: Rec[] = [
+      { name: "Propofol", dose: child ? "2,5–5 mg/kg" : `2–3 mg/kg${elderly}`, note: "Hypnotique de référence.", route: "bolus_iv", ref: "Propofol" },
+      { name: "Étomidate", dose: "0,2–0,3 mg/kg", note: "Si instabilité hémodynamique (choc, cardiopathie sévère).", ref: "Étomidate" },
+      { name: "Kétamine", dose: "1–2 mg/kg", note: "Choc, tamponnade, asthme sévère.", ref: "Kétamine" },
+      { name: "Sufentanil", dose: child ? "0,1–0,3 µg/kg" : "0,2–0,5 µg/kg", note: "Ou rémifentanil en AIVOC.", ref: "Sufentanil" },
+    ];
+    if (airway.rsi) {
+      out.push({ name: "Rocuronium", dose: "1,2 mg/kg (poids idéal)", note: "Séquence rapide ; sugammadex 16 mg/kg prêt.", ref: "Rocuronium" });
+      out.push({ name: "Suxaméthonium (succinylcholine)", dose: "1 mg/kg (poids réel)", note: "Alternative en séquence rapide, sauf contre-indication (hyperkaliémie, HM, myopathie).", ref: "Suxaméthonium" });
+    } else if (airway.device === "ett") out.push({ name: "Rocuronium", dose: "0,6 mg/kg (poids idéal)", note: "Intubation.", ref: "Rocuronium" });
+    else if (airway.device === "lma_or_ett") out.push({ name: "Rocuronium", dose: "0,6 mg/kg si intubation", note: "Masque laryngé : pas de curare nécessaire.", ref: "Rocuronium" });
+    return out;
+  }
+  if (code === "maintenance") {
+    if (c.general)
+      return [
+        ...(c.plan?.gases ? [] : [{ name: "Sévoflurane", dose: "≈ 1 CAM corrigée pour l'âge (≈ 2 % à 40 ans), bas débit de gaz frais", note: "Entretien de référence." } as Rec,
+        { name: "Propofol (AIVOC)", dose: "cible 2–4 µg/ml selon l'EEG", note: "Plutôt qu'un halogéné si NVPO à risque élevé, HM ou chirurgie ORL/neuro ; EEG traité.", route: "aivoc", ref: "Propofol" }] as Rec[]),
+        { name: "Rémifentanil", dose: "0,1–0,25 µg/kg/min ou AIVOC", note: "Relais analgésique avant l'arrêt (hyperalgésie).", route: "pse", ref: "Rémifentanil" },
+        ...(c.airway.device === "ett" || c.airway.rsi
+          ? [
+              { name: "Sugammadex", dose: "2 mg/kg (2 réponses au TOF) ; 4 mg/kg (bloc profond)", note: "Décurarisation du rocuronium ; rapport TOF > 0,9 avant l'extubation.", ref: "Sugammadex" },
+              { name: "Néostigmine", dose: "40–50 µg/kg (max 5 mg) + atropine ou glycopyrrolate", note: "Seulement si rapport TOF > 0,2 (ESAIC 2023).", ref: "Néostigmine" },
+            ]
+          : []),
+      ];
+    if (c.sedation || c.neuraxial || c.deepBlock || c.superficialBlock) return [...sedation, ...(c.neuraxial ? vaso : [])];
+    return [];
+  }
+  if (code === "analgesia")
+    return [
+      { name: "Paracétamol", dose: child ? "15 mg/kg, 4 × / jour" : "1 g, 4 × / jour", ref: "Paracétamol" },
+      { name: child ? "Ibuprofène" : "Kétorolac", dose: child ? "10 mg/kg, 3 × / jour (pas avant 6 mois ni sous 10 kg)" : "30 mg IV en fin d'intervention", note: "Sauf insuffisance rénale, saignement ou ulcère.", ref: child ? "Ibuprofène" : "Kétorolac" },
+      ...(c.general && !c.neuraxial && !c.deepBlock ? [{ name: "Kétamine", dose: "0,15–0,5 mg/kg", note: "Épargne morphinique si chirurgie douloureuse ou opioïdes au long cours.", ref: "Kétamine" }] : []),
+      { name: "Morphine", dose: child ? "titration 20–50 µg/kg" : "titration 2–3 mg toutes les 5 min en SSPI", note: "Si l'analgésie multimodale ne suffit pas.", ref: "Morphine" },
+    ];
+  if (code === "ponv")
+    return [
+      { name: "Dexaméthasone", dose: child ? "0,15 mg/kg (max 8 mg)" : "4–8 mg à l'induction", ref: "Dexaméthasone" },
+      { name: "Ondansétron", dose: child ? "0,1 mg/kg (max 4 mg)" : "4 mg en fin d'intervention", ref: "Ondansétron" },
+      ...(child ? [] : [{ name: "Dropéridol", dose: "0,625–1,25 mg en fin d'intervention", note: "Troisième classe si risque élevé ; QT long : éviter.", ref: "Dropéridol" }]),
+    ];
+  return [];
+}
+
+function recommendedDrugs(c: Ctx, code: PhaseCode): SheetDrug[] {
+  const own = new Set((c.plan?.drugs ?? []).map((d) => firstWord(d.name)));
+  return recommendedFor(c, code)
+    .filter((r) => !own.has(firstWord(r.name)))
+    .map((r) => {
+      const ref = r.ref ? drugReferenceFor(r.ref) : undefined;
+      // A sedation keeps only the textbook's sedation doses (not the induction target).
+      const reference = !ref
+        ? []
+        : /sedation/.test(fold(r.name))
+          ? ref.doses.filter((d) => /sedation/.test(fold(d.label))).slice(0, 2).map((d) => `${d.label} : ${formatReferenceDose(d)}`)
+          : referenceDoses(ref, code, r.route);
+      return { name: r.name, dose: r.dose, note: r.note, reference };
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Technique chosen in the sheet: the whole sheet for that one technique
 // ---------------------------------------------------------------------------
@@ -907,6 +1005,12 @@ export function anaesthesiaSheet(s0: SurgeryItem, protocol0: Protocol | null, mo
     phasePosition(c),
     phasePostop(c),
   ].filter((p): p is SheetPhase => p !== null);
+
+  // What is recommended for the technique — a phase the protocol leaves empty still gets it.
+  for (const code of ["maintenance"] as PhaseCode[])
+    if (!phases.some((p) => p.code === code) && recommendedFor(c, code).length) phases.push(phase(code, c.neuraxial ? "Patient éveillé" : "Selon le patient", {}));
+  phases.sort((a, b) => PHASES.findIndex((x) => x.code === a.code) - PHASES.findIndex((x) => x.code === b.code));
+  for (const p of phases) p.recommended = recommendedDrugs(c, p.code);
 
   for (const p of phases) {
     const written = NOTES.filter((n) => n.phase === p.code && (!n.when || n.when(c))).map(({ profile, text, refs, chapter }) => ({ profile, text, refs, chapter }));

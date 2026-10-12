@@ -208,6 +208,14 @@ describe("examples", () => {
     expect(phase(general, "airway")!.lines[0].text).not.toMatch(/Si AG/);
     expect(phase(general, "induction")!.drugs.map((d) => d.name)).toContain("Propofol");
     expect(general.flatMap((p) => p.drugs.map((d) => d.name)).some((n) => /Bupivacaïne/.test(n))).toBe(false);
+    // What is recommended for each technique, without repeating the protocol.
+    const rec = (ph: SheetPhase[], code: SheetPhase["code"]) => phase(ph, code)?.recommended.map((d) => d.name) ?? [];
+    expect(rec(spinal, "technique")).toContain("Sufentanil intrathécal");
+    expect(rec(spinal, "technique")).not.toContain("Bupivacaïne 0,5 % hyperbare");
+    expect(rec(spinal, "maintenance")).toEqual(expect.arrayContaining(["Propofol (sédation)", "Phényléphrine"]));
+    expect(rec(general, "induction")).toEqual(expect.arrayContaining(["Étomidate", "Kétamine"]));
+    expect(rec(general, "induction")).not.toContain("Propofol");
+    expect(rec(general, "maintenance")).toContain("Sugammadex");
     // A thoracic epidural added to a general anaesthesia is not an anaesthesia of its own.
     const colectomy = sheetOf(/^Colectomie par laparotomie$/);
     const colProtocol = matchProtocol(protocols, { name: colectomy.s.name, category: colectomy.s.category, catalogId: colectomy.s.id }, "", surgeries);

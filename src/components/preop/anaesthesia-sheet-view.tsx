@@ -180,6 +180,22 @@ function PhaseView({ phase, open, onToggle, filter }: { phase: SheetPhase; open:
             )}
           </Section>
         )}
+        {phase.recommended.length > 0 && (
+          <Section title="Recommandé pour cette technique">
+            <ul className="space-y-1.5">
+              {phase.recommended.map((d) => (
+                <li key={d.name} className="rounded-[var(--radius-md)] border border-dashed border-border px-2.5 py-1.5">
+                  <p className="text-sm text-foreground">
+                    <span className="font-medium">{d.name}</span>
+                    <span className="text-foreground-muted"> — {d.dose}</span>
+                  </p>
+                  {d.note && <p className="text-xs text-foreground-muted">{d.note}</p>}
+                  {d.reference.length > 0 && <p className="text-[11px] text-foreground-subtle">Manuel 2020 : {d.reference.join(" ; ")}</p>}
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
         {phase.blocks.map((b) => (
           <Section key={b.title} title={b.title}>
             {b.items.map((it) => (
