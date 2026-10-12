@@ -264,7 +264,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Rocuronium",
     words: ["rocuronium", "esmeron"],
     chapter: "chap. 8",
-    doses: [pk("Intubation", 0.6, 1.2, "mg", { basis: "ideal", note: "Poids idéal chez l'obèse (chap. 44)." }), pk("Séquence rapide (contre-indication à la succinylcholine)", 0.9, 1.2, "mg", { basis: "ideal", note: "1,2 mg/kg : intubation après 90 s ; sugammadex 16 mg/kg prêt (chap. 41)." })],
+    doses: [pk("Intubation", 0.6, 1.2, "mg", { basis: "ideal", note: "Poids idéal chez l'obèse (chap. 44)." }), pk("Séquence rapide (contre-indication à la succinylcholine)", 0.9, 1.2, "mg", { basis: "ideal", note: "1,2 mg/kg : intubation après 90 s ; sugammadex 16 mg/kg prêt (chap. 9)." })],
     cautions: [
       { conditions: ["myasthenia", "hyperthyroidism", "hypothyroidism", "hyperparathyroidism", "hyperaldosteronism", "adrenal_insufficiency", "lambert_eaton"], level: "adapt", text: "réduire les doses (myasthénie, dysthyroïdie, dysparathyroïdie, hyperaldostéronisme, insuffisance surrénalienne) ; monitorage" },
       { atc: ["N03AB", "N03AF", "R03DA"], level: "adapt", text: "phénytoïne, carbamazépine ou théophylline au long cours : bloc moins intense" },
@@ -305,7 +305,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
     name: "Néostigmine",
     words: ["neostigmine", "prostigmine"],
     chapter: "chap. 9",
-    doses: [pk("Décurarisation (dès 2 réponses au TOF)", 0.04, 0.08, "mg", { note: "Avec atropine ou glycopyrrolate 0,02 mg/kg (max 1 mg)." })],
+    doses: [pk("Décurarisation (rapport TOF > 0,2)", 0.04, 0.08, "mg", { note: "Avec atropine ou glycopyrrolate 0,02 mg/kg (max 1 mg). ESAIC 2023 : seulement après une récupération spontanée avancée (rapport TOF > 0,2 ; le manuel 2020 disait dès 2 réponses au TOF), puis monitorage quantitatif jusqu'à un rapport TOF > 0,9 ; bloc plus profond au rocuronium : sugammadex." })],
     cautions: [
       { conditions: ["asthma", "copd"], level: "relative", text: "asthme ou BPCO spastique : bronchoconstriction" },
       { conditions: ["parkinson"], level: "relative", text: "maladie de Parkinson" },
@@ -411,7 +411,7 @@ export const DRUG_REFERENCES: DrugReference[] = [
   // --- Adjuvants d'épargne morphinique (tableau 7.5) ------------------------------------------------
   { name: "Dexaméthasone", words: ["dexamethasone"], chapter: "chap. 7, 12 et 23", doses: [pk("Début d'intervention (IV lent)", 0.1, 0.2, "mg", { note: "Prolonge aussi un bloc périphérique d'environ 8 h (chap. 12)." }), fx("Prévention des NVPO, à l'induction", 4, 8), fx("Périnerveuse (dose plafond)", 4, 4)], cautions: [{ conditions: ["diabetes_insulin", "diabetes_oral"], level: "adapt", text: "diabète : élévation de la glycémie" }] },
   { name: "Kétorolac", words: ["ketorolac", "taradyl"], chapter: "chap. 7, tableau 7.5", doses: [fx("Fin d'intervention", 30, 60)], cautions: [...NSAID_CAUTIONS, { conditions: ["porphyria"], level: "relative", text: "porphyrie : médicament porphyrinogène (chap. 35)" }] },
-  { name: "Ibuprofène", words: ["ibuprofene", "brufen", "nurofen", "perdophen"], chapter: "chap. 7 et 37", doses: [fx("Adulte, per os ou IV, 3×/j", 400, 600), pk("Enfant après 3 mois, 3×/j (chap. 37)", 10, 10, "mg")], cautions: NSAID_CAUTIONS },
+  { name: "Ibuprofène", words: ["ibuprofene", "brufen", "nurofen", "perdophen"], chapter: "chap. 7 et 37", doses: [fx("Adulte, per os ou IV, 3×/j", 400, 600), pk("Enfant d'au moins 6 mois et 10 kg, 3×/j (chap. 37)", 10, 10, "mg")], cautions: NSAID_CAUTIONS },
   { name: "Diclofénac", words: ["diclofenac", "voltaren"], chapter: "chap. 7", doses: [fx("Adulte, 2–3×/j", 50, 75)], cautions: NSAID_CAUTIONS },
   { name: "Énoxaparine", onlyInPlan: true, words: ["enoxaparine", "clexane", "hbpm"], chapter: "chap. 13 et 15", doses: [fx("Thromboprophylaxie, 1×/j", 40, 40, "mg", { note: "Clairance < 30 mL/min : 20 mg/j ; > 120 kg : 40 mg 2×/j selon le protocole." }), pk("Dose curative, 2×/j", 1, 1, "mg")], cautions: [{ conditions: ["hit_history"], level: "contraindicated", text: "antécédent de TIH : pas d'héparine (fondaparinux)" }, { conditions: ["ckd", "dialysis"], level: "adapt", text: "clairance < 30 mL/min : accumulation, 20 mg/j en prophylaxie ou HNF" }, { atc: ["B01AF", "B01AE", "B01AA"], level: "relative", text: "anticoagulant oral en cours : pas de double anticoagulation" }] },
   { name: "Métoclopramide", words: ["metoclopramide", "primperan"], chapter: "chap. 23", doses: [fx("NVPO, lent", 10, 10)], cautions: [{ conditions: ["parkinson"], level: "contraindicated", text: "maladie de Parkinson : antidopaminergique" }, { conditions: ["pheochromocytoma"], level: "contraindicated", text: "phéochromocytome : crise hypertensive" }, { conditions: ["epilepsy"], level: "relative", text: "épilepsie : abaisse le seuil épileptogène" }] },

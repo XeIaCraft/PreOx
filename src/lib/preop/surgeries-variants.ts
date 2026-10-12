@@ -4,7 +4,7 @@
 // Same conventions as surgeries.ts (grade after the KCE 280 / NICE examples,
 // ESC 2022 cardiac risk, bleeding risk, Lee item, ARISCAT incision); the
 // approach itself is described after the Manuel pratique d'anesthésie 2020
-// (chap. 30: laparoscopy; chap. 19: positions; chap. 26: one-lung
+// (chap. 30: laparoscopy; chap. 19: positions; chap. 28: one-lung
 // ventilation; chap. 37: children). Every value stays editable in
 // Paramètres › Interventions.
 
@@ -55,7 +55,7 @@ export const APPROACH_SPECIFICS: Partial<Record<Approach, string[]>> = {
   transoral: ["Voies aériennes partagées avec le chirurgien : intubation nasale ou sonde armée, extubation prudente (œdème, saignement)"],
 };
 
-export const APPROACH_SOURCE = `${MANUAL}, chap. 30 (laparoscopie), 19 (positions) et 26 (ventilation unipulmonaire)`;
+export const APPROACH_SOURCE = `${MANUAL}, chap. 30 (laparoscopie), 19 (positions) et 28 (ventilation unipulmonaire)`;
 
 // ---------------------------------------------------------------------------
 // Deriving approach, sex, population and family for the existing entries

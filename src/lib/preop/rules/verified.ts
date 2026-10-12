@@ -13,6 +13,8 @@
 // - Lithium: Dominicus et al., Bipolar Disord 2026 (full text, PMC).
 // - Hereditary angioedema: WAO/EAACI 2021 (full text, PMC); COVID-19 timing
 //   (Anaesthesia 2022) and adrenal insufficiency (Anaesthesia 2020): abstracts.
+// - October 2026: adult fasting consensus (Anaesthesia 2026), EMHG 2021
+//   malignant hyperthermia and SOAP 2021 obstetric thrombocytopenia: abstracts.
 
 import type { Condition, Rule, RuleSource } from "./types";
 
@@ -26,6 +28,7 @@ const id = (n: number) => `5f1c0a10-0003-4000-8000-${String(n).padStart(12, "0")
 const guideline = (n: number) => `5f1c0a10-0001-4000-8000-${String(n).padStart(12, "0")}`;
 const manual = (n: number) => `5f1c0a10-0002-4000-8000-${String(n).padStart(12, "0")}`;
 const treatmentDraft = (n: number) => `5f1c0a10-0005-4000-8000-${String(n).padStart(12, "0")}`;
+const maparDraft = (n: number) => `5f1c0a10-0007-4000-8000-${String(n).padStart(12, "0")}`;
 
 const ESC_2022 = {
   organisation: "ESC (avec l'ESAIC)",
@@ -686,7 +689,75 @@ const ANTECEDENTS: Verified[] = [
   }),
 ];
 
-export const VERIFIED_RULES: Verified[] = [...ALR, ...SURGERY, ...TREATMENTS, ...LITHIUM, ...ANTECEDENTS];
+// ---------------------------------------------------------------------------
+// Checked in October 2026 (abstracts read on PubMed): adult fasting
+// (international consensus, Anaesthesia 2026), malignant hyperthermia (EMHG
+// 2021) and obstetric thrombocytopenia (SOAP 2021).
+// ---------------------------------------------------------------------------
+
+const VERIFIED_OCT = "2026-10-11T00:00:00.000Z";
+const REVIEW_OCT = "2027-10-11";
+const october = (...args: Parameters<typeof rule>): Verified => ({ ...rule(...args), verified_at: VERIFIED_OCT, review_at: REVIEW_OCT });
+
+const OCTOBER: Verified[] = [
+  october(93, {
+    title: "Jeûne de l'adulte : liquides clairs jusqu'à 2 h, solides 6 h",
+    statement: "Adulte : solides et liquides non clairs (lait, compléments, nutrition entérale) 6 h, repas gras abondant 8 h ou plus ; liquides clairs encouragés jusqu'à 2 h avant l'anesthésie ou la sédation, ou moins si un protocole du service le prévoit ; chewing-gum ou bonbon jusqu'au transfert ; réalimentation dès que possible.",
+    conditions: [{ kind: "value", value: "age", op: ">=", threshold: 16 }],
+    action: { type: "info", text: "Liquides clairs (eau, thé ou café avec un peu de lait, jus sans pulpe, boisson glucidique) jusqu'à 2 h ; lait et solides 6 h, repas gras 8 h ; doute sur le contenu gastrique : échographie gastrique.", target: "anaesthesia" },
+    source: {
+      organisation: "Consensus international et multidisciplinaire (Delphi, 68 participants)",
+      title: "Peri-operative fasting in adults: an international, multidisciplinary consensus statement (Rüggeberg et al., Anaesthesia 2026;81:840-851)",
+      year: 2026,
+      doi: "10.1111/anae.70130",
+      pmid: "41657234",
+      quote: "We recommend continuing current practices on pre-operative fasting for solid food and non-clear liquids. We recommend encouraging clear liquids until 2 h before the start of anaesthesia or sedation, unless institutional protocols allow for more liberal liquid intake.",
+      grade: "Consensus Delphi",
+      level: "int",
+    },
+    explanations: [
+      "Résumé de la version allemande (Die Anaesthesiologie 2026, PMID 42340416) : 6 h pour les liquides non clairs (lait, produits laitiers, compléments, nutrition entérale), au moins 6 h pour les solides et 8 h ou plus après un repas gras abondant ; liquides clairs : eau, thé ou café sucré (lait jusqu'à un cinquième du volume), jus clairs, limonade, boissons glucidiques.",
+      "Concordant avec l'ESA 2011 (Smith et al., Eur J Anaesthesiol 2011, PMID 21712716), qui s'applique aussi à l'obésité, au reflux, au diabète et à la grossesse hors travail. Une recommandation ESAIC adulte est en préparation (protocole publié en 2026, PMID 42730370).",
+      "Exception : agonistes du GLP-1 (vidange gastrique ralentie), voir la règle dédiée.",
+    ],
+  }),
+  october(94, {
+    title: "Susceptibilité à l'hyperthermie maligne : anesthésie sans agent déclenchant",
+    statement: "Patient susceptible (ou suspect) d'hyperthermie maligne : anesthésie sans agent déclenchant (ni halogéné ni succinylcholine), poste d'anesthésie préparé ; pas de dantrolène en prophylaxie ; préparation, monitorage et SSPI inchangés ; ambulatoire possible.",
+    conditions: [history("malignant_hyperthermia", "Hyperthermie maligne")],
+    action: { type: "requirement", text: "Ni halogéné ni succinylcholine ; vaporisateurs retirés, filtres à charbon actif ou rinçage selon la notice du poste ; pas de dantrolène prophylactique ; surveillance habituelle, ambulatoire possible.", blocking: false, target: "anaesthesia" },
+    source: {
+      organisation: "European Malignant Hyperthermia Group (EMHG)",
+      title: "Consensus guidelines on perioperative management of malignant hyperthermia suspected or susceptible patients from the European Malignant Hyperthermia Group (Rüffert et al., Br J Anaesth 2021;126:120-130)",
+      year: 2021,
+      doi: "10.1016/j.bja.2020.09.029",
+      pmid: "33131754",
+      quote: "The most crucial recommendation is that malignant hyperthermia-susceptible patients should receive anaesthesia that is free of triggering agents. Providing that this can be achieved, other key recommendations include avoidance of prophylactic administration of dantrolene; that preoperative management, intraoperative monitoring, and care in the PACU are unaltered by malignant hyperthermia susceptibility; and that malignant hyperthermia patients may be anaesthetised in an outpatient setting.",
+      grade: "Consensus d'experts",
+      level: "eu",
+    },
+    explanations: ["La préparation du poste (durée de rinçage, filtres à charbon actif) dépend du modèle : détails dans le texte intégral, non relu ici.", "Le manuel 2020 demandait en plus d'être premier du programme et de changer la chaux sodée : la recommandation européenne ne l'impose pas si le poste est préparé."],
+  }),
+  october(95, {
+    title: "Prééclampsie : numération plaquettaire avant la ponction neuraxiale",
+    statement: "Prééclampsie (et autres thrombopénies de la grossesse) : numération plaquettaire avant la ponction ; à partir de 70 G/L, le risque d'hématome périmédullaire est très faible en l'absence d'autre facteur de risque ; en dessous, décision partagée selon le bénéfice attendu (risque d'une anesthésie générale).",
+    conditions: [history("preeclampsia", "Prééclampsie"), { kind: "technique", in: ["neuraxial"] }],
+    action: { type: "requirement", text: "Numération plaquettaire récente ; ≥ 70 G/L sans autre facteur de risque : ponction possible ; < 70 G/L : balance bénéfice-risque discutée (hémostase, évolution, alternative de l'AG).", blocking: false, target: "anaesthesia" },
+    source: {
+      organisation: "Society for Obstetric Anesthesia and Perinatology (SOAP), groupe interdisciplinaire",
+      title: "The Society for Obstetric Anesthesia and Perinatology Interdisciplinary Consensus Statement on Neuraxial Procedures in Obstetric Patients With Thrombocytopenia (Bauer et al., Anesth Analg 2021;132:1531-1544)",
+      year: 2021,
+      doi: "10.1213/ANE.0000000000005355",
+      pmid: "33861047",
+      quote: "The taskforce concluded that the best available evidence indicates the risk of spinal epidural hematoma associated with a platelet count ≥70,000 × 10^6/L is likely to be very low in obstetric patients with thrombocytopenia secondary to gestational thrombocytopenia, immune thrombocytopenia (ITP), and hypertensive disorders of pregnancy in the absence of other risk factors.",
+      grade: "Consensus (revue systématique et Delphi modifié)",
+      level: "int",
+    },
+    explanations: ["Le manuel 2020 retenait 75 G/L pour la péridurale.", "Autres facteurs de risque à rechercher : chute rapide des plaquettes, anticoagulant ou antiagrégant, coagulopathie (HELLP sévère, hématome rétroplacentaire)."],
+  }),
+];
+
+export const VERIFIED_RULES: Verified[] = [...ALR, ...SURGERY, ...TREATMENTS, ...LITHIUM, ...ANTECEDENTS, ...OCTOBER];
 
 /**
  * The drafts each verified rule replaces: archived when the verified group is
@@ -737,4 +808,7 @@ export const SUPERSEDES: Record<string, string[]> = {
   [id(75)]: [manual(104)],
   [id(82)]: [treatmentDraft(6)],
   [id(83)]: [treatmentDraft(7)],
+  [id(93)]: [manual(103), maparDraft(8)],
+  [id(94)]: [manual(134)],
+  [id(95)]: [manual(149)],
 };

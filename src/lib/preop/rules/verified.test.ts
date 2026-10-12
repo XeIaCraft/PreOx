@@ -99,4 +99,19 @@ describe("verified rules", () => {
     const withHf = delays(ctx({ atc: "C09AA05", name: "Ramipril" }, ["general"], {}, { conditions: { heart_failure: { present: true } } }));
     expect(withHf.anaesthesia).toBeUndefined();
   });
+
+  it("October 2026: adult fasting, malignant hyperthermia and pre-eclampsia rules fire on their own conditions", () => {
+    const titles = (c: PatientContext) =>
+      evaluate(active, c, "2026-10-12T00:00:00Z")
+        .findings.filter((f) => f.status === "applies")
+        .map((f) => f.rule.title);
+    const base = ctx({ atc: "N02BE01", name: "Paracétamol" }, ["general"]);
+    expect(titles(base)).toContain("Jeûne de l'adulte : liquides clairs jusqu'à 2 h, solides 6 h");
+    expect(titles({ ...base, age: 8 })).not.toContain("Jeûne de l'adulte : liquides clairs jusqu'à 2 h, solides 6 h");
+    const mh = titles({ ...base, conditions: { malignant_hyperthermia: { present: true } } });
+    expect(mh).toContain("Susceptibilité à l'hyperthermie maligne : anesthésie sans agent déclenchant");
+    const preeclampsia = { ...base, sex: "F" as const, age: 30, conditions: { preeclampsia: { present: true } } };
+    expect(titles(preeclampsia)).not.toContain("Prééclampsie : numération plaquettaire avant la ponction neuraxiale");
+    expect(titles({ ...preeclampsia, techniques: ["neuraxial"] })).toContain("Prééclampsie : numération plaquettaire avant la ponction neuraxiale");
+  });
 });

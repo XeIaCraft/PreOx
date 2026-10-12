@@ -48,7 +48,7 @@ const ESC_2022 = "ESC 2022, chirurgie non cardiaque (PMID 36017553)";
 
 const etomidate = () => drug("Étomidate", "induction", "bolus_iv", { perKg: 0.3 }, "mg", "0,2–0,4 mg/kg : stabilité hémodynamique (manuel, chap. 6) ; dose unique (inhibition surrénalienne).");
 const succinylcholine = () => drug("Suxaméthonium (succinylcholine)", "induction", "bolus_iv", { perKg: 1 }, "mg", "1–1,5 mg/kg au poids réel, sans dépasser 150 mg (manuel, chap. 8) ; ou rocuronium 1,2 mg/kg si contre-indication.");
-const sugammadex = () => drug("Sugammadex", "other", "bolus_iv", { perKg: 2 }, "mg", "2 mg/kg dès 2 réponses au TOF ; 4 mg/kg en bloc profond ; 16 mg/kg en urgence (manuel, chap. 8).");
+const sugammadex = () => drug("Sugammadex", "other", "bolus_iv", { perKg: 2 }, "mg", "2 mg/kg dès 2 réponses au TOF ; 4 mg/kg en bloc profond ; 16 mg/kg en urgence (manuel, chap. 9).");
 const remifentanil = () => drug("Rémifentanil", "maintenance", "pse", { perKg: 0.5 }, "µg", "Bolus 0,2–1 µg/kg ; entretien 0,1–0,5 µg/kg/min (manuel, chap. 7).");
 const phenylephrine = (note = "Bolus 50–100 µg, ou perfusion ; noradrénaline en cas de bradycardie.") => drug("Phényléphrine", "haemodynamic", "bolus_iv", { fixed: 100 }, "µg", note);
 const noradrenaline = (note = "Perfusion 0,05–0,3 µg/kg/min par voie dédiée, titrée sur la PAM.") => drug("Noradrénaline", "haemodynamic", "pse", { fixed: 8 }, "µg", note);
@@ -102,7 +102,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Laparotomie pour occlusion",
     operation_category: "A",
     hospital: "",
-    source: `${ERAS_EL} ; ${MANUAL}, chap. 20, 21 et 39 (estomac plein).`,
+    source: `${ERAS_EL} ; ${MANUAL}, chap. 17 (estomac plein), 20 et 21.`,
     content: content({
       techniques: ["general"],
       drugs: [etomidate(), drug("Kétamine", "induction", "bolus_iv", { perKg: 1 }, "mg", "1–2 mg/kg en cas d'instabilité (choc septique ou hypovolémique) (manuel, chap. 6)."), sufentanil(0.2), drug("Rocuronium (séquence rapide)", "induction", "bolus_iv", { perKg: 1.2, basis: "total" }, "mg", "1,2 mg/kg ; sugammadex 16 mg/kg prêt."), succinylcholine(), sugammadex(), cefazolin("Céfazoline 2 g + métronidazole 500 mg ; péritonite : antibiothérapie curative déjà en cours ?"), metronidazole(), noradrenaline(), paracetamol()],
@@ -136,7 +136,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Œsophagectomie",
     operation_category: "A",
     hospital: "",
-    source: `${ERAS_OESO} ; ${MANUAL}, chap. 26.`,
+    source: `${ERAS_OESO} ; ${MANUAL}, chap. 28 (ventilation unipulmonaire) et 30.`,
     content: content({
       techniques: ["general", "neuraxial"],
       drugs: [propofolInduction(), sufentanil(0.3), rocuronium(), cefazolin(), dexamethasone(8), paracetamol(), drug("Ropivacaïne 0,2 % (péridurale thoracique)", "alr", "peridural", { fixed: 10 }, "mg", "T5–T7 : couvre laparotomie et thoracotomie ; PCEA ensuite."), noradrenaline(), ketamineSparing()],
@@ -204,7 +204,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Chirurgie de cytoréduction et CHIP",
     operation_category: "A",
     hospital: "",
-    source: `${ERAS_CRS} ; ${MANUAL}, chap. 21 et 40.`,
+    source: `${ERAS_CRS} ; ${MANUAL}, chap. 21 et 45 (patient oncologique).`,
     content: content({
       techniques: ["general", "neuraxial"],
       drugs: [propofolInduction(), sufentanil(0.3), rocuronium(), cefazolin(), metronidazole(), dexamethasone(8), paracetamol(), drug("Ropivacaïne 0,2 % (péridurale thoracique)", "alr", "peridural", { fixed: 10 }, "mg", "T8–T10, si coagulation normale."), noradrenaline(), tranexamic()],
@@ -221,7 +221,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Surrénalectomie",
     operation_category: "A",
     hospital: "",
-    source: `${MANUAL}, chap. 17 (endocrinopathies) et 30.`,
+    source: `${MANUAL}, chap. 34 (phéochromocytome) et 30.`,
     content: content({
       techniques: ["general"],
       drugs: [propofolInduction(), remifentanil(), rocuronium(), cefazolin(), drug("Nicardipine", "haemodynamic", "pse", { fixed: 1 }, "mg", "Bolus 0,5–1 mg puis 1–5 mg/h lors des pics hypertensifs (manipulation de la tumeur)."), drug("Esmolol", "haemodynamic", "bolus_iv", { fixed: 20 }, "mg", "Tachycardie, seulement après l'alpha-blocage."), drug("Magnésium", "haemodynamic", "perfusion", { perKg: 40 }, "mg", "40–50 mg/kg : atténue les pics catécholaminergiques."), noradrenaline("Après la ligature de la veine surrénalienne : chute de pression attendue, noradrénaline prête."), paracetamol()],
@@ -238,10 +238,10 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Exérèse cutanée",
     operation_category: "A",
     hospital: "",
-    source: `${MANUAL}, chap. 11 (anesthésiques locaux) et 22 (sédation).`,
+    source: `${MANUAL}, chap. 12 (anesthésiques locaux) et 22 (sédation).`,
     content: content({
       techniques: ["sedation", "general"],
-      drugs: [propofolInduction(), drug("Lidocaïne 1 % adrénalinée (infiltration)", "alr", "infiltration", { fixed: 200 }, "mg", "Par le chirurgien ; maximum 7 mg/kg avec adrénaline, 4,5 mg/kg sans (manuel, chap. 11)."), drug("Propofol (sédation)", "maintenance", "pse", { fixed: 20 }, "mg", "Titré par bolus de 10–20 mg ou AIVOC 1–2 µg/mL."), drug("Rémifentanil (sédation)", "maintenance", "pse", { fixed: 20 }, "µg", "0,02–0,05 µg/kg/min en ventilation spontanée (manuel, chap. 7)."), paracetamol()],
+      drugs: [propofolInduction(), drug("Lidocaïne 1 % adrénalinée (infiltration)", "alr", "infiltration", { fixed: 200 }, "mg", "Par le chirurgien ; maximum 7 mg/kg avec adrénaline, 4 mg/kg sans (manuel, chap. 12)."), drug("Propofol (sédation)", "maintenance", "pse", { fixed: 20 }, "mg", "Titré par bolus de 10–20 mg ou AIVOC 1–2 µg/mL."), drug("Rémifentanil (sédation)", "maintenance", "pse", { fixed: 20 }, "µg", "0,02–0,05 µg/kg/min en ventilation spontanée (manuel, chap. 7)."), paracetamol()],
       targets: ["Ventilation spontanée, SpO₂ ≥ 94 %", "Patient réveillable"],
       material: ["ECG", "PNI", "SpO₂", "EtCO₂ (capnographie nasale)", "Lunettes à O₂", "Masque laryngé prêt"],
       risks: [risk("last"), { title: "Dépression respiratoire sous sédation", why: "Association propofol et opioïde.", prevention: "Titration, capnographie.", conduct: "Stimuler, subluxation, O₂ ; masque et ventilation, réduire la sédation." }],
@@ -255,7 +255,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Transplantation hépatique",
     operation_category: "A",
     hospital: "",
-    source: `${MANUAL}, chap. 21, 40 et 41 ; protocole du centre de transplantation.`,
+    source: `${MANUAL}, chap. 21, 30 (transplantation hépatique) et 35 ; protocole du centre de transplantation.`,
     content: content({
       techniques: ["general"],
       drugs: [propofolInduction(1.5), sufentanil(0.3), drug("Rocuronium (séquence rapide)", "induction", "bolus_iv", { perKg: 1.2 }, "mg", "Ascite, estomac plein fréquent."), noradrenaline(), drug("Calcium (chlorure)", "haemodynamic", "bolus_iv", { fixed: 1 }, "g", "Hypocalcémie de la transfusion massive (citrate)."), tranexamic(), cefazolin("Antibioprophylaxie selon le protocole du centre de transplantation.")],
@@ -274,7 +274,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Chirurgie aortique ouverte",
     operation_category: "A",
     hospital: "",
-    source: `${ESC_2022} ; ${MANUAL}, chap. 28 (chirurgie vasculaire).`,
+    source: `${ESC_2022} ; ${MANUAL}, chap. 27 (chirurgie aortique).`,
     content: content({
       techniques: ["general", "neuraxial"],
       drugs: [etomidate(), sufentanil(0.3), rocuronium(), cefazolin(), vancomycinAlt(), heparinVascular(), drug("Ropivacaïne 0,2 % (péridurale thoracique)", "alr", "peridural", { fixed: 10 }, "mg", "T8–T10, posée la veille ou avant l'induction ; délai avec l'héparine (ESAIC/ASRA)."), drug("Nicardipine", "haemodynamic", "pse", { fixed: 1 }, "mg", "Au clampage : hypertension d'amont."), noradrenaline("Au déclampage : chute de pression, remplissage anticipé et noradrénaline."), tranexamic(), paracetamol()],
@@ -291,7 +291,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Endoprothèse aortique",
     operation_category: "A",
     hospital: "",
-    source: `${ESC_2022} ; ${MANUAL}, chap. 28.`,
+    source: `${ESC_2022} ; ${MANUAL}, chap. 27.`,
     content: content({
       techniques: ["general", "sedation"],
       drugs: [propofolInduction(1.5), sufentanil(), rocuronium(), cefazolin(), heparinVascular(), drug("Lidocaïne 1 % (infiltration fémorale)", "alr", "infiltration", { fixed: 200 }, "mg", "Voie percutanée sous anesthésie locale et sédation possible."), noradrenaline(), paracetamol()],
@@ -308,7 +308,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Endartériectomie carotidienne",
     operation_category: "A",
     hospital: "",
-    source: `${ESC_2022} ; ${MANUAL}, chap. 28 ; GALA (AG ou locorégionale : pas de différence de résultat).`,
+    source: `${ESC_2022} ; ${MANUAL}, chap. 27 ; GALA (AG ou locorégionale : pas de différence de résultat).`,
     content: content({
       techniques: ["general", "superficial_block"],
       drugs: [propofolInduction(1.5), remifentanil(), rocuronium(), cefazolin(), heparinVascular(), ropivacaineBlock(100, "bloc cervical superficiel ou intermédiaire"), phenylephrine("Clampage : PAM maintenue 10–20 % au-dessus de la valeur de base."), drug("Nicardipine", "haemodynamic", "pse", { fixed: 1 }, "mg", "Hypertension après déclampage (syndrome d'hyperperfusion)."), paracetamol()],
@@ -325,7 +325,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Pontage fémoro-poplité ou distal",
     operation_category: "A",
     hospital: "",
-    source: `${ESC_2022} ; ${MANUAL}, chap. 12, 13 et 28 ; ESAIC/ASRA : délais des antithrombotiques avant ALR.`,
+    source: `${ESC_2022} ; ${MANUAL}, chap. 12, 13 et 27 ; ESAIC/ASRA : délais des antithrombotiques avant ALR.`,
     content: content({
       techniques: ["neuraxial", "general", "superficial_block"],
       drugs: [bupiSpinal(12), propofolInduction(1.5), sufentanil(), cefazolin(), heparinVascular(), ropivacaineBlock(150, "fascia iliaca ou fémoral"), paracetamol()],
@@ -359,7 +359,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Fistule artério-veineuse",
     operation_category: "A",
     hospital: "",
-    source: `${MANUAL}, chap. 12 et 32 (insuffisance rénale).`,
+    source: `${MANUAL}, chap. 12 et 31 (insuffisance rénale, abord de dialyse).`,
     content: content({
       techniques: ["superficial_block", "sedation"],
       drugs: [ropivacaineBlock(150, "bloc axillaire ou supraclaviculaire"), drug("Propofol (sédation)", "maintenance", "pse", { fixed: 20 }, "mg", "Titré par bolus de 10–20 mg."), paracetamol()],
@@ -376,7 +376,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Chirurgie des varices",
     operation_category: "A",
     hospital: "",
-    source: `${MANUAL}, chap. 11 et 22.`,
+    source: `${MANUAL}, chap. 12 et 22.`,
     content: content({
       techniques: ["sedation", "neuraxial", "general"],
       drugs: [propofolInduction(), bupiSpinal(7.5, "Stripping classique : rachianesthésie courte (ou chloroprocaïne 40–50 mg)."), drug("Lidocaïne 0,1 % (anesthésie par tumescence)", "alr", "infiltration", { fixed: 350 }, "mg", "Par le chirurgien, adrénalinée diluée ; maximum 7 mg/kg."), drug("Propofol (sédation)", "maintenance", "pse", { fixed: 20 }, "mg", "Titré ; AIVOC 1–2 µg/mL."), paracetamol(), ketorolac()],
@@ -395,7 +395,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Néphrectomie",
     operation_category: "J2",
     hospital: "",
-    source: `${MANUAL}, chap. 19 (lombotomie), 30 (cœlioscopie) et 33 (urologie).`,
+    source: `${MANUAL}, chap. 19 (lombotomie), 30 (cœlioscopie) et 31 (urologie).`,
     content: content({
       techniques: ["general", "neuraxial"],
       drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), drug("Ropivacaïne 0,2 % (péridurale ou paravertébral)", "alr", "peridural", { fixed: 10 }, "mg", "Lombotomie : péridurale T8–T10 ou paravertébral ; cœlioscopie ou robot : blocs de paroi (ESP, TAP) et infiltration."), tranexamic()],
@@ -412,7 +412,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Cystectomie totale",
     operation_category: "J2",
     hospital: "",
-    source: `${ERAS_CYSTECTOMY} ; ${MANUAL}, chap. 30 et 33.`,
+    source: `${ERAS_CYSTECTOMY} ; ${MANUAL}, chap. 30 et 31.`,
     content: content({
       techniques: ["general", "neuraxial"],
       drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), metronidazole(), dexamethasone(8), paracetamol(), drug("Ropivacaïne 0,2 % (péridurale thoracique)", "alr", "peridural", { fixed: 10 }, "mg", "Voie ouverte T10 ; robot : morphine intrathécale ou blocs de paroi."), tranexamic(), noradrenaline()],
@@ -429,7 +429,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Urétéroscopie",
     operation_category: "J2",
     hospital: "",
-    source: `${MANUAL}, chap. 13 et 33.`,
+    source: `${MANUAL}, chap. 13 et 31.`,
     content: content({
       techniques: ["general", "neuraxial"],
       drugs: [propofolInduction(), drug("Alfentanil", "induction", "bolus_iv", { perKg: 10 }, "µg", "10–40 µg/kg ; geste court (manuel, chap. 7)."), bupiSpinal(7.5, "Rachianesthésie basse si terrain respiratoire."), drug("Céfuroxime", "antibio", "bolus_iv", { fixed: 1.5 }, "g", "Urétéroscopie, résection de vessie : dose unique, urine stérile (ECBU) ; cystoscopie diagnostique : pas d'antibioprophylaxie (EAU 2024). Bactériurie : traitement adapté avant le geste."), dexamethasone(4), ondansetron(), paracetamol()],
@@ -446,7 +446,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Néphrolithotomie percutanée",
     operation_category: "J2",
     hospital: "",
-    source: `${MANUAL}, chap. 19 et 33.`,
+    source: `${MANUAL}, chap. 19 et 31.`,
     content: content({
       techniques: ["general", "deep_block"],
       drugs: [propofolInduction(), sufentanil(), rocuronium(), drug("Céfuroxime", "antibio", "bolus_iv", { fixed: 1.5 }, "g", "ECBU stérile ; sinon traitement adapté."), dexamethasone(8), ondansetron(), paracetamol(), ropivacaineBlock(100, "paravertébral ou ESP homolatéral"), tranexamic()],
@@ -463,7 +463,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Chirurgie scrotale",
     operation_category: "J2",
     hospital: "",
-    source: `${MANUAL}, chap. 12, 13 et 33.`,
+    source: `${MANUAL}, chap. 12, 13 et 31.`,
     content: content({
       techniques: ["general", "neuraxial", "superficial_block"],
       drugs: [propofolInduction(), drug("Alfentanil", "induction", "bolus_iv", { perKg: 10 }, "µg", "Geste court."), bupiSpinal(7.5), drug("Ropivacaïne (bloc du cordon ou pénien)", "alr", "infiltration", { fixed: 75 }, "mg", "0,375 %, par le chirurgien ou échoguidé."), cefazolin("Seulement pour les prothèses (implant pénien, sphincter)."), dexamethasone(4), paracetamol(), ketorolac()],
@@ -480,7 +480,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Transplantation rénale",
     operation_category: "J2",
     hospital: "",
-    source: `${ESC_2022} ; ${MANUAL}, chap. 32 (insuffisance rénale) ; protocole du centre de transplantation.`,
+    source: `${ESC_2022} ; ${MANUAL}, chap. 31 (insuffisance rénale, transplantation) ; protocole du centre de transplantation.`,
     content: content({
       techniques: ["general", "superficial_block"],
       drugs: [propofolInduction(1.5), sufentanil(), drug("Cisatracurium", "induction", "bolus_iv", { perKg: 0.15, basis: "ideal" }, "mg", "0,15–0,2 mg/kg : élimination indépendante du rein (manuel, chap. 8)."), cefazolin("Selon le protocole du centre de transplantation."), noradrenaline("PAM ≥ 80 mmHg au déclampage (perfusion du greffon)."), paracetamol(), drug("Ropivacaïne (TAP ou carré des lombes)", "alr", "perinerveux", { fixed: 100 }, "mg", "Échoguidé, en fin d'intervention.")],
@@ -516,7 +516,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Hystérectomie par laparotomie",
     operation_category: "J1",
     hospital: "",
-    source: `${ERAS_GYN} ; ${MANUAL}, chap. 13 et 34.`,
+    source: `${ERAS_GYN} ; ${MANUAL}, chap. 13 et 36.`,
     content: content({
       techniques: ["general", "neuraxial", "superficial_block"],
       drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), clindamycinAlt(), dexamethasone(8), ondansetron(), droperidol(), paracetamol(), ketorolac(), morphineIt(0.1, "Ou TAP bilatéral ; péridurale si laparotomie xipho-pubienne (oncologie)."), tranexamic(), ropivacaineBlock(150, "TAP bilatéral si pas de morphine intrathécale")],

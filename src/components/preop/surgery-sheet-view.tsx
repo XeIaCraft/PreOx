@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Combobox, Panel } from "@/components/preop/ui";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { SurgeryForm } from "@/components/preop/settings";
+import { AnaesthesiaProtocol } from "@/components/preop/anaesthesia-sheet-view";
 import { useToast } from "@/components/ui/toast";
 import { DEFAULT_CATALOGS } from "@/lib/preop/catalog-defaults";
 import { emptyOverrides, fold, type CatalogOverrides, type SurgeryItem } from "@/lib/preop/catalog";
 import { RISK_GRADES } from "@/lib/preop/dossier";
 import { matchProtocol, type Protocol } from "@/lib/preop/protocols";
-import { POSTOP_ANALGESIA, POSTOP_DESTINATIONS, POSTOP_THROMBO } from "@/lib/preop/postop";
+import { POSTOP_DESTINATIONS } from "@/lib/preop/postop";
 import { TECHNIQUES } from "@/lib/preop/rules/types";
 import { searchSurgeries, surgeryVariants } from "@/lib/preop/surgery-search";
 import { APPROACH_SPECIFICS } from "@/lib/preop/surgeries-variants";
@@ -21,7 +22,9 @@ import { cn } from "@/lib/utils";
 
 // « Fiches » tab: one procedure, without a patient — the exams to ask with
 // the conditions that call for them, where the patient goes after, the
-// bleeding risk and what it implies, and the protocol that applies.
+// bleeding risk and what it implies, and the anaesthesia protocol phase by
+// phase (recent guidelines, what changes with the patient, contraindications
+// of what is used).
 
 const SETTING_LABEL = { ambulatory: "Ambulatoire", inpatient: "Hospitalisation", hdu: "Soins intermédiaires", icu: "Soins intensifs" } as const;
 /** The protocol's post-operative destination, in the catalogue's terms. */
@@ -64,8 +67,9 @@ export function SurgerySheetView({ protocols }: { protocols: Protocol[] }) {
     <div className="space-y-4">
       <Panel title="Fiche par intervention">
         <p className="text-sm text-foreground-muted">
-          Choisissez une intervention : examens à demander et leurs conditions, destination après l&apos;intervention, risque hémorragique et protocole, sans
-          patient. Tout se corrige avec « Modifier » (enregistré pour vous, comme dans Paramètres › Interventions).
+          Choisissez une intervention : examens à demander et leurs conditions, destination après l&apos;intervention, risque hémorragique, puis le
+          protocole anesthésique phase par phase (recommandations récentes, différences selon le patient, contre-indications de ce qui est utilisé),
+          sans patient. Tout se corrige avec « Modifier » (enregistré pour vous, comme dans Paramètres › Interventions).
         </p>
         {surgery ? (
           <div className="flex items-start gap-2 rounded-[var(--radius-md)] bg-surface-muted/60 px-3 py-2">
@@ -216,7 +220,6 @@ function Sheet({ surgery: s, protocol, onEdit }: { surgery: SurgeryItem; protoco
   const planDestination = plan?.postopPlan?.destination;
   const destinationDiffers = !!planDestination && !!s.setting && DESTINATION_SETTING[planDestination] !== s.setting;
   const techniquesDiffer = !!plan?.techniques.length && !!s.techniques?.length && plan.techniques.slice().sort().join() !== s.techniques.slice().sort().join();
-  const antibio = plan?.drugs.filter((d) => d.phase === "antibio") ?? [];
   const specifics = [...(s.specifics ?? []), ...(s.approach ? (APPROACH_SPECIFICS[s.approach] ?? []) : [])];
   const always = sheet.exams.filter((e) => e.always);
   const conditional = sheet.exams.filter((e) => !e.always);
@@ -281,54 +284,21 @@ function Sheet({ surgery: s, protocol, onEdit }: { surgery: SurgeryItem; protoco
         </ul>
       </Panel>
 
-      {!plan && (
-        <Panel title="Protocole">
-          <p className="text-sm text-foreground-muted">
-            Aucun protocole de référence ne correspond à cette intervention.{" "}
-            <button type="button" onClick={onEdit} className="font-medium text-primary hover:underline print:hidden">
-              Lier un protocole
-            </button>
-          </p>
-        </Panel>
-      )}
-      {plan && (
-        <Panel title={`Protocole : ${protocol.name}`} actions={<Button size="sm" variant="ghost" onClick={onEdit} className="print:hidden">Changer</Button>}>
-          {(techniquesDiffer || destinationDiffers) && (
+      <AnaesthesiaProtocol
+        surgery={s}
+        protocol={protocol}
+        onEdit={onEdit}
+        commonNote={
+          plan && (techniquesDiffer || destinationDiffers) ? (
             <p className="text-xs text-foreground-muted">
               Protocole commun à plusieurs interventions : il prévoit
               {techniquesDiffer ? ` ${plan.techniques.map(techniqueLabel).join(" ou ").toLowerCase()}` : ""}
               {techniquesDiffer && destinationDiffers ? " et" : ""}
               {destinationDiffers ? ` une sortie en ${POSTOP_DESTINATIONS.find((d) => d.code === planDestination)?.label.toLowerCase()}` : ""} — la fiche suit l&apos;intervention.
             </p>
-          )}
-          <dl className="grid gap-2 text-sm sm:grid-cols-2">
-            {antibio.length > 0 && (
-              <div>
-                <dt className="text-xs font-medium text-foreground-subtle">Antibioprophylaxie</dt>
-                <dd className="text-foreground">{antibio.map((d) => [d.name, d.amount !== null ? `${String(d.amount).replace(".", ",")} ${d.unit}${d.doseMode === "per_kg" ? "/kg" : ""}` : ""].filter(Boolean).join(" ")).join(" ; ")}</dd>
-              </div>
-            )}
-            {plan.postopPlan?.analgesia.length ? (
-              <div>
-                <dt className="text-xs font-medium text-foreground-subtle">Analgésie postopératoire</dt>
-                <dd className="text-foreground">{plan.postopPlan.analgesia.map((a) => POSTOP_ANALGESIA.find((x) => x.code === a)?.label ?? a).join(", ")}</dd>
-              </div>
-            ) : null}
-            {plan.postopPlan?.thrombo && (
-              <div>
-                <dt className="text-xs font-medium text-foreground-subtle">Thromboprophylaxie</dt>
-                <dd className="text-foreground">{POSTOP_THROMBO.find((x) => x.code === plan.postopPlan!.thrombo)?.label}</dd>
-              </div>
-            )}
-            {plan.postop.length > 0 && (
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-foreground-subtle">Consignes postopératoires</dt>
-                <dd className="text-foreground">{plan.postop.join(" ; ")}</dd>
-              </div>
-            )}
-          </dl>
-        </Panel>
-      )}
+          ) : undefined
+        }
+      />
 
       {specifics.length > 0 && (
         <Panel title="Ce que l'intervention change pour l'anesthésie">

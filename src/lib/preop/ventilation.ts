@@ -6,7 +6,7 @@
 // Ventilation: perioperative protective ventilation consensus (Young et al.,
 // Br J Anaesth 2019: Vt 6–8 mL/kg predicted body weight, PEEP ≥ 5,
 // individualised; driving pressure); Manuel pratique d'anesthésie 2020
-// (chap. 26 ventilation unipulmonaire, 37 enfant, 44 obésité).
+// (chap. 18 ventilation, 28 ventilation unipulmonaire, 37 enfant, 44 obésité).
 // Alarms: set from the patient's own values (PAM ≥ 65 mmHg and within 20 %
 // of the baseline; heart rate and pressures by age for children).
 
@@ -138,4 +138,4 @@ export function alarmSettings(p: VentilationPatient, ctx: VentilationContext = {
 }
 
 export const VENTILATION_SOURCE =
-  "Ventilation protectrice : Young et al., Br J Anaesth 2019 ; Manuel pratique d'anesthésie 2020 (chap. 26, 37, 44). Alarmes : bornes calculées sur les valeurs du patient (PAM ≥ 65 mmHg et ± 20 % de la base), à ajuster ; normes de l'enfant selon l'âge.";
+  "Ventilation protectrice : Young et al., Br J Anaesth 2019 ; Manuel pratique d'anesthésie 2020 (chap. 18, 28, 37, 44). Alarmes : bornes calculées sur les valeurs du patient (PAM ≥ 65 mmHg et ± 20 % de la base), à ajuster ; normes de l'enfant selon l'âge.";

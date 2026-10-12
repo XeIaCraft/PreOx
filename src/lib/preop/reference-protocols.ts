@@ -253,7 +253,7 @@ const FIRST_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Cure de hernie inguinale",
     operation_category: "A",
     hospital: "",
-    source: `${DUBOIS} (anesthésiques intrathécaux) ; ${MANUAL}, chap. 13, 20 et 33.`,
+    source: `${DUBOIS} (anesthésiques intrathécaux) ; ${MANUAL}, chap. 13, 20 et 26 (ambulatoire).`,
     content: content({
       techniques: ["neuraxial"],
       drugs: [
@@ -278,15 +278,15 @@ const FIRST_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Amygdalectomie de l'enfant",
     operation_category: "C",
     hospital: "",
-    source: `${MANUAL}, chap. 37 et 38 ; ${ESAIC_FASTING}.`,
+    source: `${MANUAL}, chap. 37 et 39 ; ${ESAIC_FASTING}.`,
     content: content({
       techniques: ["general"],
       drugs: [
         drug("Midazolam (prémédication)", "premed", "po", { perKg: 0.3, max: 15 }, "mg", "0,3–0,5 mg/kg per os, 20–30 min avant (manuel, chap. 37)."),
         drug("Propofol", "induction", "bolus_iv", { perKg: 3 }, "mg", "2,5–5 mg/kg chez l'enfant ; ou induction au sévoflurane puis voie veineuse."),
         drug("Sufentanil", "induction", "bolus_iv", { perKg: 0.2 }, "µg", "Douleur importante."),
-        drug("Dexaméthasone", "ponv", "bolus_iv", { perKg: 0.15, max: 8 }, "mg", "0,1–0,2 mg/kg (manuel, chap. 38)."),
-        drug("Ondansétron", "ponv", "bolus_iv", { perKg: 0.1, max: 4 }, "mg", "0,1–0,2 mg/kg (manuel, chap. 38)."),
+        drug("Dexaméthasone", "ponv", "bolus_iv", { perKg: 0.15, max: 8 }, "mg", "0,1–0,2 mg/kg (manuel, chap. 37)."),
+        drug("Ondansétron", "ponv", "bolus_iv", { perKg: 0.1, max: 4 }, "mg", "0,1–0,2 mg/kg (manuel, chap. 37)."),
         drug("Paracétamol", "analgesia", "perfusion", { perKg: 15, max: 1000 }, "mg", "15 mg/kg, 4 × / jour."),
       ],
       targets: ["Sonde préformée (RAE), souvent sans curare", "Réveil calme, aspiration pharyngée sous contrôle de la vue"],
@@ -321,7 +321,7 @@ const FIRST_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Résection transurétrale de prostate",
     operation_category: "J2",
     hospital: "",
-    source: `${MANUAL}, chap. 13, 20 et 35.`,
+    source: `${MANUAL}, chap. 13, 20 et 31 (syndrome de résection transurétrale).`,
     content: content({
       techniques: ["neuraxial"],
       drugs: [
@@ -464,7 +464,7 @@ const FIRST_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Hystéroscopie",
     operation_category: "J1",
     hospital: "",
-    source: `${MANUAL}, chap. 23 et 35.`,
+    source: `${MANUAL}, chap. 23, 26 et 31 (résorption du liquide d'irrigation).`,
     content: content({
       techniques: ["general"],
       drugs: [propofolInduction(), drug("Sufentanil", "induction", "bolus_iv", { perKg: 0.1, basis: "lean" }, "µg", "Geste court ; ou alfentanil."), dexamethasone(4), ondansetron(), paracetamol(), ketorolac()],
@@ -600,7 +600,7 @@ const FIRST_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Lobectomie pulmonaire",
     operation_category: "G",
     hospital: "",
-    source: `${PROSPECT_REF("VATS", 2021, "34739134")} ; ${MANUAL}, chap. 20 et 26.`,
+    source: `${PROSPECT_REF("VATS", 2021, "34739134")} ; ${MANUAL}, chap. 20 et 28.`,
     content: content({
       techniques: ["general", "deep_block"],
       drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), ketorolac(), ropivacaineBlock(150, "paravertébral ou ESP")],
@@ -617,7 +617,7 @@ const FIRST_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Lobectomie par thoracotomie",
     operation_category: "G",
     hospital: "",
-    source: `${PROSPECT_REF("thoracotomie", 2026, "41521792")} ; ${MANUAL}, chap. 20, 25 et 26.`,
+    source: `${PROSPECT_REF("thoracotomie", 2026, "41521792")} ; ${MANUAL}, chap. 20, 25 et 28.`,
     content: content({
       techniques: ["general", "neuraxial"],
       drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), ketorolac(), thoracicEpidural("T5–T7")],
@@ -634,7 +634,7 @@ const FIRST_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Craniotomie pour tumeur",
     operation_category: "D",
     hospital: "",
-    source: `${PROSPECT_REF("craniotomie", 2023, "37417808")} ; ${MANUAL}, chap. 20 et 28.`,
+    source: `${PROSPECT_REF("craniotomie", 2023, "37417808")} ; ${MANUAL}, chap. 20 et 29.`,
     content: content({
       techniques: ["general"],
       drugs: [propofolInduction(), drug("Rémifentanil", "maintenance", "aivoc", { perKg: 0.5 }, "µg", "Bolus 0,5 µg/kg avant la pose de la têtière à pointes ; entretien 0,1–0,25 µg/kg/min ou AIVOC 2–5 ng/mL (manuel, chap. 7 et 22)."), rocuronium(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), drug("Dexmédétomidine", "analgesia", "pse", { perKg: 1 }, "µg", "Charge 1 µg/kg en 10 min puis 0,2–0,7 µg/kg/h (manuel, chap. 10) ; recommandée par PROSPECT. Bradycardie : réduire.")],
@@ -754,7 +754,7 @@ const FIRST_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Pontages aorto-coronariens sous CEC",
     operation_category: "F",
     hospital: "",
-    source: `${PROSPECT_REF("sternotomie", 2023, "37501517")} ; EACTS/EACTA/EBCP : circulation extracorporelle de l'adulte 2019 (PMID 31576396) ; ${MANUAL}, chap. 20, 27 et 40.`,
+    source: `${PROSPECT_REF("sternotomie", 2023, "37501517")} ; EACTS/EACTA/EBCP : circulation extracorporelle de l'adulte 2019 (PMID 31576396) ; ${MANUAL}, chap. 20 et 27.`,
     content: content({
       techniques: ["general"],
       drugs: [

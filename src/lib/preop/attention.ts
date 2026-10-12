@@ -260,7 +260,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         title: r.apfel.level === "high" ? `Risque élevé de NVPO (Apfel ${r.apfel.value}/4 ≈ ${[10, 20, 40, 60, 80][r.apfel.value] ?? 80} %)` : "Chirurgie émétisante : NVPO",
         detail: "Prophylaxie multimodale : dexaméthasone 4–8 mg à l'induction, ondansétron 4 mg ou dropéridol 0,625–1,25 mg 30 min avant la fin ; propofol plutôt qu'halogénés, pas de protoxyde d'azote, épargne morphinique. Chaque mesure réduit le risque d'environ 20 %, et leurs effets s'additionnent.",
         why: [r.apfel.level === "high" ? `Score d'Apfel ${r.apfel.value}/4` : "", ponvSurgery ? `${c.surgery.name} (strabisme, oreille ou amygdale)` : ""].filter(Boolean).join(" ; "),
-        source: "Consensus NVPO 2020 (Gan) ; Manuel pratique d'anesthésie 2020, chap. 23",
+        source: "4e et 5e consensus NVPO (Gan et al., Anesth Analg 2020 et 2025, PMID 41237407) ; Manuel pratique d'anesthésie 2020, chap. 23",
       });
   }
 

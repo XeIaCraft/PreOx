@@ -46,7 +46,7 @@ const childPremed = () => drug("Midazolam (prémédication)", "premed", "po", { 
 // Porter et al., Paediatr Anaesth 2020); IV propofol is preferred with a high risk of
 // respiratory adverse events (Ramgolam et al., Anesthesiology 2018) or a full stomach.
 const childSevoflurane = (extra = "") => ({
-  ...drug("Sévoflurane (induction au masque)", "induction", "inhalation", { fixed: 8 }, "%", `Induction de référence sans voie veineuse : 6–8 % dans l'O₂ (± N₂O), voie veineuse posée endormi, puis environ 1 CAM. Équivalente au propofol IV chez l'enfant sain (méta-analyse, Porter 2020).${extra}`),
+  ...drug("Sévoflurane (induction au masque)", "induction", "inhale", { fixed: 8 }, "%", `Induction de référence sans voie veineuse : 6–8 % dans l'O₂ (± N₂O), voie veineuse posée endormi, puis environ 1 CAM. Équivalente au propofol IV chez l'enfant sain (méta-analyse, Porter 2020).${extra}`),
   choice: "induction",
 });
 const childPropofol = (extra = "") => ({
@@ -56,9 +56,9 @@ const childPropofol = (extra = "") => ({
 const childSufentanil = () => drug("Sufentanil", "induction", "bolus_iv", { perKg: 0.2 }, "µg", "0,1–0,3 µg/kg (manuel, chap. 37).");
 const childAtropine = () => drug("Atropine", "premed", "bolus_iv", { perKg: 0.02, max: 0.6 }, "mg", "20 µg/kg si bradycardie (nourrisson, réflexe oculocardiaque, succinylcholine).");
 const childParacetamol = () => drug("Paracétamol", "analgesia", "perfusion", { perKg: 15, max: 1000 }, "mg", "15 mg/kg IV ou per os, 4 × / jour (nouveau-né : voir le manuel, chap. 37).");
-const childDexa = () => drug("Dexaméthasone", "ponv", "bolus_iv", { perKg: 0.15, max: 8 }, "mg", "0,1–0,2 mg/kg (manuel, chap. 38).");
+const childDexa = () => drug("Dexaméthasone", "ponv", "bolus_iv", { perKg: 0.15, max: 8 }, "mg", "0,1–0,2 mg/kg (manuel, chap. 37).");
 const childOndansetron = () => drug("Ondansétron", "ponv", "bolus_iv", { perKg: 0.1, max: 4 }, "mg", "0,1 mg/kg (manuel, chap. 23).");
-const childIbuprofen = () => drug("Ibuprofène", "analgesia", "po", { perKg: 10, max: 400 }, "mg", "10 mg/kg per os, 3 × / jour, après 3 mois (manuel, chap. 37).");
+const childIbuprofen = () => drug("Ibuprofène", "analgesia", "po", { perKg: 10, max: 400 }, "mg", "10 mg/kg per os, 3 × / jour ; pas d'AINS avant 6 mois ni sous 10 kg (manuel, chap. 37).");
 const childCefazolin = () => drug("Céfazoline", "antibio", "bolus_iv", { perKg: 30, max: 2000 }, "mg", "30 mg/kg, maximum 2 g, 30–60 min avant l'incision ; réinjection 15 mg/kg toutes les 4 h ; pas de prolongation postopératoire (SFAR 2024). Côlon, appendice : + métronidazole 15 mg/kg (maximum 1 g).", 240);
 const caudal = () => drug("Bupivacaïne 0,25 % (caudale)", "alr", "peridural", { perKg: 2.5 }, "mg", "1 mL/kg (T10) ; clonidine 1 µg/kg pour prolonger après 6 mois (manuel, chap. 37).");
 const CHILD_MONITORING = ["ECG", "PNI", "SpO₂", "EtCO₂", "Température", "Matériel au poids (tableau du manuel, chap. 37)", "Réchauffement (air pulsé)"];
@@ -71,7 +71,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Chirurgie endoscopique des sinus",
     operation_category: "C",
     hospital: "",
-    source: `${MANUAL}, chap. 38 (ORL).`,
+    source: `${MANUAL}, chap. 39 (ORL).`,
     content: content({
       techniques: ["general"],
       drugs: [propofolInduction(), remifentanil(), rocuronium(), lidocaineTopical(), dexamethasone(8), ondansetron(), tranexamic(), paracetamol(), ketorolac()],
@@ -88,7 +88,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Tympanoplastie",
     operation_category: "C",
     hospital: "",
-    source: `${MANUAL}, chap. 23 (NVPO) et 38.`,
+    source: `${MANUAL}, chap. 23 (NVPO) et 39.`,
     content: content({
       techniques: ["general"],
       drugs: [propofolInduction(), remifentanil(), dexamethasone(8), ondansetron(), droperidol(), paracetamol(), ketorolac()],
@@ -105,10 +105,10 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Microchirurgie laryngée",
     operation_category: "C",
     hospital: "",
-    source: `${MANUAL}, chap. 38 (voies aériennes partagées).`,
+    source: `${MANUAL}, chap. 39 (voies aériennes partagées).`,
     content: content({
       techniques: ["general"],
-      drugs: [propofolInduction(), remifentanil(), rocuronium(), drug("Sugammadex", "other", "bolus_iv", { perKg: 2 }, "mg", "Geste court avec curarisation profonde : 2–4 mg/kg (manuel, chap. 8)."), dexamethasone(8), lidocaineTopical()],
+      drugs: [propofolInduction(), remifentanil(), rocuronium(), drug("Sugammadex", "other", "bolus_iv", { perKg: 2 }, "mg", "Geste court avec curarisation profonde : 2–4 mg/kg (manuel, chap. 9)."), dexamethasone(8), lidocaineTopical()],
       targets: ["Voies aériennes partagées : plan défini avec le chirurgien (sonde fine, jet-ventilation, apnée oxygénée à haut débit)", "Laser : FiO₂ < 0,3, sonde laser, ballonnet rempli de sérum coloré", "Curarisation profonde jusqu'à la fin"],
       material: [...MONITORING, "Sonde fine (5–6) ou sonde laser", "Jet-ventilateur", "Oxygène nasal à haut débit", "Vidéolaryngoscope", "Kit de cricothyroïdotomie"],
       risks: [risk("difficult_airway"), risk("laryngospasm"), { title: "Feu des voies aériennes (laser)", why: "Laser, oxygène et sonde combustible réunis.", prevention: "FiO₂ la plus basse possible, pas de N₂O, sonde adaptée, ballonnet au sérum.", conduct: "Arrêter la ventilation et l'O₂, retirer la sonde, sérum dans les voies aériennes, ventiler au masque, bronchoscopie." }],
@@ -122,7 +122,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Chirurgie carcinologique tête et cou",
     operation_category: "C",
     hospital: "",
-    source: `${MANUAL}, chap. 38 ; ERAS tête et cou avec lambeau libre (Dort et al., JAMA Otolaryngol 2017).`,
+    source: `${MANUAL}, chap. 39 ; ERAS tête et cou avec lambeau libre (Dort et al., JAMA Otolaryngol 2017).`,
     content: content({
       techniques: ["general"],
       drugs: [propofolInduction(), sufentanil(0.3), rocuronium(), drug("Amoxicilline-clavulanate", "antibio", "bolus_iv", { fixed: 2 }, "g", "Chirurgie contaminée (ouverture des voies aérodigestives) : 2 g, réinjection 1 g toutes les 2 h, 24 h au maximum (SFAR 2024) ; si amoxicilline contre-indiquée : céfazoline 2 g + métronidazole 1 g, ou clindamycine 900 mg + gentamicine 5 mg/kg.", 120), dexamethasone(8), ondansetron(), paracetamol(), ketamineSparing(), tranexamic()],
@@ -156,7 +156,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Abcès péri-amygdalien ou cervical profond",
     operation_category: "C",
     hospital: "",
-    source: `${MANUAL}, chap. 38 ; DAS : intubation difficile (Frerk et al. 2015).`,
+    source: `${MANUAL}, chap. 37 (hémorragie après amygdalectomie) et 39 ; DAS : intubation difficile (Frerk et al. 2015).`,
     content: content({
       techniques: ["general"],
       drugs: [drug("Kétamine", "induction", "bolus_iv", { perKg: 1 }, "mg", "1–2 mg/kg : ventilation spontanée préservée (manuel, chap. 6)."), propofolInduction(1.5), drug("Rocuronium (séquence rapide)", "induction", "bolus_iv", { perKg: 1.2 }, "mg", "Seulement une fois l'intubation jugée possible ; sugammadex 16 mg/kg prêt."), dexamethasone(8), drug("Amoxicilline-clavulanate", "antibio", "bolus_iv", { fixed: 2 }, "g", "Antibiothérapie de l'infection, déjà débutée ?")],
@@ -173,7 +173,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Extraction des dents de sagesse",
     operation_category: "E",
     hospital: "",
-    source: `${MANUAL}, chap. 38.`,
+    source: `${MANUAL}, chap. 16 et 17 (intubation nasotrachéale) et 39.`,
     content: content({
       techniques: ["general", "sedation"],
       drugs: [propofolInduction(), remifentanil(), rocuronium(), drug("Lidocaïne adrénalinée (infiltration dentaire)", "alr", "infiltration", { fixed: 72 }, "mg", "Par le chirurgien ; maximum 7 mg/kg."), dexamethasone(8), ondansetron(), paracetamol(), ketorolac()],
@@ -192,7 +192,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Vitrectomie",
     operation_category: "I",
     hospital: "",
-    source: `${MANUAL}, chap. 12 et 39 (ophtalmologie).`,
+    source: `${MANUAL}, chap. 12 et 38 (ophtalmologie).`,
     content: content({
       techniques: ["superficial_block", "sedation", "general"],
       drugs: [propofolInduction(), drug("Lidocaïne 2 % (bloc sous-ténonien ou péribulbaire)", "alr", "infiltration", { fixed: 100 }, "mg", "3–5 mL sous-ténonien, 6–10 mL péribulbaire ; ± ropivacaïne 0,75 %."), sedationPropofol(), sedationRemi(), paracetamol()],
@@ -209,7 +209,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Chirurgie du strabisme",
     operation_category: "I",
     hospital: "",
-    source: `${MANUAL}, chap. 37 et 39.`,
+    source: `${MANUAL}, chap. 37 et 38.`,
     content: content({
       techniques: ["general"],
       drugs: [childSevoflurane(" Pas en cas de globe ouvert (pleurs, toux, poussée de pression intraoculaire) : propofol IV."), childPropofol(), childSufentanil(), childAtropine(), childDexa(), childOndansetron(), childParacetamol(), droperidol()],
@@ -315,7 +315,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Médiastinoscopie",
     operation_category: "G",
     hospital: "",
-    source: `${MANUAL}, chap. 26 (thorax) et 34 (myasthénie).`,
+    source: `${MANUAL}, chap. 28 (thorax) et 29 (myasthénie).`,
     content: content({
       techniques: ["general"],
       drugs: [propofolInduction(), remifentanil(), rocuronium(), drug("Sugammadex", "other", "bolus_iv", { perKg: 2 }, "mg", "Myasthénie : curares réduits (rocuronium 0,3 mg/kg) et monitorage ; sugammadex en fin d'intervention."), cefazolin(), dexamethasone(8), paracetamol()],
@@ -366,7 +366,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Chirurgie du pneumothorax",
     operation_category: "G",
     hospital: "",
-    source: `${PROSPECT_REF("VATS", 2022, "34739134")} ; ${MANUAL}, chap. 26.`,
+    source: `${PROSPECT_REF("VATS", 2022, "34739134")} ; ${MANUAL}, chap. 28.`,
     content: content({
       techniques: ["general", "deep_block"],
       drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), ketorolac(), ropivacaineBlock(150, "paravertébral ou ESP")],
@@ -473,7 +473,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Réduction de luxation sous anesthésie",
     operation_category: "K",
     hospital: "",
-    source: `${MANUAL}, chap. 39 (estomac plein) et 12.`,
+    source: `${MANUAL}, chap. 17 (estomac plein, séquence rapide) et 12.`,
     content: content({
       techniques: ["general", "sedation", "superficial_block"],
       drugs: [propofolInduction(1.5), drug("Kétamine", "induction", "bolus_iv", { perKg: 0.5 }, "mg", "0,5–1 mg/kg : analgésie pour une réduction brève."), drug("Rocuronium (séquence rapide)", "induction", "bolus_iv", { perKg: 1.2 }, "mg", "Estomac plein (traumatisme récent)."), ropivacaineBlock(100, "interscalénique, PENG ou fascia iliaca selon la luxation"), cefazolin("Fracture ouverte : céfazoline dans l'heure qui suit le traumatisme, sans attendre le bloc ; Gustilo III : + gentamicine 5 mg/kg ; c'est une antibiothérapie (24–72 h), pas une prophylaxie. Lavage septique : après les prélèvements."), paracetamol()],
@@ -526,7 +526,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Excision-greffe de brûlure",
     operation_category: "L",
     hospital: "",
-    source: `${MANUAL}, chap. 42 (brûlés).`,
+    source: `${MANUAL}, chap. 41 (brûlés).`,
     content: content({
       techniques: ["general"],
       drugs: [drug("Kétamine", "induction", "bolus_iv", { perKg: 1 }, "mg", "1–2 mg/kg : stabilité, analgésie (manuel, chap. 6)."), propofolInduction(1.5), rocuronium(1), sufentanil(0.3), tranexamic(), cefazolin("Selon la colonisation et le protocole du centre des brûlés."), noradrenaline()],
@@ -543,7 +543,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Abdominoplastie",
     operation_category: "L",
     hospital: "",
-    source: `${MANUAL}, chap. 11 et 23.`,
+    source: `${MANUAL}, chap. 12 et 23.`,
     content: content({
       techniques: ["general", "superficial_block"],
       drugs: [propofolInduction(), sufentanil(), rocuronium(), cefazolin(), dexamethasone(8), ondansetron(), paracetamol(), ketorolac(), ropivacaineBlock(150, "TAP bilatéral"), tranexamic()],
@@ -647,7 +647,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Arthrodèse pour scoliose de l'adolescent",
     operation_category: "K",
     hospital: "",
-    source: `${ERAS_SPINE} (extrapolé) ; ${MANUAL}, chap. 29 et 37.`,
+    source: `${ERAS_SPINE} (extrapolé) ; ${MANUAL}, chap. 2 (potentiels évoqués), 37 et 40.`,
     content: content({
       techniques: ["general", "neuraxial"],
       drugs: [propofolInduction(), remifentanil(), rocuronium(), childCefazolin(), drug("Acide tranexamique", "haemodynamic", "perfusion", { perKg: 15 }, "mg", "10–15 mg/kg puis perfusion selon l'équipe (manuel, chap. 40)."), drug("Morphine intrathécale", "analgesia", "intrathecal", { fixed: 0.3 }, "mg", "Par le chirurgien ou avant l'incision, 5–10 µg/kg selon l'équipe ; surveillance respiratoire."), ketamineSparing(), childParacetamol(), noradrenaline("PAM ≥ 65–70 mmHg pendant la correction (perfusion médullaire).")],
@@ -664,7 +664,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Examen sous anesthésie (enfant)",
     operation_category: "X",
     hospital: "",
-    source: `${CHILD} ; ${MANUAL}, chap. 22.`,
+    source: `${CHILD} ; ${MANUAL}, chap. 22 et 42 (hors bloc).`,
     content: content({
       techniques: ["sedation", "general"],
       drugs: [childPremed(), childSevoflurane(" Imagerie : induction au masque puis relais IV ou masque laryngé."), childPropofol(), drug("Propofol (sédation)", "maintenance", "pse", { perKg: 1 }, "mg", "Bolus 1 mg/kg puis 6–10 mg/kg/h titré (manuel, chap. 37)."), drug("Dexmédétomidine intranasale", "premed", "intranasal", { perKg: 2 }, "µg", "1–2 µg/kg, 30–45 min avant (imagerie sans douleur) (manuel, chap. 37)."), drug("Kétamine", "analgesia", "bolus_iv", { perKg: 0.5 }, "mg", "0,5–1 mg/kg pour un geste douloureux (ponction, myélogramme).")],
@@ -698,7 +698,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Correction de pectus excavatum (Nuss)",
     operation_category: "G",
     hospital: "",
-    source: `${CHILD} ; ${MANUAL}, chap. 26.`,
+    source: `${CHILD} ; ${MANUAL}, chap. 28 et 37.`,
     content: content({
       techniques: ["general", "deep_block"],
       drugs: [childSevoflurane(), childPropofol(), childSufentanil(), drug("Rocuronium", "induction", "bolus_iv", { perKg: 0.6 }, "mg", "0,6 mg/kg."), childCefazolin(), drug("Ropivacaïne 0,2 % (ESP ou paravertébral)", "alr", "perinerveux", { perKg: 1.5, max: 150 }, "mg", "1,5 mg/kg au total, maximum 150 mg ; cathéters bilatéraux pour le pectus (manuel, chap. 37)."), childDexa(), childOndansetron(), childParacetamol(), childIbuprofen(), ketamineSparing()],
@@ -734,7 +734,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Bronchoscopie souple / EBUS",
     operation_category: "X",
     hospital: "",
-    source: `${MANUAL}, chap. 22 et 26.`,
+    source: `${MANUAL}, chap. 22, 28 et 39 (bronchoscopie rigide).`,
     content: content({
       techniques: ["sedation", "general"],
       drugs: [sedationPropofol(), sedationRemi(), lidocaineTopical(), propofolInduction(), rocuronium()],
@@ -751,7 +751,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "CPRE",
     operation_category: "X",
     hospital: "",
-    source: `${MANUAL}, chap. 22 ; ESGE/ESAES : sédation en endoscopie.`,
+    source: `${MANUAL}, chap. 22 et 42 (hors bloc) ; ESGE/ESAES : sédation en endoscopie.`,
     content: content({
       techniques: ["sedation", "general"],
       drugs: [sedationPropofol(), sedationRemi(), propofolInduction(), rocuronium(), drug("Céfuroxime (CPRE avec obstacle non drainé)", "antibio", "bolus_iv", { fixed: 1.5 }, "g", "Seulement si drainage biliaire incomplet prévisible (obstacle hilaire, cholangite sclérosante) ou après transplantation hépatique (ESGE) ; ponction de kyste pancréatique : à discuter avec le gastro-entérologue.")],
@@ -768,7 +768,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Radiologie interventionnelle",
     operation_category: "X",
     hospital: "",
-    source: `${MANUAL}, chap. 22.`,
+    source: `${MANUAL}, chap. 22 et 42 (hors bloc).`,
     content: content({
       techniques: ["sedation", "general"],
       drugs: [propofolInduction(), sedationPropofol(), sedationRemi(), drug("Lidocaïne 1 % (infiltration)", "alr", "infiltration", { fixed: 200 }, "mg", "Par le radiologue ; maximum 4,5 mg/kg."), drug("Kétamine", "analgesia", "bolus_iv", { perKg: 0.5 }, "mg", "Radiofréquence ou embolisation douloureuse : 0,25–0,5 mg/kg."), paracetamol(), ondansetron()],
@@ -785,7 +785,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Électroconvulsivothérapie",
     operation_category: "X",
     hospital: "",
-    source: `${MANUAL}, chap. 22 et 31 (psychiatrie).`,
+    source: `${MANUAL}, chap. 6 et 29 (électroconvulsivothérapie).`,
     content: content({
       techniques: ["general"],
       drugs: [drug("Propofol (ECT)", "induction", "bolus_iv", { perKg: 1 }, "mg", "0,75–1 mg/kg (ou étomidate 0,15–0,3 mg/kg) : la dose influence la durée de la crise."), drug("Suxaméthonium (succinylcholine)", "induction", "bolus_iv", { perKg: 1 }, "mg", "0,5–1 mg/kg : atténue la crise motrice (manuel, chap. 8)."), childAtropine(), drug("Esmolol", "haemodynamic", "bolus_iv", { fixed: 20 }, "mg", "Poussée hypertensive et tachycardie de la crise.")],
@@ -802,7 +802,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Prélèvement d'organes",
     operation_category: "X",
     hospital: "",
-    source: `${MANUAL}, chap. 41 ; protocole de la coordination de transplantation.`,
+    source: `${MANUAL}, chap. 46 (mort encéphalique et prélèvement) ; protocole de la coordination de transplantation.`,
     content: content({
       techniques: ["general"],
       drugs: [rocuronium(), noradrenaline("PAM ≥ 65 mmHg ; vasopressine si besoin."), drug("Méthylprednisolone", "other", "bolus_iv", { fixed: 1000 }, "mg", "15 mg/kg selon le protocole de la coordination."), drug("Héparine non fractionnée", "haemodynamic", "bolus_iv", { fixed: 25000 }, "UI", "300 UI/kg avant le clampage, sur demande des chirurgiens."), cefazolin("Selon le protocole de la coordination.")],
@@ -836,7 +836,7 @@ export const CHILDREN_AND_OTHER_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Résection trachéale",
     operation_category: "G",
     hospital: "",
-    source: `${MANUAL}, chap. 26 et 41 ; protocole du centre.`,
+    source: `${MANUAL}, chap. 28 (transplantation pulmonaire) et 39 (jet-ventilation) ; protocole du centre.`,
     content: content({
       techniques: ["general", "neuraxial"],
       drugs: [propofolInduction(1.5), remifentanil(), rocuronium(), cefazolin(), dexamethasone(8), noradrenaline(), paracetamol(), drug("Ropivacaïne 0,2 % (péridurale thoracique)", "alr", "peridural", { fixed: 10 }, "mg", "Si coagulation compatible (pas pour la transplantation sous ECMO ou CEC héparinée : ESP ou paravertébral).")],

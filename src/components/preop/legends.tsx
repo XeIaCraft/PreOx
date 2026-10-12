@@ -72,7 +72,7 @@ export const APFEL_LEGEND = (
       { code: "1 pt", text: "sexe féminin, non-fumeur, antécédent de NVPO ou mal des transports, opioïdes postopératoires" },
       { code: "0–4", text: "risque de NVPO ≈ 10, 21, 39, 61, 79 %" },
     ]}
-    source={`${APFEL_REFERENCE.label}. Prophylaxie : 2 antiémétiques dès 1–2 facteurs (Gan et al., Anesth Analg 2020).`}
+    source={`${APFEL_REFERENCE.label}. Prophylaxie : 2 antiémétiques dès 1–2 facteurs (4e consensus, Gan et al., Anesth Analg 2020) ; le 5e consensus (Gan et al., Anesth Analg 2025) garde ce score et discute une prophylaxie combinée plus large.`}
   />
 );
 

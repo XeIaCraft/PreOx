@@ -123,7 +123,7 @@ export function postopLines(plan: PostopPlan | undefined, p: PostopPatient = {})
   // Analgesia: base, then opioids, then regional.
   if (has("paracetamol"))
     out.push({
-      text: child && w ? `Paracétamol ${n(15 * w)} mg (15 mg/kg) 4 ×/j IV ou PO` : "Paracétamol 1 g 4 ×/j IV ou PO",
+      text: child ? `Paracétamol ${w ? `${n(15 * w)} mg (15 mg/kg)` : "15 mg/kg"} 4 ×/j IV ou PO` : "Paracétamol 1 g 4 ×/j IV ou PO",
       warning: p.liverFailure ? "Insuffisance hépatique : contre-indiqué (chap. 25)." : undefined,
     });
   if (has("nsaid")) {
@@ -136,13 +136,13 @@ export function postopLines(plan: PostopPlan | undefined, p: PostopPatient = {})
     });
   }
   if (has("metamizole")) out.push({ text: "Métamizole 500 mg–1 g 4 ×/j PO ou IV, 2 semaines au maximum (agranulocytose)" });
-  if (has("opioid_titration")) out.push({ text: child && w ? `Morphine ${range(0.05 * w, 0.1 * w, "mg")} IV toutes les 10 min en SSPI (0,05–0,1 mg/kg)` : "Morphine en titration IV en SSPI (bolus de 1–2 mg toutes les 5–10 min selon l'EVA et la sédation)" });
+  if (has("opioid_titration")) out.push({ text: child ? `Morphine ${w ? `${range(0.05 * w, 0.1 * w, "mg")} ` : ""}IV toutes les 10 min en SSPI (0,05–0,1 mg/kg)` : "Morphine en titration IV en SSPI (bolus de 1–2 mg toutes les 5–10 min selon l'EVA et la sédation)" });
   if (has("pca_morphine"))
     out.push({
-      text: child && w ? `PCA morphine 1 mg/mL : bolus ${range(0.01 * w, 0.03 * w, "mg")} (10–30 µg/kg), période réfractaire 5–10 min, sans débit continu` : "PCA morphine : bolus 1–2 mg, période réfractaire 7–10 min, maximum 30 mg / 4 h, sans débit continu",
+      text: child ? `PCA morphine 1 mg/mL : bolus ${w ? `${range(0.01 * w, 0.03 * w, "mg")} ` : ""}(10–30 µg/kg), période réfractaire 5–10 min, sans débit continu` : "PCA morphine : bolus 1–2 mg, période réfractaire 7–10 min, maximum 30 mg / 4 h, sans débit continu",
       warning: p.renalFailure || (p.crcl !== undefined && p.crcl < 30) ? "Insuffisance rénale : accumulation des métabolites de la morphine — préférer le fentanyl." : undefined,
     });
-  if (has("pca_fentanyl")) out.push({ text: child && w ? `PCA fentanyl 10 µg/mL : bolus ${range(0.2 * w, 0.5 * w, "µg")} (0,2–0,5 µg/kg), période réfractaire 5–10 min` : "PCA fentanyl : bolus 10 µg, période réfractaire 5 min, maximum 400 µg / 4 h" });
+  if (has("pca_fentanyl")) out.push({ text: child ? `PCA fentanyl 10 µg/mL : bolus ${w ? `${range(0.2 * w, 0.5 * w, "µg")} ` : ""}(0,2–0,5 µg/kg), période réfractaire 5–10 min` : "PCA fentanyl : bolus 10 µg, période réfractaire 5 min, maximum 400 µg / 4 h" });
   if (has("pcea")) out.push({ text: `PCEA : ${infusionText(plan.pcea ?? DEFAULT_PCEA)}` });
   if (has("perineural")) out.push({ text: `Cathéter périnerveux : ${infusionText(plan.perineural ?? DEFAULT_PERINEURAL)}` });
   if (has("intrathecal_morphine")) out.push({ text: "Morphine intrathécale reçue : pas d'autre opioïde systémique sans avis ; surveillance de la respiration 24 h (dépression respiratoire retardée)" });
