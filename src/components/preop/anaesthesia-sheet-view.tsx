@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronsDownUp, ChevronsUpDown, ExternalLink, ShieldAlert, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/preop/ui";
-import { anaesthesiaSheet, PATIENT_PROFILES, sheetProfiles, sheetRefs, type PhaseCode, type ProfileCode, type ProfileNote, type SheetLine, type SheetPhase } from "@/lib/preop/anaesthesia-sheet";
+import { anaesthesiaSheet, defaultSheetMode, PATIENT_PROFILES, SHEET_MODES, sheetModes, type SheetMode, sheetProfiles, sheetRefs, type PhaseCode, type ProfileCode, type ProfileNote, type SheetLine, type SheetPhase } from "@/lib/preop/anaesthesia-sheet";
 import type { CiCard } from "@/lib/preop/contraindications";
 import { GUIDELINES, doiUrl, pubmedUrl, type GuidelineId } from "@/lib/preop/guideline-refs";
 import type { SurgeryItem } from "@/lib/preop/catalog";
@@ -234,7 +234,11 @@ function PhaseView({ phase, open, onToggle, filter }: { phase: SheetPhase; open:
 }
 
 export function AnaesthesiaProtocol({ surgery, protocol, onEdit, commonNote }: { surgery: SurgeryItem; protocol: Protocol | null; onEdit: () => void; commonNote?: React.ReactNode }) {
-  const phases = useMemo(() => anaesthesiaSheet(surgery, protocol), [surgery, protocol]);
+  const modes = useMemo(() => sheetModes(surgery, protocol), [surgery, protocol]);
+  // The technique picked for this procedure (back to its usual one on another procedure).
+  const [picked, setPicked] = useState<{ id: string; mode: SheetMode } | null>(null);
+  const mode = picked && picked.id === surgery.id && modes.includes(picked.mode) ? picked.mode : defaultSheetMode(surgery, protocol);
+  const phases = useMemo(() => anaesthesiaSheet(surgery, protocol, mode), [surgery, protocol, mode]);
   const profiles = useMemo(() => sheetProfiles(phases), [phases]);
   const refs = useMemo(() => sheetRefs(phases).filter((id) => id !== "manual" && id !== "rcp"), [phases]);
   const [open, setOpen] = useState<Partial<Record<PhaseCode, boolean>>>({});
@@ -275,6 +279,28 @@ export function AnaesthesiaProtocol({ surgery, protocol, onEdit, commonNote }: {
           )}
         </p>
         {commonNote}
+      </div>
+
+      <div className="space-y-1.5">
+        <p className="text-xs text-foreground-subtle">Technique — la fiche entière s&apos;adapte à celle choisie :</p>
+        <div role="radiogroup" aria-label="Technique anesthésique" className="flex flex-wrap gap-1.5">
+          {SHEET_MODES.filter((m) => modes.includes(m.code)).map((m) => (
+            <button
+              key={m.code}
+              type="button"
+              role="radio"
+              aria-checked={mode === m.code}
+              onClick={() => setPicked({ id: surgery.id, mode: m.code })}
+              className={cn(
+                "min-h-9 rounded-lg border px-3 text-sm font-medium transition-colors",
+                mode === m.code ? "border-primary bg-primary text-primary-foreground" : "border-border text-foreground hover:bg-surface-muted"
+              )}
+            >
+              {m.label}
+              {m.code === defaultSheetMode(surgery, protocol) && modes.length > 1 ? <span className="ml-1 text-[11px] font-normal opacity-75">(habituelle)</span> : null}
+            </button>
+          ))}
+        </div>
       </div>
 
       {profiles.length > 0 && (

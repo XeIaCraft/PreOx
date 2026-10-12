@@ -191,6 +191,8 @@ interface Ctx {
   gaFallback: boolean;
   /** The airway in that case. */
   fallbackAirway: AirwayChoice | null;
+  /** General anaesthesia chosen in the sheet but none in the protocol: the manual's doses are given. */
+  gaManual: boolean;
   /** Drug names of the plan and of the post-op orders (« PCA morphine » → morphine). */
   drugNames: string[];
 }
@@ -236,7 +238,7 @@ const POSTOP_DRUG_NAMES: Partial<Record<string, string>> = {
   ketamine: "Kétamine",
 };
 
-function context(s: SurgeryItem, protocol: Protocol | null): Ctx {
+function context(s: SurgeryItem, protocol: Protocol | null, chosen = false): Ctx {
   const plan = protocol?.content;
   const techniques = new Set<Technique>(s.techniques?.length ? s.techniques : (plan?.techniques ?? []));
   for (const t of plan?.techniques ?? []) techniques.add(t);
@@ -246,7 +248,9 @@ function context(s: SurgeryItem, protocol: Protocol | null): Ctx {
   const text = fold([...(plan?.targets ?? []), ...(plan?.material ?? []), plan?.notes ?? "", ...(s.specifics ?? [])].join(" | "));
   const gases = plan?.gases;
   const general = techniques.has("general");
-  const gaFallback = !general && techniques.size > 0;
+  // With a technique chosen in the sheet, the other one is one tap away: no « Si AG » plan B.
+  const gaFallback = !chosen && !general && techniques.size > 0;
+  const gaManual = chosen && general && !drugs.some((d) => d.phase === "induction" && !/sedation|premedication/.test(fold(d.name)));
   return {
     s,
     plan,
@@ -272,7 +276,8 @@ function context(s: SurgeryItem, protocol: Protocol | null): Ctx {
     catheter: !!plan?.postopPlan?.analgesia.some((a) => a === "pcea" || a === "perineural") || drugs.some((d) => d.route === "peridural"),
     airway: airwayChoice(s, plan),
     gaFallback,
-    fallbackAirway: gaFallback ? airwayChoice(s, plan, true) : null,
+    fallbackAirway: gaFallback ? airwayChoice(s, plan, true) : gaManual ? airwayChoice(s, plan) : null,
+    gaManual,
     drugNames: [...drugs.map((d) => d.name), ...postopNames],
   };
 }
@@ -639,7 +644,7 @@ function fallbackInduction(c: Ctx): SheetLine {
 
 function phaseInduction(c: Ctx, drugs: ProtocolDrug[]): SheetPhase | null {
   if (!c.general && !c.sedation && !drugs.length && !c.gaFallback) return null;
-  const lines: SheetLine[] = c.gaFallback ? [fallbackInduction(c)] : [];
+  const lines: SheetLine[] = c.gaFallback ? [fallbackInduction(c)] : c.gaManual ? [{ ...fallbackInduction(c), text: fallbackInduction(c).text.replace(/^Si AG : /, "Pas d'AG dans le protocole, doses du manuel : ") }] : [];
   const recommendations: SheetLine[] = [
     c.child
       ? { text: "Jeûne de l'enfant : liquides clairs jusqu'à 1 h, lait maternel 3 h (ESAIC 2022) ; lait artificiel, autres laits et solides 6 h (manuel) ; un petit-déjeuner léger bien encadré semble bien toléré.", refs: ["fastingChildren2022", "manual"], chapter: "chap. 37" }
@@ -655,6 +660,7 @@ function phaseInduction(c: Ctx, drugs: ProtocolDrug[]): SheetPhase | null {
 function phaseMaintenance(c: Ctx, drugs: ProtocolDrug[]): SheetPhase | null {
   if (!c.general && !c.sedation && !drugs.length && !c.gaFallback) return null;
   const lines: SheetLine[] = [];
+  if (c.gaManual) lines.push({ text: "Sévoflurane autour de 1 CAM corrigée pour l'âge ou AIVOC propofol–rémifentanil.", refs: ["manual"], chapter: "chap. 4 et 22" });
   if (c.gaFallback)
     lines.push({ text: "Si AG : sévoflurane autour de 1 CAM corrigée pour l'âge ou AIVOC propofol–rémifentanil ; mêmes cibles hémodynamiques ; sans ALR, prévoir l'épargne morphinique (ou un bloc périphérique).", refs: ["manual"], chapter: "chap. 4 et 22" });
   const gases = c.plan?.gases;
@@ -672,7 +678,8 @@ function phaseMaintenance(c: Ctx, drugs: ProtocolDrug[]): SheetPhase | null {
   if (c.volatile || c.gaFallback) cards.push(CI_CARDS.volatile);
   if (c.n2o) cards.push(CI_CARDS.n2o);
   cards.push(...drugCards(drugs));
-  const base = gases ? (gases.agent === "tiva" ? "AIVOC" : "Sévoflurane") : c.sedation && !c.general ? "Sédation titrée" : c.gaFallback ? "" : "Selon le protocole";
+  const awake = drugs.map((d) => d.name).slice(0, 2).join(", ") || "Patient éveillé";
+  const base = gases ? (gases.agent === "tiva" ? "AIVOC" : "Sévoflurane") : c.sedation && !c.general ? "Sédation titrée" : c.gaFallback ? "" : !c.general ? awake : "Selon le protocole";
   const summary = [base, c.gaFallback ? fallbackWhen(c) : ""].filter(Boolean).join(" · ");
   return phase("maintenance", summary, { lines, drugs: sheetDrugs(drugs, "maintenance"), recommendations, cards });
 }
@@ -820,8 +827,71 @@ function relevant(n: ProfileNote, c: Ctx): boolean {
 }
 
 /** The anaesthesia of a procedure, phase by phase — with its protocol when one applies. */
-export function anaesthesiaSheet(s: SurgeryItem, protocol: Protocol | null): SheetPhase[] {
-  const c = context(s, protocol);
+// ---------------------------------------------------------------------------
+// Technique chosen in the sheet: the whole sheet for that one technique
+// ---------------------------------------------------------------------------
+
+export type SheetMode = "general" | "neuraxial" | "regional" | "sedation";
+export const SHEET_MODES: { code: SheetMode; label: string }[] = [
+  { code: "general", label: "AG" },
+  { code: "neuraxial", label: "Rachi / péridurale" },
+  { code: "regional", label: "ALR périphérique" },
+  { code: "sedation", label: "Sédation" },
+];
+
+const BLOCKS: Technique[] = ["deep_block", "superficial_block"];
+const allTechniques = (s: SurgeryItem, plan: ProtocolContent | undefined) => new Set<Technique>([...(s.techniques ?? []), ...(plan?.techniques ?? [])]);
+const spinalDrug = (d: ProtocolDrug) => d.route === "intrathecal" && d.phase === "alr";
+/** A neuraxial technique that is an anaesthesia of its own — not an epidural or intrathecal morphine added to a general anaesthesia. */
+function neuraxialAlone(s: SurgeryItem, plan: ProtocolContent | undefined): boolean {
+  if (plan?.drugs.some(spinalDrug)) return true;
+  if (plan?.drugs.some((d) => d.route === "peridural")) return false;
+  return s.incision === "peripheral";
+}
+
+/** The techniques this procedure can be done under, general anaesthesia always among them (the patient may want it). */
+export function sheetModes(s: SurgeryItem, protocol: Protocol | null): SheetMode[] {
+  const plan = protocol?.content;
+  const t = allTechniques(s, plan);
+  const out = new Set<SheetMode>(["general"]);
+  if (t.has("neuraxial") && neuraxialAlone(s, plan)) out.add("neuraxial");
+  if (BLOCKS.some((b) => t.has(b)) && (!t.has("general") || BLOCKS.includes((s.techniques ?? [])[0]))) out.add("regional");
+  if (t.has("sedation")) out.add("sedation");
+  return SHEET_MODES.map((m) => m.code).filter((m) => out.has(m));
+}
+
+/** The usual technique of the procedure, as a mode. */
+export function defaultSheetMode(s: SurgeryItem, protocol: Protocol | null): SheetMode {
+  const modes = sheetModes(s, protocol);
+  const first = (s.techniques?.length ? s.techniques : (protocol?.content.techniques ?? []))[0];
+  const m: SheetMode | undefined = first === "general" ? "general" : first === "neuraxial" ? "neuraxial" : first === "sedation" ? "sedation" : first ? "regional" : undefined;
+  return m && modes.includes(m) ? m : modes[0];
+}
+
+/** The procedure and its protocol reduced to the chosen technique. */
+function forMode(s: SurgeryItem, protocol: Protocol | null, mode: SheetMode): { s: SurgeryItem; protocol: Protocol | null } {
+  const plan = protocol?.content;
+  const t = allTechniques(s, plan);
+  const blocks = BLOCKS.filter((b) => t.has(b));
+  const techniques: Technique[] =
+    mode === "general"
+      ? ["general", ...blocks, ...(t.has("neuraxial") && !neuraxialAlone(s, plan) ? (["neuraxial"] as Technique[]) : [])]
+      : mode === "neuraxial"
+        ? ["neuraxial", ...(t.has("sedation") ? (["sedation"] as Technique[]) : [])]
+        : mode === "regional"
+          ? [...blocks, ...(t.has("sedation") ? (["sedation"] as Technique[]) : [])]
+          : ["sedation", ...blocks];
+  const sedationDrug = (d: ProtocolDrug) => /sedation|premedication/.test(fold(d.name));
+  const gaDrug = (d: ProtocolDrug) => ((d.phase === "induction" || d.phase === "maintenance") && !sedationDrug(d)) || /sugammadex|neostigmine/.test(fold(d.name));
+  const keep = (d: ProtocolDrug) =>
+    mode === "general" ? !spinalDrug(d) && !sedationDrug(d) : !gaDrug(d) && (mode === "neuraxial" || !(d.route === "intrathecal" || d.route === "peridural"));
+  const nextPlan = plan && { ...plan, techniques, drugs: plan.drugs.filter(keep), gases: mode === "general" ? plan.gases : undefined };
+  return { s: { ...s, techniques }, protocol: protocol && nextPlan ? { ...protocol, content: nextPlan } : protocol };
+}
+
+export function anaesthesiaSheet(s0: SurgeryItem, protocol0: Protocol | null, mode?: SheetMode): SheetPhase[] {
+  const { s, protocol } = mode ? forMode(s0, protocol0, mode) : { s: s0, protocol: protocol0 };
+  const c = context(s, protocol, !!mode);
   const drugs = c.plan?.drugs ?? [];
   const byPhase = (p: PhaseCode) => drugs.filter((d) => DRUG_PHASE_OF[d.phase] === p);
   const postopNames = c.drugNames.slice(drugs.length);

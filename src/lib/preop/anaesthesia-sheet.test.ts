@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { airwayChoice, anaesthesiaSheet, PATIENT_PROFILES, sheetRefs, type SheetPhase } from "./anaesthesia-sheet";
+import { airwayChoice, anaesthesiaSheet, defaultSheetMode, PATIENT_PROFILES, sheetModes, sheetRefs, type SheetPhase } from "./anaesthesia-sheet";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 import { CI_CARDS } from "./contraindications";
 import { GUIDELINES, type GuidelineId } from "./guideline-refs";
@@ -193,6 +193,25 @@ describe("examples", () => {
     expect(phase(cs, "airway")!.cards.map((c) => c.id)).toContain("rsi");
     // A planned general anaesthesia has no « Si AG ».
     expect(texts(sheetOf(/^Appendicectomie$/).phases).some((t) => /Si AG/.test(t))).toBe(false);
+  });
+
+  it("technique chosen in the sheet: spinal or general anaesthesia, never both mixed", () => {
+    const s = surgeries.find((x) => /^Adénomectomie prostatique$/.test(x.name))!;
+    const protocol = matchProtocol(protocols, { name: s.name, category: s.category, catalogId: s.id }, "", surgeries);
+    expect(sheetModes(s, protocol)).toEqual(["general", "neuraxial"]);
+    expect(defaultSheetMode(s, protocol)).toBe("neuraxial");
+    const spinal = anaesthesiaSheet(s, protocol, "neuraxial");
+    expect(phase(spinal, "airway")).toBeUndefined();
+    expect(texts(spinal).some((t) => /Si AG|Propofol|Rocuronium/.test(t))).toBe(false);
+    expect(phase(spinal, "technique")!.cards.map((c) => c.id)).toContain("neuraxial");
+    const general = anaesthesiaSheet(s, protocol, "general");
+    expect(phase(general, "airway")!.lines[0].text).not.toMatch(/Si AG/);
+    expect(phase(general, "induction")!.drugs.map((d) => d.name)).toContain("Propofol");
+    expect(general.flatMap((p) => p.drugs.map((d) => d.name)).some((n) => /Bupivacaïne/.test(n))).toBe(false);
+    // A thoracic epidural added to a general anaesthesia is not an anaesthesia of its own.
+    const colectomy = sheetOf(/^Colectomie par laparotomie$/);
+    const colProtocol = matchProtocol(protocols, { name: colectomy.s.name, category: colectomy.s.category, catalogId: colectomy.s.id }, "", surgeries);
+    expect(sheetModes(colectomy.s, colProtocol)).not.toContain("neuraxial");
   });
 
   it("without a protocol: technique, airway and contraindications from the procedure alone", () => {
