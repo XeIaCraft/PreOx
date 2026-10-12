@@ -291,7 +291,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
     surgery: "Endoprothèse aortique",
     operation_category: "A",
     hospital: "",
-    source: `${ESC_2022} ; ${MANUAL}, chap. 27.`,
+    source: `ESVS 2024 anévrismes aorto-iliaques (Wanhainen et al., Eur J Vasc Endovasc Surg 2024, PMID 38307694) ; anesthésie locale ou locorégionale contre AG : méta-analyse (de Mesquita et al., J Cardiothorac Vasc Anesth 2025) et registre VQI (Zottola et al., J Vasc Surg 2022) ; ${ESC_2022} ; ${MANUAL}, chap. 27.`,
     content: content({
       techniques: ["general", "sedation"],
       drugs: [propofolInduction(1.5), sufentanil(), rocuronium(), cefazolin(), heparinVascular(), drug("Lidocaïne 1 % (infiltration fémorale)", "alr", "infiltration", { fixed: 200 }, "mg", "Voie percutanée sous anesthésie locale et sédation possible."), noradrenaline(), paracetamol()],
@@ -299,7 +299,7 @@ export const MORE_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
       material: [...MONITORING, "Cathéter artériel (bras gauche si TEVAR)", "Sonde urinaire", "Protection contre les rayons X"],
       risks: [risk("bleeding"), { title: "Ischémie médullaire (TEVAR)", why: "Couverture des artères intercostales.", prevention: "Drainage du LCS si couverture étendue, PAM élevée.", conduct: "Déficit des membres inférieurs au réveil : PAM > 90 mmHg, drainage du LCS, avis urgent." }, { title: "Conversion en chirurgie ouverte", why: "Rupture ou échec du déploiement.", prevention: "Salle et produits sanguins prêts.", conduct: "AG rapide, transfusion, clampage." }],
       postopPlan: postop({ destination: "hdu", analgesia: ["paracetamol"], thrombo: "lmwh", watch: ["pain", "urine", "neuro"] }),
-      notes: "Endoprothèse fenêtrée ou branchée : procédure longue, AG, risque rénal et médullaire plus élevé.",
+      notes: "EVAR programmé : l'anesthésie locale (± sédation) ou locorégionale est associée à moins d'admissions en soins intensifs, un séjour plus court et, dans des études observationnelles, moins de complications cardiaques ; AG si le patient ne peut rester immobile, abord chirurgical complexe ou préférence du patient. Rupture : anesthésie locale si possible, hypotension permissive jusqu'au clampage endovasculaire (ESVS 2024), AG prête. Fenêtrée ou branchée : protocole dédié (FEVAR, BEVAR).",
     }),
   },
   {
