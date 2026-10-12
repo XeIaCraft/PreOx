@@ -96,7 +96,7 @@ describe("the sheet of every procedure of the catalogue", () => {
     for (const { s, phases } of all) {
       const airway = phase(phases, "airway");
       const lma = !!airway?.cards.some((c) => c.id === "lma");
-      const proposed = !!airway && /masque laryng/i.test(airway.lines[0]?.text ?? "");
+      const proposed = !!airway && airway.lines.some((l) => /masque laryng/i.test(l.text));
       expect(lma, s.name).toBe(proposed);
       if (s.approach === "laparoscopic" || s.approach === "robotic") expect(lma, s.name).toBe(false);
     }
@@ -175,6 +175,24 @@ describe("examples", () => {
     const phases = anaesthesiaSheet(child!, matchProtocol(protocols, { name: child!.name, category: child!.category, catalogId: child!.id }, "", surgeries));
     expect(phase(phases, "induction")!.patients.some((n) => n.profile === "child" && /sévoflurane/.test(n.text))).toBe(true);
     expect(phase(phases, "ponv")!.patients.some((n) => n.profile === "child" && /VPOP/.test(n.text))).toBe(true);
+  });
+
+  it("regional only: the patient may still want general anaesthesia, so its airway, induction and maintenance are given", () => {
+    const base = surgeries.find((x) => /^Prothèse totale de genou$/.test(x.name))!;
+    const s = { ...base, techniques: ["neuraxial" as const] };
+    const phases = anaesthesiaSheet(s, null);
+    expect(phase(phases, "technique")!.lines.some((l) => /respecter le choix du patient/.test(l.text))).toBe(true);
+    expect(phase(phases, "airway")!.lines[0].text).toMatch(/^Si AG : /);
+    expect(phase(phases, "induction")!.lines[0].text).toMatch(/^Si AG : propofol/);
+    expect(phase(phases, "maintenance")!.lines[0].text).toMatch(/^Si AG : sévoflurane/);
+    expect(phase(phases, "maintenance")!.cards.map((c) => c.id)).toContain("volatile");
+    // Caesarean section under spinal: general anaesthesia means a rapid sequence.
+    const caesarean = surgeries.find((x) => /^Césarienne$/.test(x.name))!;
+    const cs = anaesthesiaSheet({ ...caesarean, techniques: ["neuraxial"] }, null);
+    expect(phase(cs, "airway")!.lines[0].text).toMatch(/^Si AG : intubation en séquence rapide/);
+    expect(phase(cs, "airway")!.cards.map((c) => c.id)).toContain("rsi");
+    // A planned general anaesthesia has no « Si AG ».
+    expect(texts(sheetOf(/^Appendicectomie$/).phases).some((t) => /Si AG/.test(t))).toBe(false);
   });
 
   it("without a protocol: technique, airway and contraindications from the procedure alone", () => {

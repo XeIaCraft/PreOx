@@ -187,14 +187,20 @@ interface Ctx {
   n2o: boolean;
   catheter: boolean;
   airway: AirwayChoice;
+  /** No general anaesthesia planned but a regional technique or sedation: the patient may still want (or need) one. */
+  gaFallback: boolean;
+  /** The airway in that case. */
+  fallbackAirway: AirwayChoice | null;
   /** Drug names of the plan and of the post-op orders (« PCA morphine » → morphine). */
   drugNames: string[];
 }
 
 const NMBA = /rocuronium|vecuronium|atracurium|cisatracurium|mivacurium|suxamethonium|succinylcholine|celocurine/;
 
-export function airwayChoice(s: SurgeryItem, plan: ProtocolContent | undefined): AirwayChoice {
+/** `asGeneral`: the airway if the patient ends up under general anaesthesia (regional refused, failed or contraindicated). */
+export function airwayChoice(s: SurgeryItem, plan: ProtocolContent | undefined, asGeneral = false): AirwayChoice {
   const techniques = new Set<Technique>([...(s.techniques ?? []), ...(plan?.techniques ?? [])]);
+  if (asGeneral) techniques.add("general");
   const text = fold([...(plan?.targets ?? []), ...(plan?.material ?? []), plan?.notes ?? "", ...(s.specifics ?? [])].join(" | "));
   const name = fold(s.name);
   const position = fold(s.position ?? "");
@@ -239,6 +245,8 @@ function context(s: SurgeryItem, protocol: Protocol | null): Ctx {
   const postopNames = (plan?.postopPlan?.analgesia ?? []).map((a) => POSTOP_DRUG_NAMES[a]).filter((x): x is string => !!x);
   const text = fold([...(plan?.targets ?? []), ...(plan?.material ?? []), plan?.notes ?? "", ...(s.specifics ?? [])].join(" | "));
   const gases = plan?.gases;
+  const general = techniques.has("general");
+  const gaFallback = !general && techniques.size > 0;
   return {
     s,
     plan,
@@ -246,7 +254,7 @@ function context(s: SurgeryItem, protocol: Protocol | null): Ctx {
     text,
     position: fold(s.position ?? ""),
     techniques,
-    general: techniques.has("general"),
+    general,
     neuraxial: techniques.has("neuraxial") || drugs.some((d) => d.route === "intrathecal" || d.route === "peridural"),
     deepBlock: techniques.has("deep_block"),
     superficialBlock: techniques.has("superficial_block") || drugs.some((d) => d.route === "perinerveux"),
@@ -263,6 +271,8 @@ function context(s: SurgeryItem, protocol: Protocol | null): Ctx {
     n2o: gases?.carrier === "n2o",
     catheter: !!plan?.postopPlan?.analgesia.some((a) => a === "pcea" || a === "perineural") || drugs.some((d) => d.route === "peridural"),
     airway: airwayChoice(s, plan),
+    gaFallback,
+    fallbackAirway: gaFallback ? airwayChoice(s, plan, true) : null,
     drugNames: [...drugs.map((d) => d.name), ...postopNames],
   };
 }
@@ -561,6 +571,12 @@ function phaseTechnique(c: Ctx): SheetPhase {
   if (extra.length) lines.push({ text: `Le protocole prévoit aussi : ${extra.map(techniqueLabel).join(", ").toLowerCase()}` });
   if (!own.length && planned.length) lines.push({ text: `Technique du protocole : ${planned.map(techniqueLabel).join(", ").toLowerCase()}` });
   if (!lines.length) lines.push({ text: "Technique à choisir selon le patient (pas de technique habituelle renseignée)" });
+  if (c.gaFallback && hasRegional(c))
+    lines.push({
+      text: "Une ALR se propose, elle ne s'impose pas : expliquer ses bénéfices pour cette chirurgie, puis respecter le choix du patient. Refus, échec ou contre-indication : anesthésie générale, détaillée dans les phases suivantes (« Si AG »).",
+      refs: ["manual"],
+      chapter: "chap. 13",
+    });
   const cards: CiCard[] = [];
   if (c.neuraxial) cards.push(CI_CARDS.neuraxial);
   if (c.deepBlock) cards.push(CI_CARDS.deepBlock);
@@ -575,11 +591,13 @@ function phaseTechnique(c: Ctx): SheetPhase {
 }
 
 function phaseAirway(c: Ctx): SheetPhase | null {
-  const a = c.airway;
-  if (a.device === "none") return null;
+  const fallback = c.airway.device === "none" || (c.gaFallback && c.airway.device === "spontaneous");
+  const a = fallback ? c.fallbackAirway : c.airway;
+  if (!a || a.device === "none") return null;
   const lines: SheetLine[] = [];
   const cards: CiCard[] = [];
-  const label =
+  if (fallback && c.airway.device === "spontaneous") lines.push({ text: "Sédation : ventilation spontanée (oxygène, capnographie)" });
+  const device =
     a.device === "ett"
       ? `Intubation${a.rsi ? " en séquence rapide" : ""}${a.nasal ? " nasotrachéale" : ""}${a.oneLung ? " (sonde double lumière ou bloqueur)" : ""}`
       : a.device === "lma"
@@ -587,6 +605,7 @@ function phaseAirway(c: Ctx): SheetPhase | null {
         : a.device === "lma_or_ett"
           ? "Masque laryngé possible, sinon intubation"
           : "Ventilation spontanée (oxygène, capnographie)";
+  const label = fallback ? `Si AG : ${device.charAt(0).toLowerCase()}${device.slice(1)}` : device;
   lines.push({ text: `${label}${a.why.length ? ` — ${a.why.join(", ")}` : ""}` });
   if (a.device === "lma" || a.device === "lma_or_ett") cards.push(CI_CARDS.lma);
   if (a.rsi) cards.push(CI_CARDS.rsi);
@@ -597,41 +616,64 @@ function phaseAirway(c: Ctx): SheetPhase | null {
     recommendations.push({ text: "Plan A–B–C–D prêt pour chaque patient : vidéolaryngoscope ; échec d'intubation : dispositif supraglottique de 2e génération pour oxygéner ; réveil par défaut ; « ni intubation ni oxygénation » : cricothyroïdotomie au bistouri.", refs: ["das2015"] });
     recommendations.push({ text: "Curare pour l'intubation (meilleures conditions, moins de lésions pharyngolaryngées).", refs: ["nmbEsaic2023"] });
   } else recommendations.push({ text: "Sédation : capnographie, matériel de contrôle des voies aériennes et de conversion en AG prêt.", refs: ["monitoring2021"] });
+  if (fallback && c.airway.device === "spontaneous") recommendations.push({ text: "Sédation : capnographie, matériel de contrôle des voies aériennes et de conversion en AG prêt.", refs: ["monitoring2021"] });
   return phase("airway", label, { lines, cards, recommendations });
 }
 
+const hasRegional = (c: Ctx) => c.neuraxial || c.deepBlock || c.superficialBlock;
+const fallbackWhen = (c: Ctx) => (hasRegional(c) ? "AG si refus ou échec de l'ALR" : "AG si la sédation ne suffit pas");
+
+/** Induction if general anaesthesia replaces the planned regional technique (manual doses). */
+function fallbackInduction(c: Ctx): SheetLine {
+  const a = c.fallbackAirway;
+  const curare = a?.rsi
+    ? "succinylcholine 1 mg/kg ou rocuronium 1,2 mg/kg (séquence rapide)"
+    : a?.device === "ett"
+      ? `rocuronium ${c.child ? "0,6 mg/kg" : "0,6 mg/kg (poids idéal)"}`
+      : "pas de curare pour un masque laryngé";
+  const text = c.child
+    ? `Si AG : sévoflurane au masque ou propofol 2,5–5 mg/kg, sufentanil 0,1–0,3 µg/kg, ${curare}.`
+    : `Si AG : propofol 2–3 mg/kg (1–2 mg/kg chez la personne âgée, titré chez le patient fragile), sufentanil 0,2–0,6 µg/kg, ${curare}.`;
+  return { text, refs: ["manual"], chapter: c.child ? "chap. 37" : "chap. 6, 7 et 8" };
+}
+
 function phaseInduction(c: Ctx, drugs: ProtocolDrug[]): SheetPhase | null {
-  if (!c.general && !c.sedation && !drugs.length) return null;
+  if (!c.general && !c.sedation && !drugs.length && !c.gaFallback) return null;
+  const lines: SheetLine[] = c.gaFallback ? [fallbackInduction(c)] : [];
   const recommendations: SheetLine[] = [
     c.child
       ? { text: "Jeûne de l'enfant : liquides clairs jusqu'à 1 h, lait maternel 3 h (ESAIC 2022) ; lait artificiel, autres laits et solides 6 h (manuel) ; un petit-déjeuner léger bien encadré semble bien toléré.", refs: ["fastingChildren2022", "manual"], chapter: "chap. 37" }
       : { text: "Jeûne : solides et laits 6 h (repas gras abondant : 8 h ou plus) ; liquides clairs (thé, café avec un peu de lait, jus sans pulpe) encouragés jusqu'à 2 h, moins si le protocole du service le permet — aussi chez l'obèse, le diabétique, en cas de reflux et chez la femme enceinte hors travail ; chewing-gum ou bonbon jusqu'au transfert : pas de report.", refs: ["fasting2026", "fasting2011"] },
     { text: "Pas de prémédication sédative systématique ; information et jeûne court (programmes de récupération améliorée).", refs: ["eras2025"] },
   ];
-  if (c.general) recommendations.push({ text: `${c.airway.rsi ? "Séquence rapide" : "Si séquence rapide"} : succinylcholine 1 mg/kg ou rocuronium 0,9–1,2 mg/kg ; préoxygénation jusqu'à FeO₂ ≥ 0,9.`, refs: ["nmbEsaic2023", "das2015"] });
-  const summary = drugs.filter((d) => d.phase === "induction").map((d) => d.name).slice(0, 3).join(", ") || (c.sedation && !c.general ? "Sédation" : "Selon le protocole");
-  return phase("induction", summary, { drugs: sheetDrugs(drugs, "induction"), recommendations, cards: drugCards(drugs) });
+  if (c.general || c.gaFallback) recommendations.push({ text: `${(c.general ? c.airway : c.fallbackAirway)?.rsi ? "Séquence rapide" : "Si séquence rapide"} : succinylcholine 1 mg/kg ou rocuronium 0,9–1,2 mg/kg ; préoxygénation jusqu'à FeO₂ ≥ 0,9.`, refs: ["nmbEsaic2023", "das2015"] });
+  const named = drugs.filter((d) => d.phase === "induction").map((d) => d.name).slice(0, 3).join(", ");
+  const summary = [named || (c.sedation && !c.general ? "Sédation" : c.gaFallback ? "" : "Selon le protocole"), c.gaFallback ? fallbackWhen(c) : ""].filter(Boolean).join(" · ");
+  return phase("induction", summary, { lines, drugs: sheetDrugs(drugs, "induction"), recommendations, cards: drugCards(drugs) });
 }
 
 function phaseMaintenance(c: Ctx, drugs: ProtocolDrug[]): SheetPhase | null {
-  if (!c.general && !c.sedation && !drugs.length) return null;
+  if (!c.general && !c.sedation && !drugs.length && !c.gaFallback) return null;
   const lines: SheetLine[] = [];
+  if (c.gaFallback)
+    lines.push({ text: "Si AG : sévoflurane autour de 1 CAM corrigée pour l'âge ou AIVOC propofol–rémifentanil ; mêmes cibles hémodynamiques ; sans ALR, prévoir l'épargne morphinique (ou un bloc périphérique).", refs: ["manual"], chapter: "chap. 4 et 22" });
   const gases = c.plan?.gases;
   if (gases) for (const l of describeGases(gases, c.child ? (c.s.population === "neonate" ? 0.1 : 5) : undefined)) lines.push({ text: l });
   for (const t of c.plan?.targets ?? []) lines.push({ text: t });
   const recommendations: SheetLine[] = [];
-  if (c.general) {
+  if (c.general || c.gaFallback) {
     recommendations.push({ text: "Ventilation protectrice : Vt 6–8 ml/kg de poids idéal, PEP 5 cmH₂O puis individualisée, recrutement à la pression et la durée minimales efficaces.", refs: ["ventilation2019"] });
     recommendations.push({ text: "Curarisation : approfondir le bloc seulement si les conditions chirurgicales l'exigent ; monitorage quantitatif à l'adducteur du pouce ; sugammadex pour un bloc au rocuronium profond, modéré ou superficiel ; néostigmine seulement si TOF-ratio > 0,2, monitorage jusqu'à > 0,9.", refs: ["nmbEsaic2023", "nmbAsa2023"] });
   }
   recommendations.push({ text: "PAM ≥ 65 mmHg : une PAM < 60–70 mmHg, même brève, est associée à des lésions myocardiques et rénales et à la mortalité.", refs: ["bp2019"] });
   if (c.tiva) recommendations.push({ text: "AIVOC avec curare : EEG traité recommandé (risque de mémorisation) ; voie dédiée, perfusion visible.", refs: ["tiva2019", "monitoring2021"] });
-  if (c.volatile) recommendations.push({ text: "Bas débit de gaz frais ; pas de desflurane ni de N₂O en routine.", refs: ["glasgow2023"] });
+  if (c.volatile || c.gaFallback) recommendations.push({ text: "Bas débit de gaz frais ; pas de desflurane ni de N₂O en routine.", refs: ["glasgow2023"] });
   const cards: CiCard[] = [];
-  if (c.volatile) cards.push(CI_CARDS.volatile);
+  if (c.volatile || c.gaFallback) cards.push(CI_CARDS.volatile);
   if (c.n2o) cards.push(CI_CARDS.n2o);
   cards.push(...drugCards(drugs));
-  const summary = gases ? (gases.agent === "tiva" ? "AIVOC" : "Sévoflurane") : c.sedation && !c.general ? "Sédation titrée" : "Selon le protocole";
+  const base = gases ? (gases.agent === "tiva" ? "AIVOC" : "Sévoflurane") : c.sedation && !c.general ? "Sédation titrée" : c.gaFallback ? "" : "Selon le protocole";
+  const summary = [base, c.gaFallback ? fallbackWhen(c) : ""].filter(Boolean).join(" · ");
   return phase("maintenance", summary, { lines, drugs: sheetDrugs(drugs, "maintenance"), recommendations, cards });
 }
 
