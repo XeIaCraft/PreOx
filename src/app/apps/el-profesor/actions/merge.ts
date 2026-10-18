@@ -127,6 +127,9 @@ export async function startMerge(input: { title: string; bookIds: string[]; incl
     return { error: `Clé API ${input.provider === "gemini" ? "Gemini" : "Claude"} non configurée (Réglages IA).` };
 
   const supabase = createAdminClient();
+  // The queue needs migration 099 (lock between stages): without it a fusion would stop at the end of its first stage.
+  const { error: schemaError } = await supabase.from("el_profesor_merge_jobs").select("locked_until").limit(1);
+  if (schemaError) return { error: "Appliquez d'abord la migration 099 (compléments de la fusion), puis relancez." };
   const { data: last } = await supabase.from("el_profesor_books").select("order_index").order("order_index", { ascending: false }).limit(1).maybeSingle();
   const { data: book, error: bookError } = await supabase
     .from("el_profesor_books")
