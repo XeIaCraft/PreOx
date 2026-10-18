@@ -1,4 +1,4 @@
-const BLOCK_TYPES_DOC = `
+export const BLOCK_TYPES_DOC = `
 - "definition_mecanisme" : définition, mécanisme d'action, physiopathologie
 - "valeurs_seuils" : valeurs numériques de référence, seuils, posologies simples
 - "tableau_comparatif" : comparaison de plusieurs éléments côte à côte (classes de médicaments, diagnostics différentiels...) — TOUJOURS en tableau réel (headers + rows), jamais aplati en liste
@@ -10,7 +10,7 @@ const BLOCK_TYPES_DOC = `
 - "texte_libre" : tout contenu important qui ne rentre dans aucune des catégories ci-dessus — jamais un prétexte pour perdre de l'information, sert de filet de sécurité
 `.trim();
 
-const EXPERT_READER_CONTEXT = `
+export const EXPERT_READER_CONTEXT = `
 Le lecteur est un(e) anesthésiste-réanimateur belge (en formation ou déjà spécialiste) qui vise une maîtrise théorique de niveau EXPERT (registre des référentiels européens UEMS/EBA/EDAIC) — être étudiant n'abaisse pas l'exigence de profondeur. Calibre systématiquement la profondeur du contenu — fiches ET flashcards — en conséquence : ce qui compte, c'est ce qui permet de reconnaître une situation, décider, agir et prioriser en clinique ou de trancher une distinction piégeuse à l'oral, pas seulement mémoriser une définition isolée.
 `.trim();
 
@@ -20,7 +20,7 @@ Le lecteur est un(e) anesthésiste-réanimateur belge (en formation ou déjà sp
 // nothing else in these prompts says otherwise. Citations are the one
 // deliberate exception — they must stay verbatim in the source's own
 // language to remain a faithful, page-matching quote.
-const LANGUAGE_RULE = `
+export const LANGUAGE_RULE = `
 Langue : rédige tout le contenu que tu génères (noms de sous-entités, titres de fiche, texte des blocs, questions et réponses des flashcards) exclusivement en FRANÇAIS, quelle que soit la langue du document source (même s'il est en anglais ou dans une autre langue) — traduis fidèlement en conservant la terminologie médicale standard, ne recopie jamais tel quel un passage en langue étrangère en dehors d'une citation. Seules les "citations" (le champ "quote") restent verbatim dans la langue exacte du texte source, car elles doivent correspondre mot pour mot au passage cité.
 `.trim();
 
@@ -36,11 +36,11 @@ Langue : rédige tout le contenu que tu génères (noms de sous-entités, titres
 // avoids the truncation risk altogether — this is a best-effort nudge, not
 // a guarantee (tool-use schemas constrain shape but aren't rigidly
 // enforced), so the salvage path stays in place as the real safety net.
-const STRICT_ARRAY_FORMAT_RULE = `
+export const STRICT_ARRAY_FORMAT_RULE = `
 Format strict : chaque champ de type tableau (ex. "sub_entities", "blocks", "flashcards", "additions_for_existing", "new_sub_entities") doit être un VRAI tableau JSON natif dans ta réponse — jamais une chaîne de caractères contenant du JSON sérialisé (même entre guillemets avec des \\n), quelle que soit la taille du contenu.
 `.trim();
 
-const FLASHCARD_QUALITY_DOC = `
+export const FLASHCARD_QUALITY_DOC = `
 Couverture : génère AUTANT DE FLASHCARDS QUE NÉCESSAIRE pour couvrir tout ce qui, dans les blocs déjà extraits, est réellement testable ou utile à la décision clinique — pas un nombre fixe, pas une seule carte générique par sous-entité. Une sous-entité riche et nuancée mérite beaucoup de cartes ; une sous-entité pauvre en mérite peu. N'invente rien pour atteindre un quota, et ne fusionne jamais deux faits distincts dans une carte vague — une carte = une idée testable et sans ambiguïté.
 
 Niveau attendu — des "items de maîtrise", pas du simple savoir : chaque fois que le contenu source le permet, préfère une question qui fait reconnaître, décider, agir ou prioriser plutôt qu'un pur rappel de définition. Angles à exploiter quand le texte les couvre réellement (liste d'exemples pour t'inspirer, pas une checklist à cocher une par une ni un minimum à atteindre) :

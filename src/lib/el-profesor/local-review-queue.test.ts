@@ -25,6 +25,7 @@ function makeFlashcard(id: string): Flashcard {
     clozeRanges: [],
     suggestedImagePage: null,
     suggestedImageHint: null,
+    sourceFlashcardIds: [],
   };
 }
 
@@ -35,6 +36,7 @@ function makeSubEntity(id: string, flashcards: Flashcard[], supersededByFicheId:
     name: `sub-entity-${id}`,
     orderIndex: 0,
     summary: "",
+    sourceFicheIds: [],
     fiche: {
       id: `fiche-${id}`,
       subEntityId: `sub-${id}`,

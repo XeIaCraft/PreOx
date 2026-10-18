@@ -513,7 +513,8 @@ async function callGeminiJson(
   parts: Array<Record<string, unknown>>,
   responseSchema: Record<string, unknown>,
   onRawResponse?: (text: string) => void,
-  attempt = 0
+  attempt = 0,
+  onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void
 ): Promise<unknown> {
   // Checked once per top-level call, not on retries of the same request —
   // a 429/503 retry is still the generation the caller already committed
@@ -537,7 +538,7 @@ async function callGeminiJson(
     await logGeminiUsage({ model, success: false, statusCode: response.status, errorMessage: body.slice(0, 300) });
     if (RETRYABLE_STATUS.has(response.status) && attempt < RETRY_DELAYS_MS.length) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
-      return callGeminiJson(apiKey, model, parts, responseSchema, onRawResponse, attempt + 1);
+      return callGeminiJson(apiKey, model, parts, responseSchema, onRawResponse, attempt + 1, onUsage);
     }
     throw new GeminiError(`Appel Gemini échoué (${response.status}) : ${body.slice(0, 300) || "erreur inconnue"}.`);
   }
@@ -561,6 +562,7 @@ async function callGeminiJson(
     candidatesTokens: usage?.candidatesTokenCount,
     totalTokens: usage?.totalTokenCount,
   });
+  onUsage?.({ inputTokens: usage?.promptTokenCount ?? 0, outputTokens: usage?.candidatesTokenCount ?? 0 });
 
   return parseGeminiJson(text);
 }
@@ -757,6 +759,32 @@ async function textRotation<T>(
     try {
       const result = (await callGeminiJson(apiKey, model, [{ text: instructions }], responseSchema, onRawResponse)) as T;
       return { result, apiKey, model };
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaOrCapacityError(err)) throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GeminiError("Appel Gemini échoué.");
+}
+
+/**
+ * Any text-only structured call with key/model rotation, returning the
+ * tokens actually billed — used by the book fusion pipeline (merge/), whose
+ * prompts and schemas live with it rather than here.
+ */
+export async function callGeminiTextJson(
+  config: GeminiRotationConfig,
+  instructions: string,
+  responseSchema: Record<string, unknown>
+): Promise<{ result: unknown; model: string; inputTokens: number; outputTokens: number }> {
+  let lastError: unknown;
+  for (const { apiKey, model } of rotationCombos(config)) {
+    try {
+      let usage = { inputTokens: 0, outputTokens: 0 };
+      const result = await callGeminiJson(apiKey, model, [{ text: instructions }], responseSchema, undefined, 0, (u) => {
+        usage = u;
+      });
+      return { result, model, ...usage };
     } catch (err) {
       lastError = err;
       if (!isQuotaOrCapacityError(err)) throw err;

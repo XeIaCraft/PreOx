@@ -23,6 +23,7 @@ import type {
   FlashcardVariant,
   ImageOcclusion,
   ClozeRange,
+  SuggestedImage,
 } from "../types";
 import type {
   ElProfesorBookRow,
@@ -67,6 +68,8 @@ function toBook(row: ElProfesorBookRow): Book {
     createdAt: row.created_at,
     archivedAt: row.archived_at,
     previousEditionBookId: row.previous_edition_book_id,
+    kind: row.kind === "merged" ? "merged" : "book",
+    sourceBookIds: row.source_book_ids ?? [],
   };
 }
 
@@ -84,11 +87,13 @@ function toChapter(row: ElProfesorChapterRow): Chapter {
     sourceKind: row.source_kind,
     sourceText: row.source_text,
     updatedAt: row.updated_at,
+    partTitle: row.part_title ?? null,
+    subPartTitle: row.sub_part_title ?? null,
   };
 }
 
 function toSubEntity(row: ElProfesorSubEntityRow): SubEntity {
-  return { id: row.id, chapterId: row.chapter_id, name: row.name, orderIndex: row.order_index, summary: row.summary };
+  return { id: row.id, chapterId: row.chapter_id, name: row.name, orderIndex: row.order_index, summary: row.summary, sourceFicheIds: row.source_fiche_ids ?? [] };
 }
 
 function toFiche(row: ElProfesorFicheRow): Fiche {
@@ -117,6 +122,7 @@ function toFicheBlock(row: ElProfesorFicheBlockRow): FicheBlock {
     isEmergency: row.is_emergency,
     imageUrl: row.image_url,
     imageAlt: row.image_alt,
+    suggestedImage: (row.suggested_image as unknown as SuggestedImage | null) ?? null,
   };
 }
 
@@ -127,7 +133,8 @@ function toFlashcard(row: ElProfesorFlashcardRow): Flashcard {
     front: row.front as unknown as FlashcardSide,
     back: row.back as unknown as FlashcardSide,
     citations: (row.citations as unknown as Citation[]) ?? [],
-    status: row.status,
+    // "replaced" rows never reach here — every content loader drops them (isLiveFlashcard).
+    status: row.status === "published" ? "published" : "draft",
     needsReview: row.needs_review,
     imageUrl: row.image_url,
     imageAlt: row.image_alt,
@@ -136,8 +143,12 @@ function toFlashcard(row: ElProfesorFlashcardRow): Flashcard {
     clozeRanges: (row.cloze_ranges as unknown as ClozeRange[]) ?? [],
     suggestedImagePage: row.suggested_image_page,
     suggestedImageHint: row.suggested_image_hint,
+    sourceFlashcardIds: row.source_flashcard_ids ?? [],
   };
 }
+
+/** A source card replaced by a published merged card (migration 098) is out of the book: not shown, not reviewed. */
+const isLiveFlashcard = (row: ElProfesorFlashcardRow) => row.status !== "replaced";
 
 function toFlag(row: ElProfesorFlagRow): Flag {
   return { id: row.id, targetType: row.target_type, targetId: row.target_id, reason: row.reason, status: row.status };
@@ -230,7 +241,7 @@ export const getChapterContent = cache(async function getChapterContent(
       fiche: {
         ...toFiche(ficheRow),
         blocks: blocks.filter((b) => b.fiche_id === ficheRow.id).map(toFicheBlock),
-        flashcards: flashcards.filter((c) => c.fiche_id === ficheRow.id).map(toFlashcard),
+        flashcards: flashcards.filter((c) => c.fiche_id === ficheRow.id && isLiveFlashcard(c)).map(toFlashcard),
       },
     };
   });
@@ -451,6 +462,7 @@ export async function getChapterContentBatch(chapterIds: string[], includeDrafts
   }
   const flashcardsByFiche = new Map<string, ElProfesorFlashcardRow[]>();
   for (const c of flashcardRows) {
+    if (!isLiveFlashcard(c)) continue;
     const list = flashcardsByFiche.get(c.fiche_id);
     if (list) list.push(c);
     else flashcardsByFiche.set(c.fiche_id, [c]);

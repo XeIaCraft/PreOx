@@ -51,6 +51,7 @@ function card(id: string): Flashcard {
     clozeRanges: [],
     suggestedImagePage: null,
     suggestedImageHint: null,
+    sourceFlashcardIds: [],
   };
 }
 
@@ -67,6 +68,7 @@ function block(id: string, text: string): FicheBlock {
     isEmergency: false,
     imageUrl: null,
     imageAlt: null,
+    suggestedImage: null,
   };
 }
 
@@ -77,6 +79,7 @@ function sub(id: string, cards: Flashcard[], opts: { superseded?: boolean; block
     name: `name-${id}`,
     orderIndex: 0,
     summary: "",
+    sourceFicheIds: [],
     fiche: {
       id: `fiche-${id}`,
       subEntityId: id,

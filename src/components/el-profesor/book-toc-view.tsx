@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
+import Link from "next/link";
 import { LocalNavLink } from "@/components/el-profesor/local-nav-link";
 import Image from "next/image";
 import { ArrowLeft, ChevronDown, ChevronRight, FileText, FileX } from "lucide-react";
@@ -11,7 +12,7 @@ import type { ChapterStatus } from "@/lib/el-profesor/types";
 const STATUS_LABEL: Record<ChapterStatus, string> = {
   pending: "En attente",
   queued: "En file",
-  extracting: "Extraction…",
+  extracting: "En cours…",
   draft_ready: "Brouillon prêt",
   published: "Publié",
   failed: "Échec",
@@ -61,9 +62,15 @@ export function BookTocView({ toc }: { toc: BookTableOfContents }) {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <LocalNavLink href="/apps/el-profesor" className="mb-4 inline-flex items-center gap-1.5 text-sm text-foreground-subtle hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> Retour à la bibliothèque
-      </LocalNavLink>
+      {book.kind === "merged" ? (
+        <Link href="/apps/el-profesor/notions" prefetch={false} className="mb-4 inline-flex items-center gap-1.5 text-sm text-foreground-subtle hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> Retour aux notions
+        </Link>
+      ) : (
+        <LocalNavLink href="/apps/el-profesor" className="mb-4 inline-flex items-center gap-1.5 text-sm text-foreground-subtle hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> Retour à la bibliothèque
+        </LocalNavLink>
+      )}
 
       <div className="flex items-start gap-3">
         {book.coverUrl && (
@@ -73,6 +80,7 @@ export function BookTocView({ toc }: { toc: BookTableOfContents }) {
         )}
         <div>
           <h1 className="font-serif-display text-2xl font-medium text-foreground">{book.title}</h1>
+          {book.kind === "merged" && <p className="text-sm text-foreground-subtle">Notion — fusion de {book.sourceBookIds.length} livre{book.sourceBookIds.length > 1 ? "s" : ""}</p>}
           {(book.author || book.edition) && <p className="text-sm text-foreground-subtle">{[book.author, book.edition].filter(Boolean).join(" — ")}</p>}
           {book.theme && (
             <span className="mt-1 inline-block rounded-full border border-border px-2 py-0.5 text-[11px] text-foreground-subtle">{book.theme}</span>
@@ -91,10 +99,17 @@ export function BookTocView({ toc }: { toc: BookTableOfContents }) {
         {chapters.length === 0 ? (
           <p className="text-sm text-foreground-subtle">Ce livre n&apos;a pas encore de chapitre publié.</p>
         ) : (
-          chapters.map((chapter) => {
+          chapters.map((chapter, index) => {
             const isOpen = expanded.has(chapter.chapterId);
+            const previous = chapters[index - 1];
+            // A merged book's four levels: a part heading, then a sub-part heading, whenever they change.
+            const newPart = Boolean(chapter.partTitle) && chapter.partTitle !== previous?.partTitle;
+            const newSubPart = Boolean(chapter.subPartTitle) && (newPart || chapter.subPartTitle !== previous?.subPartTitle);
             return (
-              <div key={chapter.chapterId} className="rounded-[var(--radius-lg)] border border-border bg-surface">
+              <Fragment key={chapter.chapterId}>
+              {newPart && <h2 className="pt-6 font-serif-display text-xl font-medium text-foreground first:pt-0">{chapter.partTitle}</h2>}
+              {newSubPart && <h3 className="pt-2 text-xs font-semibold uppercase tracking-wide text-foreground-subtle">{chapter.subPartTitle}</h3>}
+              <div className="rounded-[var(--radius-lg)] border border-border bg-surface">
                 <button
                   type="button"
                   onClick={() => toggle(chapter.chapterId)}
@@ -141,6 +156,7 @@ export function BookTocView({ toc }: { toc: BookTableOfContents }) {
                   </div>
                 )}
               </div>
+              </Fragment>
             );
           })
         )}

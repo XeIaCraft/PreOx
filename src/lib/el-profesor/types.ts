@@ -11,20 +11,35 @@ export type BlockType =
   | "perle_clinique"
   | "piege_erreur"
   | "formule"
-  | "texte_libre";
+  | "texte_libre"
+  /** Merged books only (migration 098): what each source book says when they disagree — never resolved by the AI. */
+  | "divergence"
+  /** Merged books only: the points to know by heart, at the end of a fiche. */
+  | "a_retenir";
 
 export type Citation = {
   page: number;
   quote: string;
+  /**
+   * Set on a merged book's citations (migration 098): the source chapter
+   * whose PDF this page belongs to — a merged chapter has no PDF of its own.
+   * Absent on an ordinary book's citations (the page is in its own chapter).
+   */
+  chapterId?: string;
+  bookTitle?: string;
+  chapterTitle?: string;
+  /** Merged book: the source block this citation was carried over from. */
+  sourceBlockId?: string;
 };
 
 // content shape by block_type — a discriminated union would be ideal, but
 // the column is typed loosely (BlockType is a free string check in SQL) so
 // callers narrow on `block_type` before reading `content`.
-export type TextBlockContent = { text: string };
-export type TableBlockContent = { headers: string[]; rows: string[][] };
+/** `heading`: optional short subtitle of the block (merged books, migration 098 — « Mécanisme d'action », « Posologie »…). */
+export type TextBlockContent = { text: string; heading?: string };
+export type TableBlockContent = { headers: string[]; rows: string[][]; heading?: string };
 export type ProtocolStepContent = { label: string; detail: string; condition?: string };
-export type ProtocolBlockContent = { steps: ProtocolStepContent[] };
+export type ProtocolBlockContent = { steps: ProtocolStepContent[]; heading?: string };
 export type BlockContent = TextBlockContent | TableBlockContent | ProtocolBlockContent;
 
 export type FlashcardSide = { text: string };
@@ -35,9 +50,14 @@ export type ContentStatus = "draft" | "published";
 export type ReviewRating = "again" | "hard" | "good" | "easy";
 export type ReviewSource = "scheduled" | "free" | "exam";
 
+export type BookKind = "book" | "merged";
+
 export type Book = {
   id: string;
   title: string;
+  /** "merged": built by fusing other books (Notions, migration 098). */
+  kind: BookKind;
+  sourceBookIds: string[];
   author: string | null;
   edition: string | null;
   coverUrl: string | null;
@@ -48,7 +68,7 @@ export type Book = {
   previousEditionBookId: string | null;
 };
 
-export type ChapterSourceKind = "pdf" | "docx" | "pptx";
+export type ChapterSourceKind = "pdf" | "docx" | "pptx" | "merged";
 
 export type Chapter = {
   id: string;
@@ -63,6 +83,9 @@ export type Chapter = {
   sourceKind: ChapterSourceKind;
   sourceText: string | null;
   updatedAt: string;
+  /** Merged book's table of contents: the part and sub-part this chapter sits in. */
+  partTitle: string | null;
+  subPartTitle: string | null;
 };
 
 export type SubEntity = {
@@ -71,6 +94,8 @@ export type SubEntity = {
   name: string;
   orderIndex: number;
   summary: string;
+  /** Merged book: the source fiches fused into this one (empty for an ordinary book). */
+  sourceFicheIds: string[];
 };
 
 export type SupersededReason = "duplicate" | "outdated";
@@ -101,7 +126,12 @@ export type FicheBlock = {
   /** Illustration/schéma associé (2026-08-27, extension du support déjà présent sur les flashcards, item 23) — capturé depuis le PDF source ou envoyé manuellement, jamais généré par IA. */
   imageUrl: string | null;
   imageAlt: string | null;
+  /** Merged book: an illustration worth adding here, and the source page that already has one (if any). */
+  suggestedImage: SuggestedImage | null;
 };
+
+/** What the fusion suggests illustrating — `chapterId`/`page` point to a figure that already exists in a source PDF. */
+export type SuggestedImage = { what: string; chapterId: string | null; page: number | null };
 
 /** Alternate phrasing of a flashcard's front (item 47) — the back never varies, only how the question is asked. */
 export type FlashcardVariant = { id: string; text: string };
@@ -129,6 +159,8 @@ export type Flashcard = {
   /** Extraction-time hint ("there's a diagram worth capturing around here") — cleared once an image is actually attached. Never set for a Word/PowerPoint-sourced chapter (no page to point to). */
   suggestedImagePage: number | null;
   suggestedImageHint: string | null;
+  /** Merged flashcard: the source cards it replaces in reviews once published. */
+  sourceFlashcardIds: string[];
 };
 
 export type FlagTargetType = "block" | "flashcard";

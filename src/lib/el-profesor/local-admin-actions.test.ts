@@ -17,6 +17,8 @@ function makeBook(id: string, chapterIds: string[] = [], chapterStatus: ChapterS
     createdAt: "2026-01-01T00:00:00.000Z",
     archivedAt: null,
     previousEditionBookId: null,
+    kind: "book" as const,
+    sourceBookIds: [],
     chapters: chapterIds.map((cid) => ({
       id: cid,
       bookId: id,
@@ -28,6 +30,8 @@ function makeBook(id: string, chapterIds: string[] = [], chapterStatus: ChapterS
       extractionError: null,
       estimatedRemainingPasses: null,
       sourceKind: "pdf" as const,
+      partTitle: null,
+      subPartTitle: null,
       sourceText: null,
       updatedAt: "2026-01-01T00:00:00.000Z",
     })),

@@ -14,6 +14,8 @@ const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   piege_erreur: "Piège fréquent",
   formule: "Formule",
   texte_libre: "Note",
+  divergence: "Divergence entre sources",
+  a_retenir: "À retenir",
 };
 
 export type CoverageInfoTarget =

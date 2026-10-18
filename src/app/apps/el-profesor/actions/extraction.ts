@@ -35,6 +35,7 @@ import type {
   BlockContent,
   FlashcardSide,
 } from "@/lib/el-profesor/types";
+import { replaceSourceCards } from "@/lib/el-profesor/merge/publish";
 
 export interface ActionState {
   error?: string;
@@ -571,7 +572,9 @@ export async function publishFiche(ficheId: string): Promise<ActionState> {
   if (ficheError) return { error: "Impossible de publier la fiche." };
 
   await supabase.from("el_profesor_fiche_blocks").update({ status: "published" }).eq("fiche_id", ficheId);
-  await supabase.from("el_profesor_flashcards").update({ status: "published" }).eq("fiche_id", ficheId);
+  // A card already replaced by a merged card (migration 098) stays out of the book.
+  await supabase.from("el_profesor_flashcards").update({ status: "published" }).eq("fiche_id", ficheId).neq("status", "replaced");
+  await replaceSourceCards([ficheId]);
 
   revalidatePath("/apps/el-profesor");
   return { success: "Fiche publiée." };
@@ -592,7 +595,8 @@ export async function finalizeChapterPublication(chapterId: string): Promise<Act
   if (ficheIds.length > 0) {
     await supabase.from("el_profesor_fiches").update({ status: "published" }).in("id", ficheIds);
     await supabase.from("el_profesor_fiche_blocks").update({ status: "published" }).in("fiche_id", ficheIds);
-    await supabase.from("el_profesor_flashcards").update({ status: "published" }).in("fiche_id", ficheIds);
+    await supabase.from("el_profesor_flashcards").update({ status: "published" }).in("fiche_id", ficheIds).neq("status", "replaced");
+    await replaceSourceCards(ficheIds);
   }
 
   const { error } = await supabase.from("el_profesor_chapters").update({ status: "published" }).eq("id", chapterId);
@@ -648,9 +652,10 @@ export async function bulkPublishChapters(chapterIds: string[]): Promise<ActionS
       chunkIds(ficheIds).flatMap((chunk) => [
         supabase.from("el_profesor_fiches").update({ status: "published" }).in("id", chunk),
         supabase.from("el_profesor_fiche_blocks").update({ status: "published" }).in("fiche_id", chunk),
-        supabase.from("el_profesor_flashcards").update({ status: "published" }).in("fiche_id", chunk),
+        supabase.from("el_profesor_flashcards").update({ status: "published" }).in("fiche_id", chunk).neq("status", "replaced"),
       ])
     );
+    await replaceSourceCards(ficheIds);
   }
 
   await Promise.all(chapterChunks.map((chunk) => supabase.from("el_profesor_chapters").update({ status: "published" }).in("id", chunk)));

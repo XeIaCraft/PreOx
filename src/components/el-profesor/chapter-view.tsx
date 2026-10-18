@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { LocalNavLink } from "@/components/el-profesor/local-nav-link";
 import { useLocalNav } from "@/components/el-profesor/local-nav-shell";
 import { matchLocalRoute } from "@/lib/el-profesor/local-nav-routes";
-import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, PenSquare, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, LayoutTemplate, LayoutList, BookOpenText, ListTree, SlidersHorizontal, AlignJustify, Check, Gauge, RotateCcw } from "lucide-react";
+import { ArrowLeft, FileText, Search, Minus, Plus, Printer, Files, Link2, Star, Keyboard, Download, Maximize2, Minimize2, Sun, ListChecks, Share2, SpellCheck, PenSquare, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, LayoutTemplate, LayoutList, BookOpenText, ListTree, SlidersHorizontal, AlignJustify, Check, Gauge, RotateCcw, ShieldCheck } from "lucide-react";
 import { QuizMode } from "@/components/el-profesor/quiz-mode";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -22,6 +22,7 @@ import { FicheQA } from "@/components/el-profesor/fiche-qa";
 import { StudyToolsButtons } from "@/components/el-profesor/study-tools-buttons";
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
+import { FicheVerificationModal } from "@/components/el-profesor/fiche-verification-modal";
 import { getMyNote, toggleNoteShare } from "@/app/apps/el-profesor/actions/notes";
 import { applyPendingNoteWrites } from "@/lib/el-profesor/local-widgets";
 import { toggleFicheShare } from "@/app/apps/el-profesor/actions/share";
@@ -54,6 +55,21 @@ import type { SubEntityWithFiche, BlockReviewState, AdjacentChapterEntry, Master
 import type { Citation, ChapterSourceKind } from "@/lib/el-profesor/types";
 
 /** Read-only fallback for a chapter sourced from Word/PowerPoint (item 5 of the backlog) — no PDF to render, so citations only ever show as plain quoted text and there's no page to jump to. */
+/** Merged chapter (migration 098): no PDF of its own — each citation opens the page of its source book. */
+function MergedSourcePanel({ source, error }: { source: { label: string } | null; error: string | null }) {
+  return (
+    <div className="h-full overflow-y-auto p-4 text-sm text-foreground-muted">
+      {error ? (
+        <p className="text-danger">{error}</p>
+      ) : source ? (
+        <p>Ouverture de {source.label}…</p>
+      ) : (
+        <p>Cette fiche fusionne plusieurs livres. Touchez un passage, ou une référence sous un bloc, pour ouvrir la page du livre d&apos;où il vient.</p>
+      )}
+    </div>
+  );
+}
+
 function SourceTextPanel({ text }: { text: string | null }) {
   return (
     <div className="h-full overflow-y-auto p-4">
@@ -396,7 +412,12 @@ export function ChapterView({
     if (saved && withFiche.some((s) => s.id === saved)) return saved;
     return withFiche[0]?.id ?? null;
   });
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [ownPdfUrl, setPdfUrl] = useState<string | null>(null);
+  // Merged chapter: the source chapter whose PDF is currently shown.
+  const [sourcePdf, setSourcePdf] = useState<{ chapterId: string; label: string; url: string | null } | null>(null);
+  const [sourcePdfError, setSourcePdfError] = useState<string | null>(null);
+  const isMerged = sourceKind === "merged";
+  const pdfUrl = isMerged ? (sourcePdf?.url ?? null) : ownPdfUrl;
   const [highlight, setHighlight] = useState<PdfHighlight>(null);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(null);
@@ -442,6 +463,7 @@ export function ChapterView({
   // the tablet/desktop width. Mobile is unaffected (it already opens the
   // PDF in its own modal, see pdfModalOpen).
   const [pdfPanelOpen, setPdfPanelOpen] = useState(false);
+  const [verifyingFicheId, setVerifyingFicheId] = useState<string | null>(null);
   const [contributingFlashcard, setContributingFlashcard] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   // Item 37 of the backlog: this page (already visited) is served from the
@@ -773,7 +795,19 @@ export function ChapterView({
   }
 
   function handleCitationClick(citation: Citation) {
-    setHighlight({ page: citation.page, quote: citation.quote });
+    // A merged chapter's citation points at its source chapter: that chapter's PDF is the one to open.
+    if (citation.chapterId && citation.chapterId !== chapterId) {
+      const label = [citation.bookTitle, citation.chapterTitle].filter(Boolean).join(" — ") || "la source";
+      if (sourcePdf?.chapterId !== citation.chapterId) {
+        setSourcePdf({ chapterId: citation.chapterId, label, url: null });
+        setSourcePdfError(null);
+        getChapterPdfUrl(citation.chapterId).then((result) => {
+          if (result.url) setSourcePdf({ chapterId: citation.chapterId!, label, url: result.url });
+          else setSourcePdfError(result.error ?? "PDF source introuvable.");
+        });
+      }
+    }
+    setHighlight({ page: Math.max(1, citation.page), quote: citation.quote });
     // Below lg there's no room for a persistent PDF panel — jump straight
     // into the source instead of leaving the user to find a "voir le PDF" button.
     if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
@@ -860,7 +894,7 @@ export function ChapterView({
             {pdfPanelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
           </Button>
           <Button variant="secondary" size="sm" className="md:hidden" onClick={() => setPdfModalOpen(true)}>
-            <FileText className="h-3.5 w-3.5" /> PDF
+            <FileText className="h-3.5 w-3.5" /> {isMerged ? "Sources" : "PDF"}
           </Button>
         </div>
       </div>
@@ -989,6 +1023,20 @@ export function ChapterView({
             )}
             {isAdmin && selected?.fiche && (
               <StudyToolsButtons ficheTitle={selected.fiche.title} blocks={selected.fiche.blocks} onOpen={() => setOptionsMenuOpen(false)} />
+            )}
+            {isAdmin && selected?.fiche && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => {
+                  setOptionsMenuOpen(false);
+                  setVerifyingFicheId(selected.fiche!.id);
+                }}
+                title="Exporter la fiche vers une IA qui vérifie qu'elle est à jour, puis réimporter sa réponse"
+              >
+                <ShieldCheck className="h-3.5 w-3.5" /> Vérifier l&apos;actualité
+              </Button>
             )}
             {isAdmin && (
               <Button
@@ -1175,7 +1223,13 @@ export function ChapterView({
               !focusMode && pdfPanelOpen ? "hidden md:block" : "hidden"
             }`}
           >
-            {sourceKind !== "pdf" ? (
+            {isMerged ? (
+              pdfUrl ? (
+                <PdfViewer url={pdfUrl} highlight={highlight} />
+              ) : (
+                <MergedSourcePanel source={sourcePdf} error={sourcePdfError} />
+              )
+            ) : sourceKind !== "pdf" ? (
               <SourceTextPanel text={sourceText} />
             ) : pdfUrl ? (
               <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} onCoverageClick={handleCoverageClick} />
@@ -1204,9 +1258,13 @@ export function ChapterView({
         </div>
       )}
 
+      {verifyingFicheId && (
+        <FicheVerificationModal ficheId={verifyingFicheId} onClose={() => setVerifyingFicheId(null)} onApplied={() => window.location.reload()} />
+      )}
+
       {pdfModalOpen && (
         <Modal
-          title="Document source"
+          title={isMerged ? (sourcePdf?.label ?? "Livres sources") : "Document source"}
           onClose={() => setPdfModalOpen(false)}
           size="xl"
           footer={
@@ -1218,7 +1276,13 @@ export function ChapterView({
           }
         >
           <div className="relative -m-4 h-[75vh]">
-            {sourceKind !== "pdf" ? (
+            {isMerged ? (
+              pdfUrl ? (
+                <PdfViewer url={pdfUrl} highlight={highlight} />
+              ) : (
+                <MergedSourcePanel source={sourcePdf} error={sourcePdfError} />
+              )
+            ) : sourceKind !== "pdf" ? (
               <SourceTextPanel text={sourceText} />
             ) : pdfUrl ? (
               <PdfViewer url={pdfUrl} highlight={highlight} coverage={coverage} onSelection={setPendingSelection} onCoverageClick={handleCoverageClick} />

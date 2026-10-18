@@ -45,6 +45,7 @@ export default async function SharedFichePage({ params }: { params: Promise<{ to
     isEmergency: b.is_emergency,
     imageUrl: b.image_url,
     imageAlt: b.image_alt,
+    suggestedImage: null,
   }));
 
   const bookRow = book as ElProfesorBookRow | null;

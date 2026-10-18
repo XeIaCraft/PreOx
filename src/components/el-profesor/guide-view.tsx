@@ -58,8 +58,6 @@ import {
   Siren,
   Volume2,
   EyeOff,
-  Landmark,
-  Calculator,
   PenSquare,
   AlertTriangle,
   Menu,
@@ -132,8 +130,8 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
         <Section id="tableau-de-bord" title="Tableau de bord" icon={GraduationCap}>
           <p>
             La page d&apos;accueil du module liste vos livres, vos widgets de progression, et — si vous êtes admin — les outils de
-            génération de contenu. Une bascule « Par livre / Par notion » change le regroupement de cette liste : par livre (classique),
-            ou par notion transversale (voir la section Notions plus bas).
+            génération de contenu. Une bascule « Par livre / Par notion » change la liste : les livres de la bibliothèque, ou les
+            notions — des livres fusionnés (voir la section Notions plus bas).
           </p>
           <p className="font-medium text-foreground">Barre du haut</p>
           <p>
@@ -152,7 +150,7 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
                   verrait un utilisateur normal (contenu brouillon masqué, outils de génération IA cachés), sans créer de second
                   compte.
                 </IconRow>
-                <IconRow icon={Tag}>Notions et contradictions entre livres (admin).</IconRow>
+                <IconRow icon={Tag}>Notions : fusionner des livres (admin).</IconRow>
                 <IconRow icon={Gauge}>Tableau de bord qualité — doublons, fiches incomplètes (admin).</IconRow>
                 <IconRow icon={Archive}>Livres archivés (admin).</IconRow>
                 <IconRow icon={Settings}>Réglages IA : fournisseur, clés API, coûts (admin) — un point rouge signale une clé manquante.</IconRow>
@@ -338,7 +336,7 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
             Plusieurs modes : révision du jour par chapitre (uniquement les cartes dues), révision libre (tout le chapitre, plafonnée
             par défaut pour rester raisonnable, jamais prise en compte dans la planification), révision globale (mélange tous les
             chapitres dus — la pratique entrelacée retient mieux qu&apos;un chapitre isolé), carnet d&apos;erreurs (vos cartes les plus
-            difficiles), et révision par thème depuis la vue « Par notion ».
+            difficiles), et révision des notions (livres fusionnés) depuis la vue « Par notion ».
           </p>
         </Section>
 
@@ -354,44 +352,38 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
 
         <Section id="notions" title="Notions" icon={Tag}>
           <p>
-            Une « notion » regroupe les fiches de plusieurs livres qui traitent du même sujet (ex. « hyperkaliémie »). Cliquez sur son
-            nom pour ouvrir sa <strong>synthèse</strong> : une fiche unique, réécrite par IA à partir de tout le contenu publié sur ce
-            sujet dans la bibliothèque — les faits qui se répètent d&apos;un livre à l&apos;autre ne sont lus qu&apos;une fois, tandis
-            que le détail propre à chaque livre est conservé. Chaque bloc de synthèse reste tracé jusqu&apos;à son (ou ses) livre(s)
-            source(s) — l&apos;IA ne reformule jamais une citation, elle ne fait que regrouper des blocs déjà extraits et vérifiés. Les
-            fiches sources d&apos;origine restent listées en bas de la page pour qui veut le détail complet d&apos;un livre en
-            particulier.
+            Une « notion » est un <strong>livre fusionné</strong> : plusieurs livres de la bibliothèque réunis en un seul, construit pour
+            apprendre. L&apos;IA bâtit une nouvelle table des matières (parties, sous-parties, chapitres, fiches) qui suit une progression
+            logique, puis rédige chaque fiche à partir des fiches de tous les livres qui traitent du même sujet — sans perte
+            d&apos;information : tout ce que disent les livres est repris, dit une fois quand ils disent la même chose, et un contrôle de
+            couverture réintègre ce qui aurait été oublié (en dernier recours tel quel, marqué « à vérifier »).
           </p>
           <p>
-            La vue « Par notion » du tableau de bord (accessible à tous) liste ces notions avec un raccourci{" "}
-            <GraduationCap className="inline h-3.5 w-3.5 align-text-bottom" /> pour réviser directement ce thème (flashcards
-            mélangées de tous les livres liés) et un badge « Prêt / À consolider / Fragile » qui estime votre préparation à partir des
-            flashcards déjà maîtrisées.
+            Quand les livres se contredisent, un bloc <strong>Divergence entre sources</strong> cite ce que dit chacun. Chaque fiche se
+            termine par un bloc <strong>À retenir par cœur</strong>. Touchez un passage (ou une référence sous un bloc) pour ouvrir la page
+            du PDF du livre d&apos;où il vient — le choix vous est proposé quand il vient de plusieurs livres. Des illustrations sont
+            suggérées là où elles aident, avec la page du livre qui en montre une quand elle existe.
           </p>
           <p>
-            Certaines notions affichent aussi des <Landmark className="inline h-3.5 w-3.5 align-text-bottom" /> recommandations
-            officielles (liens vers des documents de référence saisis manuellement par un admin, jamais résumés par IA) et un{" "}
-            <Calculator className="inline h-3.5 w-3.5 align-text-bottom" /> calculateur de dose — poids × dose/kg plafonné à la dose
-            max, toutes les valeurs saisies manuellement par un admin, jamais un moteur de formules ni de l&apos;IA ; un avertissement
-            reste affiché en permanence au-dessus de tout résultat.
+            Les flashcards sont fusionnées elles aussi : une fois un chapitre de la notion publié, ses cartes remplacent celles des livres
+            sources (qui sortent de vos révisions, pour ne jamais réviser deux fois la même chose), et chaque carte fusionnée reprend votre
+            historique le plus avancé parmi les cartes qu&apos;elle remplace. La vue « Par notion » du tableau de bord liste les notions,
+            chapitre par chapitre, pour lire et réviser.
           </p>
           {isAdmin && (
             <ul className="space-y-1.5">
-              <IconRow icon={Plus}>Créer une notion manuellement, vide au départ — utile pour nommer un thème avant même qu&apos;une fiche y soit rattachée.</IconRow>
-              <IconRow icon={Tag}>Catégoriser automatiquement les fiches d&apos;un chapitre par notion.</IconRow>
-              <IconRow icon={Sparkles}>
-                Générer (ou régénérer) la synthèse d&apos;une notion, depuis sa propre page — reste en brouillon jusqu&apos;à ce que
-                vous la publiiez ; un bandeau signale quand le contenu source a changé depuis la dernière génération.
+              <IconRow icon={Plus}>
+                Créer une notion depuis la page Notions : choisir les livres, inclure ou non les fiches pas encore publiées, choisir
+                l&apos;IA (Gemini, plus rapide ; Claude en lots, moitié prix) et le modèle — le coût estimé s&apos;affiche avant de lancer.
+                La fusion continue côté serveur, fenêtre fermée.
               </IconRow>
-              <IconRow icon={Sparkles}>Détecter les contradictions entre deux fiches partageant une notion.</IconRow>
-              <IconRow icon={Merge}>Fusionner des fiches redondantes, ou marquer l&apos;une d&apos;elles obsolète/remplacée.</IconRow>
+              <IconRow icon={Sparkles}>Relire et publier chaque chapitre (ou tous les chapitres prêts d&apos;un coup) ; tout reste modifiable comme un livre.</IconRow>
               <IconRow icon={FileSearch}>
-                Comparer une notion à une source externe — collez la réponse d&apos;un outil comme Consensus/OpenEvidence, ou
-                importez un article, pour que l&apos;IA propose (jamais n&apos;applique automatiquement) les mises à jour
-                nécessaires sur chaque fiche liée.
+                « Vérifier l&apos;actualité » d&apos;une fiche : exporter la fiche vers une IA avec recherche web, coller sa réponse, voir
+                chaque changement proposé puis l&apos;appliquer — les passages modifiés sont marqués « à vérifier », avec leur référence.
               </IconRow>
-              <IconRow icon={Copy}>Repérer les flashcards quasi-identiques entre plusieurs livres.</IconRow>
-              <IconRow icon={Landmark}>Ajouter une recommandation officielle, ou <Calculator className="inline h-3.5 w-3.5 align-text-bottom" /> un calculateur de dose, rattaché à cette notion.</IconRow>
+              <IconRow icon={Merge}>Supprimer une notion rend leurs cartes aux livres sources, avec leur propre historique.</IconRow>
+              <IconRow icon={Tag}>Les anciennes notions (synthèses, contradictions, recommandations, calculateurs de dose) restent accessibles depuis la page Notions.</IconRow>
             </ul>
           )}
         </Section>

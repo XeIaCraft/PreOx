@@ -72,6 +72,8 @@ export function BookTocWithLocalCache({
         return {
           chapterId: chapter.id,
           chapterTitle: chapter.title,
+          partTitle: chapter.partTitle,
+          subPartTitle: chapter.subPartTitle,
           status: chapter.status,
           subEntities: content ? content.subEntities.map((s) => ({ id: s.id, name: s.name, hasFiche: Boolean(s.fiche) })) : [],
           mastery: masteryCounts[chapter.id] ?? { total: 0, new: 0, learning: 0, acquired: 0 },

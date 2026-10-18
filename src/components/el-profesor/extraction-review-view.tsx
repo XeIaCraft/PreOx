@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, ChevronUp, ChevronDown, FileText, PartyPopper, Search, Merge } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronUp, ChevronDown, FileText, PartyPopper, Search, Merge, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -15,6 +15,7 @@ import { blockToPlainText } from "@/lib/el-profesor/block-text";
 import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-from-selection-dialog";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { BlockEditor } from "@/components/el-profesor/block-editor";
+import { FicheVerificationModal } from "@/components/el-profesor/fiche-verification-modal";
 import { FlashcardEditor } from "@/components/el-profesor/flashcard-editor";
 import { RenameFicheButton } from "@/components/el-profesor/inline-rename-fiche";
 import { MergeFichesForm } from "@/components/el-profesor/merge-fiches-form";
@@ -89,13 +90,18 @@ export function ExtractionReviewView({
   const [subEntities, applyOptimisticAction] = useOptimistic(subEntitiesProp, applyReviewAction);
   const withFiche = subEntities.filter((s) => s.fiche);
   const [selectedId, setSelectedId] = useState(withFiche[0]?.id ?? null);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [ownPdfUrl, setPdfUrl] = useState<string | null>(null);
+  // Merged chapter (migration 098): the source chapter whose PDF is open — to check a passage or capture its figure.
+  const [sourcePdf, setSourcePdf] = useState<{ chapterId: string; label: string; url: string | null; error?: string } | null>(null);
+  const isMerged = sourceKind === "merged";
+  const pdfUrl = isMerged ? (sourcePdf?.url ?? null) : ownPdfUrl;
   const [highlight, setHighlight] = useState<PdfHighlight>(null);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [onlyFlagged, setOnlyFlagged] = useState(false);
   const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [showMerge, setShowMerge] = useState(false);
+  const [verifying, setVerifying] = useState<string | null>(null);
 
   useEffect(() => {
     if (sourceKind !== "pdf") return;
@@ -302,7 +308,14 @@ export function ExtractionReviewView({
   }
 
   function handleCitationClick(citation: Citation) {
-    setHighlight({ page: citation.page, quote: citation.quote });
+    if (citation.chapterId && citation.chapterId !== chapterId && sourcePdf?.chapterId !== citation.chapterId) {
+      const label = [citation.bookTitle, citation.chapterTitle].filter(Boolean).join(" — ") || "la source";
+      setSourcePdf({ chapterId: citation.chapterId, label, url: null });
+      getChapterPdfUrl(citation.chapterId).then((result) =>
+        setSourcePdf({ chapterId: citation.chapterId!, label, url: result.url ?? null, error: result.url ? undefined : (result.error ?? "PDF source introuvable.") })
+      );
+    }
+    setHighlight({ page: Math.max(1, citation.page), quote: citation.quote });
     if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
       setPdfModalOpen(true);
     }
@@ -427,6 +440,9 @@ export function ExtractionReviewView({
                         <Merge className="h-3.5 w-3.5" /> Fusionner
                       </Button>
                     )}
+                    <Button variant="ghost" size="sm" onClick={() => setVerifying(selected.fiche!.id)} title="Exporter la fiche vers une IA qui vérifie qu'elle est à jour, puis réimporter sa réponse">
+                      <ShieldCheck className="h-3.5 w-3.5" /> Vérifier l&apos;actualité
+                    </Button>
                   </div>
                 </div>
 
@@ -486,14 +502,18 @@ export function ExtractionReviewView({
           </div>
 
           <div className="relative hidden min-h-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface md:block">
-            {sourceKind !== "pdf" ? (
+            {isMerged && !pdfUrl ? (
+              <p className="p-4 text-sm text-foreground-muted">
+                {sourcePdf?.error ?? (sourcePdf ? `Ouverture de ${sourcePdf.label}…` : "Fiches fusionnées : cliquez une référence sous un bloc pour ouvrir la page du livre source (et y capturer une figure).")}
+              </p>
+            ) : sourceKind !== "pdf" && !isMerged ? (
               <SourceTextPanel text={sourceText} />
             ) : pdfUrl ? (
               <PdfViewer
                 url={pdfUrl}
                 highlight={highlight}
-                coverage={coverage}
-                onSelection={setPendingSelection}
+                coverage={isMerged ? undefined : coverage}
+                onSelection={isMerged ? undefined : setPendingSelection}
                 onCapture={handlePdfCapture}
                 captureRequest={captureRequest}
                 onCoverageClick={handleCoverageClick}
@@ -506,17 +526,23 @@ export function ExtractionReviewView({
         </div>
       </div>
 
+      {verifying && <FicheVerificationModal ficheId={verifying} onClose={() => setVerifying(null)} onApplied={() => router.refresh()} />}
+
       {pdfModalOpen && (
         <Modal title="Document source" onClose={() => setPdfModalOpen(false)} size="xl">
           <div className="relative -m-4 h-[75vh]">
-            {sourceKind !== "pdf" ? (
+            {isMerged && !pdfUrl ? (
+              <p className="p-4 text-sm text-foreground-muted">
+                {sourcePdf?.error ?? (sourcePdf ? `Ouverture de ${sourcePdf.label}…` : "Fiches fusionnées : cliquez une référence sous un bloc pour ouvrir la page du livre source (et y capturer une figure).")}
+              </p>
+            ) : sourceKind !== "pdf" && !isMerged ? (
               <SourceTextPanel text={sourceText} />
             ) : pdfUrl ? (
               <PdfViewer
                 url={pdfUrl}
                 highlight={highlight}
-                coverage={coverage}
-                onSelection={setPendingSelection}
+                coverage={isMerged ? undefined : coverage}
+                onSelection={isMerged ? undefined : setPendingSelection}
                 onCapture={handlePdfCapture}
                 captureRequest={captureRequest}
                 onCoverageClick={handleCoverageClick}

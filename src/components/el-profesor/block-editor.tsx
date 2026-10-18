@@ -21,7 +21,7 @@ import { suggestFlagFix } from "@/app/apps/el-profesor/actions/flags";
 import { useToast } from "@/components/ui/toast";
 import { uploadImageDirect } from "@/lib/el-profesor/client-image-upload";
 import { EL_PROFESOR_BLOCK_IMAGE_BUCKET } from "@/lib/el-profesor/storage-constants";
-import type { Citation, FicheBlock, Flag, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
+import type { BlockContent, Citation, FicheBlock, Flag, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
 import type { ContentLogEntry } from "@/lib/el-profesor/content-log";
 
 const MAX_BLOCK_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -60,6 +60,8 @@ export const IS_TEXT_BLOCK = new Set([
   "piege_erreur",
   "formule",
   "texte_libre",
+  "divergence",
+  "a_retenir",
 ]);
 
 export function TableEditor({ content, onChange }: { content: TableBlockContent; onChange: (c: TableBlockContent) => void }) {
@@ -240,6 +242,10 @@ export function BlockEditor({
   const [isPending, startTransition] = useTransition();
   const [content, setContent] = useState(block.content);
   const [citations, setCitations] = useState(block.citations);
+  const heading = (content as { heading?: string }).heading;
+  // Merged books' blocks carry an intertitre; an ordinary book's block only shows the field once it has one.
+  const showHeading = (block.content as { heading?: string }).heading !== undefined || block.citations.some((c) => c.chapterId);
+  const withHeading = <T extends object>(c: T): BlockContent => (heading ? { ...c, heading } : c) as unknown as BlockContent;
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -380,16 +386,26 @@ export function BlockEditor({
       </div>
 
       <div className="mt-2">
-        {block.blockType === "tableau_comparatif" && (
-          <TableEditor content={content as TableBlockContent} onChange={(c) => setContent(c)} />
+        {/* Intertitre (merged books, migration 098) — kept through every edit of the body below. */}
+        {showHeading && (
+          <input
+            value={heading ?? ""}
+            onChange={(e) => setContent({ ...content, heading: e.target.value || undefined } as BlockContent)}
+            placeholder="Intertitre (facultatif)"
+            aria-label="Intertitre du bloc"
+            className="mb-2 h-8 w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          />
         )}
-        {block.blockType === "protocole_paliers" && (
-          <ProtocolEditor content={content as ProtocolBlockContent} onChange={(c) => setContent(c)} />
+        {block.blockType === "tableau_comparatif" && "rows" in content && (
+          <TableEditor content={content as TableBlockContent} onChange={(c) => setContent(withHeading(c))} />
         )}
-        {IS_TEXT_BLOCK.has(block.blockType) && (
+        {block.blockType === "protocole_paliers" && "steps" in content && (
+          <ProtocolEditor content={content as ProtocolBlockContent} onChange={(c) => setContent(withHeading(c))} />
+        )}
+        {(IS_TEXT_BLOCK.has(block.blockType) || !("rows" in content || "steps" in content)) && (
           <textarea
             value={(content as TextBlockContent).text ?? ""}
-            onChange={(e) => setContent({ text: e.target.value })}
+            onChange={(e) => setContent(withHeading({ text: e.target.value }))}
             rows={4}
             className="w-full rounded-[var(--radius-sm)] border border-border bg-surface p-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
           />
@@ -416,9 +432,28 @@ export function BlockEditor({
             </Button>
           </div>
         ) : (
-          <Button variant="secondary" size="sm" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage}>
-            <Upload className="h-3.5 w-3.5" /> {uploadingImage ? "Envoi…" : "Ajouter une illustration"}
-          </Button>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage}>
+              <Upload className="h-3.5 w-3.5" /> {uploadingImage ? "Envoi…" : "Ajouter une illustration"}
+            </Button>
+            {block.suggestedImage && (
+              <span className="text-xs text-foreground-subtle">
+                Suggérée : {block.suggestedImage.what}
+                {block.suggestedImage.chapterId && block.suggestedImage.page && onCitationClick && (
+                  <>
+                    {" — "}
+                    <button
+                      type="button"
+                      className="text-primary-strong underline-offset-2 hover:underline"
+                      onClick={() => onCitationClick({ page: block.suggestedImage!.page!, quote: "", chapterId: block.suggestedImage!.chapterId! })}
+                    >
+                      figure du livre p. {block.suggestedImage.page}
+                    </button>
+                  </>
+                )}
+              </span>
+            )}
+          </div>
         )}
       </div>
 

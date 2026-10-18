@@ -17,12 +17,16 @@ import {
   VolumeX,
   ThumbsUp,
   RotateCcw,
+  Scale,
+  Target,
+  Image as ImageIcon,
 } from "lucide-react";
 import { FlagButton } from "@/components/el-profesor/flag-button";
 import { markBlockReviewedLocally } from "@/lib/el-profesor/local-writes";
 import type { BlockReviewState } from "@/lib/el-profesor/dal";
+import { shortBookTitle } from "@/lib/el-profesor/book-title";
 import type { FicheLayout } from "@/lib/el-profesor/local-prefs";
-import type { BlockType, Citation, FicheBlock, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
+import type { BlockContent, BlockType, Citation, FicheBlock, ProtocolBlockContent, TableBlockContent, TextBlockContent } from "@/lib/el-profesor/types";
 
 /**
  * Spaced repetition per block (item 16 of the backlog) — a self-contained
@@ -84,6 +88,8 @@ export const BLOCK_META: Record<BlockType, { label: string; icon: React.Componen
   piege_erreur: { label: "Piège fréquent", icon: ShieldAlert },
   formule: { label: "Formule", icon: Sigma },
   texte_libre: { label: "Note", icon: FileText },
+  divergence: { label: "Divergence entre sources", icon: Scale },
+  a_retenir: { label: "À retenir par cœur", icon: Target },
 };
 
 /** Short under-icon captions for the "sommaire" layout's TOC strip — BLOCK_META's own labels ("Définition / mécanisme", "Tableau comparatif") run too long under a 56px column. */
@@ -97,7 +103,93 @@ const BLOCK_SHORT_LABEL: Record<BlockType, string> = {
   piege_erreur: "Piège",
   formule: "Formule",
   texte_libre: "Note",
+  divergence: "Divergence",
+  a_retenir: "À retenir",
 };
+
+/** The two fusion-only block types stand out from the reading column: a divergence between books, and the closing « à retenir ». */
+const BLOCK_TONE: Partial<Record<BlockType, string>> = {
+  divergence: "my-2 rounded-[var(--radius-md)] border border-accent/40 bg-accent-tint/40 px-4 first:pt-3",
+  a_retenir: "my-2 rounded-[var(--radius-md)] border border-primary/30 bg-primary-tint/40 px-4 first:pt-3",
+};
+
+/**
+ * In a merged book, a passage comes from one or several source books:
+ * touching it opens the page it came from — straight away when there is one
+ * source, through a short list of chips when there are several. Text being
+ * selected (to copy) never counts as a touch.
+ */
+function MergedSourceTarget({ block, onCitationClick, children }: { block: FicheBlock; onCitationClick?: (c: Citation) => void; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const sources = distinctSources(block.citations.filter((c) => c.chapterId && c.page > 0));
+  if (!onCitationClick || sources.length === 0) return <>{children}</>;
+
+  function activate() {
+    if (typeof window !== "undefined" && window.getSelection()?.toString()) return;
+    if (sources.length === 1) onCitationClick!(sources[0]);
+    else setOpen((v) => !v);
+  }
+
+  return (
+    <div>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={activate}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            activate();
+          }
+        }}
+        aria-label={sources.length === 1 ? `Ouvrir la source : ${citationLabel(sources[0])}` : `Choisir parmi ${sources.length} sources`}
+        className="-mx-1.5 cursor-pointer rounded-[var(--radius-sm)] px-1.5 transition-colors hover:bg-surface-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      >
+        {children}
+      </div>
+      {open && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-foreground-subtle">Ouvrir :</span>
+          {sources.map((c, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onCitationClick!(c);
+              }}
+              title={[c.bookTitle, c.chapterTitle].filter(Boolean).join(" — ")}
+              className="rounded-full border border-primary/30 bg-surface px-2.5 py-1 text-xs text-primary-strong hover:bg-primary-tint"
+            >
+              {citationLabel(c)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Where the fusion suggested an illustration, and the source page that already has one when it knows it. */
+function SuggestedImageNote({ suggestion, onCitationClick }: { suggestion: NonNullable<FicheBlock["suggestedImage"]>; onCitationClick?: (c: Citation) => void }) {
+  return (
+    <div className="mt-2 flex flex-col gap-1 rounded-[var(--radius-sm)] border border-dashed border-border-strong px-3 py-2 text-xs text-foreground-subtle sm:flex-row sm:items-start sm:gap-2">
+      <span className="flex min-w-0 flex-1 items-start gap-2">
+        <ImageIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>Illustration suggérée : {suggestion.what}</span>
+      </span>
+      {suggestion.chapterId && suggestion.page && onCitationClick && (
+        <button
+          type="button"
+          onClick={() => onCitationClick({ page: suggestion.page!, quote: "", chapterId: suggestion.chapterId! })}
+          className="self-start pl-5 text-primary-strong underline-offset-2 hover:underline sm:shrink-0 sm:pl-0"
+        >
+          Voir la figure du livre (p. {suggestion.page})
+        </button>
+      )}
+    </div>
+  );
+}
 
 export type FontScale = "sm" | "md" | "lg";
 
@@ -155,11 +247,48 @@ function CopyBlockButton({ block }: { block: FicheBlock }) {
   );
 }
 
+function citationLabel(c: Citation): string {
+  const book = c.bookTitle ? shortBookTitle(c.bookTitle) : "";
+  if (c.page === 0) return book || "Source externe";
+  return book ? `${book} · p. ${c.page}` : `p. ${c.page}`;
+}
+
+/** One chip per source page (several quotes of the same page open the same place). */
+function distinctSources(citations: Citation[]): Citation[] {
+  const seen = new Set<string>();
+  return citations.filter((c) => {
+    const key = `${c.chapterId ?? ""}|${c.page}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?: (c: Citation) => void }) {
   if (citations.length === 0) return null;
+  // Merged books' citations, and the notes of an « Actualisation », name their source.
+  const merged = citations.some((c) => c.chapterId || c.bookTitle);
+  const list = merged ? distinctSources(citations) : citations;
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
-      {citations.map((c, i) =>
+      {list.map((c, i) =>
+        merged ? (
+          c.page === 0 ? (
+            <span key={i} title={c.chapterTitle} className="rounded-full border border-border bg-surface-muted px-2.5 py-1 text-xs text-foreground-subtle">
+              {citationLabel(c)}
+            </span>
+          ) : (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onClick?.(c)}
+              title={[c.bookTitle, c.chapterTitle].filter(Boolean).join(" — ")}
+              className="rounded-full border border-border-strong px-2.5 py-1 text-xs text-foreground-subtle hover:border-primary/40 hover:text-primary-strong"
+            >
+              {citationLabel(c)}
+            </button>
+          )
+        ) :
         // page 0 is the sentinel for citations imported from a source with
         // no PDF to ground-truth against (Word/PowerPoint chapter, or a
         // hand-pasted external extraction) — see importChapterContent.
@@ -188,6 +317,13 @@ function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?
   );
 }
 
+/** Heading of a merged book's block (« Mécanisme d'action »…), when it has one. */
+function BlockHeading({ content }: { content: BlockContent }) {
+  const heading = (content as { heading?: string }).heading;
+  if (!heading) return null;
+  return <p className="mb-1.5 font-medium text-foreground">{heading}</p>;
+}
+
 export function BlockBody({
   block,
   fontScale,
@@ -200,12 +336,13 @@ export function BlockBody({
   /** Justified body text (piste 2026-08-28) — only meaningful on the flowing free-text paragraph below; tables and protocol steps ignore it, their lines are too short for justification to do anything but add ragged gaps. */
   justify?: boolean;
 }) {
-  if (block.blockType === "tableau_comparatif") {
+  if (block.blockType === "tableau_comparatif" && "rows" in block.content) {
     const content = block.content as TableBlockContent;
     const headers = content.headers ?? [];
     const rows = content.rows ?? [];
     return (
       <div>
+        <BlockHeading content={content} />
         {/* Below sm: one card per row with each cell stacked under its
             header — a multi-column grid table is unreadable on a phone
             even scrolled horizontally. */}
@@ -251,9 +388,11 @@ export function BlockBody({
     );
   }
 
-  if (block.blockType === "protocole_paliers") {
+  if (block.blockType === "protocole_paliers" && "steps" in block.content) {
     const content = block.content as ProtocolBlockContent;
     return (
+      <div>
+      <BlockHeading content={content} />
       <ol className="space-y-2">
         {content.steps?.map((step, i) => (
           <li key={i} className="flex gap-3">
@@ -268,16 +407,20 @@ export function BlockBody({
           </li>
         ))}
       </ol>
+      </div>
     );
   }
 
   const content = block.content as TextBlockContent;
   return (
-    <p
-      className={`whitespace-pre-wrap leading-relaxed text-foreground-muted ${BODY_TEXT_SIZE[fontScale]} ${serif ? "font-serif-display" : ""} ${justify ? "text-justify [-webkit-hyphens:auto] [hyphens:auto]" : ""}`}
-    >
-      {content.text}
-    </p>
+    <div>
+      <BlockHeading content={content} />
+      <p
+        className={`whitespace-pre-wrap leading-relaxed text-foreground-muted ${BODY_TEXT_SIZE[fontScale]} ${serif ? "font-serif-display" : ""} ${justify ? "text-justify [-webkit-hyphens:auto] [hyphens:auto]" : ""}`}
+      >
+        {content.text}
+      </p>
+    </div>
   );
 }
 
@@ -509,11 +652,12 @@ export function FicheViewer({
           // treatment (piste 2026-08-28) — the one block type worth a
           // visual break from the otherwise unbroken reading column.
           const isPearlInLivre = layout === "livre" && block.blockType === "perle_clinique";
+          const tone = BLOCK_TONE[block.blockType];
           return (
             <div
               key={block.id}
               id={`fiche-block-${block.id}`}
-              className={`scroll-mt-14 first:pt-0 ${immersive ? "py-3.5" : "py-4"} ${isPearlInLivre ? "border-l-2 border-accent pl-4" : ""}`}
+              className={`scroll-mt-14 first:pt-0 ${immersive ? "py-3.5" : "py-4"} ${isPearlInLivre ? "border-l-2 border-accent pl-4" : ""} ${tone ?? ""}`}
             >
               <div className="flex items-center justify-between gap-2">
                 <span
@@ -530,9 +674,11 @@ export function FicheViewer({
                   </div>
                 )}
               </div>
-              <div className={`mt-2 ${isPearlInLivre ? "italic" : ""}`}>
-                <BlockBody block={block} fontScale={fontScale} serif={layout === "livre"} justify={justify} />
-              </div>
+              <MergedSourceTarget block={block} onCitationClick={onCitationClick}>
+                <div className={`mt-2 ${isPearlInLivre ? "italic" : ""}`}>
+                  <BlockBody block={block} fontScale={fontScale} serif={layout === "livre"} justify={justify} />
+                </div>
+              </MergedSourceTarget>
               {block.imageUrl && (
                 // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded content, arbitrary origin (Supabase Storage public URL), not a Next-optimizable local/known-domain asset.
                 <img
@@ -543,6 +689,7 @@ export function FicheViewer({
                   }`}
                 />
               )}
+              {!block.imageUrl && block.suggestedImage && <SuggestedImageNote suggestion={block.suggestedImage} onCitationClick={onCitationClick} />}
               {!immersive && <CitationChips citations={block.citations} onClick={onCitationClick} />}
               {!immersive && blockReviewStates && (
                 <div className="mt-2 flex justify-end">

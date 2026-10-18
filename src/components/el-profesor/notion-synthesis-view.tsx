@@ -86,6 +86,7 @@ function SynthesisBlockCard({ block, fontScale, justify }: { block: NotionSynthe
     isEmergency: false,
     imageUrl: block.imageUrl,
     imageAlt: block.imageAlt,
+    suggestedImage: null,
   } satisfies FicheBlock;
   const isPearl = block.blockType === "perle_clinique";
 

@@ -229,6 +229,43 @@ export type ElProfesorBatchJobRow = {
   candidates_tokens: number | null;
 };
 
+export type ElProfesorMergeStage = "plan" | "assign" | "chapters" | "fiches" | "repair" | "done" | "failed" | "canceled";
+export type ElProfesorMergeJobRow = {
+  id: string;
+  book_id: string;
+  source_book_ids: string[];
+  include_drafts: boolean;
+  provider: "gemini" | "claude";
+  model: string;
+  stage: ElProfesorMergeStage;
+  plan: Json | null;
+  stats: Json;
+  error: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+};
+export type ElProfesorMergeTaskStage = "plan" | "assign" | "chapter" | "fiche" | "repair";
+export type ElProfesorMergeTaskRow = {
+  id: string;
+  job_id: string;
+  stage: ElProfesorMergeTaskStage;
+  ref_key: string;
+  input: Json;
+  output: Json | null;
+  status: "waiting" | "running" | "submitted" | "done" | "failed";
+  attempts: number;
+  next_attempt_at: string;
+  started_at: string | null;
+  claude_batch_id: string | null;
+  error: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ElProfesorGeminiQueueRow = {
   chapter_id: string;
   status: "waiting" | "running" | "failed";
@@ -273,6 +310,8 @@ export type ElProfesorNotionUpdateProposalRow = {
   resolved_by: string | null;
 };
 export type ElProfesorContentStatus = "draft" | "published";
+/** A source flashcard is "replaced" once a published merged flashcard took its place (migration 098). */
+export type ElProfesorFlashcardStatus = ElProfesorContentStatus | "replaced";
 export type ElProfesorReviewRating = "again" | "hard" | "good" | "easy";
 export type ElProfesorReviewSource = "scheduled" | "free" | "exam";
 
@@ -289,9 +328,12 @@ export type ElProfesorBookRow = {
   updated_at: string;
   archived_at: string | null;
   previous_edition_book_id: string | null;
+  /** 'merged' for a book built by fusing other books (migration 098). */
+  kind?: "book" | "merged";
+  source_book_ids?: string[];
 };
 
-export type ElProfesorChapterSourceKind = "pdf" | "docx" | "pptx";
+export type ElProfesorChapterSourceKind = "pdf" | "docx" | "pptx" | "merged";
 
 export type ElProfesorChapterRow = {
   id: string;
@@ -308,6 +350,9 @@ export type ElProfesorChapterRow = {
   /** Start and end of a PDF chapter's text (migration 097), for the neighbour context of the Gemini queue. */
   text_head?: string | null;
   text_tail?: string | null;
+  /** Table of contents of a merged book (migration 098): part and sub-part this chapter sits in. */
+  part_title?: string | null;
+  sub_part_title?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -318,6 +363,8 @@ export type ElProfesorSubEntityRow = {
   name: string;
   order_index: number;
   summary: string;
+  /** Merged book (migration 098): the source fiches fused into this one. */
+  source_fiche_ids?: string[];
   created_at: string;
   updated_at: string;
 };
@@ -348,6 +395,8 @@ export type ElProfesorFicheBlockRow = {
   is_emergency: boolean;
   image_url: string | null;
   image_alt: string | null;
+  /** Merged book (migration 098): what would be worth illustrating, and where a source figure exists. */
+  suggested_image?: Json | null;
   created_at: string;
   updated_at: string;
 };
@@ -358,7 +407,7 @@ export type ElProfesorFlashcardRow = {
   front: Json;
   back: Json;
   citations: Json;
-  status: ElProfesorContentStatus;
+  status: ElProfesorFlashcardStatus;
   needs_review: boolean;
   image_url: string | null;
   image_alt: string | null;
@@ -367,6 +416,9 @@ export type ElProfesorFlashcardRow = {
   suggested_image_hint: string | null;
   image_occlusions: Json;
   cloze_ranges: Json;
+  /** Merged flashcard (migration 098): the source cards it replaces. */
+  source_flashcard_ids?: string[];
+  replaced_by_flashcard_id?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -930,6 +982,18 @@ export type Database = {
         Update: Partial<ElProfesorBatchJobRow>;
         Relationships: [];
       };
+      el_profesor_merge_jobs: {
+        Row: ElProfesorMergeJobRow;
+        Insert: Partial<ElProfesorMergeJobRow> & { book_id: string; source_book_ids: string[]; provider: "gemini" | "claude"; model: string };
+        Update: Partial<ElProfesorMergeJobRow>;
+        Relationships: [];
+      };
+      el_profesor_merge_tasks: {
+        Row: ElProfesorMergeTaskRow;
+        Insert: Partial<ElProfesorMergeTaskRow> & { job_id: string; stage: ElProfesorMergeTaskStage; ref_key: string };
+        Update: Partial<ElProfesorMergeTaskRow>;
+        Relationships: [];
+      };
       el_profesor_gemini_queue: {
         Row: ElProfesorGeminiQueueRow;
         Insert: Partial<ElProfesorGeminiQueueRow> & { chapter_id: string };
@@ -1257,6 +1321,23 @@ export type Database = {
       el_profesor_chapter_last_modified: {
         Args: { p_chapter_ids: string[] };
         Returns: { chapter_id: string; last_modified_at: string }[];
+      };
+      el_profesor_merge_source_fiches: {
+        Args: { p_book_ids: string[]; p_include_drafts: boolean };
+        Returns: {
+          fiche_id: string;
+          book_id: string;
+          chapter_id: string;
+          chapter_title: string;
+          chapter_order: number;
+          sub_entity_order: number;
+          title: string;
+          summary: string;
+          fiche_status: string;
+          block_count: number;
+          card_count: number;
+          chars: number;
+        }[];
       };
     };
   };

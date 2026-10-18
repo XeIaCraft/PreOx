@@ -319,6 +319,18 @@ export function buildNotionUpdateCheckBatchContent(
 
 /** Submits one batch covering every request at once — returns Anthropic's own batch id to poll later. */
 export async function submitClaudeBatch(config: ClaudeConfig, kind: ClaudeBatchKind, requests: ClaudeBatchRequestSpec[]): Promise<string> {
+  return submitClaudeToolBatch(config, requests);
+}
+
+/** Text-only request for submitClaudeToolBatch: one prompt, one forced tool. */
+export function claudeTextContent(text: string): ClaudeContentBlock[] {
+  return [{ type: "text", text } as ClaudeContentBlock];
+}
+
+export type { ClaudeTool };
+
+/** Same as submitClaudeBatch, for callers bringing their own tool (the book fusion pipeline, merge/). */
+export async function submitClaudeToolBatch(config: ClaudeConfig, requests: ClaudeBatchRequestSpec[]): Promise<string> {
   if (requests.length === 0) throw new GeminiError("Aucune requête à soumettre.");
   await assertAiSpendCapNotExceeded();
   const client = claudeClient(config.apiKey);

@@ -303,6 +303,9 @@ export async function getArchivedBooks(): Promise<ArchivedBookEntry[]> {
 export interface BookTocChapter {
   chapterId: string;
   chapterTitle: string;
+  /** Merged book (migration 098): part and sub-part of its four-level table of contents. */
+  partTitle?: string | null;
+  subPartTitle?: string | null;
   status: ChapterStatus;
   subEntities: { id: string; name: string; hasFiche: boolean }[];
   mastery: { total: number; new: number; learning: number; acquired: number };
@@ -343,6 +346,8 @@ export async function getBookTableOfContents(bookId: string, userId: string, inc
   const tocChapters: BookTocChapter[] = chapters.map((chapter) => ({
     chapterId: chapter.id,
     chapterTitle: chapter.title,
+    partTitle: chapter.partTitle,
+    subPartTitle: chapter.subPartTitle,
     status: chapter.status,
     subEntities: (contentByChapter.get(chapter.id) ?? []).map((s) => ({ id: s.id, name: s.name, hasFiche: Boolean(s.fiche) })),
     mastery: mastery[chapter.id] ?? { total: 0, new: 0, learning: 0, acquired: 0 },

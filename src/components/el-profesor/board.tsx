@@ -53,7 +53,7 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { NotesSearchDialog } from "@/components/el-profesor/notes-search-dialog";
-import { DashboardNotionView } from "@/components/el-profesor/dashboard-notion-view";
+import { MergedBooksPanel } from "@/components/el-profesor/merged-books-panel";
 import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog";
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { SplitBookDialog } from "@/components/el-profesor/dialogs/split-book-dialog";
@@ -250,7 +250,7 @@ function HeaderMenu({
                 <div className="my-1 border-t border-border" />
                 <Link href="/apps/el-profesor/notions" prefetch={false}>
                   <Button variant="ghost" size="sm" className="w-full justify-start">
-                    <Tag className="h-3.5 w-3.5" /> Notions et contradictions
+                    <Tag className="h-3.5 w-3.5" /> Notions (fusion de livres)
                   </Button>
                 </Link>
                 <Link href="/apps/el-profesor/quality" prefetch={false}>
@@ -545,7 +545,6 @@ export function ElProfesorBoard({
   globalProgress,
   secondaryData,
   aiConfigData,
-  notionViewData,
   onLocalBooksChange,
   onAiConfigChange,
 }: {
@@ -581,7 +580,8 @@ export function ElProfesorBoard({
    */
   secondaryData: DashboardSecondaryData | null;
   aiConfigData: DashboardAiConfigData | null;
-  notionViewData: DashboardNotionViewData | null;
+  /** No longer shown on the dashboard: the « Par notion » view lists merged books since the fusion refonte (the old notions live on /notions/anciennes). */
+  notionViewData?: DashboardNotionViewData | null;
   /** Called with the reordered books array right after a local reorder (handleMoveBook/handleMoveChapter) persists to the cache — lets the parent (DashboardWithLocalCache) update its own snapshot state in step, so booksProp is already correct by the time the transition below resolves and useOptimistic's override lapses (otherwise the list would flash back to the old order for an instant). Undefined when this board isn't backed by the local cache at all (e.g. never synced) — the reorder still gets queued, just without a local list to keep in sync with. */
   onLocalBooksChange?: (books: BookWithChapters[]) => void;
   /** Called with fresh AI settings whenever the settings dialog fetches them — lets the parent keep its cached copy (and IndexedDB) current. */
@@ -647,17 +647,20 @@ export function ElProfesorBoard({
   const chaptersMastered = masteryValues.filter((m) => m.total > 0 && m.acquired === m.total).length;
   const totalChapters = books.reduce((sum, b) => sum + b.chapters.filter((c) => c.status === "published").length, 0);
   const totalFlashcards = masteryValues.reduce((sum, m) => sum + m.total, 0);
-  const themes = [...new Set(books.map((b) => b.theme).filter((t): t is string => Boolean(t)))].sort();
-  const visibleBooks = themeFilter ? books.filter((b) => b.theme === themeFilter) : books;
+  // Merged books (migration 098) live in the « Par notion » view, the library's books in « Par livre ».
+  const libraryBooks = books.filter((b) => b.kind !== "merged");
+  const mergedBooks = books.filter((b) => b.kind === "merged");
+  const themes = [...new Set(libraryBooks.map((b) => b.theme).filter((t): t is string => Boolean(t)))].sort();
+  const visibleBooks = themeFilter ? libraryBooks.filter((b) => b.theme === themeFilter) : libraryBooks;
 
   // Every chapter a Claude batch could apply to, regardless of current status —
   // "Tout sélectionner" below and the cost estimate in the sticky bar both use
   // this same set (see bulkSelectable below, computed identically per-chapter).
   const bulkSelectableChapterIds =
-    isAdmin && aiProvider === "claude" ? books.flatMap((b) => b.chapters.filter((c) => c.sourceKind === "pdf").map((c) => c.id)) : [];
+    isAdmin && aiProvider === "claude" ? libraryBooks.flatMap((b) => b.chapters.filter((c) => c.sourceKind === "pdf").map((c) => c.id)) : [];
 
   // Gemini queue: the chapters still to extract.
-  const geminiQueueableIds = isAdmin && aiProvider === "gemini" ? books.flatMap((b) => b.chapters.filter((c) => c.status === "pending" || c.status === "failed").map((c) => c.id)) : [];
+  const geminiQueueableIds = isAdmin && aiProvider === "gemini" ? libraryBooks.flatMap((b) => b.chapters.filter((c) => c.status === "pending" || c.status === "failed").map((c) => c.id)) : [];
 
   const selectedChapters = books
     .flatMap((b) => b.chapters)
@@ -1019,7 +1022,7 @@ export function ElProfesorBoard({
             {isAdmin && (
               <>
                 <Link href="/apps/el-profesor/notions" prefetch={false}>
-                  <Button variant="ghost" size="icon" aria-label="Notions et contradictions" title="Notions et contradictions">
+                  <Button variant="ghost" size="icon" aria-label="Notions (fusion de livres)" title="Notions (fusion de livres)">
                     <Tag className="h-4 w-4" />
                   </Button>
                 </Link>
@@ -1255,7 +1258,7 @@ export function ElProfesorBoard({
       {viewMode === "notion" && (
         <div className="mt-6">
           <RenderErrorBoundary fallbackTitle="Notions" compact>
-            <DashboardNotionView data={notionViewData} isAdmin={isAdmin} />
+            <MergedBooksPanel books={mergedBooks} dueCounts={dueCounts} masteryCounts={masteryCounts} readProgressByChapter={readProgressByChapter} isAdmin={isAdmin} />
           </RenderErrorBoundary>
           <GlobalProgressCard progress={globalProgress} />
         </div>
@@ -1264,7 +1267,7 @@ export function ElProfesorBoard({
       {viewMode === "book" && (
       <div className="mt-8 space-y-8">
         {visibleBooks.map((book) => {
-          const bookIndex = books.findIndex((b) => b.id === book.id);
+          const bookIndex = libraryBooks.findIndex((b) => b.id === book.id);
           const publishedChapters = book.chapters.filter((c) => c.status === "published");
           const bookMastered =
             publishedChapters.length > 0 &&
@@ -1355,7 +1358,7 @@ export function ElProfesorBoard({
                     <button
                       type="button"
                       onClick={() => handleMoveBook(book.id, "down")}
-                      disabled={bookIndex === books.length - 1 || isPending}
+                      disabled={bookIndex === libraryBooks.length - 1 || isPending}
                       aria-label="Descendre ce livre"
                       className="text-foreground-subtle hover:text-foreground disabled:opacity-30"
                     >
