@@ -4,14 +4,12 @@
 // table as the usage panel.
 
 import { estimateCostUsd } from "../ai-pricing";
-import { ASSIGN_CHUNK } from "./plan";
+import { ASSIGN_CHUNK, targetSubPartCount } from "./plan";
 import type { MergeProvider } from "./types";
 
 /** Characters per token for this content: JSON-quoted French and English medical prose. */
 const CHARS_PER_TOKEN = 3.2;
-const FICHE_PROMPT_TOKENS = 3_200;
-/** Source fiches per chapter the plan aims for. */
-export const FICHES_PER_CHAPTER = 15;
+const FICHE_PROMPT_TOKENS = 3_800;
 
 export interface MergeEstimateInput {
   fiches: { title: string; summary: string; chars: number }[];
@@ -27,29 +25,26 @@ export interface MergeEstimate {
   costUsd: number | null;
 }
 
-export function targetChapterCount(ficheCount: number): number {
-  return Math.max(3, Math.min(600, Math.round(ficheCount / FICHES_PER_CHAPTER)));
-}
-
 export function estimateMerge(input: MergeEstimateInput, provider: MergeProvider, model: string): MergeEstimate {
   const n = input.fiches.length;
-  const chapters = targetChapterCount(n);
-  // Two books on the same subject fuse into one fiche; one book alone barely regroups.
+  const subParts = targetSubPartCount(n);
+  // Several books on the same subject fuse into one fiche; one book alone barely regroups.
   const mergedFiches = Math.max(1, Math.round(n / Math.min(2.2, 1 + 0.6 * (input.bookCount - 1))));
+  const chapters = Math.max(1, Math.round(mergedFiches / 7));
   const titleTokens = input.fiches.reduce((s, f) => s + f.title.length + 4, 0) / CHARS_PER_TOKEN;
-  const refTokens = input.fiches.reduce((s, f) => s + f.title.length + f.summary.length + 60, 0) / CHARS_PER_TOKEN;
+  const refTokens = input.fiches.reduce((s, f) => s + f.title.length + f.summary.length + 70, 0) / CHARS_PER_TOKEN;
   const contentTokens = input.fiches.reduce((s, f) => s + f.chars, 0) / CHARS_PER_TOKEN;
-  const tocTokens = chapters * 45;
+  const tocTokens = subParts * 60;
 
   const assignChunks = Math.ceil(n / ASSIGN_CHUNK);
   const stages = [
-    { requests: 1, input: 2_500 + titleTokens, output: tocTokens + 1_500 },
-    { requests: assignChunks, input: assignChunks * (1_000 + tocTokens) + refTokens, output: n * 14 },
-    { requests: chapters, input: chapters * 1_400 + refTokens, output: mergedFiches * 45 },
-    // Sources go in with their labels; the merged fiche comes out about as long (nothing is dropped, duplicates are).
-    { requests: mergedFiches, input: mergedFiches * FICHE_PROMPT_TOKENS + contentTokens * 1.15, output: contentTokens * 0.85 + mergedFiches * 350 },
-    // Rattrapage: roughly one fiche in five needs one.
-    { requests: Math.ceil(mergedFiches / 5), input: contentTokens * 0.12, output: contentTokens * 0.04 },
+    { requests: 1, input: 2_500 + titleTokens, output: tocTokens + 1_000 },
+    { requests: assignChunks, input: assignChunks * (800 + tocTokens) + refTokens, output: n * 15 },
+    { requests: subParts, input: subParts * 1_500 + refTokens, output: mergedFiches * 45 + chapters * 15 },
+    // Sources go in with their labels; the merged fiche comes out about as long (nothing is dropped, duplicates are), plus its cards.
+    { requests: mergedFiches, input: mergedFiches * FICHE_PROMPT_TOKENS + contentTokens * 1.15, output: contentTokens * 0.85 + mergedFiches * 400 },
+    // Rattrapage: about one fiche in three (a value or a block to take up again).
+    { requests: Math.ceil(mergedFiches / 3), input: contentTokens * 0.2, output: contentTokens * 0.06 },
   ];
 
   const requests = stages.reduce((s, x) => s + x.requests, 0);

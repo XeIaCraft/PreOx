@@ -241,6 +241,7 @@ export type ElProfesorMergeJobRow = {
   plan: Json | null;
   stats: Json;
   error: string | null;
+  locked_until: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -1321,6 +1322,10 @@ export type Database = {
       el_profesor_chapter_last_modified: {
         Args: { p_chapter_ids: string[] };
         Returns: { chapter_id: string; last_modified_at: string }[];
+      };
+      el_profesor_replace_source_cards: {
+        Args: { p_fiche_ids: string[] };
+        Returns: { replaced: number; histories: number }[];
       };
       el_profesor_merge_source_fiches: {
         Args: { p_book_ids: string[]; p_include_drafts: boolean };

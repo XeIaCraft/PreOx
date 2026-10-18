@@ -206,6 +206,11 @@ const SUMMARY_TEXT_SIZE: Record<FontScale, string> = {
 };
 
 function getBlockPlainText(block: FicheBlock): string {
+  const heading = (block.content as { heading?: string }).heading;
+  return heading ? `${heading}\n${getBlockBodyText(block)}` : getBlockBodyText(block);
+}
+
+function getBlockBodyText(block: FicheBlock): string {
   if (block.blockType === "tableau_comparatif") {
     const content = block.content as TableBlockContent;
     const headers = (content.headers ?? []).join(" | ");
@@ -317,6 +322,20 @@ function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?
   );
 }
 
+/**
+ * Block types that read as ordinary prose: in a merged book their heading
+ * (« Pourquoi la néostigmine échoue sur un bloc profond ») is the section
+ * title, in place of the generic type label — the page reads like a
+ * textbook chapter. Pearls, pitfalls, mnemonics, divergences and « à
+ * retenir » keep their label: it tells the reader what kind of point it is.
+ */
+const PROSE_TYPES = new Set<BlockType>(["definition_mecanisme", "valeurs_seuils", "tableau_comparatif", "protocole_paliers", "formule", "texte_libre"]);
+
+export function sectionTitle(block: FicheBlock): string | null {
+  const heading = (block.content as { heading?: string }).heading;
+  return heading && PROSE_TYPES.has(block.blockType) ? heading : null;
+}
+
 /** Heading of a merged book's block (« Mécanisme d'action »…), when it has one. */
 function BlockHeading({ content }: { content: BlockContent }) {
   const heading = (content as { heading?: string }).heading;
@@ -329,10 +348,13 @@ export function BlockBody({
   fontScale,
   serif = false,
   justify = false,
+  hideHeading = false,
 }: {
   block: FicheBlock;
   fontScale: FontScale;
   serif?: boolean;
+  /** The heading is already shown as the block's title (merged books' section headings, see BlockTitle). */
+  hideHeading?: boolean;
   /** Justified body text (piste 2026-08-28) — only meaningful on the flowing free-text paragraph below; tables and protocol steps ignore it, their lines are too short for justification to do anything but add ragged gaps. */
   justify?: boolean;
 }) {
@@ -342,7 +364,7 @@ export function BlockBody({
     const rows = content.rows ?? [];
     return (
       <div>
-        <BlockHeading content={content} />
+        {!hideHeading && <BlockHeading content={content} />}
         {/* Below sm: one card per row with each cell stacked under its
             header — a multi-column grid table is unreadable on a phone
             even scrolled horizontally. */}
@@ -392,7 +414,7 @@ export function BlockBody({
     const content = block.content as ProtocolBlockContent;
     return (
       <div>
-      <BlockHeading content={content} />
+      {!hideHeading && <BlockHeading content={content} />}
       <ol className="space-y-2">
         {content.steps?.map((step, i) => (
           <li key={i} className="flex gap-3">
@@ -414,7 +436,7 @@ export function BlockBody({
   const content = block.content as TextBlockContent;
   return (
     <div>
-      <BlockHeading content={content} />
+      {!hideHeading && <BlockHeading content={content} />}
       <p
         className={`whitespace-pre-wrap leading-relaxed text-foreground-muted ${BODY_TEXT_SIZE[fontScale]} ${serif ? "font-serif-display" : ""} ${justify ? "text-justify [-webkit-hyphens:auto] [hyphens:auto]" : ""}`}
       >
@@ -428,7 +450,51 @@ export function BlockBody({
 // showing once a fiche has enough blocks that scrolling to find one is a
 // real chore — the "sommaire" layout uses its own dedicated BlockTocStrip
 // instead, always shown regardless of block count.
+/** A merged fiche's own table of contents: its section headings (and the « à retenir » at the end). */
+function headingEntries(blocks: FicheBlock[]): { blockId: string; label: string; type: BlockType }[] | null {
+  const entries = blocks
+    .map((b) => {
+      const heading = (b.content as { heading?: string }).heading;
+      if (b.blockType === "a_retenir") return { blockId: b.id, label: "À retenir", type: b.blockType };
+      return heading ? { blockId: b.id, label: heading, type: b.blockType } : null;
+    })
+    .filter((e): e is { blockId: string; label: string; type: BlockType } => e !== null);
+  return entries.length >= 3 ? entries : null;
+}
+
+function scrollToBlock(blockId: string) {
+  document.getElementById(`fiche-block-${blockId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function HeadingNav({ entries, large = false }: { entries: { blockId: string; label: string; type: BlockType }[]; large?: boolean }) {
+  return (
+    // The grid track (minmax(0, 1fr)) keeps the row of chips from widening the page on a phone: it scrolls inside instead.
+    <div className="sticky top-0 z-10 -mx-1 mb-3 grid grid-cols-[minmax(0,1fr)] bg-surface">
+    <nav aria-label="Sommaire de la fiche" className={`flex gap-1.5 overflow-x-auto px-1 ${large ? "py-2" : "py-1.5"}`}>
+      {entries.map((e) => {
+        const Icon = BLOCK_META[e.type].icon;
+        return (
+          <button
+            key={e.blockId}
+            type="button"
+            onClick={() => scrollToBlock(e.blockId)}
+            className={`flex max-w-[14rem] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
+              e.type === "a_retenir" ? "border-primary/40 text-primary-strong" : e.type === "divergence" ? "border-accent/40 text-accent" : "border-border text-foreground-subtle"
+            } hover:border-primary/40 hover:text-primary-strong`}
+          >
+            <Icon className="h-3 w-3 shrink-0" aria-hidden />
+            <span className="truncate">{e.label}</span>
+          </button>
+        );
+      })}
+    </nav>
+    </div>
+  );
+}
+
 function BlockNav({ blocks }: { blocks: FicheBlock[] }) {
+  const headings = headingEntries(blocks);
+  if (headings) return <HeadingNav entries={headings} />;
   if (blocks.length < 6) return null;
   const seen = new Set<BlockType>();
   const entries: { type: BlockType; blockId: string }[] = [];
@@ -472,6 +538,8 @@ function BlockNav({ blocks }: { blocks: FicheBlock[] }) {
  * unrecognizable next to what was promised.
  */
 function BlockTocStrip({ blocks }: { blocks: FicheBlock[] }) {
+  const headings = headingEntries(blocks);
+  if (headings) return <HeadingNav entries={headings} large />;
   const seen = new Set<BlockType>();
   const entries: { type: BlockType; blockId: string }[] = [];
   for (const b of blocks) {
@@ -653,6 +721,7 @@ export function FicheViewer({
           // visual break from the otherwise unbroken reading column.
           const isPearlInLivre = layout === "livre" && block.blockType === "perle_clinique";
           const tone = BLOCK_TONE[block.blockType];
+          const title = sectionTitle(block);
           return (
             <div
               key={block.id}
@@ -660,13 +729,20 @@ export function FicheViewer({
               className={`scroll-mt-14 first:pt-0 ${immersive ? "py-3.5" : "py-4"} ${isPearlInLivre ? "border-l-2 border-accent pl-4" : ""} ${tone ?? ""}`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span
-                  className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${
-                    isPearlInLivre ? "text-accent" : "text-foreground-subtle"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" /> {meta.label}
-                </span>
+                {title ? (
+                  <h4 className="flex items-start gap-1.5 font-medium leading-snug text-foreground" title={meta.label}>
+                    <Icon className="mt-[3px] h-3.5 w-3.5 shrink-0 text-foreground-subtle" aria-hidden />
+                    <span>{title}</span>
+                  </h4>
+                ) : (
+                  <span
+                    className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${
+                      isPearlInLivre ? "text-accent" : "text-foreground-subtle"
+                    }`}
+                  >
+                    <Icon className="h-3.5 w-3.5" /> {meta.label}
+                  </span>
+                )}
                 {!immersive && (
                   <div className="flex items-center gap-2">
                     <CopyBlockButton block={block} />
@@ -676,7 +752,7 @@ export function FicheViewer({
               </div>
               <MergedSourceTarget block={block} onCitationClick={onCitationClick}>
                 <div className={`mt-2 ${isPearlInLivre ? "italic" : ""}`}>
-                  <BlockBody block={block} fontScale={fontScale} serif={layout === "livre"} justify={justify} />
+                  <BlockBody block={block} fontScale={fontScale} serif={layout === "livre"} justify={justify} hideHeading={Boolean(title)} />
                 </div>
               </MergedSourceTarget>
               {block.imageUrl && (

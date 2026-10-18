@@ -120,13 +120,17 @@ create table if not exists public.el_profesor_merge_jobs (
   include_drafts boolean not null default true,
   provider text not null check (provider in ('gemini', 'claude')),
   model text not null,
-  -- plan → assign → chapters → fiches → repair → done
+  -- plan (parties, sous-parties) → assign (fiches → sous-parties) →
+  -- chapters (chapitres et fiches de chaque sous-partie) → fiches → repair → done
   stage text not null default 'plan' check (stage in ('plan', 'assign', 'chapters', 'fiches', 'repair', 'done', 'failed', 'canceled')),
   -- Squelette de la table des matières (parties, sous-parties, chapitres).
   plan jsonb,
   -- Compteurs affichés : fiches sources, fiches fusionnées, blocs non repris...
   stats jsonb not null default '{}',
   error text,
+  -- Verrou court pendant le passage d'une étape à la suivante (plusieurs
+  -- passages de la file peuvent se chevaucher).
+  locked_until timestamptz,
   created_by uuid references public.profiles (id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -139,7 +143,7 @@ create table if not exists public.el_profesor_merge_tasks (
   id uuid primary key default gen_random_uuid(),
   job_id uuid not null references public.el_profesor_merge_jobs (id) on delete cascade,
   stage text not null check (stage in ('plan', 'assign', 'chapter', 'fiche', 'repair')),
-  -- 'plan', 'assign:0', 'chapter:<id>', 'fiche:<sub_entity_id>', 'repair:<sub_entity_id>'
+  -- 'plan', 'assign:0000', 'chapter:0000' (une sous-partie), 'fiche:…', 'repair:…'
   ref_key text not null,
   input jsonb not null default '{}',
   output jsonb,
@@ -241,6 +245,51 @@ $$;
 
 revoke all on function public.el_profesor_merge_source_fiches(uuid[], boolean) from public, anon;
 grant execute on function public.el_profesor_merge_source_fiches(uuid[], boolean) to authenticated, service_role;
+
+-- Publication d'un chapitre fusionné : ses cartes remplacent les cartes
+-- sources publiées qu'elles fusionnent (statut 'replaced', hors de toutes
+-- les révisions) et chaque lecteur garde sur la carte fusionnée son
+-- historique le plus avancé parmi ces sources (plus grande stabilité, puis
+-- plus de répétitions) — en une seule requête, quel que soit le nombre de
+-- cartes. Appelée par le serveur (rôle service) après chaque publication.
+create or replace function public.el_profesor_replace_source_cards(p_fiche_ids uuid[])
+returns table (replaced integer, histories integer)
+language sql
+volatile
+security invoker
+set search_path = public
+as $$
+  with map as (
+    select distinct on (s.source_id) s.source_id, m.id as merged_id
+    from public.el_profesor_flashcards m
+    cross join lateral unnest(m.source_flashcard_ids) as s(source_id)
+    where m.fiche_id = any(p_fiche_ids) and m.status = 'published' and s.source_id <> m.id
+    order by s.source_id, m.created_at, m.id
+  ),
+  copied as (
+    insert into public.el_profesor_review_state
+      (user_id, flashcard_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review)
+    select distinct on (rs.user_id, map.merged_id)
+      rs.user_id, map.merged_id, rs.due, rs.stability, rs.difficulty, rs.elapsed_days, rs.scheduled_days, rs.reps, rs.lapses, rs.state, rs.last_review
+    from map
+    join public.el_profesor_flashcards src on src.id = map.source_id and src.status = 'published'
+    join public.el_profesor_review_state rs on rs.flashcard_id = map.source_id
+    order by rs.user_id, map.merged_id, rs.stability desc, rs.reps desc
+    on conflict (user_id, flashcard_id) do nothing
+    returning 1
+  ),
+  replaced as (
+    update public.el_profesor_flashcards src
+    set status = 'replaced', replaced_by_flashcard_id = map.merged_id
+    from map
+    where src.id = map.source_id and src.status = 'published'
+    returning 1
+  )
+  select (select count(*) from replaced)::integer, (select count(*) from copied)::integer;
+$$;
+
+revoke all on function public.el_profesor_replace_source_cards(uuid[]) from public, anon, authenticated;
+grant execute on function public.el_profesor_replace_source_cards(uuid[]) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- Relance toutes les minutes tant qu'une fusion est en cours (même

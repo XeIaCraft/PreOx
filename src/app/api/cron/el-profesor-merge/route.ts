@@ -14,6 +14,7 @@ export async function GET(request: Request) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const result = await processMergeJobs({ budgetMs: 280_000, startBeforeMs: 150_000 });
+  // Starting calls is limited by each call's expected duration (see claimOne), not by a fixed cut-off.
+  const result = await processMergeJobs({ budgetMs: 285_000, startBeforeMs: 265_000 });
   return NextResponse.json(result);
 }

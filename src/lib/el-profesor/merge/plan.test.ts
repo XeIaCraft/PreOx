@@ -1,36 +1,55 @@
 import { describe, expect, it } from "vitest";
-import { cardOwners, flattenPlan, mergeCitations, numberPlan, resolveAssignments, resolveChapterPlan, uncovered } from "./plan";
-import { normalizeContent, normalizeMergedFiche, normalizePlan, normalizeRepair, toGeminiSchema, FICHE_SCHEMA } from "./schemas";
-import { estimateMerge, targetChapterCount } from "./estimate";
+import {
+  flattenChapters,
+  flattenSubParts,
+  mergeCitations,
+  missingFacts,
+  numberPlan,
+  numericFacts,
+  resolveAssignments,
+  resolveOutline,
+  routeItems,
+  splitBySize,
+  uncovered,
+  withChapters,
+} from "./plan";
+import { normalizeContent, normalizeMergedFiche, normalizeOutline, normalizePlan, normalizeRepair, toGeminiSchema, FICHE_SCHEMA } from "./schemas";
+import { estimateMerge } from "./estimate";
 import { stableUuid } from "./ids";
-import { buildCatalogText, buildFichePrompt, blockPromptText } from "./prompts";
+import { buildCatalogText, buildFichePrompt, buildRepairPrompt, blockPromptText } from "./prompts";
 import type { SourceFicheRef } from "./types";
 
 // The fusion's promise to the user is "sans perte d'informations": these
-// tests pin the rules that place whatever the model forgets, and the
-// parsing that turns an approximate answer into something safe to store.
+// tests pin the rules that place whatever the model forgets, share out a
+// broad source fiche, catch a value lost on the way, and turn an
+// approximate answer into something safe to store.
 
-function ref(id: string, chapterId: string, title = id): SourceFicheRef {
-  return { ficheId: id, bookId: "b", bookTitle: "Miller", chapterId, chapterTitle: `chap-${chapterId}`, title, summary: "", blockCount: 2, cardCount: 1, chars: 900 };
+function ref(id: string, chapterId: string, title = id, chars = 900): SourceFicheRef {
+  return { ficheId: id, bookId: "b", bookTitle: "Miller", chapterId, chapterTitle: `chap-${chapterId}`, title, summary: "", blockCount: 2, cardCount: 1, chars };
 }
 
-describe("numberPlan / flattenPlan", () => {
-  it("numbers chapters in reading order, drops empty levels, gives stable ids", () => {
+describe("plan: parts, sub-parts, then chapters", () => {
+  it("numbers sub-parts in reading order, drops empty levels, then gives chapters stable ids", () => {
     const raw = normalizePlan({
       parts: [
-        { title: "Bases", sub_parts: [{ title: "", chapters: [{ title: "Physiologie respiratoire", scope: "x" }, { title: "", scope: "vide" }] }] },
+        { title: "Bases", sub_parts: [{ title: "Respiration", scope: "x" }, { title: "", scope: "" }] },
         { title: "Vide", sub_parts: [] },
-        { title: "Techniques", sub_parts: [{ title: "ALR", chapters: [{ title: "Blocs du membre supérieur", scope: "y" }] }] },
+        { title: "Techniques", sub_parts: [{ title: "", scope: "ALR, tout" }] },
       ],
     });
-    const plan = numberPlan(raw, "job-1");
-    const flat = flattenPlan(plan);
-    expect(flat.map((c) => c.key)).toEqual(["C1", "C2"]);
-    expect(flat[0].subPartTitle).toBeNull();
-    expect(flat[1].partTitle).toBe("Techniques");
-    expect(flat[1].subPartTitle).toBe("ALR");
-    expect(numberPlan(raw, "job-1").parts[0].subParts[0].chapters[0].chapterId).toBe(flat[0].chapterId);
-    expect(numberPlan(raw, "job-2").parts[0].subParts[0].chapters[0].chapterId).not.toBe(flat[0].chapterId);
+    const plan = numberPlan(raw);
+    expect(flattenSubParts(plan).map((s) => [s.key, s.partTitle, s.title])).toEqual([
+      ["S1", "Bases", "Respiration"],
+      ["S2", "Techniques", ""],
+    ]);
+    const full = withChapters(plan, "job-1", new Map([["S1", ["Mécanique ventilatoire", "Échanges gazeux"]], ["S2", ["Blocs du membre supérieur"]]]));
+    const chapters = flattenChapters(full);
+    expect(chapters.map((c) => [c.key, c.orderIndex, c.subPartTitle])).toEqual([
+      ["S1.C1", 0, "Respiration"],
+      ["S1.C2", 1, "Respiration"],
+      ["S2.C1", 2, null],
+    ]);
+    expect(chapters[0].chapterId).toBe(stableUuid("job-1", "chapter", "S1.C1"));
   });
 });
 
@@ -47,53 +66,98 @@ describe("resolveAssignments", () => {
   const fiches = [ref("f1", "x"), ref("f2", "x"), ref("f3", "x"), ref("f4", "y")];
 
   it("follows the model, and places forgotten fiches with their siblings", () => {
-    const { byChapter, fallbackCount } = resolveAssignments(["C1", "C2"], fiches, [
+    const { byKey, fallbackCount } = resolveAssignments(["S1", "S2"], fiches, [
       {
         aliasToFiche: { F1: "f1", F2: "f2", F3: "f3", F4: "f4" },
         assignments: [
-          { fiche: "F1", chapter: "C2" },
-          { fiche: "f2", chapter: "c2" },
-          { fiche: "F4", chapter: "C1" },
-          { fiche: "F9", chapter: "C1" },
+          { fiche: "F1", chapter: "S2" },
+          { fiche: "f2", chapter: "s2" },
+          { fiche: "F4", chapter: "S1" },
+          { fiche: "F9", chapter: "S1" },
         ],
       },
     ]);
     expect(fallbackCount).toBe(1);
-    expect(byChapter.get("C2")).toEqual(["f1", "f2", "f3"]);
-    expect(byChapter.get("C1")).toEqual(["f4"]);
+    expect(byKey.get("S2")).toEqual(["f1", "f2", "f3"]);
+    expect(byKey.get("S1")).toEqual(["f4"]);
   });
 
   it("never loses a fiche, even when the answer is unusable", () => {
-    const { byChapter } = resolveAssignments(["C1", "C2"], fiches, [{ aliasToFiche: {}, assignments: [{ fiche: "F1", chapter: "C99" }] }]);
-    expect([...byChapter.values()].flat().sort()).toEqual(["f1", "f2", "f3", "f4"]);
+    const { byKey } = resolveAssignments(["S1", "S2"], fiches, [{ aliasToFiche: {}, assignments: [{ fiche: "F1", chapter: "S99" }] }]);
+    expect([...byKey.values()].flat().sort()).toEqual(["f1", "f2", "f3", "f4"]);
   });
 });
 
-describe("resolveChapterPlan / cardOwners", () => {
-  const chapter = [ref("f1", "x", "Rocuronium"), ref("f2", "x", "Sugammadex"), ref("f3", "y", "Suxaméthonium")];
+describe("resolveOutline", () => {
+  const sub = [ref("f1", "x", "Rocuronium"), ref("f2", "x", "Sugammadex"), ref("f3", "y", "Suxaméthonium"), ref("f4", "x", "Vécuronium")];
+  const aliases = { F1: "f1", F2: "f2", F3: "f3", F4: "f4" };
 
-  it("keeps the model's fiches and gives every forgotten source fiche its own", () => {
-    const { fiches, fallbackCount } = resolveChapterPlan(
+  it("keeps the model's chapters, drops unknown ids, and gives a forgotten fiche its own fiche next to its siblings", () => {
+    const { chapters, fallbackCount } = resolveOutline(
       [
-        { title: "Curares stéroïdiens", objective: "o", sources: ["F1", "F2", "F7"] },
-        { title: "Sans source", objective: "o", sources: ["F9"] },
-        { title: "Antagonisation", objective: "o", sources: ["F2"] },
+        { title: "Curares", fiches: [{ title: "Curares stéroïdiens", objective: "o", sources: ["F1", "F4", "F7"] }, { title: "Sans source", objective: "o", sources: ["F9"] }] },
+        { title: "Dépolarisants", fiches: [{ title: "Suxaméthonium", objective: "o", sources: ["F3"] }] },
       ],
-      { F1: "f1", F2: "f2", F3: "f3" },
-      chapter
+      aliases,
+      sub,
+      "Curarisation"
     );
-    expect(fiches.map((f) => f.title)).toEqual(["Curares stéroïdiens", "Antagonisation", "Suxaméthonium"]);
-    expect(fiches[0].sourceFicheIds).toEqual(["f1", "f2"]);
+    expect(chapters.map((c) => c.title)).toEqual(["Curares", "Dépolarisants"]);
+    expect(chapters[0].fiches.map((f) => f.title)).toEqual(["Curares stéroïdiens", "Sugammadex"]);
+    expect(chapters[0].fiches[0].sourceFicheIds).toEqual(["f1", "f4"]);
     expect(fallbackCount).toBe(1);
   });
 
-  it("gives a shared source fiche's cards to its first merged fiche only", () => {
-    const owners = cardOwners([
-      { key: "C1.0", sourceFicheIds: ["f1", "f2"] },
-      { key: "C1.1", sourceFicheIds: ["f2", "f3"] },
+  it("builds a chapter when the answer has none, and splits a fiche whose sources are too long", () => {
+    const empty = resolveOutline([], aliases, sub, "Curarisation");
+    expect(empty.chapters).toHaveLength(1);
+    expect(empty.chapters[0].fiches).toHaveLength(4);
+
+    const big = [ref("g1", "x", "A", 30_000), ref("g2", "x", "B", 30_000), ref("g3", "x", "C", 20_000)];
+    const { chapters, splitCount } = resolveOutline([{ title: "T", fiches: [{ title: "Gros sujet", objective: "o", sources: ["F1", "F2", "F3"] }] }], { F1: "g1", F2: "g2", F3: "g3" }, big, "T", 55_000);
+    expect(splitCount).toBe(1);
+    expect(chapters[0].fiches.map((f) => [f.title, f.sourceFicheIds])).toEqual([
+      ["Gros sujet (1/2)", ["g1"]],
+      ["Gros sujet (2/2)", ["g2", "g3"]],
     ]);
-    expect(owners.get("f2")).toBe("C1.0");
-    expect(owners.get("f3")).toBe("C1.1");
+  });
+
+  it("splitBySize keeps an oversized single source alone", () => {
+    expect(splitBySize(["a"], () => 99_000, 55_000)).toEqual([["a"]]);
+  });
+});
+
+describe("routeItems", () => {
+  it("sends each passage of a broad source fiche to the merged fiche it is about", () => {
+    const targets = [
+      { key: "meca", profile: "Sugammadex : structure et mécanisme d'encapsulation cyclodextrine complexe" },
+      { key: "dose", profile: "Sugammadex : posologie selon la profondeur du bloc, dose urgence mg/kg" },
+      { key: "effets", profile: "Sugammadex : effets secondaires, anaphylaxie, hypersensibilité, interactions contraceptifs" },
+    ];
+    const route = routeItems(
+      [
+        { id: "b1", text: "Mécanisme d'action : encapsulation dans la cavité de la cyclodextrine" },
+        { id: "b2", text: "Posologie standard 2 à 4 mg/kg ; urgence 16 mg/kg" },
+        { id: "b3", text: "Anaphylaxie rare ; interaction avec les contraceptifs hormonaux" },
+        { id: "b4", text: "Prix élevé" },
+      ],
+      targets
+    );
+    expect(Object.fromEntries(route)).toEqual({ b1: "meca", b2: "dose", b3: "effets", b4: "meca" });
+  });
+});
+
+describe("numeric facts", () => {
+  it("reads doses, thresholds and percentages, not bare list numbers", () => {
+    expect([...numericFacts("Posologie : 2 mg/kg si TOF ≥ 2, 4 mg/kg si PTC 1–2 ; 16 mg/kg en urgence. TOF 0,90 en 107 secondes, 97 % des patients.")].sort()).toEqual(
+      ["0.9", "107", "16mg", "2mg", "4mg", "97%"].sort()
+    );
+    expect([...numericFacts("Dose de 1 000 mg ; 2,0 h")].sort()).toEqual(["1000mg", "2h"].sort());
+  });
+
+  it("finds a value the merged text lost, and accepts the same value written differently", () => {
+    const merged = numericFacts("Dose : 0.6 mg/kg (poids réel) ; délai 60 s ; 1044 secondes avec la néostigmine.");
+    expect(missingFacts("Rocuronium 0,6 mg/kg, délai 60 s, puis 1,2 mg/kg en séquence rapide ; 1044 s.", merged)).toEqual(["1.2mg"]);
   });
 });
 
@@ -139,15 +203,20 @@ describe("normalizers", () => {
     expect(fiche.flashcards).toHaveLength(1);
   });
 
-  it("parses a repair answer", () => {
+  it("parses an outline and a repair answer", () => {
+    expect(normalizeOutline({ chapters: [{ title: "C", fiches: [{ title: "F", objective: "o", sources: ["F1"] }, { title: "Vide", objective: "", sources: [] }] }, { title: "Rien", fiches: [] }] })).toEqual([
+      { title: "C", fiches: [{ title: "F", objective: "o", sources: ["F1"] }] },
+    ]);
     const r = normalizeRepair({
       replacements: [{ block_index: 1, content: { text: "x" }, source_block_ids: ["B1"] }, { content: {} }],
       insertions: [{ after_block_index: 0, block_type: "divergence", content: { text: "• A : 1 / • B : 2" }, source_block_ids: ["B2"] }],
       already_covered: [{ source_block_id: "B3", block_index: 2 }],
+      flashcards: [{ front: "Q", back: "R", source_flashcard_ids: ["K1"] }],
     });
     expect(r.replacements).toHaveLength(1);
     expect(r.insertions[0].block_type).toBe("divergence");
     expect(r.alreadyCovered).toEqual([{ sourceBlockId: "B3", blockIndex: 2 }]);
+    expect(r.flashcards).toHaveLength(1);
   });
 
   it("converts schemas to Gemini's dialect without touching enums", () => {
@@ -165,13 +234,38 @@ describe("prompts", () => {
     );
     const prompt = buildFichePrompt(
       { bookTitle: "Notion", path: "Pharmacologie", chapterTitle: "Curares", title: "Rocuronium", objective: "o", siblings: ["Sugammadex"] },
-      [{ alias: "F1", bookTitle: "Miller", chapterTitle: "NMB", title: "Roc", blocks: [{ alias: "B1", blockType: "valeurs_seuils", content: { text: "0,6 mg/kg" }, pages: [812], image: "courbe" }], cards: [{ alias: "K1", front: "Q", back: "R" }] }]
+      [
+        {
+          alias: "F1",
+          bookTitle: "Miller",
+          chapterTitle: "NMB",
+          title: "Roc",
+          sharedWith: ["Sugammadex"],
+          blocks: [{ alias: "B1", blockType: "valeurs_seuils", content: { text: "0,6 mg/kg" }, pages: [812], image: "courbe" }],
+          cards: [{ alias: "K1", front: "Q", back: "R" }],
+        },
+      ]
     );
     expect(prompt).toContain("[B1] Valeurs & seuils · p. 812 : 0,6 mg/kg");
     expect(prompt).toContain("[B1] [illustration : courbe]");
     expect(prompt).toContain("[K1] Q : Q — R : R");
+    expect(prompt).toContain("le reste est traité dans « Sugammadex »");
     expect(prompt).toContain("ZÉRO PERTE");
+    expect(prompt).toContain("40 à 160 mots");
     expect(prompt).toContain("a_retenir");
+  });
+
+  it("asks the repair pass for lost values, cards and the missing « À retenir »", () => {
+    const prompt = buildRepairPrompt(
+      { bookTitle: "N", chapterTitle: "C", title: "T" },
+      [{ index: 0, blockType: "definition_mecanisme", content: { text: "x" } }],
+      [{ alias: "B1", bookTitle: "Miller", blockType: "valeurs_seuils", content: { text: "1,2 mg/kg" }, lostValues: ["1.2mg"] }],
+      [{ alias: "K1", bookTitle: "Albrecht", front: "Q", back: "R", lostValues: [] }],
+      true
+    );
+    expect(prompt).toContain("valeurs absentes de la fiche : 1.2mg");
+    expect(prompt).toContain("[K1] « Albrecht »");
+    expect(prompt).toContain("n'a pas de bloc « À retenir »");
   });
 
   it("lists the catalogue by book and source chapter", () => {
@@ -185,7 +279,6 @@ describe("estimateMerge", () => {
     const fiches = Array.from({ length: 300 }, (_, i) => ({ title: `Fiche ${i}`, summary: "résumé", chars: 3_000 }));
     const gemini = estimateMerge({ fiches, bookCount: 2 }, "gemini", "gemini-flash-latest");
     const claude = estimateMerge({ fiches, bookCount: 2 }, "claude", "claude-sonnet-5");
-    expect(gemini.chapters).toBe(targetChapterCount(300));
     expect(gemini.inputTokens).toBeGreaterThan(300_000);
     expect(claude.costUsd!).toBeGreaterThan(gemini.costUsd!);
     expect(estimateMerge({ fiches: fiches.slice(0, 30), bookCount: 2 }, "gemini", "gemini-flash-latest").inputTokens).toBeLessThan(gemini.inputTokens);

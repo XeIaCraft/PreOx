@@ -48,20 +48,10 @@ export const PLAN_SCHEMA: JsonSchema = {
             items: {
               type: "object",
               properties: {
-                title: { type: "string", description: "Vide si les chapitres sont directement sous la partie." },
-                chapters: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      title: { type: "string" },
-                      scope: { type: "string", description: "Ce que couvre ce chapitre, assez précis pour y ranger une fiche sans hésiter." },
-                    },
-                    required: ["title", "scope"],
-                  },
-                },
+                title: { type: "string", description: "Vide seulement si la partie n'a pas besoin d'être subdivisée." },
+                scope: { type: "string", description: "Ce que couvre cette sous-partie, assez précis pour y ranger une fiche sans hésiter." },
               },
-              required: ["title", "chapters"],
+              required: ["title", "scope"],
             },
           },
         },
@@ -79,31 +69,40 @@ export const ASSIGN_SCHEMA: JsonSchema = {
       type: "array",
       items: {
         type: "object",
-        properties: { fiche: { type: "string" }, chapter: { type: "string" } },
-        required: ["fiche", "chapter"],
+        properties: { fiche: { type: "string" }, sub_part: { type: "string" } },
+        required: ["fiche", "sub_part"],
       },
     },
   },
   required: ["assignments"],
 };
 
-export const CHAPTER_SCHEMA: JsonSchema = {
+const OUTLINE_FICHE: JsonSchema = {
   type: "object",
   properties: {
-    fiches: {
+    title: { type: "string" },
+    objective: { type: "string", description: "En une phrase : ce que le lecteur saura après cette fiche." },
+    sources: { ...ID_LIST, description: "Identifiants (ex. \"F3\") des fiches sources fusionnées dans celle-ci." },
+  },
+  required: ["title", "objective", "sources"],
+};
+
+export const OUTLINE_SCHEMA: JsonSchema = {
+  type: "object",
+  properties: {
+    chapters: {
       type: "array",
       items: {
         type: "object",
         properties: {
           title: { type: "string" },
-          objective: { type: "string", description: "En une phrase : ce que le lecteur saura après cette fiche." },
-          sources: { ...ID_LIST, description: "Identifiants (ex. \"F3\") des fiches sources fusionnées dans celle-ci." },
+          fiches: { type: "array", items: OUTLINE_FICHE },
         },
-        required: ["title", "objective", "sources"],
+        required: ["title", "fiches"],
       },
     },
   },
-  required: ["fiches"],
+  required: ["chapters"],
 };
 
 export const FICHE_SCHEMA: JsonSchema = {
@@ -186,8 +185,17 @@ export const REPAIR_SCHEMA: JsonSchema = {
         required: ["source_block_id", "block_index"],
       },
     },
+    flashcards: {
+      type: "array",
+      description: "Cartes nouvelles pour les cartes sources listées ou les valeurs perdues ; vide s'il n'y a rien à ajouter.",
+      items: {
+        type: "object",
+        properties: { front: { type: "string" }, back: { type: "string" }, source_flashcard_ids: ID_LIST },
+        required: ["front", "back", "source_flashcard_ids"],
+      },
+    },
   },
-  required: ["replacements", "insertions", "already_covered"],
+  required: ["replacements", "insertions", "already_covered", "flashcards"],
 };
 
 /** Gemini's responseSchema dialect: same structure, upper-case type names. */
@@ -209,7 +217,7 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const ids = (v: unknown): string[] => coerceArray(v).filter((x): x is string => typeof x === "string").map((x) => x.trim());
 
 export interface RawPlan {
-  parts: { title: string; sub_parts: { title: string; chapters: { title: string; scope: string }[] }[] }[];
+  parts: { title: string; sub_parts: { title: string; scope: string }[] }[];
 }
 
 export function normalizePlan(raw: unknown): RawPlan {
@@ -220,36 +228,42 @@ export function normalizePlan(raw: unknown): RawPlan {
         const part = p as { title?: unknown; sub_parts?: unknown };
         return {
           title: str(part.title).trim(),
-          sub_parts: coerceArray(part.sub_parts).map((sp) => {
-            const sub = sp as { title?: unknown; chapters?: unknown };
-            return {
-              title: str(sub.title).trim(),
-              chapters: coerceArray(sub.chapters)
-                .map((c) => ({ title: str((c as { title?: unknown }).title).trim(), scope: str((c as { scope?: unknown }).scope).trim() }))
-                .filter((c) => c.title),
-            };
-          }),
+          sub_parts: coerceArray(part.sub_parts)
+            .map((sp) => ({ title: str((sp as { title?: unknown }).title).trim(), scope: str((sp as { scope?: unknown }).scope).trim() }))
+            .filter((sp) => sp.title || sp.scope),
         };
       })
-      .filter((p) => p.title),
+      .filter((p) => p.title && p.sub_parts.length > 0),
   };
 }
 
+/** `chapter` is the key's former name, still accepted. */
 export function normalizeAssignments(raw: unknown): { fiche: string; chapter: string }[] {
   const obj = raw as { assignments?: unknown } | null;
   return coerceArray(obj?.assignments)
-    .map((a) => ({ fiche: str((a as { fiche?: unknown }).fiche).trim(), chapter: str((a as { chapter?: unknown }).chapter).trim() }))
+    .map((a) => {
+      const entry = a as { fiche?: unknown; sub_part?: unknown; chapter?: unknown };
+      return { fiche: str(entry.fiche).trim(), chapter: (str(entry.sub_part) || str(entry.chapter)).trim() };
+    })
     .filter((a) => a.fiche && a.chapter);
 }
 
-export function normalizeChapterPlan(raw: unknown): { title: string; objective: string; sources: string[] }[] {
-  const obj = raw as { fiches?: unknown } | null;
-  return coerceArray(obj?.fiches)
-    .map((f) => {
-      const fiche = f as { title?: unknown; objective?: unknown; sources?: unknown };
-      return { title: str(fiche.title).trim(), objective: str(fiche.objective).trim(), sources: ids(fiche.sources) };
+export function normalizeOutline(raw: unknown): { title: string; fiches: { title: string; objective: string; sources: string[] }[] }[] {
+  const obj = raw as { chapters?: unknown } | null;
+  return coerceArray(obj?.chapters)
+    .map((c) => {
+      const chapter = c as { title?: unknown; fiches?: unknown };
+      return {
+        title: str(chapter.title).trim(),
+        fiches: coerceArray(chapter.fiches)
+          .map((f) => {
+            const fiche = f as { title?: unknown; objective?: unknown; sources?: unknown };
+            return { title: str(fiche.title).trim(), objective: str(fiche.objective).trim(), sources: ids(fiche.sources) };
+          })
+          .filter((f) => f.title && f.sources.length > 0),
+      };
     })
-    .filter((f) => f.title);
+    .filter((c) => c.fiches.length > 0);
 }
 
 /** Keeps only the fields the block type actually uses, so a stray empty `rows` never turns a text block into a broken table. */
@@ -317,7 +331,7 @@ export function normalizeMergedFiche(raw: unknown): RawMergedFiche {
 }
 
 export function normalizeRepair(raw: unknown): RawRepair {
-  const obj = raw as { replacements?: unknown; insertions?: unknown; already_covered?: unknown } | null;
+  const obj = raw as { replacements?: unknown; insertions?: unknown; already_covered?: unknown; flashcards?: unknown } | null;
   const replacements: RawRepair["replacements"] = [];
   for (const r of coerceArray(obj?.replacements)) {
     const rep = r as { block_index?: unknown; heading?: unknown; content?: unknown; source_block_ids?: unknown };
@@ -347,5 +361,11 @@ export function normalizeRepair(raw: unknown): RawRepair {
     if (typeof entry.block_index === "number" && str(entry.source_block_id).trim())
       alreadyCovered.push({ sourceBlockId: str(entry.source_block_id).trim(), blockIndex: entry.block_index });
   }
-  return { replacements, insertions, alreadyCovered };
+  const flashcards = coerceArray(obj?.flashcards)
+    .map((c) => {
+      const card = c as { front?: unknown; back?: unknown; source_flashcard_ids?: unknown };
+      return { front: str(card.front).trim(), back: str(card.back).trim(), source_flashcard_ids: ids(card.source_flashcard_ids) };
+    })
+    .filter((c) => c.front && c.back);
+  return { replacements, insertions, alreadyCovered, flashcards };
 }

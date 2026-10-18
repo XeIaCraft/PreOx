@@ -27,11 +27,11 @@ import { formatUsd, estimateCostUsd } from "@/lib/el-profesor/ai-pricing";
 import type { MergeProvider } from "@/lib/el-profesor/merge/types";
 
 const STAGES = [
-  { key: "plan", label: "Table des matières", hint: "Parties, sous-parties et chapitres pensés pour l'apprentissage." },
-  { key: "assign", label: "Répartition", hint: "Chaque fiche source rejoint son chapitre." },
-  { key: "chapters", label: "Plan des chapitres", hint: "Les fiches de chaque chapitre, dans l'ordre de lecture." },
+  { key: "plan", label: "Table des matières", hint: "Parties et sous-parties, du fondamental vers l'appliqué." },
+  { key: "assign", label: "Répartition", hint: "Chaque fiche source rejoint sa sous-partie." },
+  { key: "chapters", label: "Chapitres et fiches", hint: "Chaque sous-partie organisée en chapitres et en fiches, dans l'ordre d'apprentissage." },
   { key: "fiches", label: "Fusion des fiches", hint: "Rédaction sans perte, divergences citées, « À retenir », cartes fusionnées." },
-  { key: "repair", label: "Contrôle de couverture", hint: "Tout bloc source non repris est réintégré." },
+  { key: "repair", label: "Contrôle de couverture", hint: "Blocs, cartes et valeurs chiffrées non repris : réintégrés." },
 ] as const;
 
 const ENDED_LABEL: Record<string, { label: string; variant: "success" | "danger" | "neutral" }> = {
@@ -181,15 +181,19 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
       {(s.sourceFiches || s.fichesPlanned) && (
         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <Stat label="Fiches sources" value={s.sourceFiches} />
-          <Stat label="Chapitres" value={s.chapters} />
+          <Stat label={s.chapters ? "Chapitres" : "Sous-parties"} value={s.chapters ?? s.subParts} />
           <Stat label="Fiches fusionnées" value={s.fichesPlanned} />
           <Stat label="Divergences citées" value={s.divergences} />
         </dl>
       )}
-      {job.stage === "done" && ((s.blocksKeptVerbatim ?? 0) > 0 || (s.cardsKeptVerbatim ?? 0) > 0 || (s.fichesFailed ?? 0) > 0) && (
+      {job.stage === "done" && (
         <p className="mt-3 text-xs text-foreground-muted">
-          Garde-fou sans perte : {nf.format(s.blocksKeptVerbatim ?? 0)} bloc(s) et {nf.format(s.cardsKeptVerbatim ?? 0)} carte(s) que l&apos;IA n&apos;avait pas repris ont été
-          ajoutés tels quels{(s.fichesFailed ?? 0) > 0 ? `, et ${s.fichesFailed} fiche(s) non fusionnée(s) gardent leurs sources` : ""} — marqués « à vérifier ».
+          Contrôle de couverture : {nf.format(s.fichesRepaired ?? 0)} fiche(s) complétée(s) au rattrapage (bloc, carte ou valeur chiffrée oubliés, « À retenir » manquant).
+          {((s.blocksKeptVerbatim ?? 0) > 0 || (s.cardsKeptVerbatim ?? 0) > 0 || (s.fichesFailed ?? 0) > 0) &&
+            ` En dernier recours, ${nf.format(s.blocksKeptVerbatim ?? 0)} bloc(s) et ${nf.format(s.cardsKeptVerbatim ?? 0)} carte(s) ont été ajoutés tels quels${
+              (s.fichesFailed ?? 0) > 0 ? `, et ${s.fichesFailed} fiche(s) non fusionnée(s) gardent leurs sources` : ""
+            } — marqués « à vérifier ».`}
+          {(s.fichesSplit ?? 0) > 0 && ` ${s.fichesSplit} sujet(s) trop longs pour une seule fiche ont été répartis sur plusieurs fiches.`}
         </p>
       )}
 

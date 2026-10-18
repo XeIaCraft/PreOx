@@ -8,7 +8,7 @@ import { callGeminiTextJson, isQuotaOrCapacityError } from "../gemini";
 import { claudeTextContent, getClaudeBatchResults, retrieveClaudeBatch, submitClaudeToolBatch } from "../anthropic";
 import { quotaBackoffMinutes } from "../gemini-queue";
 import { toGeminiSchema } from "./schemas";
-import { FINALIZERS, STAGE_HANDLERS, createPlanTask, jobUsage, type StageContext } from "./stages";
+import { FINALIZERS, STAGE_HANDLERS, createPlanTask, estimatedSeconds, jobUsage, type StageContext } from "./stages";
 import type { MergeStats } from "./types";
 
 // Drives every fusion in progress: pg_cron calls the route every minute
@@ -29,7 +29,8 @@ const TASK_STAGE: Record<ActiveStage, ElProfesorMergeTaskStage> = { plan: "plan"
 /** A running task older than this was killed with its function: back to waiting. */
 const STUCK_RUNNING_MS = 12 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
-const MAX_QUOTA_ATTEMPTS = 20;
+/** A refused quota (free tier, daily limit) only postpones: a big fusion may need several days of quota, never a fallback. */
+const MAX_QUOTA_ATTEMPTS = 200;
 /** Gemini calls in flight at once within one run (several runs can overlap). */
 const GEMINI_CONCURRENCY = 6;
 /** Requests per Claude batch: keeps each submission's body a reasonable size. */
@@ -48,11 +49,26 @@ export async function processMergeJobs({ budgetMs = 240_000, startBeforeMs = 150
   const started = Date.now();
   const summary: MergeRunSummary = { jobs: 0, tasksDone: 0, tasksFailed: 0, submitted: 0 };
 
-  await supabase
+  // Tasks left « running » by a run killed at its time limit: that counts as an attempt, so a
+  // task that never fits in a run ends in its fallback instead of being retried forever.
+  const { data: stuck } = await supabase
     .from("el_profesor_merge_tasks")
-    .update({ status: "waiting", started_at: null })
+    .select("id, attempts")
     .eq("status", "running")
-    .lt("started_at", new Date(Date.now() - STUCK_RUNNING_MS).toISOString());
+    .lt("started_at", new Date(Date.now() - STUCK_RUNNING_MS).toISOString())
+    .limit(500);
+  for (const t of stuck ?? []) {
+    const attempts = t.attempts + 1;
+    await supabase
+      .from("el_profesor_merge_tasks")
+      .update(
+        attempts >= MAX_ATTEMPTS
+          ? { status: "failed", attempts, started_at: null, error: "Interrompue à chaque essai (délai dépassé)." }
+          : { status: "waiting", attempts, started_at: null, error: "Interrompue (délai dépassé), nouvel essai." }
+      )
+      .eq("id", t.id)
+      .eq("status", "running");
+  }
 
   const { data: jobs } = await supabase.from("el_profesor_merge_jobs").select("*").in("stage", ACTIVE_STAGES).order("created_at");
   for (const job of (jobs ?? []) as Job[]) {
@@ -106,8 +122,22 @@ async function advanceJob(initial: Job, clock: Clock, summary: MergeRunSummary):
       .eq("stage", TASK_STAGE[stage])
       .in("status", ["waiting", "running", "submitted"]);
     if ((count ?? 0) > 0) return;
-    if (Date.now() - clock.started > clock.budgetMs - 30_000) return;
-    await FINALIZERS[stage](ctx);
+    if (Date.now() - clock.started > clock.budgetMs - 60_000) return;
+    // One run at a time moves the job to the next stage (runs overlap, every minute).
+    const { data: locked } = await supabase
+      .from("el_profesor_merge_jobs")
+      .update({ locked_until: new Date(Date.now() + 4 * 60_000).toISOString() })
+      .eq("id", job.id)
+      .eq("stage", job.stage)
+      .or(`locked_until.is.null,locked_until.lt.${new Date().toISOString()}`)
+      .select("id")
+      .maybeSingle();
+    if (!locked) return;
+    try {
+      await FINALIZERS[stage](ctx);
+    } finally {
+      await supabase.from("el_profesor_merge_jobs").update({ locked_until: null }).eq("id", job.id);
+    }
     await supabase.from("el_profesor_merge_jobs").update({ error: null }).eq("id", job.id).not("error", "is", null).neq("stage", "failed");
   }
 }
@@ -125,12 +155,21 @@ async function dueTasks(ctx: StageContext, stage: ElProfesorMergeTaskStage, limi
   return (data ?? []) as Task[];
 }
 
-/** One due task for this worker: candidates are tried in random order, so parallel workers (and overlapping runs) don't all fight over the first one. */
-async function claimOne(ctx: StageContext, stage: ElProfesorMergeTaskStage): Promise<Task | null> {
+/**
+ * One due task for this worker that has time to finish before the run ends
+ * (see estimatedSeconds). Candidates are tried in random order, so parallel
+ * workers (and overlapping runs) don't all fight over the first one.
+ */
+async function claimOne(ctx: StageContext, stage: ElProfesorMergeTaskStage, clock: Clock): Promise<Task | null> {
   for (let attempt = 0; attempt < 4; attempt++) {
     const candidates = await dueTasks(ctx, stage, GEMINI_CONCURRENCY * 3);
     if (!candidates.length) return null;
-    for (const candidate of [...candidates].sort(() => Math.random() - 0.5)) {
+    const deadline = clock.started + clock.budgetMs - 15_000;
+    const atStart = Date.now() - clock.started < 20_000;
+    // A task longer than any run still gets its chance at the very start of one.
+    const fitting = candidates.filter((c) => Date.now() + estimatedSeconds(c) * 1000 < deadline || atStart);
+    if (!fitting.length) return null;
+    for (const candidate of [...fitting].sort(() => Math.random() - 0.5)) {
       const [task] = await claim(ctx, [candidate]);
       if (task) return task;
     }
@@ -198,7 +237,7 @@ async function runGemini(ctx: StageContext, stage: ElProfesorMergeTaskStage, clo
 
   const worker = async () => {
     while (!quotaHit && Date.now() - clock.started < clock.startBeforeMs) {
-      const task = await claimOne(ctx, stage);
+      const task = await claimOne(ctx, stage, clock);
       if (!task) return;
       try {
         const prepared = (await handler.prepare(ctx, [task])).get(task.id);
@@ -237,6 +276,8 @@ async function runClaude(ctx: StageContext, stage: ElProfesorMergeTaskStage, clo
     const byId = new Map(tasks.map((t) => [t.id, t]));
     const results = await getClaudeBatchResults(config.apiKey, batchId, config.model, undefined, new Set(byId.keys()));
     for (const r of results) {
+      // Out of time: what's left of this batch is picked up by the next run (results stay available).
+      if (Date.now() - clock.started > clock.budgetMs - 30_000) return;
       const task = byId.get(r.customId);
       if (!task) continue;
       byId.delete(r.customId);
@@ -248,8 +289,8 @@ async function runClaude(ctx: StageContext, stage: ElProfesorMergeTaskStage, clo
     for (const task of byId.values()) await settleFailure(ctx, task, new GeminiError("Absente des résultats du lot."), summary);
   }
 
-  // 2. Send what's waiting, a batch at a time.
-  while (Date.now() - clock.started < clock.startBeforeMs) {
+  // 2. Send what's waiting, a batch at a time — only with room left to prepare and send a whole batch.
+  while (Date.now() - clock.started < Math.min(clock.startBeforeMs, clock.budgetMs - 90_000)) {
     const tasks = await claim(ctx, await dueTasks(ctx, stage, CLAUDE_BATCH_SIZE));
     if (!tasks.length) return;
     try {

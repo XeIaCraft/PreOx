@@ -7,34 +7,48 @@ import type { BlockContent, BlockType, Citation, SuggestedImage } from "../types
 import { stableUuid } from "./ids";
 import {
   ASSIGN_CHUNK,
-  cardOwners,
   chapterPath,
   chunk,
-  flattenPlan,
+  flattenChapters,
+  flattenSubParts,
   mergeCitations,
+  missingFacts,
   numberPlan,
+  numericFacts,
   resolveAssignments,
-  resolveChapterPlan,
+  resolveOutline,
+  routeItems,
+  subPartPath,
+  targetSubPartCount,
   uncovered,
+  withChapters,
   type FlatPlanChapter,
 } from "./plan";
-import { buildAssignPrompt, buildCatalogText, buildChapterPrompt, buildFichePrompt, buildPlanPrompt, buildRepairPrompt, type PromptSourceFiche } from "./prompts";
+import {
+  blockPromptText,
+  buildAssignPrompt,
+  buildCatalogText,
+  buildFichePrompt,
+  buildOutlinePrompt,
+  buildPlanPrompt,
+  buildRepairPrompt,
+  type PromptSourceFiche,
+} from "./prompts";
 import {
   ASSIGN_SCHEMA,
-  CHAPTER_SCHEMA,
   FICHE_SCHEMA,
+  OUTLINE_SCHEMA,
   PLAN_SCHEMA,
   REPAIR_SCHEMA,
   normalizeAssignments,
-  normalizeChapterPlan,
   normalizeContent,
   normalizeMergedFiche,
+  normalizeOutline,
   normalizePlan,
   normalizeRepair,
 } from "./schemas";
 import { appendMergedCards, loadFicheBlocks, rewriteFicheBlocks, writeMergedFiche, type MergedBlockDraft, type MergedCardDraft } from "./persist";
 import { loadSourceCatalog, loadSourceContent, type SourceBlock, type SourceCard } from "./source";
-import { targetChapterCount } from "./estimate";
 import type { MergePlan, MergeStats, SourceFicheRef } from "./types";
 
 // What each fusion stage does, provider-agnostic: build its prompts
@@ -42,6 +56,12 @@ import type { MergePlan, MergeStats, SourceFicheRef } from "./types";
 // (`apply`), and once every task of the stage is settled, place whatever is
 // missing and create the next stage's tasks (`finalize*`). pipeline.ts only
 // schedules these; it never looks inside a stage.
+//
+//   plan      parties et sous-parties (1 requête)
+//   assign    chaque fiche source → une sous-partie (par paquets de 200)
+//   chapter   une sous-partie → ses chapitres et ses fiches fusionnées
+//   fiche     une fiche fusionnée, rédigée à partir de ses sources
+//   repair    ce que le contrôle de couverture a trouvé manquant
 
 type Admin = SupabaseClient<Database>;
 type Job = ElProfesorMergeJobRow;
@@ -72,6 +92,7 @@ const aliasIndex = (prefix: string, a: string): number => {
   const m = new RegExp(`^${prefix}(\\d+)$`, "i").exec(a.trim());
   return m ? Number(m[1]) - 1 : -1;
 };
+const pad = (n: number, width = 4) => String(n).padStart(width, "0");
 
 function planOf(job: Job): MergePlan {
   return (job.plan as unknown as MergePlan | null) ?? { parts: [] };
@@ -99,15 +120,19 @@ export async function stageTasks(supabase: Admin, jobId: string, stage: ElProfes
   return out;
 }
 
+async function saveOutput(supabase: Admin, task: Task, output: unknown) {
+  await supabase.from("el_profesor_merge_tasks").update({ output: output as Json }).eq("id", task.id);
+}
+
 function mergeStats(job: Job, patch: MergeStats): Json {
   return { ...((job.stats as MergeStats | null) ?? {}), ...patch } as Json;
 }
 
-/** Moves the job on, only if no other run already did (two cron runs can overlap). Returns false when it lost the race. */
+/** Moves the job on, only if no other run already did (two runs can overlap). Releases the finalize lock. */
 async function transition(supabase: Admin, job: Job, next: Job["stage"], patch: Partial<Job> = {}): Promise<boolean> {
   const { data } = await supabase
     .from("el_profesor_merge_jobs")
-    .update({ ...patch, stage: next, ...(next === "done" || next === "failed" ? { finished_at: new Date().toISOString() } : {}) })
+    .update({ ...patch, stage: next, locked_until: null, ...(next === "done" || next === "failed" ? { finished_at: new Date().toISOString() } : {}) })
     .eq("id", job.id)
     .eq("stage", job.stage)
     .select("id")
@@ -115,7 +140,7 @@ async function transition(supabase: Admin, job: Job, next: Job["stage"], patch: 
   return Boolean(data);
 }
 
-// -- 1. Plan ----------------------------------------------------------------
+// -- 1. Plan : parties et sous-parties --------------------------------------
 
 export async function createPlanTask(supabase: Admin, job: Job) {
   await upsertTasks(supabase, job.id, "plan", [{ refKey: "plan", input: {} }]);
@@ -123,17 +148,17 @@ export async function createPlanTask(supabase: Admin, job: Job) {
 
 const planHandler: StageHandler = {
   toolName: "enregistrer_table_des_matieres",
-  toolDescription: "Enregistre la table des matières du livre fusionné.",
+  toolDescription: "Enregistre les parties et sous-parties du livre fusionné.",
   schema: PLAN_SCHEMA,
   async prepare(ctx, tasks) {
     const catalog = await loadSourceCatalog(ctx.supabase, ctx.job.source_book_ids, ctx.job.include_drafts);
     if (catalog.fiches.length === 0) throw new GeminiError("Aucune fiche dans les livres choisis.");
-    const prompt = buildPlanPrompt(ctx.bookTitle, { books: catalog.books, text: buildCatalogText(catalog.books, catalog.fiches), ficheCount: catalog.fiches.length }, targetChapterCount(catalog.fiches.length));
+    const prompt = buildPlanPrompt(ctx.bookTitle, { books: catalog.books, text: buildCatalogText(catalog.books, catalog.fiches), ficheCount: catalog.fiches.length }, targetSubPartCount(catalog.fiches.length));
     return new Map(tasks.map((t) => [t.id, { prompt }]));
   },
-  async apply(ctx, _task, _prepared, raw) {
-    const plan = numberPlan(normalizePlan(raw), ctx.job.id);
-    if (flattenPlan(plan).length === 0) throw new GeminiError("Table des matières vide.");
+  async apply(_ctx, _task, _prepared, raw) {
+    const plan = numberPlan(normalizePlan(raw));
+    if (flattenSubParts(plan).length === 0) throw new GeminiError("Table des matières vide.");
     return plan as unknown as Json;
   },
 };
@@ -146,13 +171,213 @@ export async function finalizePlan(ctx: StageContext): Promise<void> {
     return;
   }
   const plan = task.output as unknown as MergePlan;
-  const chapters = flattenPlan(plan);
   const catalog = await loadSourceCatalog(supabase, job.source_book_ids, job.include_drafts);
+  await upsertTasks(
+    supabase,
+    job.id,
+    "assign",
+    chunk(catalog.fiches, ASSIGN_CHUNK).map((fiches, i) => ({ refKey: `assign:${pad(i)}`, input: { fiches } }))
+  );
+  await transition(supabase, job, "assign", {
+    plan: plan as unknown as Json,
+    stats: mergeStats(job, {
+      sourceFiches: catalog.fiches.length,
+      sourceBlocks: catalog.fiches.reduce((s, f) => s + f.blockCount, 0),
+      sourceCards: catalog.fiches.reduce((s, f) => s + f.cardCount, 0),
+      subParts: flattenSubParts(plan).length,
+    }),
+  });
+}
 
+// -- 2. Répartition : chaque fiche source → une sous-partie -----------------
+
+const assignHandler: StageHandler = {
+  toolName: "enregistrer_repartition",
+  toolDescription: "Enregistre la sous-partie de chaque fiche source.",
+  schema: ASSIGN_SCHEMA,
+  async prepare(ctx, tasks) {
+    const subParts = flattenSubParts(planOf(ctx.job)).map((s) => ({ key: s.key, path: subPartPath(s), scope: s.scope }));
+    return new Map(
+      tasks.map((t) => {
+        const fiches = ((t.input as { fiches?: SourceFicheRef[] }).fiches ?? []).map((ref, i) => ({ alias: alias("F", i), ref }));
+        return [t.id, { prompt: buildAssignPrompt(ctx.bookTitle, subParts, fiches) }];
+      })
+    );
+  },
+  async apply(_ctx, task, _prepared, raw) {
+    const assignments = normalizeAssignments(raw);
+    const expected = ((task.input as { fiches?: SourceFicheRef[] }).fiches ?? []).length;
+    // Less than half placed: the answer was cut short — ask again rather than guess most of it.
+    if (assignments.length < expected / 2) throw new GeminiError(`Répartition incomplète (${assignments.length}/${expected}).`);
+    return { assignments } as unknown as Json;
+  },
+};
+
+export async function finalizeAssign(ctx: StageContext): Promise<void> {
+  const { supabase, job } = ctx;
+  const plan = planOf(job);
+  const subParts = flattenSubParts(plan);
+  const tasks = await stageTasks(supabase, job.id, "assign");
+  const allFiches: SourceFicheRef[] = [];
+  const answers = tasks.map((t) => {
+    const fiches = (t.input as { fiches?: SourceFicheRef[] }).fiches ?? [];
+    allFiches.push(...fiches);
+    return {
+      aliasToFiche: Object.fromEntries(fiches.map((f, i) => [alias("F", i), f.ficheId])),
+      assignments: t.status === "done" ? ((t.output as { assignments?: { fiche: string; chapter: string }[] } | null)?.assignments ?? []) : [],
+    };
+  });
+  const { byKey, fallbackCount } = resolveAssignments(
+    subParts.map((s) => s.key),
+    allFiches,
+    answers
+  );
+  const refById = new Map(allFiches.map((f) => [f.ficheId, f]));
+
+  // A sub-part nothing went to is dropped from the book.
+  const kept = subParts.filter((s) => (byKey.get(s.key) ?? []).length > 0);
+  const keptKeys = new Set(kept.map((s) => s.key));
+  const trimmed: MergePlan = {
+    parts: plan.parts.map((p) => ({ ...p, subParts: p.subParts.filter((s) => keptKeys.has(s.key)) })).filter((p) => p.subParts.length),
+  };
+
+  await upsertTasks(
+    supabase,
+    job.id,
+    "chapter",
+    kept.map((s) => ({ refKey: `chapter:${pad(s.orderIndex)}`, input: { key: s.key, fiches: (byKey.get(s.key) ?? []).map((id) => refById.get(id)!) } }))
+  );
+  await transition(supabase, job, "chapters", { plan: trimmed as unknown as Json, stats: mergeStats(job, { subParts: kept.length, assignFallback: fallbackCount }) });
+}
+
+// -- 3. Chapitres et fiches d'une sous-partie -------------------------------
+
+const outlineHandler: StageHandler = {
+  toolName: "enregistrer_chapitres",
+  toolDescription: "Enregistre les chapitres de la sous-partie et les fiches fusionnées de chacun, dans l'ordre d'apprentissage.",
+  schema: OUTLINE_SCHEMA,
+  async prepare(ctx, tasks) {
+    const plan = planOf(ctx.job);
+    const subParts = flattenSubParts(plan);
+    return new Map(
+      tasks.map((t) => {
+        const input = t.input as unknown as { key: string; fiches: SourceFicheRef[] };
+        const sub = subParts.find((s) => s.key === input.key);
+        const neighbours = subParts.filter((s) => s.partTitle === sub?.partTitle && s.key !== input.key).map((s) => s.title || s.partTitle);
+        const prompt = buildOutlinePrompt(
+          ctx.bookTitle,
+          { partTitle: sub?.partTitle ?? "", title: sub?.title ?? "", scope: sub?.scope ?? "", neighbours },
+          input.fiches.map((ref, i) => ({ alias: alias("F", i), ref }))
+        );
+        return [t.id, { prompt }];
+      })
+    );
+  },
+  async apply(_ctx, task, _prepared, raw) {
+    const chapters = normalizeOutline(raw);
+    if (chapters.length === 0) throw new GeminiError("Aucun chapitre proposé pour cette sous-partie.");
+    const expected = (task.input as unknown as { fiches: SourceFicheRef[] }).fiches.length;
+    const placed = new Set(chapters.flatMap((c) => c.fiches.flatMap((f) => f.sources.map((s) => s.toUpperCase()))));
+    // Fewer than half the fiches placed: the answer was cut short.
+    if (placed.size < expected / 2) throw new GeminiError(`Plan de sous-partie incomplet (${placed.size}/${expected} fiches).`);
+    return { chapters } as unknown as Json;
+  },
+};
+
+/** What a fiche task needs: which source fiches, and — for a source shared with other merged fiches — which of its blocks and cards. */
+export interface FicheTaskInput {
+  key: string;
+  chapterId: string;
+  subEntityId: string;
+  ficheId: string;
+  title: string;
+  objective: string;
+  siblings: string[];
+  /** Characters of source content sent: sizes the call (a Gemini call must fit in one run of the queue). */
+  chars: number;
+  sources: {
+    ficheId: string;
+    bookTitle: string;
+    chapterId: string;
+    chapterTitle: string;
+    title: string;
+    /** Set when the source fiche is shared: only these of its blocks / cards come to this fiche. */
+    blockIds?: string[];
+    cardIds?: string[];
+    sharedWith?: string[];
+  }[];
+}
+
+const blockText = (b: SourceBlock) => blockPromptText(b.blockType, b.content);
+const cardText = (c: SourceCard) => `${c.front}\n${c.back}`;
+
+export async function finalizeChapters(ctx: StageContext): Promise<void> {
+  const { supabase, job } = ctx;
+  const plan = planOf(job);
+  const subParts = flattenSubParts(plan);
+  const tasks = await stageTasks(supabase, job.id, "chapter");
+
+  // 1. Each sub-part's chapters and merged fiches, made safe.
+  const outlines = tasks.map((t) => {
+    const input = t.input as unknown as { key: string; fiches: SourceFicheRef[] };
+    const sub = subParts.find((s) => s.key === input.key);
+    const planned = t.status === "done" ? ((t.output as { chapters?: { title: string; fiches: { title: string; objective: string; sources: string[] }[] }[] } | null)?.chapters ?? []) : [];
+    const aliasToFiche = Object.fromEntries(input.fiches.map((f, i) => [alias("F", i), f.ficheId]));
+    return { key: input.key, refs: input.fiches, ...resolveOutline(planned, aliasToFiche, input.fiches, sub?.title || sub?.partTitle || "Compléments") };
+  });
+  const titlesBySubPart = new Map(outlines.map((o) => [o.key, o.chapters.map((c) => c.title)]));
+  const fullPlan = withChapters(plan, job.id, titlesBySubPart);
+  const chapters = flattenChapters(fullPlan);
+  const chapterByKey = new Map(chapters.map((c) => [c.key, c]));
+
+  // 2. Merged fiches, with stable ids.
+  type Merged = { key: string; chapter: FlatPlanChapter; title: string; objective: string; sourceIds: string[]; orderIndex: number; siblings: string[] };
+  const merged: Merged[] = [];
+  const refById = new Map<string, SourceFicheRef>();
+  for (const o of outlines) {
+    o.refs.forEach((r) => refById.set(r.ficheId, r));
+    o.chapters.forEach((c, ci) => {
+      const chapter = chapterByKey.get(`${o.key}.C${ci + 1}`)!;
+      c.fiches.forEach((f, fi) =>
+        merged.push({ key: `${chapter.key}.F${fi + 1}`, chapter, title: f.title, objective: f.objective, sourceIds: f.sourceFicheIds, orderIndex: fi, siblings: c.fiches.filter((x) => x !== f).map((x) => x.title) })
+      );
+    });
+  }
+
+  // 3. A source fiche feeding several merged fiches shares out its blocks and cards.
+  const users = new Map<string, Merged[]>();
+  for (const m of merged) for (const id of m.sourceIds) users.set(id, [...(users.get(id) ?? []), m]);
+  const shared = [...users.entries()].filter(([, ms]) => ms.length > 1);
+  const route = new Map<string, Map<string, string>>(); // source fiche → item id → merged key
+  const itemChars = new Map<string, number>();
+  if (shared.length) {
+    // The content of every source of the merged fiches involved: a fiche's own sources say best what it is about.
+    const involved = new Set(shared.flatMap(([, ms]) => ms.flatMap((m) => m.sourceIds)));
+    const content = await loadSourceContent(supabase, [...involved], job.include_drafts);
+    const sharedIds = new Set(shared.map(([id]) => id));
+    const textOf = (id: string) => [
+      refById.get(id)?.title ?? "",
+      refById.get(id)?.summary ?? "",
+      ...(content.blocksByFiche.get(id) ?? []).map(blockText),
+      ...(content.cardsByFiche.get(id) ?? []).map(cardText),
+    ];
+    for (const [ficheId, ms] of shared) {
+      const targets = ms.map((m) => ({
+        key: m.key,
+        profile: [m.title, m.title, m.objective, ...m.sourceIds.filter((id) => id !== ficheId && !sharedIds.has(id)).flatMap(textOf)].join(" "),
+      }));
+      const blocks = (content.blocksByFiche.get(ficheId) ?? []).map((b) => ({ id: b.id, text: blockText(b) }));
+      const cards = (content.cardsByFiche.get(ficheId) ?? []).map((c) => ({ id: c.id, text: cardText(c) }));
+      [...blocks, ...cards].forEach((x) => itemChars.set(x.id, x.text.length + 40));
+      route.set(ficheId, routeItems([...blocks, ...cards], targets));
+    }
+  }
+
+  // 4. Rows (upserted on stable ids: a transition interrupted and run again doesn't duplicate) and fiche tasks.
   for (const part of chunk(chapters, 200)) {
     const { error } = await supabase.from("el_profesor_chapters").upsert(
       part.map((c) => ({
-        id: c.chapterId!,
+        id: c.chapterId,
         book_id: job.book_id,
         title: c.title,
         order_index: c.orderIndex,
@@ -166,201 +391,57 @@ export async function finalizePlan(ctx: StageContext): Promise<void> {
     );
     if (error) throw new GeminiError(`Création des chapitres impossible : ${error.message}`);
   }
-
-  await upsertTasks(
-    supabase,
-    job.id,
-    "assign",
-    chunk(catalog.fiches, ASSIGN_CHUNK).map((fiches, i) => ({ refKey: `assign:${String(i).padStart(4, "0")}`, input: { fiches } }))
-  );
-  await transition(supabase, job, "assign", {
-    plan: plan as unknown as Json,
-    stats: mergeStats(job, {
-      sourceFiches: catalog.fiches.length,
-      sourceBlocks: catalog.fiches.reduce((s, f) => s + f.blockCount, 0),
-      sourceCards: catalog.fiches.reduce((s, f) => s + f.cardCount, 0),
-      chapters: chapters.length,
-    }),
-  });
-}
-
-// -- 2. Répartition ---------------------------------------------------------
-
-function promptChapters(plan: MergePlan) {
-  return flattenPlan(plan).map((c) => ({ key: c.key, path: chapterPath(c), title: c.title, scope: c.scope }));
-}
-
-const assignHandler: StageHandler = {
-  toolName: "enregistrer_repartition",
-  toolDescription: "Enregistre le chapitre de chaque fiche source.",
-  schema: ASSIGN_SCHEMA,
-  async prepare(ctx, tasks) {
-    const chapters = promptChapters(planOf(ctx.job));
-    return new Map(
-      tasks.map((t) => {
-        const fiches = ((t.input as { fiches?: SourceFicheRef[] }).fiches ?? []).map((ref, i) => ({ alias: alias("F", i), ref }));
-        return [t.id, { prompt: buildAssignPrompt(ctx.bookTitle, chapters, fiches) }];
-      })
+  const rows = merged.map((m) => ({ ...m, subEntityId: stableUuid(job.id, "sub", m.key), ficheId: stableUuid(job.id, "fiche", m.key) }));
+  for (const part of chunk(rows, 300)) {
+    await supabase.from("el_profesor_sub_entities").upsert(
+      part.map((r) => ({ id: r.subEntityId, chapter_id: r.chapter.chapterId, name: r.title, order_index: r.orderIndex, summary: r.objective, source_fiche_ids: r.sourceIds })),
+      { onConflict: "id", ignoreDuplicates: true }
     );
-  },
-  async apply(_ctx, task, _prepared, raw) {
-    const assignments = normalizeAssignments(raw);
-    if (assignments.length === 0) throw new GeminiError("Répartition vide.");
-    const expected = ((task.input as { fiches?: SourceFicheRef[] }).fiches ?? []).length;
-    // Less than half placed: the answer was cut short, ask again rather than guess most of it.
-    if (assignments.length < expected / 2) throw new GeminiError(`Répartition incomplète (${assignments.length}/${expected}).`);
-    return { assignments } as unknown as Json;
-  },
-};
-
-export async function finalizeAssign(ctx: StageContext): Promise<void> {
-  const { supabase, job } = ctx;
-  const plan = planOf(job);
-  const chapters = flattenPlan(plan);
-  const tasks = await stageTasks(supabase, job.id, "assign");
-  const allFiches: SourceFicheRef[] = [];
-  const answers = tasks.map((t) => {
-    const fiches = (t.input as { fiches?: SourceFicheRef[] }).fiches ?? [];
-    allFiches.push(...fiches);
-    return {
-      aliasToFiche: Object.fromEntries(fiches.map((f, i) => [alias("F", i), f.ficheId])),
-      assignments: t.status === "done" ? ((t.output as { assignments?: { fiche: string; chapter: string }[] } | null)?.assignments ?? []) : [],
-    };
-  });
-  const { byChapter, fallbackCount } = resolveAssignments(
-    chapters.map((c) => c.key),
-    allFiches,
-    answers
-  );
-  const refById = new Map(allFiches.map((f) => [f.ficheId, f]));
-
-  // A chapter nobody went to is dropped from the book.
-  const empty = chapters.filter((c) => (byChapter.get(c.key) ?? []).length === 0);
-  if (empty.length) await supabase.from("el_profesor_chapters").delete().in("id", empty.map((c) => c.chapterId!));
-  const emptyKeys = new Set(empty.map((c) => c.key));
-  const trimmed: MergePlan = {
-    parts: plan.parts
-      .map((p) => ({ ...p, subParts: p.subParts.map((s) => ({ ...s, chapters: s.chapters.filter((c) => !emptyKeys.has(c.key)) })).filter((s) => s.chapters.length) }))
-      .filter((p) => p.subParts.length),
-  };
-
-  await upsertTasks(
-    supabase,
-    job.id,
-    "chapter",
-    chapters
-      .filter((c) => !emptyKeys.has(c.key))
-      .map((c) => ({ refKey: `chapter:${String(c.orderIndex).padStart(4, "0")}`, input: { key: c.key, fiches: (byChapter.get(c.key) ?? []).map((id) => refById.get(id)!) } }))
-  );
-  await transition(supabase, job, "chapters", { plan: trimmed as unknown as Json, stats: mergeStats(job, { chapters: chapters.length - empty.length, assignFallback: fallbackCount }) });
-}
-
-// -- 3. Chapitres -----------------------------------------------------------
-
-function chapterByKey(plan: MergePlan): Map<string, FlatPlanChapter> {
-  return new Map(flattenPlan(plan).map((c) => [c.key, c]));
-}
-
-function neighbours(plan: MergePlan, key: string): string[] {
-  for (const p of plan.parts) for (const s of p.subParts) if (s.chapters.some((c) => c.key === key)) return s.chapters.filter((c) => c.key !== key).map((c) => c.title);
-  return [];
-}
-
-const chapterHandler: StageHandler = {
-  toolName: "enregistrer_fiches_du_chapitre",
-  toolDescription: "Enregistre la liste ordonnée des fiches du chapitre fusionné.",
-  schema: CHAPTER_SCHEMA,
-  async prepare(ctx, tasks) {
-    const plan = planOf(ctx.job);
-    const byKey = chapterByKey(plan);
-    return new Map(
-      tasks.map((t) => {
-        const input = t.input as unknown as { key: string; fiches: SourceFicheRef[] };
-        const c = byKey.get(input.key);
-        const fiches = input.fiches.map((ref, i) => ({ alias: alias("F", i), ref }));
-        const prompt = buildChapterPrompt(
-          ctx.bookTitle,
-          { path: c ? chapterPath(c) : "", title: c?.title ?? input.key, scope: c?.scope ?? "", neighbours: neighbours(plan, input.key) },
-          fiches
-        );
-        return [t.id, { prompt }];
-      })
+    await supabase.from("el_profesor_fiches").upsert(
+      part.map((r) => ({ id: r.ficheId, sub_entity_id: r.subEntityId, title: r.title, status: "draft" as const })),
+      { onConflict: "id", ignoreDuplicates: true }
     );
-  },
-  async apply(_ctx, _task, _prepared, raw) {
-    const fiches = normalizeChapterPlan(raw);
-    if (fiches.length === 0) throw new GeminiError("Aucune fiche proposée pour ce chapitre.");
-    return { fiches } as unknown as Json;
-  },
-};
-
-export interface FicheTaskInput {
-  key: string;
-  chapterId: string;
-  subEntityId: string;
-  ficheId: string;
-  title: string;
-  objective: string;
-  siblings: string[];
-  sources: { ficheId: string; bookTitle: string; chapterId: string; chapterTitle: string; title: string; withCards: boolean }[];
-}
-
-export async function finalizeChapters(ctx: StageContext): Promise<void> {
-  const { supabase, job } = ctx;
-  const byKey = chapterByKey(planOf(job));
-  const tasks = await stageTasks(supabase, job.id, "chapter");
-  const ficheTasks: { refKey: string; input: FicheTaskInput }[] = [];
-  let fallback = 0;
-
-  for (const t of tasks) {
-    const input = t.input as unknown as { key: string; fiches: SourceFicheRef[] };
-    const chapter = byKey.get(input.key);
-    if (!chapter?.chapterId) continue;
-    const planned = t.status === "done" ? ((t.output as { fiches?: { title: string; objective: string; sources: string[] }[] } | null)?.fiches ?? []) : [];
-    const aliasToFiche = Object.fromEntries(input.fiches.map((f, i) => [alias("F", i), f.ficheId]));
-    const { fiches, fallbackCount } = resolveChapterPlan(planned, aliasToFiche, input.fiches);
-    fallback += fallbackCount;
-    const refById = new Map(input.fiches.map((f) => [f.ficheId, f]));
-    const keyed = fiches.map((f, i) => ({ ...f, key: `${input.key}.${i}` }));
-    const owners = cardOwners(keyed);
-
-    const rows = keyed.map((f, i) => ({
-      ...f,
-      subEntityId: stableUuid(job.id, "sub", f.key),
-      ficheId: stableUuid(job.id, "fiche", f.key),
-      orderIndex: i,
-    }));
-    if (rows.length) {
-      await supabase.from("el_profesor_sub_entities").upsert(
-        rows.map((r) => ({ id: r.subEntityId, chapter_id: chapter.chapterId!, name: r.title, order_index: r.orderIndex, summary: r.objective, source_fiche_ids: r.sourceFicheIds })),
-        { onConflict: "id", ignoreDuplicates: true }
-      );
-      await supabase.from("el_profesor_fiches").upsert(
-        rows.map((r) => ({ id: r.ficheId, sub_entity_id: r.subEntityId, title: r.title, status: "draft" as const })),
-        { onConflict: "id", ignoreDuplicates: true }
-      );
-    }
-    for (const r of rows)
-      ficheTasks.push({
-        refKey: `fiche:${String(chapter.orderIndex).padStart(4, "0")}:${String(r.orderIndex).padStart(3, "0")}`,
-        input: {
-          key: r.key,
-          chapterId: chapter.chapterId,
-          subEntityId: r.subEntityId,
-          ficheId: r.ficheId,
-          title: r.title,
-          objective: r.objective,
-          siblings: rows.filter((o) => o !== r).map((o) => o.title),
-          sources: r.sourceFicheIds.map((id) => {
-            const ref = refById.get(id)!;
-            return { ficheId: id, bookTitle: ref.bookTitle, chapterId: ref.chapterId, chapterTitle: ref.chapterTitle, title: ref.title, withCards: owners.get(id) === r.key };
-          }),
-        },
-      });
   }
 
+  const ficheTasks = rows.map((r) => {
+    let chars = 0;
+    const sources = r.sourceIds.map((id) => {
+      const ref = refById.get(id)!;
+      const base = { ficheId: id, bookTitle: ref.bookTitle, chapterId: ref.chapterId, chapterTitle: ref.chapterTitle, title: ref.title };
+      const routed = route.get(id);
+      if (!routed) {
+        chars += ref.chars;
+        return base;
+      }
+      const mine = [...routed.entries()].filter(([, key]) => key === r.key).map(([itemId]) => itemId);
+      chars += mine.reduce((s, itemId) => s + (itemChars.get(itemId) ?? 0), 0);
+      const sharedWith = (users.get(id) ?? []).filter((m) => m.key !== r.key).map((m) => m.title);
+      return { ...base, blockIds: mine, cardIds: mine, sharedWith };
+    });
+    const input: FicheTaskInput = {
+      key: r.key,
+      chapterId: r.chapter.chapterId,
+      subEntityId: r.subEntityId,
+      ficheId: r.ficheId,
+      title: r.title,
+      objective: r.objective,
+      siblings: r.siblings,
+      chars,
+      sources,
+    };
+    return { refKey: `fiche:${pad(r.chapter.orderIndex)}:${pad(r.orderIndex, 3)}`, input };
+  });
+
   await upsertTasks(supabase, job.id, "fiche", ficheTasks);
-  await transition(supabase, job, "fiches", { stats: mergeStats(job, { fichesPlanned: ficheTasks.length, chapterFallback: fallback }) });
+  await transition(supabase, job, "fiches", {
+    plan: fullPlan as unknown as Json,
+    stats: mergeStats(job, {
+      chapters: chapters.length,
+      fichesPlanned: ficheTasks.length,
+      fichesSplit: outlines.reduce((s, o) => s + o.splitCount, 0),
+      chapterFallback: outlines.reduce((s, o) => s + o.fallbackCount, 0),
+    }),
+  });
 }
 
 // -- 4. Fiches --------------------------------------------------------------
@@ -374,28 +455,54 @@ function pagesOf(citations: Citation[]): number[] {
   return [...new Set(citations.map((c) => c.page).filter((p) => p > 0))].sort((a, b) => a - b);
 }
 
-function promptSources(input: FicheTaskInput, content: Awaited<ReturnType<typeof loadSourceContent>>): { sources: PromptSourceFiche[]; prepared: FichePrepared } {
+type SourceContent = Awaited<ReturnType<typeof loadSourceContent>>;
+
+/** The blocks and cards of each source that belong to this merged fiche (all of them, unless the source is shared). */
+function sourceItems(input: FicheTaskInput, content: SourceContent) {
+  return input.sources.map((s) => {
+    const keepBlock = s.blockIds ? new Set(s.blockIds) : null;
+    const keepCard = s.cardIds ? new Set(s.cardIds) : null;
+    return {
+      source: s,
+      blocks: (content.blocksByFiche.get(s.ficheId) ?? []).filter((b) => !keepBlock || keepBlock.has(b.id)),
+      cards: (content.cardsByFiche.get(s.ficheId) ?? []).filter((c) => !keepCard || keepCard.has(c.id)),
+    };
+  });
+}
+
+function promptSources(input: FicheTaskInput, content: SourceContent): { sources: PromptSourceFiche[]; prepared: FichePrepared } {
   const prepared: FichePrepared = { blockIds: [], cardIds: [] };
-  const sources = input.sources.map((s, fi) => {
-    const blocks = (content.blocksByFiche.get(s.ficheId) ?? []).map((b) => {
+  const sources = sourceItems(input, content).map(({ source, blocks, cards }, fi) => ({
+    alias: alias("F", fi),
+    bookTitle: source.bookTitle,
+    chapterTitle: source.chapterTitle,
+    title: source.title,
+    sharedWith: source.sharedWith ?? [],
+    blocks: blocks.map((b) => {
       prepared.blockIds.push(b.id);
       return { alias: alias("B", prepared.blockIds.length - 1), blockType: b.blockType, content: b.content, pages: pagesOf(b.citations), image: b.imageUrl ? b.imageAlt || "figure" : null };
-    });
-    const cards = s.withCards
-      ? (content.cardsByFiche.get(s.ficheId) ?? [])
-          .filter((c) => !c.structural)
-          .map((c) => {
-            prepared.cardIds.push(c.id);
-            return { alias: alias("K", prepared.cardIds.length - 1), front: c.front, back: c.back };
-          })
-      : [];
-    return { alias: alias("F", fi), bookTitle: s.bookTitle, chapterTitle: s.chapterTitle, title: s.title, blocks, cards };
-  });
+    }),
+    // Image-occlusion and cloze cards aren't sent: they come over as they are.
+    cards: cards
+      .filter((c) => !c.structural)
+      .map((c) => {
+        prepared.cardIds.push(c.id);
+        return { alias: alias("K", prepared.cardIds.length - 1), front: c.front, back: c.back };
+      }),
+  }));
   return { sources, prepared };
 }
 
 async function contentFor(ctx: StageContext, inputs: FicheTaskInput[]) {
   return loadSourceContent(ctx.supabase, [...new Set(inputs.flatMap((i) => i.sources.map((s) => s.ficheId)))], ctx.job.include_drafts);
+}
+
+function sourceMeta(input: FicheTaskInput) {
+  const byFiche = new Map(input.sources.map((s) => [s.ficheId, s]));
+  return (ficheId: string) => {
+    const s = byFiche.get(ficheId);
+    return { chapterId: s?.chapterId ?? "", bookTitle: s?.bookTitle ?? "", chapterTitle: s?.chapterTitle ?? "" };
+  };
 }
 
 const ficheHandler: StageHandler = {
@@ -405,11 +512,11 @@ const ficheHandler: StageHandler = {
   async prepare(ctx, tasks) {
     const inputs = tasks.map((t) => t.input as unknown as FicheTaskInput);
     const content = await contentFor(ctx, inputs);
-    const byKey = chapterByKey(planOf(ctx.job));
+    const chapters = new Map(flattenChapters(planOf(ctx.job)).map((c) => [c.chapterId, c]));
     const out = new Map<string, PreparedTask>();
     tasks.forEach((t, i) => {
       const input = inputs[i];
-      const chapter = byKey.get(input.key.split(".")[0]);
+      const chapter = chapters.get(input.chapterId);
       const { sources, prepared } = promptSources(input, content);
       const prompt = buildFichePrompt(
         { bookTitle: ctx.bookTitle, path: chapter ? chapterPath(chapter) : "", chapterTitle: chapter?.title ?? "", title: input.title, objective: input.objective, siblings: input.siblings },
@@ -425,9 +532,10 @@ const ficheHandler: StageHandler = {
     const merged = normalizeMergedFiche(raw);
     if (merged.blocks.length === 0) throw new GeminiError("Fiche fusionnée vide.");
     const content = await contentFor(ctx, [input]);
+    const items = sourceItems(input, content);
     const meta = sourceMeta(input);
-    const blockById = new Map([...content.blocksByFiche.values()].flat().map((b) => [b.id, b]));
-    const cardById = new Map([...content.cardsByFiche.values()].flat().map((c) => [c.id, c]));
+    const blockById = new Map(items.flatMap((x) => x.blocks).map((b) => [b.id, b]));
+    const cardById = new Map(items.flatMap((x) => x.cards).map((c) => [c.id, c]));
     const resolve = (prefix: string, table: string[], a: string) => table[aliasIndex(prefix, a)];
 
     const claimedBlocks = new Set<string>();
@@ -464,7 +572,7 @@ const ficheHandler: StageHandler = {
 
     const claimedCards = new Set<string>();
     const cards: MergedCardDraft[] = merged.flashcards.map((c) => {
-      const srcIds = [...new Set(c.source_flashcard_ids.map((a) => resolve("K", prepared.cardIds, a)).filter((id): id is string => Boolean(id && cardById.has(id)) && !claimedCards.has(id!)))];
+      const srcIds = [...new Set(c.source_flashcard_ids.map((a) => resolve("K", prepared.cardIds, a)).filter((id): id is string => Boolean(id && cardById.has(id) && !claimedCards.has(id))))];
       srcIds.forEach((id) => claimedCards.add(id));
       const sources = srcIds.map((id) => cardById.get(id)!);
       const withImage = sources.find((s) => s.row.image_url);
@@ -478,33 +586,43 @@ const ficheHandler: StageHandler = {
         needsReview: false,
       };
     });
-    // Image-occlusion and cloze cards were never sent: they come over as they are.
-    for (const s of input.sources.filter((x) => x.withCards))
-      for (const c of (content.cardsByFiche.get(s.ficheId) ?? []).filter((x) => x.structural)) {
+    for (const c of cardById.values())
+      if (c.structural) {
         cards.push(copiedCard(c, meta));
         claimedCards.add(c.id);
       }
 
+    // Values check: every number of a source block must still be stated somewhere in the fiche, every number of a source card on a card.
+    const ficheFacts = numericFacts(blocks.map((b) => blockPromptText(b.blockType, b.content)).join("\n"));
+    const cardFacts = numericFacts(cards.map((c) => `${c.front}\n${c.back}`).join("\n"));
+    const lostBlocks: Record<string, string[]> = {};
+    for (const id of claimedBlocks) {
+      const lost = missingFacts(blockText(blockById.get(id)!), ficheFacts);
+      if (lost.length) lostBlocks[id] = lost;
+    }
+    const lostCards: Record<string, string[]> = {};
+    for (const id of claimedCards) {
+      const card = cardById.get(id)!;
+      if (card.structural) continue;
+      const lost = missingFacts(cardText(card), cardFacts);
+      if (lost.length) lostCards[id] = lost;
+    }
+
     await writeMergedFiche(ctx.supabase, input, merged.summary, blocks, cards);
     return {
-      givenBlockIds: prepared.blockIds,
-      givenCardIds: [...prepared.cardIds, ...[...claimedCards].filter((id) => !prepared.cardIds.includes(id))],
+      givenBlockIds: [...blockById.keys()],
+      givenCardIds: [...cardById.keys()],
       claimedBlockIds: [...claimedBlocks],
       claimedCardIds: [...claimedCards],
+      lostBlocks,
+      lostCards,
+      hasKeyPoints: blocks.some((b) => b.blockType === "a_retenir"),
       blocks: blocks.length,
       cards: cards.length,
       divergences: blocks.filter((b) => b.blockType === "divergence").length,
     } as unknown as Json;
   },
 };
-
-function sourceMeta(input: FicheTaskInput) {
-  const byFiche = new Map(input.sources.map((s) => [s.ficheId, s]));
-  return (ficheId: string) => {
-    const s = byFiche.get(ficheId);
-    return { chapterId: s?.chapterId ?? "", bookTitle: s?.bookTitle ?? "", chapterTitle: s?.chapterTitle ?? "" };
-  };
-}
 
 function suggestion(
   raw: { what: string; source_block_id?: string } | null | undefined,
@@ -533,7 +651,7 @@ function cardCitations(sources: SourceCard[], meta: ReturnType<typeof sourceMeta
   return out.slice(0, 8);
 }
 
-function copiedCard(c: SourceCard, meta: ReturnType<typeof sourceMeta>): MergedCardDraft {
+function copiedCard(c: SourceCard, meta: ReturnType<typeof sourceMeta>, needsReview = false): MergedCardDraft {
   return {
     front: c.front,
     back: c.back,
@@ -541,7 +659,7 @@ function copiedCard(c: SourceCard, meta: ReturnType<typeof sourceMeta>): MergedC
     imageUrl: c.row.image_url,
     imageAlt: c.row.image_alt,
     sourceFlashcardIds: [c.id],
-    needsReview: false,
+    needsReview,
     copyOf: c,
   };
 }
@@ -564,8 +682,18 @@ interface FicheOutput {
   givenCardIds: string[];
   claimedBlockIds: string[];
   claimedCardIds: string[];
+  lostBlocks?: Record<string, string[]>;
+  lostCards?: Record<string, string[]>;
+  hasKeyPoints?: boolean;
   divergences: number;
 }
+
+export type RepairInput = FicheTaskInput & {
+  blockIds: string[];
+  cardIds: string[];
+  lostValues: Record<string, string[]>;
+  needsKeyPoints: boolean;
+};
 
 export async function finalizeFiches(ctx: StageContext): Promise<void> {
   const { supabase, job } = ctx;
@@ -583,37 +711,38 @@ export async function finalizeFiches(ctx: StageContext): Promise<void> {
     failed++;
     const content = await contentFor(ctx, [input]);
     const meta = sourceMeta(input);
-    const blocks = input.sources.flatMap((s) => (content.blocksByFiche.get(s.ficheId) ?? []).map((b) => verbatimBlock(b, meta)));
-    const cards = input.sources.filter((s) => s.withCards).flatMap((s) => (content.cardsByFiche.get(s.ficheId) ?? []).map((c) => copiedCard(c, meta)));
+    const items = sourceItems(input, content);
+    const blocks = items.flatMap((x) => x.blocks.map((b) => verbatimBlock(b, meta)));
+    const cards = items.flatMap((x) => x.cards.map((c) => copiedCard(c, meta, true)));
     await writeMergedFiche(supabase, input, "", blocks, cards);
-    const ids = blocks.flatMap((b) => b.citations.map((c) => c.sourceBlockId!));
-    outputs.set(t.id, { givenBlockIds: ids, givenCardIds: [], claimedBlockIds: ids, claimedCardIds: cards.flatMap((c) => c.sourceFlashcardIds), divergences: 0 });
+    const blockIds = items.flatMap((x) => x.blocks.map((b) => b.id));
+    const cardIds = items.flatMap((x) => x.cards.map((c) => c.id));
+    outputs.set(t.id, { givenBlockIds: blockIds, givenCardIds: cardIds, claimedBlockIds: blockIds, claimedCardIds: cardIds, hasKeyPoints: false, divergences: 0 });
   }
 
+  // Coverage over the whole book: a block given to two fiches is covered once either took it.
   const all = [...outputs.values()];
   const missingBlocks = new Set(uncovered(all.flatMap((o) => o.givenBlockIds), all.flatMap((o) => o.claimedBlockIds)));
   const missingCards = new Set(uncovered(all.flatMap((o) => o.givenCardIds), all.flatMap((o) => o.claimedCardIds)));
-
-  // Cards no merged card took over come over as they are, in the fiche they were given to.
-  let cardsKept = 0;
-  const repairTasks: { refKey: string; input: unknown }[] = [];
-  const assignedBlock = new Set<string>();
+  const assigned = new Set<string>();
+  const repairTasks: { refKey: string; input: RepairInput }[] = [];
   for (const t of tasks) {
-    const o = outputs.get(t.id);
-    if (!o) continue;
+    const o = outputs.get(t.id)!;
     const input = t.input as unknown as FicheTaskInput;
-    const cardIds = o.givenCardIds.filter((id) => missingCards.has(id));
-    if (cardIds.length) {
-      const content = await contentFor(ctx, [input]);
-      const meta = sourceMeta(input);
-      const cards = [...content.cardsByFiche.values()].flat().filter((c) => cardIds.includes(c.id));
-      await appendMergedCards(supabase, input.ficheId, cards.map((c) => copiedCard(c, meta)));
-      cardIds.forEach((id) => missingCards.delete(id));
-      cardsKept += cards.length;
-    }
-    const blockIds = o.givenBlockIds.filter((id) => missingBlocks.has(id) && !assignedBlock.has(id));
-    blockIds.forEach((id) => assignedBlock.add(id));
-    if (blockIds.length) repairTasks.push({ refKey: t.ref_key.replace(/^fiche:/, "repair:"), input: { ...input, blockIds } });
+    const take = (ids: string[], missing: Set<string>, lost: Record<string, string[]> = {}) =>
+      [...new Set([...ids.filter((id) => missing.has(id)), ...Object.keys(lost)])].filter((id) => {
+        if (assigned.has(id)) return false;
+        assigned.add(id);
+        return true;
+      });
+    const blockIds = take(o.givenBlockIds, missingBlocks, o.lostBlocks);
+    const cardIds = take(o.givenCardIds, missingCards, o.lostCards);
+    const needsKeyPoints = o.hasKeyPoints === false && o.claimedBlockIds.length > 0;
+    if (!blockIds.length && !cardIds.length && !needsKeyPoints) continue;
+    repairTasks.push({
+      refKey: t.ref_key.replace(/^fiche:/, "repair:"),
+      input: { ...input, blockIds, cardIds, lostValues: { ...(o.lostBlocks ?? {}), ...(o.lostCards ?? {}) }, needsKeyPoints },
+    });
   }
 
   await upsertTasks(supabase, job.id, "repair", repairTasks);
@@ -621,7 +750,7 @@ export async function finalizeFiches(ctx: StageContext): Promise<void> {
     stats: mergeStats(job, {
       fichesDone: tasks.length - failed,
       fichesFailed: failed,
-      cardsKeptVerbatim: cardsKept,
+      fichesRepaired: repairTasks.length,
       divergences: all.reduce((s, o) => s + (o.divergences ?? 0), 0),
     }),
   });
@@ -629,17 +758,20 @@ export async function finalizeFiches(ctx: StageContext): Promise<void> {
 
 // -- 5. Rattrapage ----------------------------------------------------------
 
-type RepairInput = FicheTaskInput & { blockIds: string[] };
-
 interface RepairPrepared {
   blockIds: string[];
+  cardIds: string[];
   currentIds: string[];
 }
 
-async function missingBlocksFor(ctx: StageContext, input: RepairInput): Promise<SourceBlock[]> {
+async function repairMaterial(ctx: StageContext, input: RepairInput) {
   const content = await contentFor(ctx, [input]);
-  const wanted = new Set(input.blockIds);
-  return [...content.blocksByFiche.values()].flat().filter((b) => wanted.has(b.id));
+  const wantedBlocks = new Set(input.blockIds);
+  const wantedCards = new Set(input.cardIds);
+  return {
+    blocks: [...content.blocksByFiche.values()].flat().filter((b) => wantedBlocks.has(b.id)),
+    cards: [...content.cardsByFiche.values()].flat().filter((c) => wantedCards.has(c.id)),
+  };
 }
 
 const repairHandler: StageHandler = {
@@ -647,18 +779,23 @@ const repairHandler: StageHandler = {
   toolDescription: "Enregistre l'intégration des informations manquantes dans la fiche.",
   schema: REPAIR_SCHEMA,
   async prepare(ctx, tasks) {
+    const chapters = new Map(flattenChapters(planOf(ctx.job)).map((c) => [c.chapterId, c]));
     const out = new Map<string, PreparedTask>();
     for (const t of tasks) {
       const input = t.input as unknown as RepairInput;
-      const [current, missing] = await Promise.all([loadFicheBlocks(ctx.supabase, input.ficheId), missingBlocksFor(ctx, input)]);
+      const [current, material] = await Promise.all([loadFicheBlocks(ctx.supabase, input.ficheId), repairMaterial(ctx, input)]);
       const meta = sourceMeta(input);
-      const chapter = chapterByKey(planOf(ctx.job)).get(input.key.split(".")[0]);
       const prompt = buildRepairPrompt(
-        { bookTitle: ctx.bookTitle, chapterTitle: chapter?.title ?? "", title: input.title },
+        { bookTitle: ctx.bookTitle, chapterTitle: chapters.get(input.chapterId)?.title ?? "", title: input.title },
         current.map((b, index) => ({ index, blockType: b.block_type, content: b.content as unknown as BlockContent })),
-        missing.map((m, i) => ({ alias: alias("B", i), bookTitle: meta(m.ficheId).bookTitle, blockType: m.blockType, content: m.content }))
+        material.blocks.map((m, i) => ({ alias: alias("B", i), bookTitle: meta(m.ficheId).bookTitle, blockType: m.blockType, content: m.content, lostValues: input.lostValues[m.id] ?? [] })),
+        material.cards.map((c, i) => ({ alias: alias("K", i), bookTitle: meta(c.ficheId).bookTitle, front: c.front, back: c.back, lostValues: input.lostValues[c.id] ?? [] })),
+        input.needsKeyPoints
       );
-      out.set(t.id, { prompt, prepared: { blockIds: missing.map((m) => m.id), currentIds: current.map((b) => b.id) } as unknown as Json });
+      out.set(t.id, {
+        prompt,
+        prepared: { blockIds: material.blocks.map((m) => m.id), cardIds: material.cards.map((c) => c.id), currentIds: current.map((b) => b.id) } as unknown as Json,
+      });
     }
     return out;
   },
@@ -666,26 +803,27 @@ const repairHandler: StageHandler = {
     const input = task.input as unknown as RepairInput;
     const prepared = preparedJson as unknown as RepairPrepared;
     const repair = normalizeRepair(raw);
-    const [current, missing] = await Promise.all([loadFicheBlocks(ctx.supabase, input.ficheId), missingBlocksFor(ctx, input)]);
+    const [current, material] = await Promise.all([loadFicheBlocks(ctx.supabase, input.ficheId), repairMaterial(ctx, input)]);
     // The fiche changed since the prompt was built (edited by hand): its numbering no longer holds.
     if (current.map((b) => b.id).join() !== prepared.currentIds.join()) throw new GeminiError("Fiche modifiée entre-temps.");
     const meta = sourceMeta(input);
-    const byId = new Map(missing.map((m) => [m.id, m]));
-    const claimed = new Set<string>();
+    const blockById = new Map(material.blocks.map((m) => [m.id, m]));
+    const cardById = new Map(material.cards.map((c) => [c.id, c]));
+    const referenced = new Set<string>();
     const sourcesOf = (aliases: string[]) =>
       aliases
         .map((a) => prepared.blockIds[aliasIndex("B", a)])
-        .filter((id): id is string => Boolean(id && byId.has(id)))
+        .filter((id): id is string => Boolean(id && blockById.has(id)))
         .map((id) => {
-          claimed.add(id);
-          const b = byId.get(id)!;
+          referenced.add(id);
+          const b = blockById.get(id)!;
           return { id, ...meta(b.ficheId), citations: b.citations };
         });
 
     const entries = current.map((b) => ({
       id: b.id,
       type: b.block_type as BlockType,
-      content: undefined as BlockContent | undefined,
+      content: b.content as unknown as BlockContent,
       citations: (b.citations as unknown as Citation[]) ?? [],
       touched: false,
     }));
@@ -694,7 +832,7 @@ const repairHandler: StageHandler = {
       if (!e) continue;
       const content = normalizeContent(e.type, r.content);
       if (!content) continue;
-      const keptHeading = r.heading ?? heading(current[r.block_index].content);
+      const keptHeading = r.heading ?? heading(e.content);
       e.content = (keptHeading ? { ...content, heading: keptHeading } : content) as BlockContent;
       e.citations = [...e.citations, ...mergeCitations(sourcesOf(r.source_block_ids))];
       e.touched = true;
@@ -706,19 +844,17 @@ const repairHandler: StageHandler = {
       e.citations = [...e.citations, ...mergeCitations(sources)];
       e.touched = true;
     }
-    const ordered: Parameters<typeof rewriteFicheBlocks>[2] = [];
-    const insertsAfter = new Map<number, MergedBlockDraft[]>();
     // Never after the closing « À retenir ».
     let lastIndex = entries.length - 1;
     while (lastIndex >= 0 && entries[lastIndex].type === "a_retenir") lastIndex--;
+    const insertsAfter = new Map<number, MergedBlockDraft[]>();
     for (const ins of repair.insertions) {
-      const sources = sourcesOf(ins.source_block_ids);
-      const at = Math.min(Math.max(-1, ins.after_block_index), lastIndex);
+      const at = ins.block_type === "a_retenir" ? entries.length - 1 : Math.min(Math.max(-1, ins.after_block_index), lastIndex);
       const list = insertsAfter.get(at) ?? [];
       list.push({
         blockType: ins.block_type,
         content: (ins.heading ? { ...ins.content, heading: ins.heading } : ins.content) as BlockContent,
-        citations: mergeCitations(sources),
+        citations: mergeCitations(sourcesOf(ins.source_block_ids)),
         imageUrl: null,
         imageAlt: null,
         suggestedImage: null,
@@ -727,13 +863,30 @@ const repairHandler: StageHandler = {
       });
       insertsAfter.set(at, list);
     }
+    const ordered: Parameters<typeof rewriteFicheBlocks>[2] = [];
     for (const d of insertsAfter.get(-1) ?? []) ordered.push({ draft: d });
     entries.forEach((e, i) => {
       ordered.push(e.touched ? { id: e.id, content: e.content, citations: e.citations.slice(0, 16) } : { id: e.id });
       for (const d of insertsAfter.get(i) ?? []) ordered.push({ draft: d });
     });
     await rewriteFicheBlocks(ctx.supabase, input.ficheId, ordered);
-    return { claimed: [...claimed] } as unknown as Json;
+
+    // A block counts as taken up once referenced — and, when it was here for lost values, once those values are in the fiche.
+    const finalText = [
+      ...entries.map((e) => blockPromptText(e.type, e.content)),
+      ...[...insertsAfter.values()].flat().map((d) => blockPromptText(d.blockType, d.content)),
+    ].join("\n");
+    const facts = numericFacts(finalText);
+    const claimedBlocks = [...referenced].filter((id) => !(input.lostValues[id]?.length && missingFacts(blockPromptText(blockById.get(id)!.blockType, blockById.get(id)!.content), facts).length));
+
+    const claimedCards = new Set<string>();
+    const newCards: MergedCardDraft[] = repair.flashcards.map((c) => {
+      const srcIds = c.source_flashcard_ids.map((a) => prepared.cardIds[aliasIndex("K", a)]).filter((id): id is string => Boolean(id && cardById.has(id)));
+      srcIds.forEach((id) => claimedCards.add(id));
+      return { front: c.front, back: c.back, citations: cardCitations(srcIds.map((id) => cardById.get(id)!), meta), imageUrl: null, imageAlt: null, sourceFlashcardIds: srcIds, needsReview: false };
+    });
+    await appendMergedCards(ctx.supabase, input.ficheId, newCards);
+    return { claimedBlocks, claimedCards: [...claimedCards], cardsAdded: newCards.length } as unknown as Json;
   },
 };
 
@@ -745,30 +898,46 @@ function heading(content: unknown): string | undefined {
 export async function finalizeRepair(ctx: StageContext): Promise<void> {
   const { supabase, job } = ctx;
   const tasks = await stageTasks(supabase, job.id, "repair");
-  let kept = 0;
+  let blocksKept = 0;
+  let cardsKept = 0;
   for (const t of tasks) {
     const input = t.input as unknown as RepairInput;
-    const claimed = new Set(t.status === "done" ? ((t.output as { claimed?: string[] } | null)?.claimed ?? []) : []);
-    const left = input.blockIds.filter((id) => !claimed.has(id));
-    if (!left.length) continue;
-    // Still not integrated: the source block itself goes in, before « À retenir », marked to review.
-    const missing = (await missingBlocksFor(ctx, input)).filter((b) => left.includes(b.id));
-    const meta = sourceMeta(input);
-    const current = await loadFicheBlocks(supabase, input.ficheId);
-    const cut = current.findIndex((b) => b.block_type === "a_retenir");
-    const before = cut === -1 ? current : current.slice(0, cut);
-    const after = cut === -1 ? [] : current.slice(cut);
-    await rewriteFicheBlocks(supabase, input.ficheId, [...before.map((b) => ({ id: b.id })), ...missing.map((m) => ({ draft: verbatimBlock(m, meta) })), ...after.map((b) => ({ id: b.id }))]);
-    kept += missing.length;
+    const output = (t.output as { claimedBlocks?: string[]; claimedCards?: string[]; keptVerbatim?: boolean } | null) ?? {};
+    // Done on an earlier, interrupted run of this step: nothing to add again.
+    if (output.keptVerbatim) continue;
+    const claimedBlocks = new Set(t.status === "done" ? (output.claimedBlocks ?? []) : []);
+    const claimedCards = new Set(t.status === "done" ? (output.claimedCards ?? []) : []);
+    const leftBlocks = input.blockIds.filter((id) => !claimedBlocks.has(id));
+    const leftCards = input.cardIds.filter((id) => !claimedCards.has(id));
+    if (leftBlocks.length || leftCards.length) {
+      // Still not taken up after two passes: the source itself goes in, marked « à vérifier » — before « À retenir » for a block.
+      const material = await repairMaterial(ctx, input);
+      const meta = sourceMeta(input);
+      const blocks = material.blocks.filter((b) => leftBlocks.includes(b.id));
+      if (blocks.length) {
+        const current = await loadFicheBlocks(supabase, input.ficheId);
+        const cut = current.findIndex((b) => b.block_type === "a_retenir");
+        const before = cut === -1 ? current : current.slice(0, cut);
+        const after = cut === -1 ? [] : current.slice(cut);
+        await rewriteFicheBlocks(supabase, input.ficheId, [...before.map((b) => ({ id: b.id })), ...blocks.map((m) => ({ draft: verbatimBlock(m, meta) })), ...after.map((b) => ({ id: b.id }))]);
+      }
+      const cards = material.cards.filter((c) => leftCards.includes(c.id));
+      await appendMergedCards(supabase, input.ficheId, cards.map((c) => copiedCard(c, meta, true)));
+      blocksKept += blocks.length;
+      cardsKept += cards.length;
+    }
+    await saveOutput(supabase, t, { ...output, keptVerbatim: true });
   }
 
-  const plan = planOf(job);
-  const chapterIds = flattenPlan(plan).map((c) => c.chapterId!).filter(Boolean);
+  const chapterIds = flattenChapters(planOf(job)).map((c) => c.chapterId);
   for (const part of chunk(chapterIds, 150))
     await supabase.from("el_profesor_chapters").update({ status: "draft_ready", extraction_error: null }).in("id", part).eq("status", "extracting");
 
   const usage = await jobUsage(supabase, job.id);
-  await transition(supabase, job, "done", { stats: mergeStats(job, { blocksKeptVerbatim: kept, ...usage }) });
+  const previous = (job.stats as MergeStats | null) ?? {};
+  await transition(supabase, job, "done", {
+    stats: mergeStats(job, { blocksKeptVerbatim: (previous.blocksKeptVerbatim ?? 0) + blocksKept, cardsKeptVerbatim: (previous.cardsKeptVerbatim ?? 0) + cardsKept, ...usage }),
+  });
 }
 
 export async function jobUsage(supabase: Admin, jobId: string): Promise<{ inputTokens: number; outputTokens: number; tasksTotal: number; tasksDone: number }> {
@@ -789,10 +958,28 @@ export async function jobUsage(supabase: Admin, jobId: string): Promise<{ inputT
   return { inputTokens, outputTokens, tasksTotal, tasksDone };
 }
 
+/** Rough seconds a Gemini call of this task takes: a call must end within the run that starts it. */
+export function estimatedSeconds(task: Task): number {
+  const input = task.input as { chars?: number; fiches?: unknown[]; blockIds?: unknown[] } | null;
+  switch (task.stage) {
+    case "plan":
+      return 170;
+    case "assign":
+      return 70;
+    case "chapter":
+      return 40 + (input?.fiches?.length ?? 0) * 0.6;
+    case "fiche":
+      // Written about as long as read (≈ 3,2 characters per token), ≈ 110 tokens a second, thinking included.
+      return 25 + ((input?.chars ?? 20_000) / 3.2) * 0.9 / 110;
+    case "repair":
+      return 40 + (input?.blockIds?.length ?? 0) * 4;
+  }
+}
+
 export const STAGE_HANDLERS: Record<ElProfesorMergeTaskStage, StageHandler> = {
   plan: planHandler,
   assign: assignHandler,
-  chapter: chapterHandler,
+  chapter: outlineHandler,
   fiche: ficheHandler,
   repair: repairHandler,
 };

@@ -6,17 +6,22 @@ import type { BlockContent, BlockType } from "../types";
 
 export type MergeProvider = "gemini" | "claude";
 
-/** One chapter of the merged table of contents. `key` ("C12") is what the prompts use; `chapterId` is set once the chapter row exists. */
+/**
+ * The merged table of contents. The plan stage writes the parts and their
+ * sub-parts (`key` "S12" is what the prompts use); each sub-part's chapters
+ * are added once the chapters stage has organised the fiches assigned to it.
+ */
 export interface MergePlanChapter {
   key: string;
   title: string;
-  scope: string;
-  chapterId?: string;
+  chapterId: string;
 }
 
 /** A sub-part with an empty title means "chapters directly under the part". */
 export interface MergePlanSubPart {
+  key: string;
   title: string;
+  scope: string;
   chapters: MergePlanChapter[];
 }
 
@@ -37,7 +42,10 @@ export interface MergeStats {
   /** Fiches the model left out at the répartition / chapitres stages, placed by rule instead. */
   assignFallback?: number;
   chapterFallback?: number;
+  subParts?: number;
   fichesPlanned?: number;
+  /** Merged fiches split in two or more because their sources were too long for one answer. */
+  fichesSplit?: number;
   fichesDone?: number;
   fichesFailed?: number;
   tasksTotal?: number;
@@ -46,6 +54,8 @@ export interface MergeStats {
   blocksKeptVerbatim?: number;
   cardsKeptVerbatim?: number;
   divergences?: number;
+  /** Fiches sent to the repair pass: a source block not taken up, a value lost on the way, or no « à retenir ». */
+  fichesRepaired?: number;
   inputTokens?: number;
   outputTokens?: number;
   costUsd?: number;
@@ -87,8 +97,15 @@ export interface RawMergedFiche {
   flashcards: RawMergedCard[];
 }
 
+export interface RawRepairCard {
+  front: string;
+  back: string;
+  source_flashcard_ids: string[];
+}
+
 export interface RawRepair {
   replacements: { block_index: number; heading?: string; content: BlockContent; source_block_ids: string[] }[];
   insertions: { after_block_index: number; block_type: BlockType; heading?: string; content: BlockContent; source_block_ids: string[] }[];
   alreadyCovered: { sourceBlockId: string; blockIndex: number }[];
+  flashcards: RawRepairCard[];
 }
