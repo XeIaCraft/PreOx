@@ -16,6 +16,7 @@ import { ProposeFromSelectionDialog } from "@/components/el-profesor/propose-fro
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { BlockEditor } from "@/components/el-profesor/block-editor";
 import { FicheVerificationModal } from "@/components/el-profesor/fiche-verification-modal";
+import type { VerificationScope } from "@/app/apps/el-profesor/actions/fiche-verification";
 import { FlashcardEditor } from "@/components/el-profesor/flashcard-editor";
 import { RenameFicheButton } from "@/components/el-profesor/inline-rename-fiche";
 import { MergeFichesForm } from "@/components/el-profesor/merge-fiches-form";
@@ -101,7 +102,7 @@ export function ExtractionReviewView({
   const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [showMerge, setShowMerge] = useState(false);
-  const [verifying, setVerifying] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState<VerificationScope | null>(null);
 
   useEffect(() => {
     if (sourceKind !== "pdf") return;
@@ -440,8 +441,21 @@ export function ExtractionReviewView({
                         <Merge className="h-3.5 w-3.5" /> Fusionner
                       </Button>
                     )}
-                    <Button variant="ghost" size="sm" onClick={() => setVerifying(selected.fiche!.id)} title="Exporter la fiche vers une IA qui vérifie qu'elle est à jour, puis réimporter sa réponse">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setVerifying({ kind: "fiche", ficheId: selected.fiche!.id })}
+                      title="Actualité, études et auteurs clés, historique : exporter la fiche vers une IA avec PubMed et Consensus, puis réimporter sa réponse"
+                    >
                       <ShieldCheck className="h-3.5 w-3.5" /> Vérifier l&apos;actualité
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setVerifying({ kind: "chapter", chapterId })}
+                      title="Toutes les fiches du chapitre en une seule conversation"
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5" /> … tout le chapitre
                     </Button>
                   </div>
                 </div>
@@ -526,7 +540,7 @@ export function ExtractionReviewView({
         </div>
       </div>
 
-      {verifying && <FicheVerificationModal ficheId={verifying} onClose={() => setVerifying(null)} onApplied={() => router.refresh()} />}
+      {verifying && <FicheVerificationModal scope={verifying} onClose={() => setVerifying(null)} onApplied={() => router.refresh()} />}
 
       {pdfModalOpen && (
         <Modal title="Document source" onClose={() => setPdfModalOpen(false)} size="xl">

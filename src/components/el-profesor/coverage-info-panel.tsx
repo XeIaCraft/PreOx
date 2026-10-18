@@ -16,6 +16,8 @@ const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   texte_libre: "Note",
   divergence: "Divergence entre sources",
   a_retenir: "À retenir",
+  historique: "Historique",
+  etudes_cles: "Études et auteurs clés",
 };
 
 export type CoverageInfoTarget =

@@ -62,6 +62,8 @@ export const IS_TEXT_BLOCK = new Set([
   "texte_libre",
   "divergence",
   "a_retenir",
+  "historique",
+  "etudes_cles",
 ]);
 
 export function TableEditor({ content, onChange }: { content: TableBlockContent; onChange: (c: TableBlockContent) => void }) {
@@ -396,13 +398,9 @@ export function BlockEditor({
             className="mb-2 h-8 w-full rounded-[var(--radius-sm)] border border-border bg-surface px-2 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
           />
         )}
-        {block.blockType === "tableau_comparatif" && "rows" in content && (
-          <TableEditor content={content as TableBlockContent} onChange={(c) => setContent(withHeading(c))} />
-        )}
-        {block.blockType === "protocole_paliers" && "steps" in content && (
-          <ProtocolEditor content={content as ProtocolBlockContent} onChange={(c) => setContent(withHeading(c))} />
-        )}
-        {(IS_TEXT_BLOCK.has(block.blockType) || !("rows" in content || "steps" in content)) && (
+        {"rows" in content && <TableEditor content={content as TableBlockContent} onChange={(c) => setContent(withHeading(c))} />}
+        {"steps" in content && <ProtocolEditor content={content as ProtocolBlockContent} onChange={(c) => setContent(withHeading(c))} />}
+        {!("rows" in content || "steps" in content) && (
           <textarea
             value={(content as TextBlockContent).text ?? ""}
             onChange={(e) => setContent(withHeading({ text: e.target.value }))}

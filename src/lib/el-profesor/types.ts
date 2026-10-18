@@ -15,7 +15,11 @@ export type BlockType =
   /** Merged books only (migration 098): what each source book says when they disagree — never resolved by the AI. */
   | "divergence"
   /** Merged books only: the points to know by heart, at the end of a fiche. */
-  | "a_retenir";
+  | "a_retenir"
+  /** For the oral (migration 100): how it was done before, and why it changed. */
+  | "historique"
+  /** For the oral: the studies and authors behind current (and past) practice — a table, or text. */
+  | "etudes_cles";
 
 export type Citation = {
   page: number;
@@ -30,6 +34,12 @@ export type Citation = {
   chapterTitle?: string;
   /** Merged book: the source block this citation was carried over from. */
   sourceBlockId?: string;
+  /**
+   * A reference outside the library (PubMed, DOI), added by « Vérifier
+   * l'actualité »: the chip opens it. `bookTitle` holds its short label
+   * ("Baillard 2005") and `quote` its full title.
+   */
+  url?: string;
 };
 
 // content shape by block_type — a discriminated union would be ideal, but

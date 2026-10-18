@@ -20,6 +20,9 @@ import {
   Scale,
   Target,
   Image as ImageIcon,
+  History,
+  Library,
+  ExternalLink,
 } from "lucide-react";
 import { FlagButton } from "@/components/el-profesor/flag-button";
 import { markBlockReviewedLocally } from "@/lib/el-profesor/local-writes";
@@ -90,6 +93,8 @@ export const BLOCK_META: Record<BlockType, { label: string; icon: React.Componen
   texte_libre: { label: "Note", icon: FileText },
   divergence: { label: "Divergence entre sources", icon: Scale },
   a_retenir: { label: "À retenir par cœur", icon: Target },
+  historique: { label: "Historique", icon: History },
+  etudes_cles: { label: "Études et auteurs clés", icon: Library },
 };
 
 /** Short under-icon captions for the "sommaire" layout's TOC strip — BLOCK_META's own labels ("Définition / mécanisme", "Tableau comparatif") run too long under a 56px column. */
@@ -105,6 +110,8 @@ const BLOCK_SHORT_LABEL: Record<BlockType, string> = {
   texte_libre: "Note",
   divergence: "Divergence",
   a_retenir: "À retenir",
+  historique: "Histoire",
+  etudes_cles: "Études",
 };
 
 /** The two fusion-only block types stand out from the reading column: a divergence between books, and the closing « à retenir ». */
@@ -211,13 +218,13 @@ function getBlockPlainText(block: FicheBlock): string {
 }
 
 function getBlockBodyText(block: FicheBlock): string {
-  if (block.blockType === "tableau_comparatif") {
+  if ("rows" in block.content) {
     const content = block.content as TableBlockContent;
     const headers = (content.headers ?? []).join(" | ");
     const rows = (content.rows ?? []).map((r) => r.join(" | ")).join("\n");
     return [headers, rows].filter(Boolean).join("\n");
   }
-  if (block.blockType === "protocole_paliers") {
+  if ("steps" in block.content) {
     const content = block.content as ProtocolBlockContent;
     return (content.steps ?? [])
       .map((s, i) => `${i + 1}. ${s.label} — ${s.detail}${s.condition ? ` (si : ${s.condition})` : ""}`)
@@ -258,11 +265,11 @@ function citationLabel(c: Citation): string {
   return book ? `${book} · p. ${c.page}` : `p. ${c.page}`;
 }
 
-/** One chip per source page (several quotes of the same page open the same place). */
+/** One chip per source page (several quotes of the same page open the same place), one per outside reference. */
 function distinctSources(citations: Citation[]): Citation[] {
   const seen = new Set<string>();
   return citations.filter((c) => {
-    const key = `${c.chapterId ?? ""}|${c.page}`;
+    const key = c.page === 0 ? `0|${c.url ?? ""}|${c.bookTitle ?? ""}|${c.chapterTitle ?? ""}` : `${c.chapterId ?? ""}|${c.page}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -278,7 +285,19 @@ function CitationChips({ citations, onClick }: { citations: Citation[]; onClick?
     <div className="mt-2 flex flex-wrap gap-1.5">
       {list.map((c, i) =>
         merged ? (
-          c.page === 0 ? (
+          c.url ? (
+            <a
+              key={i}
+              href={c.url}
+              target="_blank"
+              rel="noreferrer"
+              title={c.quote || c.bookTitle}
+              className="inline-flex max-w-[16rem] items-center gap-1 rounded-full border border-primary/30 px-2.5 py-1 text-xs text-primary-strong hover:bg-primary-tint"
+            >
+              <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
+              <span className="truncate">{c.bookTitle || "Référence"}</span>
+            </a>
+          ) : c.page === 0 ? (
             <span key={i} title={c.chapterTitle} className="rounded-full border border-border bg-surface-muted px-2.5 py-1 text-xs text-foreground-subtle">
               {citationLabel(c)}
             </span>
@@ -336,10 +355,12 @@ export function sectionTitle(block: FicheBlock): string | null {
   return heading && PROSE_TYPES.has(block.blockType) ? heading : null;
 }
 
-/** Heading of a merged book's block (« Mécanisme d'action »…), when it has one. */
-function BlockHeading({ content }: { content: BlockContent }) {
+const sameWords = (a: string, b: string) => a.normalize("NFD").replace(/[^a-z]/gi, "").toLowerCase() === b.normalize("NFD").replace(/[^a-z]/gi, "").toLowerCase();
+
+/** Heading of a merged book's block (« Mécanisme d'action »…), when it has one — not when it only repeats the block's label. */
+function BlockHeading({ content, blockType }: { content: BlockContent; blockType: BlockType }) {
   const heading = (content as { heading?: string }).heading;
-  if (!heading) return null;
+  if (!heading || sameWords(heading, BLOCK_META[blockType].label)) return null;
   return <p className="mb-1.5 font-medium text-foreground">{heading}</p>;
 }
 
@@ -358,13 +379,14 @@ export function BlockBody({
   /** Justified body text (piste 2026-08-28) — only meaningful on the flowing free-text paragraph below; tables and protocol steps ignore it, their lines are too short for justification to do anything but add ragged gaps. */
   justify?: boolean;
 }) {
-  if (block.blockType === "tableau_comparatif" && "rows" in block.content) {
+  // By shape, not by type: « Études et auteurs clés » is a table too.
+  if ("rows" in block.content && Array.isArray(block.content.rows)) {
     const content = block.content as TableBlockContent;
     const headers = content.headers ?? [];
     const rows = content.rows ?? [];
     return (
       <div>
-        {!hideHeading && <BlockHeading content={content} />}
+        {!hideHeading && <BlockHeading content={content} blockType={block.blockType} />}
         {/* Below sm: one card per row with each cell stacked under its
             header — a multi-column grid table is unreadable on a phone
             even scrolled horizontally. */}
@@ -410,11 +432,11 @@ export function BlockBody({
     );
   }
 
-  if (block.blockType === "protocole_paliers" && "steps" in block.content) {
+  if ("steps" in block.content && Array.isArray(block.content.steps)) {
     const content = block.content as ProtocolBlockContent;
     return (
       <div>
-      {!hideHeading && <BlockHeading content={content} />}
+      {!hideHeading && <BlockHeading content={content} blockType={block.blockType} />}
       <ol className="space-y-2">
         {content.steps?.map((step, i) => (
           <li key={i} className="flex gap-3">
@@ -436,7 +458,7 @@ export function BlockBody({
   const content = block.content as TextBlockContent;
   return (
     <div>
-      {!hideHeading && <BlockHeading content={content} />}
+      {!hideHeading && <BlockHeading content={content} blockType={block.blockType} />}
       <p
         className={`whitespace-pre-wrap leading-relaxed text-foreground-muted ${BODY_TEXT_SIZE[fontScale]} ${serif ? "font-serif-display" : ""} ${justify ? "text-justify [-webkit-hyphens:auto] [hyphens:auto]" : ""}`}
       >

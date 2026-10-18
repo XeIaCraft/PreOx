@@ -23,6 +23,7 @@ import { StudyToolsButtons } from "@/components/el-profesor/study-tools-buttons"
 import { ShortcutsDialog } from "@/components/el-profesor/shortcuts-dialog";
 import { getChapterPdfUrl } from "@/app/apps/el-profesor/actions/pdf";
 import { FicheVerificationModal } from "@/components/el-profesor/fiche-verification-modal";
+import type { VerificationScope } from "@/app/apps/el-profesor/actions/fiche-verification";
 import { getMyNote, toggleNoteShare } from "@/app/apps/el-profesor/actions/notes";
 import { applyPendingNoteWrites } from "@/lib/el-profesor/local-widgets";
 import { toggleFicheShare } from "@/app/apps/el-profesor/actions/share";
@@ -463,7 +464,7 @@ export function ChapterView({
   // the tablet/desktop width. Mobile is unaffected (it already opens the
   // PDF in its own modal, see pdfModalOpen).
   const [pdfPanelOpen, setPdfPanelOpen] = useState(false);
-  const [verifyingFicheId, setVerifyingFicheId] = useState<string | null>(null);
+  const [verifyingFicheId, setVerifyingFicheId] = useState<VerificationScope | null>(null);
   const [contributingFlashcard, setContributingFlashcard] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   // Item 37 of the backlog: this page (already visited) is served from the
@@ -1031,11 +1032,25 @@ export function ChapterView({
                 className="w-full justify-start"
                 onClick={() => {
                   setOptionsMenuOpen(false);
-                  setVerifyingFicheId(selected.fiche!.id);
+                  setVerifyingFicheId({ kind: "fiche", ficheId: selected.fiche!.id });
                 }}
-                title="Exporter la fiche vers une IA qui vérifie qu'elle est à jour, puis réimporter sa réponse"
+                title="Actualité, études et auteurs clés, historique : exporter la fiche vers une IA avec PubMed et Consensus, puis réimporter sa réponse"
               >
-                <ShieldCheck className="h-3.5 w-3.5" /> Vérifier l&apos;actualité
+                <ShieldCheck className="h-3.5 w-3.5" /> Vérifier l&apos;actualité de la fiche
+              </Button>
+            )}
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => {
+                  setOptionsMenuOpen(false);
+                  setVerifyingFicheId({ kind: "chapter", chapterId });
+                }}
+                title="Toutes les fiches du chapitre en une seule conversation"
+              >
+                <ShieldCheck className="h-3.5 w-3.5" /> Vérifier l&apos;actualité du chapitre
               </Button>
             )}
             {isAdmin && (
@@ -1259,7 +1274,7 @@ export function ChapterView({
       )}
 
       {verifyingFicheId && (
-        <FicheVerificationModal ficheId={verifyingFicheId} onClose={() => setVerifyingFicheId(null)} onApplied={() => window.location.reload()} />
+        <FicheVerificationModal scope={verifyingFicheId} onClose={() => setVerifyingFicheId(null)} onApplied={() => window.location.reload()} />
       )}
 
       {pdfModalOpen && (

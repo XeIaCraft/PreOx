@@ -51,7 +51,11 @@ export function EditableCitations({
           />
         ) : (
           <span key={i} className="flex items-center overflow-hidden rounded-full border border-border-strong text-[11px] text-foreground-subtle">
-            {c.page === 0 ? (
+            {c.url ? (
+              <a href={c.url} target="_blank" rel="noreferrer" title={c.quote || c.bookTitle} className="max-w-[14rem] truncate px-2 py-0.5 text-primary-strong hover:underline">
+                {c.bookTitle || "Référence"}
+              </a>
+            ) : c.page === 0 ? (
               // Sentinel for a citation imported from a source with no PDF
               // to ground-truth against (Word/PowerPoint chapter, or a
               // hand-pasted external extraction) — see importChapterContent.

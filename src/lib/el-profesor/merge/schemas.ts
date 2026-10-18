@@ -13,7 +13,7 @@ import type { RawMergedBlock, RawMergedCard, RawMergedFiche, RawRepair } from ".
 type JsonSchema = Record<string, unknown>;
 
 /** Block types the fusion may write: the extraction ones plus the two fusion-only ones. */
-export const MERGE_BLOCK_TYPES: BlockType[] = [...BLOCK_TYPES, "divergence", "a_retenir"];
+export const MERGE_BLOCK_TYPES: BlockType[] = [...BLOCK_TYPES, "divergence", "a_retenir", "historique", "etudes_cles"];
 
 const BLOCK_CONTENT: JsonSchema = {
   type: "object",
@@ -269,7 +269,12 @@ export function normalizeOutline(raw: unknown): { title: string; fiches: { title
 /** Keeps only the fields the block type actually uses, so a stray empty `rows` never turns a text block into a broken table. */
 export function normalizeContent(blockType: BlockType, raw: unknown): BlockContent | null {
   const c = (raw ?? {}) as { text?: unknown; headers?: unknown; rows?: unknown; steps?: unknown };
-  if (blockType === "tableau_comparatif") {
+  // « Études et auteurs clés »: a table when there is one, else text.
+  if (blockType === "etudes_cles" && coerceArray(c.rows).length === 0) {
+    const text = str(c.text).trim();
+    return text ? { text } : null;
+  }
+  if (blockType === "tableau_comparatif" || blockType === "etudes_cles") {
     const headers = coerceArray(c.headers).map(str);
     const rows = coerceArray(c.rows).map((r) => coerceArray(r).map(str));
     if (rows.length === 0) return typeof c.text === "string" && c.text.trim() ? { text: c.text } : null;

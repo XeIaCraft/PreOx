@@ -16,7 +16,9 @@ Langue : tout ce que tu écris (titres, intertitres, texte des blocs, cartes) es
 
 const MERGE_BLOCK_TYPES_DOC = `${BLOCK_TYPES_DOC}
 - "divergence" : point sur lequel les livres sources se contredisent — nomme le point de désaccord puis ce que dit CHAQUE livre, nommément (« • Miller : … » / « • Morgan : … »)
-- "a_retenir" : les points à savoir par cœur, en fin de fiche`;
+- "a_retenir" : les points à savoir par cœur, en fin de fiche
+- "historique" : comment on faisait avant, pourquoi on a changé (quelle étude, quel accident, quelle recommandation) et quand — uniquement ce que disent les sources
+- "etudes_cles" : les études et auteurs qui fondent la pratique (actuelle ou ancienne) — de préférence un tableau : Étude ou auteurs | Année | Ce qu'elle a montré | Ce que ça a changé — uniquement ceux que citent les sources`;
 
 const BLOCK_LABEL: Record<string, string> = {
   definition_mecanisme: "Définition / mécanisme",
@@ -36,11 +38,11 @@ const BLOCK_LABEL: Record<string, string> = {
 export function blockPromptText(blockType: BlockType | string, content: BlockContent): string {
   const heading = (content as { heading?: string }).heading;
   const prefix = heading ? `${heading} — ` : "";
-  if (blockType === "tableau_comparatif" && "rows" in content) {
+  if ("rows" in content) {
     const c = content as TableBlockContent;
     return `${prefix}tableau\n  ${(c.headers ?? []).join(" | ")}\n${(c.rows ?? []).map((r) => `  ${r.join(" | ")}`).join("\n")}`;
   }
-  if (blockType === "protocole_paliers" && "steps" in content) {
+  if ("steps" in content) {
     const c = content as ProtocolBlockContent;
     return `${prefix}étapes\n${(c.steps ?? []).map((s, i) => `  ${i + 1}. ${s.label} — ${s.detail}${s.condition ? ` (si : ${s.condition})` : ""}`).join("\n")}`;
   }
@@ -207,7 +209,7 @@ Exigences, par ordre de priorité :
 2. CONTRADICTIONS. Si les sources divergent (dose, seuil, indication, recommandation, définition, chiffre…), ne tranche jamais en silence : écris un bloc "divergence", placé juste après le passage qu'il concerne, qui nomme le point de désaccord puis ce que dit chaque livre, nommément et avec ses nuances (« • ${bookNames[0] ?? "Livre A"} : … » / « • ${bookNames[1] ?? "Livre B"} : … »), et, si une source le précise, laquelle est la plus récente ou fait référence aujourd'hui. Une simple différence de niveau de détail n'est pas une divergence : additionne, ne l'oppose pas.
 
 3. UNE LECTURE AGRÉABLE ET LOGIQUE. Écris comme un excellent manuel — le confort de lecture d'un Morgan ou d'un Albrecht, avec l'exhaustivité d'un Miller :
-- Un fil conducteur, du « quoi » au « pourquoi » puis au « comment » : définition et contexte → mécanisme / physiologie / physiopathologie → données chiffrées (pharmacologie, valeurs, seuils) → clinique (indications, contre-indications, diagnostic) → conduite pratique (protocole, étapes) → situations particulières → pièges et perles → à retenir. Adapte cet ordre au sujet ; chaque bloc s'appuie sur le précédent.
+- Un fil conducteur, du « quoi » au « pourquoi » puis au « comment » : définition et contexte → mécanisme / physiologie / physiopathologie → données chiffrées (pharmacologie, valeurs, seuils) → clinique (indications, contre-indications, diagnostic) → conduite pratique (protocole, étapes) → situations particulières → historique et études clés → pièges et perles → à retenir. Adapte cet ordre au sujet ; chaque bloc s'appuie sur le précédent.
 - Des blocs courts : une idée par bloc, 40 à 160 mots ; au-delà, coupe en deux blocs. Chaque bloc a un intertitre ("heading") court qui dit ce qu'on y apprend (« Pourquoi la néostigmine échoue sur un bloc profond », pas « Remarque » ni « Généralités »).
 - Explique : des phrases complètes et précises pour les mécanismes et les raisonnements — comprendre le pourquoi fait retenir ; des listes à puces « • » pour les énumérations (critères, effets indésirables, étapes courtes) ; jamais une fiche entièrement en puces.
 - Un tableau (headers + rows) dès que plusieurs éléments se comparent sur les mêmes critères — c'est souvent la meilleure façon de réunir les données de plusieurs livres ; "protocole_paliers" pour une séquence d'étapes.
@@ -215,13 +217,15 @@ Exigences, par ordre de priorité :
 - Renvois : quand un point relève surtout d'une autre fiche du chapitre, garde ce qu'en disent tes sources et ajoute une courte phrase de renvoi (« → voir la fiche « … » ») plutôt que de le développer.
 - Texte brut : ni Markdown, ni astérisques, ni dièses (sauts de ligne autorisés).
 
-4. À RETENIR. Termine par exactement UN bloc "a_retenir" : 5 à 12 points « • » courts et mémorisables, à savoir par cœur (chiffres clés, doses, seuils, red flags, conduite immédiate, pièges), une affirmation par point, dans l'ordre de la fiche — uniquement des informations déjà écrites plus haut ; "source_block_ids" = les blocs sources d'où viennent ces points.
+4. POUR L'ORAL. Les études et auteurs que citent les sources (essais, cohortes, méta-analyses, noms attachés à une technique, un score ou un signe) se regroupent dans un bloc "etudes_cles", avec ce que chaque étude a montré et ce qu'elle a changé ; l'évolution des pratiques (ce qu'on faisait avant et pourquoi on l'a abandonné) dans un bloc "historique". N'en invente aucun : seulement ce que disent les sources, avec leurs chiffres.
 
-5. ILLUSTRATIONS. Sur chaque bloc qu'une figure rendrait nettement plus clair (anatomie, courbe, schéma de mécanisme, algorithme, montage, échographie), renseigne "suggested_image.what" en décrivant précisément l'image à placer là (ex. « Courbe de dissociation de l'hémoglobine : déplacements par la température, le pH et le 2,3-DPG ») et, quand un bloc source a une illustration ou cite la page où son livre en montre une, "suggested_image.source_block_id". Un bloc source suivi de [illustration : …] a déjà une image : reprends-la sur le bloc fusionné le plus pertinent avec "reuse_image_from" (chaque illustration source reprise une fois, aucune perdue). Rien de décoratif : 0 à 4 suggestions selon le sujet.
+5. À RETENIR. Termine par exactement UN bloc "a_retenir" : 5 à 12 points « • » courts et mémorisables, à savoir par cœur (chiffres clés, doses, seuils, red flags, conduite immédiate, pièges), une affirmation par point, dans l'ordre de la fiche — uniquement des informations déjà écrites plus haut ; "source_block_ids" = les blocs sources d'où viennent ces points.
 
-6. TRAÇABILITÉ. "source_block_ids" de chaque bloc liste TOUS les blocs sources (identifiants entre crochets, ex. "B12") dont il reprend du contenu : c'est ce qui permet au lecteur de toucher un passage pour ouvrir la page du PDF d'origine, et de vérifier que rien n'a été perdu. Chaque bloc source apparaît dans au moins un bloc.
+6. ILLUSTRATIONS. Sur chaque bloc qu'une figure rendrait nettement plus clair (anatomie, courbe, schéma de mécanisme, algorithme, montage, échographie), renseigne "suggested_image.what" en décrivant précisément l'image à placer là (ex. « Courbe de dissociation de l'hémoglobine : déplacements par la température, le pH et le 2,3-DPG ») et, quand un bloc source a une illustration ou cite la page où son livre en montre une, "suggested_image.source_block_id". Un bloc source suivi de [illustration : …] a déjà une image : reprends-la sur le bloc fusionné le plus pertinent avec "reuse_image_from" (chaque illustration source reprise une fois, aucune perdue). Rien de décoratif : 0 à 4 suggestions selon le sujet.
 
-7. FLASHCARDS. Fusionne les cartes sources : deux cartes (même de livres différents) qui testent le même fait n'en font qu'une, qui garde la réponse la plus complète et les nuances de chacune ; des cartes qui testent des faits différents restent distinctes ; reformule pour la qualité et garde chaque valeur chiffrée. "source_flashcard_ids" liste les cartes sources fusionnées dans chaque carte (ex. "K4") : chaque carte source apparaît dans exactement une carte. Chaque point du bloc « À retenir » et chaque divergence est testé par au moins une carte (ajoute-la, "source_flashcard_ids" vide, si aucune carte source ne le teste). Une partie des cartes fait raisonner (« Pourquoi… ? », « Que faire si… ? », « Quelle différence entre… ? ») plutôt que réciter.
+7. TRAÇABILITÉ. "source_block_ids" de chaque bloc liste TOUS les blocs sources (identifiants entre crochets, ex. "B12") dont il reprend du contenu : c'est ce qui permet au lecteur de toucher un passage pour ouvrir la page du PDF d'origine, et de vérifier que rien n'a été perdu. Chaque bloc source apparaît dans au moins un bloc.
+
+8. FLASHCARDS. Fusionne les cartes sources : deux cartes (même de livres différents) qui testent le même fait n'en font qu'une, qui garde la réponse la plus complète et les nuances de chacune ; des cartes qui testent des faits différents restent distinctes ; reformule pour la qualité et garde chaque valeur chiffrée. "source_flashcard_ids" liste les cartes sources fusionnées dans chaque carte (ex. "K4") : chaque carte source apparaît dans exactement une carte. Chaque point du bloc « À retenir » et chaque divergence est testé par au moins une carte (ajoute-la, "source_flashcard_ids" vide, si aucune carte source ne le teste). Une partie des cartes fait raisonner (« Pourquoi… ? », « Que faire si… ? », « Quelle différence entre… ? ») plutôt que réciter. Une carte par étude ou auteur clé et par évolution de pratique (« Quelle étude a montré… ? », « Pourquoi a-t-on abandonné… ? »).
 ${FLASHCARD_QUALITY_DOC}
 
 "summary" : chapeau de une à deux phrases — de quoi parle la fiche et pourquoi c'est important en pratique.

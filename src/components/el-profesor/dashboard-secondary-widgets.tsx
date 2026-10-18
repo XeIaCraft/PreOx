@@ -24,6 +24,8 @@ const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   texte_libre: "Note",
   divergence: "Divergence entre sources",
   a_retenir: "À retenir",
+  historique: "Historique",
+  etudes_cles: "Études et auteurs clés",
 };
 
 /** Shown in place of a secondary widget when nothing's cached yet for it — piste 2026-09-24 — suite au retour "les widgets ne s'affichent jamais et finissent en erreur" : this data is read purely from cache now, populated only by an explicit "Synchroniser", never by an automatic live fetch that could hang or fail. */
