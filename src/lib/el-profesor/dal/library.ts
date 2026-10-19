@@ -2,7 +2,7 @@ import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { toBook, toChapter, toFlag, getChapterContent, getChapterContentBatch, getActiveFlashcardsByChapterBatch, selectInChunks } from "./shared";
+import { toBook, toChapter, toFlag, getChapterContent, getChapterContentBatch, getActiveFlashcardsByChapterBatch, selectInChunks, selectAllPages } from "./shared";
 import { getMasteryCountsByChapter } from "./review";
 import type { Book, Chapter, ChapterStatus, Flag, FicheQuestion, FicheAnswer } from "../types";
 import type { ElProfesorBookRow, ElProfesorChapterRow, ElProfesorFlagRow } from "@/lib/supabase/types";
@@ -246,11 +246,13 @@ export async function getLibrary(): Promise<BookWithChapters[]> {
   const supabase = await createClient();
   const [booksRes, chaptersRes] = await Promise.all([
     supabase.from("el_profesor_books").select("*").order("order_index", { ascending: true }),
-    supabase.from("el_profesor_chapters").select("*").order("order_index", { ascending: true }),
+    // Paged: the library holds more chapters than PostgREST's 1000-row cap —
+    // one plain select silently dropped the last books' later chapters.
+    selectAllPages<ElProfesorChapterRow>((from, to) => supabase.from("el_profesor_chapters").select("*").order("order_index", { ascending: true }).order("id").range(from, to)),
   ]);
 
   const books = (booksRes.data ?? []) as ElProfesorBookRow[];
-  const chapters = (chaptersRes.data ?? []) as ElProfesorChapterRow[];
+  const chapters = chaptersRes;
 
   return books.map((book) => ({
     ...toBook(book),

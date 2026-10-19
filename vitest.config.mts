@@ -17,5 +17,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // A few table-driven préop tests (thousands of lookups) take seconds
+    // when the whole suite runs in parallel — the 5 s default made them flaky.
+    testTimeout: 30_000,
   },
 });

@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { toFicheBlock, resolveFicheContexts } from "./shared";
+import { toFicheBlock, resolveFicheContexts, selectAllPages } from "./shared";
 import { findDuplicateFlashcards } from "../dedupe";
 import { blockToPlainText } from "../block-text";
 import type {
@@ -426,11 +426,10 @@ export async function getCrossBookFlashcardDuplicates(): Promise<CrossBookDuplic
 /** Every currently merged/replaced fiche, for the admin "fusions & obsolescences" oversight list (with a way back via clearFicheSuperseded). */
 export async function getSupersededFiches(): Promise<SupersededFicheEntry[]> {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("el_profesor_fiches")
-    .select("id, superseded_by_fiche_id, superseded_reason, superseded_note")
-    .not("superseded_by_fiche_id", "is", null);
-  const rows = (data ?? []) as { id: string; superseded_by_fiche_id: string; superseded_reason: "duplicate" | "outdated"; superseded_note: string }[];
+  const data = await selectAllPages((from, to) =>
+    supabase.from("el_profesor_fiches").select("id, superseded_by_fiche_id, superseded_reason, superseded_note").not("superseded_by_fiche_id", "is", null).order("id").range(from, to)
+  );
+  const rows = data as { id: string; superseded_by_fiche_id: string; superseded_reason: "duplicate" | "outdated"; superseded_note: string }[];
   if (rows.length === 0) return [];
 
   const contexts = await resolveFicheContexts([...rows.map((r) => r.id), ...rows.map((r) => r.superseded_by_fiche_id)]);

@@ -2,7 +2,7 @@ import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getChapterContent, getActiveFlashcardsByChapterBatch } from "./shared";
+import { getChapterContent, getActiveFlashcardsByChapterBatch, selectAllPages } from "./shared";
 import { blockToPlainText } from "../block-text";
 import { findDuplicateFlashcards, findSimilarSubEntities, type DuplicateFlashcardPair, type SimilarSubEntityPair } from "../dedupe";
 import { EL_PROFESOR_PDF_BUCKET } from "../storage-constants";
@@ -291,8 +291,12 @@ export interface OrphanedPdf {
 export async function getOrphanedChapterPdfs(): Promise<OrphanedPdf[]> {
   const supabase = createAdminClient();
 
-  const { data: chapters } = await supabase.from("el_profesor_chapters").select("pdf_storage_path").not("pdf_storage_path", "is", null);
-  const referenced = new Set((chapters ?? []).map((c) => c.pdf_storage_path as string));
+  // Every reference, paged: a list cut at PostgREST's 1000-row cap would
+  // flag real chapters' PDFs as orphans, ready to be deleted.
+  const chapters = await selectAllPages<{ pdf_storage_path: string | null }>((from, to) =>
+    supabase.from("el_profesor_chapters").select("pdf_storage_path").not("pdf_storage_path", "is", null).order("id").range(from, to)
+  );
+  const referenced = new Set(chapters.map((c) => c.pdf_storage_path as string));
 
   const { data: topLevel } = await supabase.storage.from(EL_PROFESOR_PDF_BUCKET).list("", { limit: 1000 });
   const orphaned: OrphanedPdf[] = [];
