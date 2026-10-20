@@ -58,20 +58,24 @@ export async function getMergeSetupData(): Promise<MergeSetupData> {
     hasElProfesorClaudeKey(),
   ]);
   const books = (bookRows ?? []).filter((b) => (b.kind ?? "book") === "book");
-  const rows = books.length
-    ? await selectAllPages((from, to) =>
-        supabase
-          .rpc("el_profesor_merge_source_fiches", { p_book_ids: books.map((b) => b.id), p_include_drafts: true })
-          .order("fiche_id")
-          .range(from, to)
-      )
-    : [];
+  // Counts only: three light lists (no content), whatever migration is applied — the full source list is read at launch.
+  const [chapters, subs, fiches] = await Promise.all([
+    selectAllPages<{ id: string; book_id: string }>((from, to) => supabase.from("el_profesor_chapters").select("id, book_id").order("id").range(from, to)),
+    selectAllPages<{ id: string; chapter_id: string }>((from, to) => supabase.from("el_profesor_sub_entities").select("id, chapter_id").order("id").range(from, to)),
+    selectAllPages<{ sub_entity_id: string; status: string }>((from, to) =>
+      supabase.from("el_profesor_fiches").select("sub_entity_id, status").is("superseded_by_fiche_id", null).order("id").range(from, to)
+    ),
+  ]);
+  const bookOfChapter = new Map(chapters.map((c) => [c.id, c.book_id]));
+  const bookOfSub = new Map(subs.map((s) => [s.id, bookOfChapter.get(s.chapter_id)]));
   const counts = new Map<string, { fiches: number; published: number }>();
-  for (const r of rows) {
-    const c = counts.get(r.book_id) ?? { fiches: 0, published: 0 };
+  for (const f of fiches) {
+    const bookId = bookOfSub.get(f.sub_entity_id);
+    if (!bookId) continue;
+    const c = counts.get(bookId) ?? { fiches: 0, published: 0 };
     c.fiches++;
-    if (r.fiche_status === "published") c.published++;
-    counts.set(r.book_id, c);
+    if (f.status === "published") c.published++;
+    counts.set(bookId, c);
   }
   return {
     books: books.map((b) => ({ id: b.id, title: b.title, author: b.author, edition: b.edition, fiches: counts.get(b.id)?.fiches ?? 0, publishedFiches: counts.get(b.id)?.published ?? 0 })),

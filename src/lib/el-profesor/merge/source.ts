@@ -16,6 +16,28 @@ export interface SourceCatalog {
   fiches: SourceFicheRef[];
 }
 
+type SourceRow = Database["public"]["Functions"]["el_profesor_merge_source_fiches"]["Returns"][number];
+
+/**
+ * The rows of el_profesor_merge_source_fiches. One call returning the whole
+ * list (el_profesor_merge_source_catalog, migration 102); before that
+ * migration, page by page — each page recomputes everything, slow on a
+ * large library.
+ */
+export async function loadSourceRows(supabase: Admin, bookIds: string[], includeDrafts: boolean): Promise<SourceRow[]> {
+  const { data, error } = await supabase.rpc("el_profesor_merge_source_catalog", { p_book_ids: bookIds, p_include_drafts: includeDrafts });
+  if (!error && Array.isArray(data)) return data as unknown as SourceRow[];
+  return selectAllPages((from, to) =>
+    supabase
+      .rpc("el_profesor_merge_source_fiches", { p_book_ids: bookIds, p_include_drafts: includeDrafts })
+      .order("book_id")
+      .order("chapter_order")
+      .order("sub_entity_order")
+      .order("fiche_id")
+      .range(from, to)
+  );
+}
+
 /** Every active fiche of the source books, in reading order (book as selected, then chapter, then fiche). */
 export async function loadSourceCatalog(supabase: Admin, bookIds: string[], includeDrafts: boolean): Promise<SourceCatalog> {
   const { data: bookRows } = await supabase.from("el_profesor_books").select("id, title").in("id", bookIds);
@@ -23,15 +45,7 @@ export async function loadSourceCatalog(supabase: Admin, bookIds: string[], incl
   const books = bookIds.filter((id) => titleById.has(id)).map((id) => ({ id, title: titleById.get(id)! }));
   const bookRank = new Map(books.map((b, i) => [b.id, i]));
 
-  const rows = await selectAllPages((from, to) =>
-    supabase
-      .rpc("el_profesor_merge_source_fiches", { p_book_ids: books.map((b) => b.id), p_include_drafts: includeDrafts })
-      .order("book_id")
-      .order("chapter_order")
-      .order("sub_entity_order")
-      .order("fiche_id")
-      .range(from, to)
-  );
+  const rows = await loadSourceRows(supabase, books.map((b) => b.id), includeDrafts);
 
   const fiches = rows
     .map((r) => ({

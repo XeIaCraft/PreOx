@@ -16,7 +16,13 @@ export default async function NotionsPage() {
   return (
     <ToastProvider>
       <Suspense fallback={<p className="mx-auto max-w-4xl px-4 py-10 text-sm text-foreground-subtle">Chargement des notions…</p>}>
-        <MergeNotionsView setupPromise={getMergeSetupData()} jobsPromise={getMergeJobs()} />
+        <MergeNotionsView
+          setupPromise={getMergeSetupData().catch((err) => {
+            console.error("[el-profesor/notions] setup:", err);
+            return null;
+          })}
+          jobsPromise={getMergeJobs()}
+        />
       </Suspense>
     </ToastProvider>
   );

@@ -226,6 +226,15 @@ function seed(db: FakeDb, provider: "gemini" | "claude") {
       .filter((r) => bookIds.includes(r.book_id as string));
   };
 
+  // Migration 102: the same rows in reading order, in one call.
+  db.rpcs.el_profesor_merge_source_catalog = (args) =>
+    [db.rpcs.el_profesor_merge_source_fiches(args)].flat().sort((a, b) =>
+      String(a.book_id).localeCompare(String(b.book_id)) ||
+      (a.chapter_order as number) - (b.chapter_order as number) ||
+      (a.sub_entity_order as number) - (b.sub_entity_order as number) ||
+      String(a.fiche_id).localeCompare(String(b.fiche_id))
+    );
+
   const job = db.insertRow("el_profesor_merge_jobs", { book_id: merged.id, source_book_ids: [miller.id, albrecht.id], include_drafts: true, provider, model: provider === "claude" ? "claude-sonnet-5" : "gemini-flash-latest" });
   return { job, merged, sourceBookIds: [miller.id, albrecht.id] };
 }

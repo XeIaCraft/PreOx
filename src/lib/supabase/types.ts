@@ -1331,6 +1331,11 @@ export type Database = {
         Args: { p_fiche_ids: string[] };
         Returns: { replaced: number; histories: number }[];
       };
+      el_profesor_merge_source_catalog: {
+        Args: { p_book_ids: string[]; p_include_drafts: boolean };
+        /** The rows of el_profesor_merge_source_fiches, in reading order, as one JSON array (migration 102). */
+        Returns: Json;
+      };
       el_profesor_merge_source_fiches: {
         Args: { p_book_ids: string[]; p_include_drafts: boolean };
         Returns: {

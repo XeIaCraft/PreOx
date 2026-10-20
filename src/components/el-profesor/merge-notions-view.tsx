@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { Suspense, use, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, BookOpen, Check, ChevronDown, ChevronRight, Combine, History, ListTree, PenLine, Play, RotateCcw, Square, Trash2 } from "lucide-react";
@@ -59,8 +59,7 @@ function isActive(job: MergeJobView) {
   return [...TOC_STAGES, ...LOT_STAGES].some((s) => s.key === job.stage);
 }
 
-export function MergeNotionsView({ setupPromise, jobsPromise }: { setupPromise: Promise<MergeSetupData>; jobsPromise: Promise<MergeJobView[]> }) {
-  const setup = use(setupPromise);
+export function MergeNotionsView({ setupPromise, jobsPromise }: { setupPromise: Promise<MergeSetupData | null>; jobsPromise: Promise<MergeJobView[]> }) {
   const initialJobs = use(jobsPromise);
   const [jobs, setJobs] = useState(initialJobs);
   const [creating, setCreating] = useState(false);
@@ -114,7 +113,17 @@ export function MergeNotionsView({ setupPromise, jobsPromise }: { setupPromise: 
         )}
       </div>
 
-      {creating && <CreateMergeModal setup={setup} onClose={() => setCreating(false)} onStarted={refresh} />}
+      {creating && (
+        <Suspense
+          fallback={
+            <Modal title="Nouvelle notion" onClose={() => setCreating(false)} size="lg">
+              <p className="text-sm text-foreground-subtle">Chargement des livres…</p>
+            </Modal>
+          }
+        >
+          <CreateMergeModalLoader setupPromise={setupPromise} onClose={() => setCreating(false)} onStarted={refresh} />
+        </Suspense>
+      )}
     </div>
   );
 }
@@ -569,6 +578,18 @@ function Stat({ label, value }: { label: string; value?: number }) {
       <dd className="tabular-nums text-foreground">{value != null ? nf.format(value) : "—"}</dd>
     </div>
   );
+}
+
+/** The books and AI choices are only needed to create a notion: the list of fusions never waits for them. */
+function CreateMergeModalLoader({ setupPromise, onClose, onStarted }: { setupPromise: Promise<MergeSetupData | null>; onClose: () => void; onStarted: () => Promise<void> }) {
+  const setup = use(setupPromise);
+  if (!setup)
+    return (
+      <Modal title="Nouvelle notion" onClose={onClose} size="lg">
+        <p className="text-sm text-danger">Les livres n&apos;ont pas pu être chargés. Rechargez la page pour réessayer.</p>
+      </Modal>
+    );
+  return <CreateMergeModal setup={setup} onClose={onClose} onStarted={onStarted} />;
 }
 
 function CreateMergeModal({ setup, onClose, onStarted }: { setup: MergeSetupData; onClose: () => void; onStarted: () => Promise<void> }) {
