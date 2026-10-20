@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeExtractionResult, normalizeComplementaryResult, coerceArray, coerceKeyedObjectArray, wasArrayFieldTruncated } from "./anthropic";
+import { normalizeExtractionResult, normalizeComplementaryResult, coerceArray, coerceKeyedObjectArray, wasArrayFieldTruncated, repairPrematureClosers } from "./anthropic";
 
 // Regression test for the 2026-08-25 bug report: a Claude batch item came
 // back "succeeded" but with a required array (blocks/flashcards/citations/
@@ -221,5 +221,35 @@ describe("normalizeComplementaryResult", () => {
     });
     expect(result.additions_for_existing[0].blocks).toHaveLength(1);
     expect((result.additions_for_existing[0].blocks[0].content as { text: string }).text).toBe("canonical");
+  });
+});
+
+describe("repairPrematureClosers", () => {
+  // The shape of a real Miller chapter's answer (2026-10): blocks closed one
+  // brace too early, right before their "citations" key, inside a
+  // double-encoded sub_entities string.
+  const block = (text: string) => `{"block_type":"texte_libre","content":{"text":"${text}","note":null}},"citations":[{"page":1,"quote":"q {x}: y"}]}`;
+  const table = `{"block_type":"tableau_comparatif","content":{"headers":["A","B"],"rows":[["1","2"]],"text":null},"citations":[{"page":1,"quote":"t"}]}`;
+  const steps = `{"block_type":"protocole_paliers","content":{"steps":[{"label":"I","detail":"d","condition":null}]},"citations":[]}`;
+  const sub = (name: string) =>
+    `{"name":"${name}","summary":"s","fiche":{"title":"${name}","blocks":[${block("a")},${table},${block("b")},${steps}],"flashcards":[{"front":"f","back":"b","citations":[{"page":1,"quote":"c"}]}]}}`;
+  const raw = `[${sub("ION et rachis")},${sub("ION et chirurgie cardiaque")}]`;
+
+  it("reopens the object closed too early and leaves valid JSON untouched", () => {
+    expect(() => JSON.parse(raw)).toThrow();
+    const parsed = JSON.parse(repairPrematureClosers(raw));
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].fiche.blocks).toHaveLength(4);
+    expect(parsed[0].fiche.blocks[0].citations[0].quote).toBe("q {x}: y");
+    const valid = JSON.stringify([{ a: [{ b: "c: }" }] }]);
+    expect(repairPrematureClosers(valid)).toBe(valid);
+  });
+
+  it("recovers every sub-entity, block and card of such an answer", () => {
+    const result = normalizeExtractionResult({ sub_entities: raw, estimated_remaining_passes: 1 });
+    expect(result.sub_entities.map((s) => s.name)).toEqual(["ION et rachis", "ION et chirurgie cardiaque"]);
+    expect(result.sub_entities[1].fiche.blocks.map((b) => b.citations.length)).toEqual([1, 1, 1, 0]);
+    expect(result.sub_entities[1].fiche.flashcards).toHaveLength(1);
+    expect(wasArrayFieldTruncated({ sub_entities: raw }, "sub_entities")).toBe(true);
   });
 });

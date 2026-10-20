@@ -596,6 +596,54 @@ function salvageObjectArrayByKey(raw: string, keyName: string): unknown[] {
 }
 
 /**
+ * Repairs an object closed one brace too early — found 2026-10 on a Miller
+ * chapter: inside a double-encoded sub_entities string, several blocks read
+ * `"content":{"text":"…","note":null}},"citations":[…]}` — the extra `}`
+ * closes the block before its "citations" key, so the whole string fails to
+ * parse and every sub-entity was lost. Walks the text tracking open `{`/`[`
+ * (ignoring quoted strings): a `:` met while the innermost container is an
+ * array can only mean the object just before was closed too early, so that
+ * `}` is dropped and the object reopened. Anything else is left untouched.
+ */
+export function repairPrematureClosers(raw: string): string {
+  const out: string[] = [];
+  const stack: string[] = [];
+  let lastCloser = -1;
+  let inString = false;
+  let escaped = false;
+  for (const ch of raw) {
+    if (inString) {
+      out.push(ch);
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{" || ch === "[") stack.push(ch);
+    else if (ch === "}" || ch === "]") {
+      stack.pop();
+      if (ch === "}") lastCloser = out.length;
+    } else if (ch === ":" && stack[stack.length - 1] === "[" && lastCloser !== -1) {
+      out.splice(lastCloser, 1);
+      stack.push("{");
+      lastCloser = -1;
+    }
+    out.push(ch);
+  }
+  return out.join("");
+}
+
+/** JSON.parse of a string after repairPrematureClosers, or undefined. */
+function parseRepaired(raw: string): unknown {
+  try {
+    return JSON.parse(repairPrematureClosers(raw));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * True when `raw[key]` is a string that had to be salvaged rather than
  * cleanly parsed — i.e. it was double-encoded AND truncated, so coerceArray
  * recovered only the complete elements before the cut. Callers that accept
@@ -623,6 +671,8 @@ export function coerceArray(raw: unknown): unknown[] {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
     } catch {
+      const repaired = parseRepaired(raw);
+      if (Array.isArray(repaired)) return repaired;
       const salvaged = salvageTruncatedObjectArray(raw);
       if (salvaged.length > 0) return salvaged;
     }
@@ -649,6 +699,8 @@ export function coerceKeyedObjectArray(raw: unknown, keyName: string): unknown[]
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
     } catch {
+      const repaired = parseRepaired(raw);
+      if (Array.isArray(repaired)) return repaired;
       const byBoundary = salvageObjectArrayByKey(raw, keyName);
       if (byBoundary.length > 0) return byBoundary;
       const byTruncation = salvageTruncatedObjectArray(raw);
