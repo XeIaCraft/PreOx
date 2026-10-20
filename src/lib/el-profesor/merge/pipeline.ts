@@ -112,7 +112,7 @@ async function advanceJob(initial: Job, clock: Clock, summary: MergeRunSummary):
     else await runGemini(ctx, TASK_STAGE[stage], clock, summary);
 
     // Tokens spent so far, for the cost shown while the fusion runs.
-    job.stats = { ...((job.stats as MergeStats | null) ?? {}), ...(await jobUsage(supabase, job.id)) } as Json;
+    job.stats = { ...((job.stats as MergeStats | null) ?? {}), ...(await jobUsage(supabase, job.id)) } as unknown as Json;
     await supabase.from("el_profesor_merge_jobs").update({ stats: job.stats }).eq("id", job.id);
 
     const { count } = await supabase

@@ -53,6 +53,10 @@ vi.mock("@/lib/el-profesor/anthropic", async (importOriginal) => {
 });
 
 import { processMergeJobs } from "./pipeline";
+import { releaseChapters } from "./stages";
+import { flattenChapters } from "./plan";
+import type { MergePlan } from "./types";
+import type { ElProfesorMergeJobRow } from "@/lib/supabase/types";
 import { numericFacts, missingFacts } from "./plan";
 import { blockPromptText } from "./prompts";
 import type { BlockContent } from "../types";
@@ -226,13 +230,25 @@ function seed(db: FakeDb, provider: "gemini" | "claude") {
   return { job, merged, sourceBookIds: [miller.id, albrecht.id] };
 }
 
-async function runToEnd(db: FakeDb, jobId: unknown) {
+async function runUntil(db: FakeDb, jobId: unknown, stages: string[]) {
   for (let i = 0; i < 12; i++) {
     await processMergeJobs({ budgetMs: 280_000, startBeforeMs: 270_000 });
     const job = db.table("el_profesor_merge_jobs").find((j) => j.id === jobId)!;
-    if (job.stage === "done" || job.stage === "failed") return job;
+    if (stages.includes(job.stage as string)) return job;
   }
   return db.table("el_profesor_merge_jobs").find((j) => j.id === jobId)!;
+}
+
+/** Table of contents first, then the chapters in two lots: the first chapter alone, then all the others. */
+async function runToEnd(db: FakeDb, jobId: unknown) {
+  const ready = await runUntil(db, jobId, ["ready", "failed"]);
+  if (ready.stage !== "ready") return ready;
+  const chapterIds = flattenChapters(ready.plan as unknown as MergePlan).map((c) => c.chapterId);
+  await releaseChapters(db as never, ready as unknown as ElProfesorMergeJobRow, chapterIds.slice(0, 1));
+  const afterFirst = await runUntil(db, jobId, ["ready", "done", "failed"]);
+  if (afterFirst.stage !== "ready") return afterFirst;
+  await releaseChapters(db as never, afterFirst as unknown as ElProfesorMergeJobRow, chapterIds.slice(1));
+  return runUntil(db, jobId, ["done", "failed"]);
 }
 
 function mergedContent(db: FakeDb, bookId: unknown) {
@@ -265,6 +281,58 @@ describe.each(["gemini", "claude"] as const)("fusion de bout en bout (%s)", (pro
     h.db = new FakeDb();
     h.prompts = [];
     h.batches = new Map();
+  });
+
+  it("stops at the table of contents: every fiche placed, nothing written yet", async () => {
+    const { job, merged } = seed(h.db, provider);
+    const ready = await runUntil(h.db, job.id, ["ready", "failed"]);
+    expect(ready.stage).toBe("ready");
+    const stats = ready.stats as Record<string, number>;
+    expect(stats.unusedFiches).toBe(0);
+    expect(mergedContent(h.db, merged.id).chapters).toHaveLength(0);
+    const ficheTasks = h.db.table("el_profesor_merge_tasks").filter((t) => t.job_id === job.id && t.stage === "fiche");
+    expect(ficheTasks.length).toBe(stats.fichesPlanned);
+    expect(ficheTasks.every((t) => t.status === "held")).toBe(true);
+    expect(h.prompts.some((p) => p.includes("Tu rédiges"))).toBe(false);
+
+    // One chapter: only its fiches are written, then the fusion waits again.
+    const chapterIds = flattenChapters(ready.plan as unknown as MergePlan).map((c) => c.chapterId);
+    await releaseChapters(h.db as never, ready as unknown as ElProfesorMergeJobRow, chapterIds.slice(0, 1));
+    const again = await runUntil(h.db, job.id, ["ready", "done", "failed"]);
+    expect(again.stage).toBe(chapterIds.length > 1 ? "ready" : "done");
+    const out = mergedContent(h.db, merged.id);
+    expect(out.chapters.map((c) => c.id)).toEqual(chapterIds.slice(0, 1));
+    expect(out.chapters[0].status).toBe("draft_ready");
+    expect((again.stats as { rounds?: unknown[] }).rounds).toHaveLength(1);
+    await expect(releaseChapters(h.db as never, again as unknown as ElProfesorMergeJobRow, chapterIds.slice(0, 1))).rejects.toThrow();
+  });
+
+  it("takes the sources as they are when a lot is written, months later", async () => {
+    const { job, merged } = seed(h.db, provider);
+    const ready = await runUntil(h.db, job.id, ["ready", "failed"]);
+    // Since the table of contents: a block added to the broad (shared) Albrecht fiche, a source fiche emptied.
+    const bridion = h.db.table("el_profesor_fiches").find((f) => f.title === "Sugammadex (Bridion®)")!;
+    const added = h.db.insertRow("el_profesor_fiche_blocks", {
+      fiche_id: bridion.id,
+      block_type: "perle_clinique",
+      content: { text: "Recurarisation exceptionnelle après 2 mg/kg sur bloc profond." },
+      order_index: 9,
+      status: "published",
+      citations: [{ page: 812, quote: "q" }],
+      needs_review: false,
+    });
+    const peep = h.db.table("el_profesor_fiches").find((f) => f.title === "PEEP et recrutement")!;
+    for (const table of ["el_profesor_fiche_blocks", "el_profesor_flashcards"] as const)
+      for (const row of h.db.table(table).filter((r) => r.fiche_id === peep.id)) h.db.table(table).splice(h.db.table(table).indexOf(row), 1);
+
+    const chapterIds = flattenChapters(ready.plan as unknown as MergePlan).map((c) => c.chapterId);
+    await releaseChapters(h.db as never, ready as unknown as ElProfesorMergeJobRow, chapterIds);
+    const done = await runUntil(h.db, job.id, ["done", "failed"]);
+    expect(done.stage).toBe("done");
+    const out = mergedContent(h.db, merged.id);
+    const cited = new Set(out.blocks.flatMap((b) => (b.citations as { sourceBlockId?: string }[]).map((c) => c.sourceBlockId)));
+    expect(cited.has(added.id as string)).toBe(true);
+    for (const s of out.subs) expect(s.source_fiche_ids as string[]).not.toContain(peep.id);
   });
 
   it("finishes, loses nothing, duplicates nothing, and builds a readable book", async () => {
@@ -332,6 +400,12 @@ describe.each(["gemini", "claude"] as const)("fusion de bout en bout (%s)", (pro
     expect(stats.fichesPlanned).toBe(out.fiches.length);
     expect(stats.fichesRepaired).toBeGreaterThan(0);
     expect(stats.inputTokens).toBeGreaterThan(0);
+    expect(stats.unusedFiches).toBe(0);
+    // Written in two lots, each with its own token count.
+    const rounds = (done.stats as { rounds?: { round: number; chapters: number; inputTokens: number }[] }).rounds ?? [];
+    expect(rounds.map((r) => r.round)).toEqual([1, 2]);
+    expect(rounds.reduce((s, r) => s + r.chapters, 0)).toBe(out.chapters.length);
+    expect(rounds.every((r) => r.inputTokens > 0)).toBe(true);
 
     if (process.env.MERGE_DEBUG) {
       const fs = await import("node:fs");

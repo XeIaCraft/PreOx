@@ -375,7 +375,9 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
               <IconRow icon={Plus}>
                 Créer une notion depuis la page Notions : choisir les livres, inclure ou non les fiches pas encore publiées, choisir
                 l&apos;IA (Gemini, plus rapide ; Claude en lots, moitié prix) et le modèle — le coût estimé s&apos;affiche avant de lancer.
-                La fusion continue côté serveur, fenêtre fermée.
+                La table des matières est établie d&apos;abord (chaque fiche des livres y trouve sa place, c&apos;est vérifié) ; la rédaction
+                se lance ensuite chapitre par chapitre (un, plusieurs ou tous, coût affiché), quand vous voulez, pour étaler la dépense.
+                Tout continue côté serveur, fenêtre fermée.
               </IconRow>
               <IconRow icon={Sparkles}>Relire et publier chaque chapitre (ou tous les chapitres prêts d&apos;un coup) ; tout reste modifiable comme un livre.</IconRow>
               <IconRow icon={FileSearch}>

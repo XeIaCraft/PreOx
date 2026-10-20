@@ -229,7 +229,7 @@ export type ElProfesorBatchJobRow = {
   candidates_tokens: number | null;
 };
 
-export type ElProfesorMergeStage = "plan" | "assign" | "chapters" | "fiches" | "repair" | "done" | "failed" | "canceled";
+export type ElProfesorMergeStage = "plan" | "assign" | "chapters" | "ready" | "fiches" | "repair" | "done" | "failed" | "canceled";
 export type ElProfesorMergeJobRow = {
   id: string;
   book_id: string;
@@ -242,6 +242,8 @@ export type ElProfesorMergeJobRow = {
   stats: Json;
   error: string | null;
   locked_until: string | null;
+  /** Lot being written (migration 101): 0 while the table of contents is built. */
+  round: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -255,7 +257,9 @@ export type ElProfesorMergeTaskRow = {
   ref_key: string;
   input: Json;
   output: Json | null;
-  status: "waiting" | "running" | "submitted" | "done" | "failed";
+  status: "held" | "waiting" | "running" | "submitted" | "done" | "failed";
+  /** Lot the task belongs to (migration 101); a 'held' fiche task waits for its chapter to be chosen. */
+  round: number;
   attempts: number;
   next_attempt_at: string;
   started_at: string | null;

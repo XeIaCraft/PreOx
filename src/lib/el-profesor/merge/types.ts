@@ -59,6 +59,19 @@ export interface MergeStats {
   inputTokens?: number;
   outputTokens?: number;
   costUsd?: number;
+  /** Source fiches of the books that no merged fiche uses, when the table of contents was made (always 0: every fiche is placed). */
+  unusedFiches?: number;
+  /** One entry per lot of chapters written (migration 101). */
+  rounds?: MergeRound[];
+}
+
+export interface MergeRound {
+  round: number;
+  chapters: number;
+  fiches: number;
+  inputTokens: number;
+  outputTokens: number;
+  finishedAt: string;
 }
 
 /** One active fiche of a source book, as listed by el_profesor_merge_source_fiches (migration 098). Prompts refer to it by a short alias ("F12") given per task. */

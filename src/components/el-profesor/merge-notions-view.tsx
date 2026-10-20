@@ -3,7 +3,7 @@
 import { use, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, BookOpen, Check, Combine, History, ListTree, Play, RotateCcw, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, BookOpen, Check, ChevronDown, ChevronRight, Combine, History, ListTree, PenLine, Play, RotateCcw, Square, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -14,36 +14,49 @@ import {
   cancelMerge,
   deleteMergedBook,
   estimateMergeAction,
+  generateMergeChapters,
   getMergeJobs,
+  getMergeToc,
   retryMerge,
   runMergeNow,
   startMerge,
   type MergeEstimateResult,
   type MergeJobView,
   type MergeSetupData,
+  type MergeToc,
+  type MergeTocChapter,
 } from "@/app/apps/el-profesor/actions/merge";
 import { bulkPublishChapters } from "@/app/apps/el-profesor/actions/extraction";
 import { formatUsd, estimateCostUsd } from "@/lib/el-profesor/ai-pricing";
+import { shortBookTitle } from "@/lib/el-profesor/book-title";
 import type { MergeProvider } from "@/lib/el-profesor/merge/types";
 
-const STAGES = [
-  { key: "plan", label: "Table des matières", hint: "Parties et sous-parties, du fondamental vers l'appliqué." },
+// Two phases: the table of contents (every fiche placed, nothing written yet), then lots of chapters chosen by hand.
+const TOC_STAGES = [
+  { key: "plan", label: "Parties", hint: "Parties et sous-parties, du fondamental vers l'appliqué." },
   { key: "assign", label: "Répartition", hint: "Chaque fiche source rejoint sa sous-partie." },
   { key: "chapters", label: "Chapitres et fiches", hint: "Chaque sous-partie organisée en chapitres et en fiches, dans l'ordre d'apprentissage." },
+] as const;
+const LOT_STAGES = [
   { key: "fiches", label: "Fusion des fiches", hint: "Rédaction sans perte, divergences citées, « À retenir », cartes fusionnées." },
   { key: "repair", label: "Contrôle de couverture", hint: "Blocs, cartes et valeurs chiffrées non repris : réintégrés." },
 ] as const;
 
-const ENDED_LABEL: Record<string, { label: string; variant: "success" | "danger" | "neutral" }> = {
-  done: { label: "Terminée", variant: "success" },
+const ENDED_LABEL: Record<string, { label: string; variant: "success" | "danger" | "neutral" | "primary" }> = {
+  ready: { label: "Table des matières prête", variant: "primary" },
+  done: { label: "Tout est rédigé", variant: "success" },
   failed: { label: "Échec", variant: "danger" },
   canceled: { label: "Arrêtée", variant: "neutral" },
 };
 
 const nf = new Intl.NumberFormat("fr-BE");
 
+function stagesOf(job: MergeJobView) {
+  return LOT_STAGES.some((s) => s.key === job.stage) ? LOT_STAGES : TOC_STAGES;
+}
+
 function isActive(job: MergeJobView) {
-  return STAGES.some((s) => s.key === job.stage);
+  return [...TOC_STAGES, ...LOT_STAGES].some((s) => s.key === job.stage);
 }
 
 export function MergeNotionsView({ setupPromise, jobsPromise }: { setupPromise: Promise<MergeSetupData>; jobsPromise: Promise<MergeJobView[]> }) {
@@ -111,13 +124,18 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
   const [pending, startTransition] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const active = isActive(job);
+  const STAGES = stagesOf(job);
+  const inLot = STAGES === LOT_STAGES;
   const stageIndex = STAGES.findIndex((s) => s.key === job.stage);
   const p = job.progress;
   const stageTotal = p.waiting + p.running + p.submitted + p.done + p.failed;
   const stageDone = p.done + p.failed;
   const overall = job.stage === "done" ? 1 : stageIndex < 0 ? 0 : (stageIndex + (stageTotal ? stageDone / stageTotal : 0)) / STAGES.length;
   const s = job.stats;
-  const cost = s.inputTokens ? estimateCostUsd(job.provider === "claude" ? `claude:${job.model}` : job.model, s.inputTokens, s.outputTokens ?? 0) : null;
+  const priced = job.provider === "claude" ? `claude:${job.model}` : job.model;
+  const cost = s.inputTokens ? estimateCostUsd(priced, s.inputTokens, s.outputTokens ?? 0) : null;
+  const lots = s.rounds ?? [];
+  const lotsCost = lots.reduce((sum, r) => sum + (estimateCostUsd(priced, r.inputTokens, r.outputTokens) ?? 0), 0);
 
   function run(action: () => Promise<{ error?: string; success?: string }>) {
     startTransition(async () => {
@@ -136,7 +154,7 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
           <p className="mt-0.5 text-sm text-foreground-subtle">Fusion de {job.sourceBooks.join(" · ")}</p>
           <p className="mt-0.5 text-xs text-foreground-subtle">
             {job.provider === "claude" ? "Claude (lots)" : "Gemini"} · {job.model}
-            {cost != null && ` · ≈ ${formatUsd(cost)} jusqu'ici`}
+            {cost != null && ` · ≈ ${formatUsd(cost)} dépensés`}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -149,7 +167,8 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
           <div className="h-1.5 overflow-hidden rounded-full bg-surface-muted" role="progressbar" aria-valuenow={Math.round(overall * 100)} aria-valuemin={0} aria-valuemax={100}>
             <div className="h-full bg-primary transition-[width] duration-500" style={{ width: `${Math.max(3, overall * 100)}%` }} />
           </div>
-          <ol className="mt-3 grid grid-cols-1 gap-1.5 text-xs sm:grid-cols-5">
+          {inLot && <p className="mt-3 text-xs font-medium text-foreground">Lot {job.round}</p>}
+          <ol className={`mt-3 grid grid-cols-1 gap-1.5 text-xs ${inLot ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
             {STAGES.map((stage, i) => (
               <li
                 key={stage.key}
@@ -183,10 +202,19 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
           <Stat label="Fiches sources" value={s.sourceFiches} />
           <Stat label={s.chapters ? "Chapitres" : "Sous-parties"} value={s.chapters ?? s.subParts} />
           <Stat label="Fiches fusionnées" value={s.fichesPlanned} />
-          <Stat label="Divergences citées" value={s.divergences} />
+          <Stat label="Chapitres rédigés" value={s.chapters ? job.chapters.total : undefined} />
         </dl>
       )}
-      {job.stage === "done" && (
+      {lots.length > 0 && (
+        <p className="mt-3 text-xs text-foreground-muted">
+          {cost != null && `Table des matières ≈ ${formatUsd(Math.max(0, cost - lotsCost))}`}
+          {lots.map((r) => {
+            const c = estimateCostUsd(priced, r.inputTokens, r.outputTokens);
+            return ` · Lot ${r.round} (${new Date(r.finishedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short" })}) : ${r.chapters} chapitre${r.chapters > 1 ? "s" : ""}${c != null ? `, ≈ ${formatUsd(c)}` : ""}`;
+          })}
+        </p>
+      )}
+      {(job.stage === "done" || (job.stage === "ready" && lots.length > 0)) && (
         <p className="mt-3 text-xs text-foreground-muted">
           Contrôle de couverture : {nf.format(s.fichesRepaired ?? 0)} fiche(s) complétée(s) au rattrapage (bloc, carte ou valeur chiffrée oubliés, « À retenir » manquant).
           {((s.blocksKeptVerbatim ?? 0) > 0 || (s.cardsKeptVerbatim ?? 0) > 0 || (s.fichesFailed ?? 0) > 0) &&
@@ -194,14 +222,17 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
               (s.fichesFailed ?? 0) > 0 ? `, et ${s.fichesFailed} fiche(s) non fusionnée(s) gardent leurs sources` : ""
             } — marqués « à vérifier ».`}
           {(s.fichesSplit ?? 0) > 0 && ` ${s.fichesSplit} sujet(s) trop longs pour une seule fiche ont été répartis sur plusieurs fiches.`}
+          {(s.divergences ?? 0) > 0 && ` ${nf.format(s.divergences ?? 0)} divergence(s) entre livres citée(s).`}
         </p>
       )}
+
+      {s.chapters != null && (job.stage === "ready" || job.stage === "done" || inLot) && <MergeTocPanel job={job} onChanged={onChanged} />}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {job.chapters.total > 0 && (
           <Link href={`/apps/el-profesor/books/${job.bookId}`} prefetch={false}>
             <Button size="sm" variant="secondary">
-              <ListTree className="h-3.5 w-3.5" /> Table des matières
+              <ListTree className="h-3.5 w-3.5" /> Ouvrir le livre
             </Button>
           </Link>
         )}
@@ -233,9 +264,12 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
               <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(runMergeNow)} title="Relance le traitement tout de suite (il reprend aussi seul chaque minute)">
                 <Play className="h-3.5 w-3.5" /> Relancer
               </Button>
-              <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => cancelMerge(job.id))}>
-                <Square className="h-3.5 w-3.5" /> Arrêter
-              </Button>
+              {/* A lot ends on its own; stopping is for the table of contents (it would give up the chapters not written yet). */}
+              {!inLot && (
+                <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => cancelMerge(job.id))}>
+                  <Square className="h-3.5 w-3.5" /> Arrêter
+                </Button>
+              )}
             </>
           )}
           {job.stage === "failed" && (
@@ -277,6 +311,254 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
         </Modal>
       )}
     </article>
+  );
+}
+
+const STATE_LABEL: Record<MergeTocChapter["state"], { label: (lot: number) => string; variant: "neutral" | "accent" | "success" }> = {
+  held: { label: () => "À rédiger", variant: "neutral" },
+  writing: { label: (lot) => `Lot ${lot} en cours`, variant: "accent" },
+  written: { label: (lot) => `Rédigé · lot ${lot}`, variant: "success" },
+};
+
+/**
+ * The planned book, chapter by chapter, with the source fiches each merged
+ * fiche fuses — to check that every fiche of the books is used, then choose
+ * which chapters to write now (one lot) and leave the rest for later.
+ */
+function MergeTocPanel({ job, onChanged }: { job: MergeJobView; onChanged: () => Promise<void> }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(job.stage === "ready");
+  const [toc, setToc] = useState<MergeToc | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [showAdded, setShowAdded] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const canChoose = job.stage === "ready";
+
+  // Reloaded whenever the fusion moves on (a lot starts or ends).
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void getMergeToc(job.id).then((result) => {
+      if (cancelled) return;
+      if ("error" in result) setLoadError(result.error);
+      else {
+        setToc(result);
+        setLoadError(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, job.id, job.stage, job.round]);
+
+  const chapters = useMemo(() => (toc ? toc.parts.flatMap((p) => p.subParts.flatMap((sp) => sp.chapters)) : []), [toc]);
+  const held = chapters.filter((c) => c.state === "held");
+  const written = chapters.filter((c) => c.state === "written").length;
+  const chosen = held.filter((c) => selected.has(c.chapterId));
+  const sumCost = (list: MergeTocChapter[]) => (list.some((c) => c.costUsd == null) ? null : list.reduce((s, c) => s + (c.costUsd ?? 0), 0));
+  const chosenCost = sumCost(chosen);
+  const leftCost = sumCost(held);
+
+  function toggle(ids: string[], on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => (on ? next.add(id) : next.delete(id)));
+      return next;
+    });
+  }
+
+  function generate() {
+    startTransition(async () => {
+      const result = await generateMergeChapters(
+        job.id,
+        chosen.map((c) => c.chapterId)
+      );
+      if (result.error) toast(result.error, { variant: "error" });
+      else {
+        toast(result.success ?? "Lot lancé.", { variant: "success" });
+        setSelected(new Set());
+      }
+      await onChanged();
+    });
+  }
+
+  return (
+    <section className="mt-4 rounded-[var(--radius-md)] border border-border">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium text-foreground hover:bg-surface-muted/60"
+        aria-expanded={open}
+      >
+        {open ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+        <span className="min-w-0 flex-1">Table des matières et chapitres à rédiger</span>
+        {toc && (
+          <span className="shrink-0 text-xs font-normal tabular-nums text-foreground-subtle">
+            {written}/{chapters.length} rédigés
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="border-t border-border px-3 pb-3 pt-3">
+          {loadError ? (
+            <p className="text-sm text-danger">{loadError}</p>
+          ) : !toc ? (
+            <p className="text-sm text-foreground-subtle">Chargement…</p>
+          ) : (
+            <>
+              <div className="space-y-1 text-xs">
+                {toc.coverage.used === toc.coverage.sourceFiches ? (
+                  <p className="flex items-start gap-1.5 text-success">
+                    <Check className="mt-px h-3.5 w-3.5 shrink-0" /> Les {nf.format(toc.coverage.sourceFiches)} fiches des livres sont toutes utilisées.
+                  </p>
+                ) : (
+                  <div className="text-accent">
+                    <p>
+                      {nf.format(toc.coverage.addedSinceCount)} fiche{toc.coverage.addedSinceCount > 1 ? "s" : ""} des livres ne figure
+                      {toc.coverage.addedSinceCount > 1 ? "nt" : ""} pas dans cette table des matières (ajoutée{toc.coverage.addedSinceCount > 1 ? "s" : ""} depuis sa création) : elle
+                      {toc.coverage.addedSinceCount > 1 ? "s" : ""} ne ser{toc.coverage.addedSinceCount > 1 ? "ont" : "a"} pas fusionnée{toc.coverage.addedSinceCount > 1 ? "s" : ""}.{" "}
+                      <button type="button" className="underline" onClick={() => setShowAdded((v) => !v)}>
+                        {showAdded ? "Masquer" : "Voir"}
+                      </button>
+                    </p>
+                    {showAdded && (
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-foreground-muted">
+                        {toc.coverage.addedSince.map((f, i) => (
+                          <li key={i}>
+                            {shortBookTitle(f.book)} · {f.chapter} — {f.title}
+                          </li>
+                        ))}
+                        {toc.coverage.addedSinceCount > toc.coverage.addedSince.length && <li>…</li>}
+                      </ul>
+                    )}
+                  </div>
+                )}
+                {toc.coverage.goneSince > 0 && (
+                  <p className="text-foreground-muted">
+                    {nf.format(toc.coverage.goneSince)} fiche{toc.coverage.goneSince > 1 ? "s" : ""} source{toc.coverage.goneSince > 1 ? "s" : ""} supprimée
+                    {toc.coverage.goneSince > 1 ? "s" : ""} depuis : simplement laissée{toc.coverage.goneSince > 1 ? "s" : ""} de côté à la rédaction.
+                  </p>
+                )}
+              </div>
+
+              {canChoose && held.length > 0 && (
+                <div className="sticky top-0 z-10 -mx-3 mt-3 flex flex-wrap items-center gap-2 border-y border-border bg-surface px-3 py-2">
+                  <Button size="sm" disabled={pending || chosen.length === 0} onClick={generate}>
+                    <PenLine className="h-3.5 w-3.5" />
+                    {pending
+                      ? "Lancement…"
+                      : chosen.length === 0
+                        ? "Choisissez des chapitres"
+                        : `Rédiger ${chosen.length} chapitre${chosen.length > 1 ? "s" : ""}${chosenCost != null ? ` · ≈ ${formatUsd(chosenCost)}` : ""}`}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => toggle(held.map((c) => c.chapterId), chosen.length < held.length)}>
+                    {chosen.length < held.length ? "Tout choisir" : "Tout retirer"}
+                  </Button>
+                  <span className="ml-auto text-xs tabular-nums text-foreground-subtle">
+                    Reste {held.length} chapitre{held.length > 1 ? "s" : ""}
+                    {leftCost != null && ` · ≈ ${formatUsd(leftCost)}`}
+                  </span>
+                </div>
+              )}
+              {!canChoose && held.length > 0 && job.stage !== "done" && (
+                <p className="mt-3 text-xs text-foreground-muted">Lot {job.round} en cours : vous pourrez choisir les chapitres suivants quand il sera terminé.</p>
+              )}
+
+              <div className="mt-3 space-y-4">
+                {toc.parts.map((part, pi) => {
+                  const partHeld = part.subParts.flatMap((sp) => sp.chapters).filter((c) => c.state === "held");
+                  const partAll = partHeld.length > 0 && partHeld.every((c) => selected.has(c.chapterId));
+                  return (
+                    <div key={pi}>
+                      <div className="flex items-center gap-2">
+                        {canChoose && partHeld.length > 0 && (
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 shrink-0"
+                            checked={partAll}
+                            onChange={() => toggle(partHeld.map((c) => c.chapterId), !partAll)}
+                            aria-label={`Choisir toute la partie ${part.title}`}
+                          />
+                        )}
+                        <h3 className="font-serif-display text-base font-medium text-foreground">{part.title}</h3>
+                      </div>
+                      {part.subParts.map((sp, si) => (
+                        <div key={si} className="mt-1.5">
+                          {sp.title && <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">{sp.title}</p>}
+                          <ul className="space-y-1">
+                            {sp.chapters.map((c) => {
+                              const isOpen = expanded.has(c.chapterId);
+                              const st = STATE_LABEL[c.state];
+                              return (
+                                <li key={c.chapterId} className="rounded-[var(--radius-sm)] border border-border/70">
+                                  <div className="flex items-start gap-2 px-2.5 py-2">
+                                    {canChoose && c.state === "held" ? (
+                                      <input
+                                        type="checkbox"
+                                        className="mt-0.5 h-4 w-4 shrink-0"
+                                        checked={selected.has(c.chapterId)}
+                                        onChange={(e) => toggle([c.chapterId], e.target.checked)}
+                                        aria-label={`Choisir ${c.title}`}
+                                      />
+                                    ) : (
+                                      <span className="w-4 shrink-0" />
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="min-w-0 flex-1 text-left"
+                                      onClick={() => setExpanded((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(c.chapterId)) next.delete(c.chapterId);
+                                        else next.add(c.chapterId);
+                                        return next;
+                                      })}
+                                      aria-expanded={isOpen}
+                                    >
+                                      <span className="block text-sm text-foreground">{c.title}</span>
+                                      <span className="block text-xs tabular-nums text-foreground-subtle">
+                                        {c.fiches.length} fiche{c.fiches.length > 1 ? "s" : ""} · {nf.format(c.fiches.reduce((n, f) => n + f.sources.length, 0))} source
+                                        {c.fiches.reduce((n, f) => n + f.sources.length, 0) > 1 ? "s" : ""}
+                                        {c.state === "held" && c.costUsd != null && ` · ≈ ${formatUsd(c.costUsd)}`}
+                                      </span>
+                                    </button>
+                                    <Badge variant={st.variant} className="shrink-0">
+                                      {st.label(c.lot)}
+                                    </Badge>
+                                  </div>
+                                  {isOpen && (
+                                    <ol className="space-y-1.5 border-t border-border/70 px-3 py-2 pl-9 text-xs">
+                                      {c.fiches.map((f, fi) => (
+                                        <li key={fi}>
+                                          <p className="font-medium text-foreground">{f.title}</p>
+                                          <ul className="mt-0.5 space-y-0.5 text-foreground-muted">
+                                            {f.sources.map((src, k) => (
+                                              <li key={k}>
+                                                <span className="text-foreground-subtle">{shortBookTitle(src.book)} ·</span> {src.title}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </li>
+                                      ))}
+                                    </ol>
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -345,7 +627,7 @@ function CreateMergeModal({ setup, onClose, onStarted }: { setup: MergeSetupData
   return (
     <Modal
       title="Nouvelle notion"
-      description="Choisissez les livres à fusionner : leurs fiches seront réorganisées en une nouvelle table des matières, puis fusionnées sujet par sujet."
+      description="Choisissez les livres à fusionner. La table des matières est établie d'abord (chaque fiche des livres y trouve sa place) ; vous choisirez ensuite quels chapitres rédiger, et quand."
       onClose={onClose}
       size="lg"
       footer={
@@ -354,7 +636,7 @@ function CreateMergeModal({ setup, onClose, onStarted }: { setup: MergeSetupData
             Annuler
           </Button>
           <Button onClick={handleStart} disabled={starting || selected.length === 0 || !title.trim() || !model.trim()}>
-            <Combine className="h-4 w-4" /> {starting ? "Lancement…" : "Lancer la fusion"}
+            <ListTree className="h-4 w-4" /> {starting ? "Lancement…" : "Établir la table des matières"}
           </Button>
         </>
       }
@@ -446,10 +728,20 @@ function CreateMergeModal({ setup, onClose, onStarted }: { setup: MergeSetupData
             <p className="text-foreground-subtle">Estimation…</p>
           ) : (
             <>
-              <p className="font-medium text-foreground">
-                {estimate.costUsd != null ? `≈ ${formatUsd(estimate.costUsd)}` : "Coût non estimable pour ce modèle"}
-                <span className="font-normal text-foreground-subtle"> — estimation, au tarif payant{provider === "claude" ? " des lots" : ""}</span>
-              </p>
+              {estimate.costUsd != null && estimate.tocCostUsd != null ? (
+                <>
+                  <p className="font-medium text-foreground">
+                    Table des matières ≈ {formatUsd(estimate.tocCostUsd)}
+                    <span className="font-normal text-foreground-subtle"> — maintenant</span>
+                  </p>
+                  <p className="text-foreground-muted">
+                    Rédaction de tous les chapitres ≈ {formatUsd(Math.max(0, estimate.costUsd - estimate.tocCostUsd))}, à lancer chapitre par chapitre, quand vous voulez.
+                  </p>
+                  <p className="text-xs text-foreground-subtle">Estimations au tarif payant{provider === "claude" ? " des lots" : ""}.</p>
+                </>
+              ) : (
+                <p className="font-medium text-foreground">Coût non estimable pour ce modèle</p>
+              )}
               <p className="mt-1 tabular-nums text-foreground-muted">
                 {nf.format(estimate.sourceFiches)} fiches sources ({nf.format(estimate.sourceBlocks)} blocs, {nf.format(estimate.sourceCards)} cartes) → environ{" "}
                 {nf.format(estimate.chapters)} chapitres et {nf.format(estimate.mergedFiches)} fiches fusionnées ; {nf.format(estimate.requests)} requêtes,{" "}

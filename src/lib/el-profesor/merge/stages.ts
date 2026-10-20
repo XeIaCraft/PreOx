@@ -62,6 +62,12 @@ import type { MergePlan, MergeStats, SourceFicheRef } from "./types";
 //   chapter   une sous-partie → ses chapitres et ses fiches fusionnées
 //   fiche     une fiche fusionnée, rédigée à partir de ses sources
 //   repair    ce que le contrôle de couverture a trouvé manquant
+//
+// Par lots (migration 101) : plan → assign → chapter établissent la table
+// des matières complète, puis la fusion s'arrête en 'ready' avec une tâche
+// « fiche » en réserve ('held') par fiche fusionnée. releaseChapters lance
+// les chapitres choisis (un lot = un round) : fiche → repair pour ce lot
+// seulement, puis retour en 'ready', ou 'done' quand tout est rédigé.
 
 type Admin = SupabaseClient<Database>;
 type Job = ElProfesorMergeJobRow;
@@ -98,12 +104,18 @@ function planOf(job: Job): MergePlan {
   return (job.plan as unknown as MergePlan | null) ?? { parts: [] };
 }
 
-async function upsertTasks(supabase: Admin, jobId: string, stage: ElProfesorMergeTaskStage, tasks: { refKey: string; input: unknown }[]) {
+async function upsertTasks(
+  supabase: Admin,
+  jobId: string,
+  stage: ElProfesorMergeTaskStage,
+  tasks: { refKey: string; input: unknown }[],
+  { status = "waiting", round = 0 }: { status?: "waiting" | "held"; round?: number } = {}
+) {
   for (const part of chunk(tasks, 200)) {
     const { error } = await supabase
       .from("el_profesor_merge_tasks")
       .upsert(
-        part.map((t) => ({ job_id: jobId, stage, ref_key: t.refKey, input: t.input as Json, status: "waiting" as const })),
+        part.map((t) => ({ job_id: jobId, stage, ref_key: t.refKey, input: t.input as Json, status, round })),
         { onConflict: "job_id,ref_key", ignoreDuplicates: true }
       );
     if (error) throw new GeminiError(`Création des tâches de fusion impossible : ${error.message}`);
@@ -292,6 +304,8 @@ export interface FicheTaskInput {
   ficheId: string;
   title: string;
   objective: string;
+  /** Position of the fiche in its chapter. */
+  orderIndex: number;
   siblings: string[];
   /** Characters of source content sent: sizes the call (a Gemini call must fit in one run of the queue). */
   chars: number;
@@ -373,35 +387,8 @@ export async function finalizeChapters(ctx: StageContext): Promise<void> {
     }
   }
 
-  // 4. Rows (upserted on stable ids: a transition interrupted and run again doesn't duplicate) and fiche tasks.
-  for (const part of chunk(chapters, 200)) {
-    const { error } = await supabase.from("el_profesor_chapters").upsert(
-      part.map((c) => ({
-        id: c.chapterId,
-        book_id: job.book_id,
-        title: c.title,
-        order_index: c.orderIndex,
-        status: "extracting" as const,
-        source_kind: "merged" as const,
-        part_title: c.partTitle,
-        sub_part_title: c.subPartTitle,
-        extraction_error: "Fusion en cours.",
-      })),
-      { onConflict: "id", ignoreDuplicates: true }
-    );
-    if (error) throw new GeminiError(`Création des chapitres impossible : ${error.message}`);
-  }
+  // 4. One fiche task per merged fiche, held until its chapter is chosen (releaseChapters writes the rows then).
   const rows = merged.map((m) => ({ ...m, subEntityId: stableUuid(job.id, "sub", m.key), ficheId: stableUuid(job.id, "fiche", m.key) }));
-  for (const part of chunk(rows, 300)) {
-    await supabase.from("el_profesor_sub_entities").upsert(
-      part.map((r) => ({ id: r.subEntityId, chapter_id: r.chapter.chapterId, name: r.title, order_index: r.orderIndex, summary: r.objective, source_fiche_ids: r.sourceIds })),
-      { onConflict: "id", ignoreDuplicates: true }
-    );
-    await supabase.from("el_profesor_fiches").upsert(
-      part.map((r) => ({ id: r.ficheId, sub_entity_id: r.subEntityId, title: r.title, status: "draft" as const })),
-      { onConflict: "id", ignoreDuplicates: true }
-    );
-  }
 
   const ficheTasks = rows.map((r) => {
     let chars = 0;
@@ -425,6 +412,7 @@ export async function finalizeChapters(ctx: StageContext): Promise<void> {
       ficheId: r.ficheId,
       title: r.title,
       objective: r.objective,
+      orderIndex: r.orderIndex,
       siblings: r.siblings,
       chars,
       sources,
@@ -432,16 +420,140 @@ export async function finalizeChapters(ctx: StageContext): Promise<void> {
     return { refKey: `fiche:${pad(r.chapter.orderIndex)}:${pad(r.orderIndex, 3)}`, input };
   });
 
-  await upsertTasks(supabase, job.id, "fiche", ficheTasks);
-  await transition(supabase, job, "fiches", {
+  // Every fiche of the books must be used somewhere in the table of contents.
+  const catalog = await loadSourceCatalog(supabase, job.source_book_ids, job.include_drafts);
+  const used = new Set(merged.flatMap((m) => m.sourceIds));
+
+  await upsertTasks(supabase, job.id, "fiche", ficheTasks, { status: "held" });
+  await transition(supabase, job, "ready", {
     plan: fullPlan as unknown as Json,
     stats: mergeStats(job, {
       chapters: chapters.length,
       fichesPlanned: ficheTasks.length,
+      unusedFiches: catalog.fiches.filter((f) => !used.has(f.ficheId)).length,
       fichesSplit: outlines.reduce((s, o) => s + o.splitCount, 0),
       chapterFallback: outlines.reduce((s, o) => s + o.fallbackCount, 0),
     }),
   });
+}
+
+// -- Lots : les chapitres choisis passent à la rédaction ----------------------
+
+/**
+ * Starts writing the chosen chapters: their merged fiches get their rows
+ * (chapter in « extraction », sub-entity, empty draft fiche) and their held
+ * tasks go into the queue as lot `round + 1`. Done months after the table of
+ * contents, so the sources are taken as they are now: a source fiche deleted
+ * since is left out, a merged fiche left with no source at all is dropped,
+ * and a block or card added since to a source shared between several merged
+ * fiches goes to the first of this lot that uses it — nothing new is lost.
+ */
+export async function releaseChapters(supabase: Admin, job: Job, chapterIds: string[]): Promise<{ chapters: number; fiches: number; dropped: number }> {
+  const wanted = new Set(chapterIds);
+  const all = await stageTasks(supabase, job.id, "fiche");
+  const held = all.filter((t) => t.status === "held" && wanted.has((t.input as unknown as FicheTaskInput).chapterId));
+  if (!held.length) throw new GeminiError("Aucun de ces chapitres n'attend d'être rédigé.");
+
+  // The job moves on first, locked: the queue can't close this lot while its tasks are being written.
+  const round = (job.round ?? 0) + 1;
+  const { data: moved } = await supabase
+    .from("el_profesor_merge_jobs")
+    .update({ stage: "fiches", round, error: null, locked_until: new Date(Date.now() + 4 * 60_000).toISOString() })
+    .eq("id", job.id)
+    .eq("stage", "ready")
+    .select("id")
+    .maybeSingle();
+  if (!moved) throw new GeminiError("Un lot est déjà en cours pour cette fusion.");
+
+  try {
+    const sourceIds = [...new Set(held.flatMap((t) => (t.input as unknown as FicheTaskInput).sources.map((s) => s.ficheId)))];
+    const content = await loadSourceContent(supabase, sourceIds, job.include_drafts);
+    const itemIds = (ficheId: string) => [...(content.blocksByFiche.get(ficheId) ?? []), ...(content.cardsByFiche.get(ficheId) ?? [])].map((x) => x.id);
+    const known = new Map<string, Set<string>>();
+    for (const t of all)
+      for (const s of (t.input as unknown as FicheTaskInput).sources)
+        if (s.blockIds) {
+          const set = known.get(s.ficheId) ?? new Set<string>();
+          [...s.blockIds, ...(s.cardIds ?? [])].forEach((id) => set.add(id));
+          known.set(s.ficheId, set);
+        }
+
+    const released: { task: Task; input: FicheTaskInput }[] = [];
+    const dropped: Task[] = [];
+    for (const t of held) {
+      const input = JSON.parse(JSON.stringify(t.input)) as FicheTaskInput;
+      input.sources = input.sources.filter((s) => itemIds(s.ficheId).length > 0);
+      for (const s of input.sources) {
+        if (!s.blockIds) continue;
+        const seen = known.get(s.ficheId)!;
+        const fresh = itemIds(s.ficheId).filter((id) => !seen.has(id));
+        fresh.forEach((id) => seen.add(id));
+        s.blockIds = [...s.blockIds, ...fresh];
+        s.cardIds = [...(s.cardIds ?? []), ...fresh];
+      }
+      if (input.sources.length) released.push({ task: t, input });
+      else dropped.push(t);
+    }
+
+    const plannedChapters = new Map(flattenChapters(planOf(job)).map((c) => [c.chapterId, c]));
+    const chapters = [...new Set(released.map((r) => r.input.chapterId))].map((id) => plannedChapters.get(id)).filter((c): c is FlatPlanChapter => Boolean(c));
+    for (const part of chunk(chapters, 200)) {
+      const { error } = await supabase.from("el_profesor_chapters").upsert(
+        part.map((c) => ({
+          id: c.chapterId,
+          book_id: job.book_id,
+          title: c.title,
+          order_index: c.orderIndex,
+          status: "extracting" as const,
+          source_kind: "merged" as const,
+          part_title: c.partTitle,
+          sub_part_title: c.subPartTitle,
+          extraction_error: "Fusion en cours.",
+        })),
+        { onConflict: "id", ignoreDuplicates: true }
+      );
+      if (error) throw new GeminiError(`Création des chapitres impossible : ${error.message}`);
+    }
+    for (const part of chunk(released, 300)) {
+      await supabase.from("el_profesor_sub_entities").upsert(
+        part.map(({ input }) => ({ id: input.subEntityId, chapter_id: input.chapterId, name: input.title, order_index: input.orderIndex, summary: input.objective, source_fiche_ids: input.sources.map((s) => s.ficheId) })),
+        { onConflict: "id", ignoreDuplicates: true }
+      );
+      await supabase.from("el_profesor_fiches").upsert(
+        part.map(({ input }) => ({ id: input.ficheId, sub_entity_id: input.subEntityId, title: input.title, status: "draft" as const })),
+        { onConflict: "id", ignoreDuplicates: true }
+      );
+    }
+    const now = new Date().toISOString();
+    for (const part of chunk(released, 200)) {
+      const { error } = await supabase.from("el_profesor_merge_tasks").upsert(
+        part.map(({ task, input }) => ({
+          id: task.id,
+          job_id: job.id,
+          stage: "fiche" as const,
+          ref_key: task.ref_key,
+          input: input as unknown as Json,
+          status: "waiting" as const,
+          round,
+          attempts: 0,
+          error: null,
+          next_attempt_at: now,
+        })),
+        { onConflict: "id" }
+      );
+      if (error) throw new GeminiError(`Lancement du lot impossible : ${error.message}`);
+    }
+    for (const part of chunk(dropped, 200))
+      await supabase.from("el_profesor_merge_tasks").delete().in("id", part.map((t) => t.id));
+    return { chapters: chapters.length, fiches: released.length, dropped: dropped.length };
+  } catch (err) {
+    // Nothing was queued: the fusion waits again for a lot to be chosen.
+    await supabase.from("el_profesor_merge_tasks").update({ status: "held", round: 0 }).eq("job_id", job.id).eq("stage", "fiche").eq("round", round).eq("status", "waiting");
+    await supabase.from("el_profesor_merge_jobs").update({ stage: "ready", round: job.round ?? 0, locked_until: null }).eq("id", job.id);
+    throw err;
+  } finally {
+    await supabase.from("el_profesor_merge_jobs").update({ locked_until: null }).eq("id", job.id).eq("stage", "fiches");
+  }
 }
 
 // -- 4. Fiches --------------------------------------------------------------
@@ -697,7 +809,8 @@ export type RepairInput = FicheTaskInput & {
 
 export async function finalizeFiches(ctx: StageContext): Promise<void> {
   const { supabase, job } = ctx;
-  const tasks = await stageTasks(supabase, job.id, "fiche");
+  // This lot only: earlier lots are closed, later ones still held.
+  const tasks = (await stageTasks(supabase, job.id, "fiche")).filter((t) => t.round === job.round && t.status !== "held");
   const outputs = new Map<string, FicheOutput>();
   let failed = 0;
 
@@ -745,13 +858,14 @@ export async function finalizeFiches(ctx: StageContext): Promise<void> {
     });
   }
 
-  await upsertTasks(supabase, job.id, "repair", repairTasks);
+  await upsertTasks(supabase, job.id, "repair", repairTasks, { round: job.round });
+  const previous = (job.stats as MergeStats | null) ?? {};
   await transition(supabase, job, "repair", {
     stats: mergeStats(job, {
-      fichesDone: tasks.length - failed,
-      fichesFailed: failed,
-      fichesRepaired: repairTasks.length,
-      divergences: all.reduce((s, o) => s + (o.divergences ?? 0), 0),
+      fichesDone: (previous.fichesDone ?? 0) + tasks.length - failed,
+      fichesFailed: (previous.fichesFailed ?? 0) + failed,
+      fichesRepaired: (previous.fichesRepaired ?? 0) + repairTasks.length,
+      divergences: (previous.divergences ?? 0) + all.reduce((s, o) => s + (o.divergences ?? 0), 0),
     }),
   });
 }
@@ -897,7 +1011,7 @@ function heading(content: unknown): string | undefined {
 
 export async function finalizeRepair(ctx: StageContext): Promise<void> {
   const { supabase, job } = ctx;
-  const tasks = await stageTasks(supabase, job.id, "repair");
+  const tasks = (await stageTasks(supabase, job.id, "repair")).filter((t) => t.round === job.round);
   let blocksKept = 0;
   let cardsKept = 0;
   for (const t of tasks) {
@@ -929,24 +1043,39 @@ export async function finalizeRepair(ctx: StageContext): Promise<void> {
     await saveOutput(supabase, t, { ...output, keptVerbatim: true });
   }
 
-  const chapterIds = flattenChapters(planOf(job)).map((c) => c.chapterId);
+  const ficheTasks = await stageTasks(supabase, job.id, "fiche");
+  const lot = ficheTasks.filter((t) => t.round === job.round);
+  const chapterIds = [...new Set(lot.map((t) => (t.input as unknown as FicheTaskInput).chapterId))];
   for (const part of chunk(chapterIds, 150))
     await supabase.from("el_profesor_chapters").update({ status: "draft_ready", extraction_error: null }).in("id", part).eq("status", "extracting");
 
   const usage = await jobUsage(supabase, job.id);
+  const lotUsage = await jobUsage(supabase, job.id, job.round);
   const previous = (job.stats as MergeStats | null) ?? {};
-  await transition(supabase, job, "done", {
-    stats: mergeStats(job, { blocksKeptVerbatim: (previous.blocksKeptVerbatim ?? 0) + blocksKept, cardsKeptVerbatim: (previous.cardsKeptVerbatim ?? 0) + cardsKept, ...usage }),
+  const left = ficheTasks.some((t) => t.status === "held");
+  await transition(supabase, job, left ? "ready" : "done", {
+    stats: mergeStats(job, {
+      blocksKeptVerbatim: (previous.blocksKeptVerbatim ?? 0) + blocksKept,
+      cardsKeptVerbatim: (previous.cardsKeptVerbatim ?? 0) + cardsKept,
+      ...usage,
+      rounds: [
+        ...(previous.rounds ?? []).filter((r) => r.round !== job.round),
+        { round: job.round, chapters: chapterIds.length, fiches: lot.length, inputTokens: lotUsage.inputTokens, outputTokens: lotUsage.outputTokens, finishedAt: new Date().toISOString() },
+      ],
+    }),
   });
 }
 
-export async function jobUsage(supabase: Admin, jobId: string): Promise<{ inputTokens: number; outputTokens: number; tasksTotal: number; tasksDone: number }> {
+/** Tokens spent by the whole fusion, or by one lot (round 0 = the table of contents). */
+export async function jobUsage(supabase: Admin, jobId: string, round?: number): Promise<{ inputTokens: number; outputTokens: number; tasksTotal: number; tasksDone: number }> {
   let inputTokens = 0;
   let outputTokens = 0;
   let tasksTotal = 0;
   let tasksDone = 0;
   for (let from = 0; ; from += 1000) {
-    const { data } = await supabase.from("el_profesor_merge_tasks").select("input_tokens, output_tokens, status").eq("job_id", jobId).order("id").range(from, from + 999);
+    let query = supabase.from("el_profesor_merge_tasks").select("input_tokens, output_tokens, status").eq("job_id", jobId);
+    if (round !== undefined) query = query.eq("round", round);
+    const { data } = await query.order("id").range(from, from + 999);
     for (const r of data ?? []) {
       inputTokens += r.input_tokens ?? 0;
       outputTokens += r.output_tokens ?? 0;
