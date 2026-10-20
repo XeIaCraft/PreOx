@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, use, useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { Suspense, use, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, BookOpen, Check, ChevronDown, ChevronRight, Combine, History, ListTree, PenLine, Play, RotateCcw, Square, Trash2 } from "lucide-react";
@@ -630,7 +630,21 @@ function CreateMergeModal({ setup, onClose, onStarted }: { setup: MergeSetupData
     setEstimate(null);
   }
 
+  // The title field sits at the top of the window, often scrolled out of sight on a phone: say what's missing instead of a greyed-out button.
+  const titleRef = useRef<HTMLInputElement>(null);
+  const [titleMissing, setTitleMissing] = useState(false);
+
   function handleStart() {
+    if (!title.trim()) {
+      setTitleMissing(true);
+      titleRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      titleRef.current?.focus();
+      return;
+    }
+    if (!model.trim()) {
+      toast("Choisissez un modèle.", { variant: "error" });
+      return;
+    }
     startStart(async () => {
       const result = await startMerge({ title, bookIds: selected, includeDrafts, provider, model });
       if (result.error) {
@@ -656,7 +670,7 @@ function CreateMergeModal({ setup, onClose, onStarted }: { setup: MergeSetupData
           <Button variant="ghost" onClick={onClose}>
             Annuler
           </Button>
-          <Button onClick={handleStart} disabled={starting || selected.length === 0 || !title.trim() || !model.trim()}>
+          <Button onClick={handleStart} disabled={starting || selected.length === 0}>
             <ListTree className="h-4 w-4" /> {starting ? "Lancement…" : "Établir la table des matières"}
           </Button>
         </>
@@ -665,7 +679,23 @@ function CreateMergeModal({ setup, onClose, onStarted }: { setup: MergeSetupData
       <div className="space-y-5">
         <div className="space-y-1.5">
           <Label htmlFor="merge-title">Titre</Label>
-          <Input id="merge-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex. Anesthésie-réanimation — référentiel" />
+          <Input
+            id="merge-title"
+            ref={titleRef}
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              if (e.target.value.trim()) setTitleMissing(false);
+            }}
+            placeholder="Ex. Anesthésie-réanimation — référentiel"
+            aria-invalid={titleMissing}
+            aria-describedby={titleMissing ? "merge-title-missing" : undefined}
+          />
+          {titleMissing && (
+            <p id="merge-title-missing" className="text-xs text-danger">
+              Donnez un titre à la notion pour l&apos;établir.
+            </p>
+          )}
         </div>
 
         <fieldset>
