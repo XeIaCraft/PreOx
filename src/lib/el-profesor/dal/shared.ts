@@ -280,20 +280,51 @@ export async function selectInChunks<T>(
  */
 async function runChunkUntruncated<T>(
   chunk: string[],
-  runQuery: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+  runQuery: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  strict = false
 ): Promise<T[]> {
   const { data, error } = await runQuery(chunk);
   if (error) {
+    if (strict) throw new Error(`Lecture partielle impossible : ${error.message}`);
     console.error("[el-profesor/dal] chunked query failed:", error.message);
     return [];
   }
   const rows = data ?? [];
   if (rows.length >= POSTGREST_MAX_ROWS && chunk.length > 1) {
     const mid = Math.ceil(chunk.length / 2);
-    const [first, second] = await Promise.all([runChunkUntruncated(chunk.slice(0, mid), runQuery), runChunkUntruncated(chunk.slice(mid), runQuery)]);
+    const [first, second] = await Promise.all([runChunkUntruncated(chunk.slice(0, mid), runQuery, strict), runChunkUntruncated(chunk.slice(mid), runQuery, strict)]);
     return [...first, ...second];
   }
   return rows;
+}
+
+/**
+ * selectInChunks for callers that must never work on a partial result (the
+ * book fusion: a chunk lost under load once left 582 blocks and cards of
+ * shared source fiches without a merged fiche to go to). A failed chunk is
+ * retried once, then throws; chunks run a few at a time, not all at once.
+ */
+export async function selectInChunksStrict<T>(
+  ids: string[],
+  runQuery: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  concurrency = 4
+): Promise<T[]> {
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK_SIZE) chunks.push(ids.slice(i, i + IN_CHUNK_SIZE));
+  const results: T[][] = new Array(chunks.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < chunks.length) {
+      const i = next++;
+      try {
+        results[i] = await runChunkUntruncated(chunks[i], runQuery, true);
+      } catch {
+        results[i] = await runChunkUntruncated(chunks[i], runQuery, true);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, chunks.length) }, worker));
+  return results.flat();
 }
 
 const POSTGREST_MAX_ROWS = 1000;

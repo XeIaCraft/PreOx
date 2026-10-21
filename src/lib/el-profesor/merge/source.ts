@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, ElProfesorFicheBlockRow, ElProfesorFlashcardRow } from "@/lib/supabase/types";
-import { selectAllPages, selectInChunks } from "../dal/shared";
+import { selectAllPages, selectInChunksStrict } from "../dal/shared";
 import type { BlockContent, BlockType, Citation, FlashcardSide } from "../types";
 import type { SourceFicheRef } from "./types";
 
@@ -110,12 +110,12 @@ export async function loadSourceContent(
   includeDrafts: boolean
 ): Promise<{ blocksByFiche: Map<string, SourceBlock[]>; cardsByFiche: Map<string, SourceCard[]> }> {
   const [blockRows, cardRows] = await Promise.all([
-    selectInChunks(ficheIds, (chunk) => {
+    selectInChunksStrict(ficheIds, (chunk) => {
       let q = supabase.from("el_profesor_fiche_blocks").select("*").in("fiche_id", chunk);
       if (!includeDrafts) q = q.eq("status", "published");
       return q;
     }),
-    selectInChunks(ficheIds, (chunk) => {
+    selectInChunksStrict(ficheIds, (chunk) => {
       let q = supabase.from("el_profesor_flashcards").select("*").in("fiche_id", chunk).neq("status", "replaced");
       if (!includeDrafts) q = q.eq("status", "published");
       return q;

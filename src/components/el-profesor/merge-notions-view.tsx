@@ -17,6 +17,7 @@ import {
   generateMergeChapters,
   getMergeJobs,
   getMergeToc,
+  getMergeTocChapter,
   retryMerge,
   runMergeNow,
   startMerge,
@@ -25,6 +26,7 @@ import {
   type MergeSetupData,
   type MergeToc,
   type MergeTocChapter,
+  type MergeTocFiche,
 } from "@/app/apps/el-profesor/actions/merge";
 import { bulkPublishChapters } from "@/app/apps/el-profesor/actions/extraction";
 import { formatUsd, estimateCostUsd } from "@/lib/el-profesor/ai-pricing";
@@ -528,8 +530,8 @@ function MergeTocPanel({ job, onChanged }: { job: MergeJobView; onChanged: () =>
                                     >
                                       <span className="block text-sm text-foreground">{c.title}</span>
                                       <span className="block text-xs tabular-nums text-foreground-subtle">
-                                        {c.fiches.length} fiche{c.fiches.length > 1 ? "s" : ""} · {nf.format(c.fiches.reduce((n, f) => n + f.sources.length, 0))} source
-                                        {c.fiches.reduce((n, f) => n + f.sources.length, 0) > 1 ? "s" : ""}
+                                        {c.ficheCount} fiche{c.ficheCount > 1 ? "s" : ""} · {nf.format(c.sourceCount)} source
+                                        {c.sourceCount > 1 ? "s" : ""}
                                         {c.state === "held" && c.costUsd != null && ` · ≈ ${formatUsd(c.costUsd)}`}
                                       </span>
                                     </button>
@@ -537,22 +539,7 @@ function MergeTocPanel({ job, onChanged }: { job: MergeJobView; onChanged: () =>
                                       {st.label(c.lot)}
                                     </Badge>
                                   </div>
-                                  {isOpen && (
-                                    <ol className="space-y-1.5 border-t border-border/70 px-3 py-2 pl-9 text-xs">
-                                      {c.fiches.map((f, fi) => (
-                                        <li key={fi}>
-                                          <p className="font-medium text-foreground">{f.title}</p>
-                                          <ul className="mt-0.5 space-y-0.5 text-foreground-muted">
-                                            {f.sources.map((src, k) => (
-                                              <li key={k}>
-                                                <span className="text-foreground-subtle">{shortBookTitle(src.book)} ·</span> {src.title}
-                                              </li>
-                                            ))}
-                                          </ul>
-                                        </li>
-                                      ))}
-                                    </ol>
-                                  )}
+                                  {isOpen && <ChapterFiches jobId={job.id} chapterId={c.chapterId} />}
                                 </li>
                               );
                             })}
@@ -568,6 +555,47 @@ function MergeTocPanel({ job, onChanged }: { job: MergeJobView; onChanged: () =>
         </div>
       )}
     </section>
+  );
+}
+
+/** A chapter's merged fiches and their sources, loaded on opening (a big fusion's full list is several MB). */
+function ChapterFiches({ jobId, chapterId }: { jobId: string; chapterId: string }) {
+  const [fiches, setFiches] = useState<MergeTocFiche[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void getMergeTocChapter(jobId, chapterId).then((result) => {
+      if (cancelled) return;
+      if ("error" in result) setError(result.error);
+      else setFiches(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, chapterId]);
+  return (
+    <div className="border-t border-border/70 px-3 py-2 pl-9 text-xs">
+      {error ? (
+        <p className="text-danger">{error}</p>
+      ) : !fiches ? (
+        <p className="text-foreground-subtle">Chargement…</p>
+      ) : (
+        <ol className="space-y-1.5">
+          {fiches.map((f, fi) => (
+            <li key={fi}>
+              <p className="font-medium text-foreground">{f.title}</p>
+              <ul className="mt-0.5 space-y-0.5 text-foreground-muted">
+                {f.sources.map((src, k) => (
+                  <li key={k}>
+                    <span className="text-foreground-subtle">{shortBookTitle(src.book)} ·</span> {src.title}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }
 

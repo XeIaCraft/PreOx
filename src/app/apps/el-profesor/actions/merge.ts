@@ -332,7 +332,8 @@ export interface MergeTocChapter {
   /** held: not chosen yet; writing: in the lot being written; written: done (draft or published). */
   state: "held" | "writing" | "written";
   lot: number;
-  fiches: MergeTocFiche[];
+  ficheCount: number;
+  sourceCount: number;
   /** Estimated cost of writing it, at the fusion's model. */
   costUsd: number | null;
   sourceChars: number;
@@ -360,19 +361,25 @@ export async function getMergeToc(jobId: string): Promise<MergeToc | { error: st
   const { data: job } = await supabase.from("el_profesor_merge_jobs").select("*").eq("id", jobId).maybeSingle();
   if (!job?.plan) return { error: "La table des matières n'est pas encore établie." };
   const plan = job.plan as unknown as MergePlan;
-  const tasks = await selectAllPages<{ status: string; round: number; input: unknown }>((from, to) =>
-    supabase.from("el_profesor_merge_tasks").select("status, round, input").eq("job_id", jobId).eq("stage", "fiche").order("ref_key").range(from, to)
+  // Only what the list needs (a big fusion holds several MB of task inputs); a chapter's fiches come with getMergeTocChapter.
+  type LightTask = { status: string; round: number; chapterId: string; chars: number; sources: { ficheId: string }[] };
+  const tasks = await selectAllPages<LightTask>(
+    (from, to) =>
+      supabase
+        .from("el_profesor_merge_tasks")
+        .select("status, round, chapterId:input->>chapterId, chars:input->chars, sources:input->sources")
+        .eq("job_id", jobId)
+        .eq("stage", "fiche")
+        .order("ref_key")
+        .range(from, to) as unknown as PromiseLike<{ data: LightTask[] | null; error: { message: string } | null }>
   );
-  const byChapter = new Map<string, { status: string; round: number; input: FicheTaskInput }[]>();
-  for (const t of tasks) {
-    const input = t.input as FicheTaskInput;
-    byChapter.set(input.chapterId, [...(byChapter.get(input.chapterId) ?? []), { ...t, input }]);
-  }
+  const byChapter = new Map<string, LightTask[]>();
+  for (const t of tasks) byChapter.set(t.chapterId, [...(byChapter.get(t.chapterId) ?? []), t]);
   const writingLot = job.stage === "fiches" || job.stage === "repair" ? job.round : -1;
   const chapters = new Map(
     flattenChapters(plan).map((c) => {
-      const own = (byChapter.get(c.chapterId) ?? []).sort((a, b) => a.input.orderIndex - b.input.orderIndex);
-      const chars = own.map((t) => t.input.chars);
+      const own = byChapter.get(c.chapterId) ?? [];
+      const chars = own.map((t) => Number(t.chars) || 0);
       const lot = Math.max(0, ...own.map((t) => t.round));
       const state: MergeTocChapter["state"] = own.some((t) => t.status === "held") ? "held" : lot === writingLot ? "writing" : "written";
       return [
@@ -382,7 +389,8 @@ export async function getMergeToc(jobId: string): Promise<MergeToc | { error: st
           title: c.title,
           state,
           lot,
-          fiches: own.map((t) => ({ title: t.input.title, sources: t.input.sources.map((src) => ({ book: src.bookTitle, chapter: src.chapterTitle, title: src.title })) })),
+          ficheCount: own.length,
+          sourceCount: own.reduce((n, t) => n + (t.sources?.length ?? 0), 0),
           costUsd: estimateLot(chars, job.provider, job.model).costUsd,
           sourceChars: chars.reduce((a, b) => a + b, 0),
         } satisfies MergeTocChapter,
@@ -391,7 +399,7 @@ export async function getMergeToc(jobId: string): Promise<MergeToc | { error: st
   );
 
   const catalog = await loadSourceCatalog(supabase, job.source_book_ids, job.include_drafts);
-  const used = new Set(tasks.flatMap((t) => (t.input as FicheTaskInput).sources.map((src) => src.ficheId)));
+  const used = new Set(tasks.flatMap((t) => (t.sources ?? []).map((src) => src.ficheId)));
   const now = new Set(catalog.fiches.map((f) => f.ficheId));
   const added = catalog.fiches.filter((f) => !used.has(f.ficheId));
   return {
@@ -407,6 +415,23 @@ export async function getMergeToc(jobId: string): Promise<MergeToc | { error: st
       goneSince: [...used].filter((id) => !now.has(id)).length,
     },
   };
+}
+
+/** One chapter's merged fiches and the source fiches each one fuses, in order — loaded when the chapter is opened. */
+export async function getMergeTocChapter(jobId: string, chapterId: string): Promise<MergeTocFiche[] | { error: string }> {
+  await requireElProfesorAdmin();
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("el_profesor_merge_tasks")
+    .select("input")
+    .eq("job_id", jobId)
+    .eq("stage", "fiche")
+    .eq("input->>chapterId", chapterId);
+  if (error) return { error: "Chapitre introuvable." };
+  return (data ?? [])
+    .map((t) => t.input as unknown as FicheTaskInput)
+    .sort((a, b) => a.orderIndex - b.orderIndex)
+    .map((f) => ({ title: f.title, sources: f.sources.map((src) => ({ book: src.bookTitle, chapter: src.chapterTitle, title: src.title })) }));
 }
 
 /** Writes the chosen chapters now (one lot): the rest of the table of contents waits, at no cost. */

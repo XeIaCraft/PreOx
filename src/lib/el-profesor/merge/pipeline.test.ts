@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({ db: null as unknown as FakeDb, prompts: [] as stri
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.db }));
 vi.mock("@/lib/el-profesor/dal/shared", () => ({
   selectInChunks: async (ids: string[], run: (chunk: string[]) => PromiseLike<{ data: unknown[] | null }>) => (ids.length ? ((await run(ids)).data ?? []) : []),
+  selectInChunksStrict: async (ids: string[], run: (chunk: string[]) => PromiseLike<{ data: unknown[] | null }>) => (ids.length ? ((await run(ids)).data ?? []) : []),
   selectAllPages: async (build: (from: number, to: number) => PromiseLike<{ data: unknown[] | null }>) => {
     const all: unknown[] = [];
     for (let from = 0; ; from += 1000) {
@@ -342,6 +343,30 @@ describe.each(["gemini", "claude"] as const)("fusion de bout en bout (%s)", (pro
     const cited = new Set(out.blocks.flatMap((b) => (b.citations as { sourceBlockId?: string }[]).map((c) => c.sourceBlockId)));
     expect(cited.has(added.id as string)).toBe(true);
     for (const s of out.subs) expect(s.source_fiche_ids as string[]).not.toContain(peep.id);
+  });
+
+  it("gives a fiche to shared-source items the table of contents missed", async () => {
+    const { job, merged } = seed(h.db, provider);
+    const ready = await runUntil(h.db, job.id, ["ready", "failed"]);
+    // As if a chunk of content had not been read: the routed ids of one shared source are dropped everywhere.
+    const tasks = h.db.table("el_profesor_merge_tasks").filter((t) => t.job_id === job.id && t.stage === "fiche");
+    const routedSource = tasks.flatMap((t) => (t.input as { sources: { ficheId: string; blockIds?: string[] }[] }).sources).find((s) => s.blockIds?.length);
+    expect(routedSource).toBeTruthy();
+    const lost = new Set(tasks.flatMap((t) => (t.input as { sources: { ficheId: string; blockIds?: string[] }[] }).sources).filter((s) => s.ficheId === routedSource!.ficheId).flatMap((s) => s.blockIds ?? []));
+    for (const t of tasks)
+      for (const s of (t.input as { sources: { ficheId: string; blockIds?: string[]; cardIds?: string[] }[] }).sources)
+        if (s.ficheId === routedSource!.ficheId) {
+          s.blockIds = [];
+          s.cardIds = [];
+        }
+
+    const chapterIds = flattenChapters(ready.plan as unknown as MergePlan).map((c) => c.chapterId);
+    await releaseChapters(h.db as never, ready as unknown as ElProfesorMergeJobRow, chapterIds);
+    expect((await runUntil(h.db, job.id, ["done", "failed"])).stage).toBe("done");
+    const out = mergedContent(h.db, merged.id);
+    const cited = new Set(out.blocks.flatMap((b) => (b.citations as { sourceBlockId?: string }[]).map((c) => c.sourceBlockId)));
+    const heldCards = new Set(out.cards.flatMap((c) => c.source_flashcard_ids as string[]));
+    for (const id of lost) expect(cited.has(id) || heldCards.has(id), `élément sans fiche : ${id}`).toBe(true);
   });
 
   it("finishes, loses nothing, duplicates nothing, and builds a readable book", async () => {

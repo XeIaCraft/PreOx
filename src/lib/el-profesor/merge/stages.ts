@@ -469,30 +469,56 @@ export async function releaseChapters(supabase: Admin, job: Job, chapterIds: str
     const sourceIds = [...new Set(held.flatMap((t) => (t.input as unknown as FicheTaskInput).sources.map((s) => s.ficheId)))];
     const content = await loadSourceContent(supabase, sourceIds, job.include_drafts);
     const itemIds = (ficheId: string) => [...(content.blocksByFiche.get(ficheId) ?? []), ...(content.cardsByFiche.get(ficheId) ?? [])].map((x) => x.id);
-    const known = new Map<string, Set<string>>();
-    for (const t of all)
-      for (const s of (t.input as unknown as FicheTaskInput).sources)
-        if (s.blockIds) {
-          const set = known.get(s.ficheId) ?? new Set<string>();
-          [...s.blockIds, ...(s.cardIds ?? [])].forEach((id) => set.add(id));
-          known.set(s.ficheId, set);
-        }
+
+    // Every fiche task's input, editable: released ones are written below, held ones too when they receive items.
+    const inputs = new Map(all.map((t) => [t.id, JSON.parse(JSON.stringify(t.input)) as FicheTaskInput]));
+    const heldIds = new Set(held.map((t) => t.id));
+    const touchedHeld = new Set<string>();
+
+    // A shared source's blocks and cards that no merged fiche has (added since the table of contents, or not
+    // read when it was made): shared out by subject among every merged fiche using that source. A share that
+    // falls to a fiche already written goes to one of this lot instead — nothing is left without a fiche.
+    const users = new Map<string, Task[]>();
+    for (const t of all) for (const s of inputs.get(t.id)!.sources) if (s.blockIds) users.set(s.ficheId, [...(users.get(s.ficheId) ?? []), t]);
+    for (const sourceId of sourceIds) {
+      const tasksOfSource = users.get(sourceId);
+      if (!tasksOfSource?.length) continue;
+      const known = new Set(tasksOfSource.flatMap((t) => inputs.get(t.id)!.sources.filter((s) => s.ficheId === sourceId).flatMap((s) => [...(s.blockIds ?? []), ...(s.cardIds ?? [])])));
+      const fresh = [
+        ...(content.blocksByFiche.get(sourceId) ?? []).map((b) => ({ id: b.id, text: blockText(b) })),
+        ...(content.cardsByFiche.get(sourceId) ?? []).map((c) => ({ id: c.id, text: cardText(c) })),
+      ].filter((x) => !known.has(x.id));
+      if (!fresh.length) continue;
+      const open = tasksOfSource.filter((t) => t.status === "held");
+      const inLot = open.filter((t) => heldIds.has(t.id));
+      if (!inLot.length) continue; // only chapters of later lots use it: they'll take it when they're written
+      const targets = open.map((t) => ({ key: t.id, profile: [inputs.get(t.id)!.title, inputs.get(t.id)!.title, inputs.get(t.id)!.objective].join(" ") }));
+      const routed = routeItems(fresh, targets);
+      for (const item of fresh) {
+        const taskId = routed.get(item.id) ?? inLot[0].id;
+        const source = inputs.get(taskId)!.sources.find((s) => s.ficheId === sourceId)!;
+        source.blockIds = [...(source.blockIds ?? []), item.id];
+        source.cardIds = [...(source.cardIds ?? []), item.id];
+        if (!heldIds.has(taskId)) touchedHeld.add(taskId);
+      }
+    }
 
     const released: { task: Task; input: FicheTaskInput }[] = [];
     const dropped: Task[] = [];
     for (const t of held) {
-      const input = JSON.parse(JSON.stringify(t.input)) as FicheTaskInput;
+      const input = inputs.get(t.id)!;
       input.sources = input.sources.filter((s) => itemIds(s.ficheId).length > 0);
-      for (const s of input.sources) {
-        if (!s.blockIds) continue;
-        const seen = known.get(s.ficheId)!;
-        const fresh = itemIds(s.ficheId).filter((id) => !seen.has(id));
-        fresh.forEach((id) => seen.add(id));
-        s.blockIds = [...s.blockIds, ...fresh];
-        s.cardIds = [...(s.cardIds ?? []), ...fresh];
-      }
       if (input.sources.length) released.push({ task: t, input });
       else dropped.push(t);
+    }
+    // Held fiches of later lots that received a share: their input is saved, they stay held.
+    const byId = new Map(all.map((t) => [t.id, t]));
+    for (const part of chunk([...touchedHeld], 200)) {
+      const { error } = await supabase.from("el_profesor_merge_tasks").upsert(
+        part.map((id) => ({ id, job_id: job.id, stage: "fiche" as const, ref_key: byId.get(id)!.ref_key, input: inputs.get(id) as unknown as Json, status: "held" as const, round: 0 })),
+        { onConflict: "id" }
+      );
+      if (error) throw new GeminiError(`Répartition impossible : ${error.message}`);
     }
 
     const plannedChapters = new Map(flattenChapters(planOf(job)).map((c) => [c.chapterId, c]));
