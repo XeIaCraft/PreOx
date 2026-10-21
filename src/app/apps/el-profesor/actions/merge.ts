@@ -17,7 +17,8 @@ import { selectAllPages } from "@/lib/el-profesor/dal/shared";
 import { estimateLot, estimateMerge, type MergeEstimate } from "@/lib/el-profesor/merge/estimate";
 import { flattenChapters } from "@/lib/el-profesor/merge/plan";
 import { loadSourceCatalog } from "@/lib/el-profesor/merge/source";
-import { releaseChapters, type FicheTaskInput } from "@/lib/el-profesor/merge/stages";
+import { redoFailedRepairs, redoableRepairs, releaseChapters, type FicheTaskInput } from "@/lib/el-profesor/merge/stages";
+import { estimateCostUsd } from "@/lib/el-profesor/ai-pricing";
 import type { MergePlan, MergeProvider, MergeStats } from "@/lib/el-profesor/merge/types";
 import type { ElProfesorMergeJobRow, ElProfesorMergeStage } from "@/lib/supabase/types";
 
@@ -186,6 +187,8 @@ export interface MergeJobView {
   progress: { waiting: number; running: number; submitted: number; done: number; failed: number };
   lastTaskError: string | null;
   chapters: { total: number; published: number; draftIds: string[]; firstDraftId: string | null };
+  /** Repairs the AI couldn't do (credit exhausted…), in chapters not yet published: they can be done again. */
+  repairRedo: { fiches: number; costUsd: number | null } | null;
 }
 
 export async function getMergeJobs(): Promise<MergeJobView[]> {
@@ -253,9 +256,43 @@ export async function getMergeJobs(): Promise<MergeJobView[]> {
         progress,
         lastTaskError,
         chapters: chaptersOf(j.book_id),
+        repairRedo: j.stage === "ready" || j.stage === "done" ? await repairRedoOf(j as ElProfesorMergeJobRow) : null,
       };
     })
   );
+}
+
+/** How many failed repairs can be done again, and roughly what that costs (from the repairs already done). */
+async function repairRedoOf(job: ElProfesorMergeJobRow): Promise<MergeJobView["repairRedo"]> {
+  const supabase = createAdminClient();
+  const tasks = await redoableRepairs(supabase, job);
+  if (!tasks.length) return null;
+  const done = await selectAllPages<{ input_tokens: number | null; output_tokens: number | null }>((from, to) =>
+    supabase.from("el_profesor_merge_tasks").select("input_tokens, output_tokens").eq("job_id", job.id).eq("stage", "repair").eq("status", "done").order("id").range(from, to)
+  );
+  const avg = (key: "input_tokens" | "output_tokens") => (done.length ? done.reduce((s, t) => s + (t[key] ?? 0), 0) / done.length : 0);
+  const priced = job.provider === "claude" ? `claude:${job.model}` : job.model;
+  return { fiches: tasks.length, costUsd: done.length ? estimateCostUsd(priced, avg("input_tokens") * tasks.length, avg("output_tokens") * tasks.length) : null };
+}
+
+/** « Refaire le rattrapage » : the copies left by failed repairs come out and the AI integrates the missing items again. */
+export async function redoMergeRepair(jobId: string): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const supabase = createAdminClient();
+  const { data: job } = await supabase.from("el_profesor_merge_jobs").select("*").eq("id", jobId).maybeSingle();
+  if (!job) return { error: "Fusion introuvable." };
+  if (job.stage !== "ready" && job.stage !== "done") return { error: "Attendez la fin du lot en cours." };
+  try {
+    const result = await redoFailedRepairs(supabase, job as ElProfesorMergeJobRow);
+    await kickMergeQueue();
+    revalidatePath("/apps/el-profesor");
+    revalidatePath("/apps/el-profesor/notions");
+    return {
+      success: `Rattrapage relancé pour ${result.fiches} fiche${result.fiches > 1 ? "s" : ""} (${result.blocksRemoved} bloc${result.blocksRemoved > 1 ? "s" : ""} et ${result.cardsRemoved} carte${result.cardsRemoved > 1 ? "s" : ""} copiés tels quels retirés, l'IA les réintègre).`,
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Relance impossible." };
+  }
 }
 
 export async function runMergeNow(): Promise<ActionState> {

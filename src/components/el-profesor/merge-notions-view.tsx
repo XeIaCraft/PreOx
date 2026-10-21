@@ -18,6 +18,7 @@ import {
   getMergeJobs,
   getMergeToc,
   getMergeTocChapter,
+  redoMergeRepair,
   retryMerge,
   runMergeNow,
   startMerge,
@@ -134,6 +135,7 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmRedo, setConfirmRedo] = useState(false);
   const active = isActive(job);
   const STAGES = stagesOf(job);
   const inLot = STAGES === LOT_STAGES;
@@ -221,7 +223,9 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
           {cost != null && `Table des matières ≈ ${formatUsd(Math.max(0, cost - lotsCost))}`}
           {lots.map((r) => {
             const c = estimateCostUsd(priced, r.inputTokens, r.outputTokens);
-            return ` · Lot ${r.round} (${new Date(r.finishedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short" })}) : ${r.chapters} chapitre${r.chapters > 1 ? "s" : ""}${c != null ? `, ≈ ${formatUsd(c)}` : ""}`;
+            const date = new Date(r.finishedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short" });
+            const what = r.kind === "repair" ? `Rattrapage refait (${date}) : ${r.fiches} fiche${r.fiches > 1 ? "s" : ""}` : `Lot ${r.round} (${date}) : ${r.chapters} chapitre${r.chapters > 1 ? "s" : ""}`;
+            return ` · ${what}${c != null ? `, ≈ ${formatUsd(c)}` : ""}`;
           })}
         </p>
       )}
@@ -235,6 +239,48 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
           {(s.fichesSplit ?? 0) > 0 && ` ${s.fichesSplit} sujet(s) trop longs pour une seule fiche ont été répartis sur plusieurs fiches.`}
           {(s.divergences ?? 0) > 0 && ` ${nf.format(s.divergences ?? 0)} divergence(s) entre livres citée(s).`}
         </p>
+      )}
+
+      {job.repairRedo && (
+        <div className="mt-4 rounded-[var(--radius-md)] border border-accent/40 bg-accent-tint/40 p-3 text-sm">
+          <p className="text-foreground">
+            Le rattrapage n&apos;a pas pu être fait par l&apos;IA pour {nf.format(job.repairRedo.fiches)} fiche{job.repairRedo.fiches > 1 ? "s" : ""} (crédit épuisé ou erreur) : ce qui
+            leur manquait y a été copié tel quel, « à vérifier ».
+          </p>
+          <Button className="mt-2" size="sm" variant="secondary" disabled={pending} onClick={() => setConfirmRedo(true)}>
+            <RotateCcw className="h-3.5 w-3.5" /> Refaire le rattrapage
+            {job.repairRedo.costUsd != null && ` · ≈ ${formatUsd(job.repairRedo.costUsd)}`}
+          </Button>
+        </div>
+      )}
+      {confirmRedo && job.repairRedo && (
+        <Modal
+          title="Refaire le rattrapage ?"
+          description="Pour chacune de ces fiches, les blocs et cartes copiés tels quels sont retirés, puis l'IA les intègre au texte, avec le « À retenir » s'il manque. Vérifiez d'abord que votre crédit IA est rechargé."
+          onClose={() => setConfirmRedo(false)}
+          size="sm"
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setConfirmRedo(false)}>
+                Annuler
+              </Button>
+              <Button
+                disabled={pending}
+                onClick={() => {
+                  setConfirmRedo(false);
+                  run(() => redoMergeRepair(job.id));
+                }}
+              >
+                Refaire ({nf.format(job.repairRedo.fiches)} fiches)
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-foreground-muted">
+            Seules les copies exactes encore marquées « à vérifier » sont retirées : ce que l&apos;IA a rédigé et vos modifications restent. Si l&apos;IA échoue de
+            nouveau, les éléments manquants sont recopiés tels quels — rien n&apos;est perdu. Les chapitres déjà publiés ne sont pas concernés.
+          </p>
+        </Modal>
       )}
 
       {s.chapters != null && (job.stage === "ready" || job.stage === "done" || inLot) && <MergeTocPanel job={job} onChanged={onChanged} />}

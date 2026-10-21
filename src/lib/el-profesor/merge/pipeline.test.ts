@@ -8,7 +8,8 @@ import { FakeDb } from "@/test/fake-supabase";
 // does, every block, card and value of the sources must end up in the
 // merged book, nothing duplicated, and the job must finish.
 
-const h = vi.hoisted(() => ({ db: null as unknown as FakeDb, prompts: [] as string[], batches: new Map<string, { customId: string; prompt: string }[]>() }));
+const h = vi.hoisted(() => ({ db: null as unknown as FakeDb, prompts: [] as string[], batches: new Map<string, { customId: string; prompt: string }[]>(), creditGone: false }));
+const isRepairPrompt = (p: string) => !p.includes("Conçois les PARTIES") && !p.includes("Tu ranges") && !p.includes("Tu organises") && !p.includes("Tu rédiges");
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.db }));
 vi.mock("@/lib/el-profesor/dal/shared", () => ({
@@ -32,6 +33,7 @@ vi.mock("@/lib/el-profesor/gemini", () => ({
   isQuotaOrCapacityError: () => false,
   callGeminiTextJson: async (_config: unknown, prompt: string) => {
     h.prompts.push(prompt);
+    if (h.creditGone && isRepairPrompt(prompt)) throw new Error("Your credit balance is too low to access the API.");
     return { result: fakeAi(prompt), model: "gemini-flash-latest", inputTokens: Math.round(prompt.length / 4), outputTokens: 500 };
   },
 }));
@@ -48,13 +50,14 @@ vi.mock("@/lib/el-profesor/anthropic", async (importOriginal) => {
     getClaudeBatchResults: async (_key: string, batchId: string) =>
       (h.batches.get(batchId) ?? []).map((r) => {
         h.prompts.push(r.prompt);
+        if (h.creditGone && isRepairPrompt(r.prompt)) return { customId: r.customId, outcome: "errored" as const, message: "Your credit balance is too low to access the API.", usage: { inputTokens: 0, outputTokens: 0 } };
         return { customId: r.customId, outcome: "succeeded" as const, output: fakeAi(r.prompt), usage: { inputTokens: 1000, outputTokens: 300 } };
       }),
   };
 });
 
 import { processMergeJobs } from "./pipeline";
-import { releaseChapters } from "./stages";
+import { redoFailedRepairs, releaseChapters } from "./stages";
 import { flattenChapters } from "./plan";
 import type { MergePlan } from "./types";
 import type { ElProfesorMergeJobRow } from "@/lib/supabase/types";
@@ -291,6 +294,53 @@ describe.each(["gemini", "claude"] as const)("fusion de bout en bout (%s)", (pro
     h.db = new FakeDb();
     h.prompts = [];
     h.batches = new Map();
+    h.creditGone = false;
+  });
+
+  it("redoes the repairs the AI couldn't do: copies out, missing items integrated, nothing lost or doubled", async () => {
+    const { job, merged, sourceBookIds } = seed(h.db, provider);
+    const ready = await runUntil(h.db, job.id, ["ready", "failed"]);
+    const chapterIds = flattenChapters(ready.plan as unknown as MergePlan).map((c) => c.chapterId);
+    h.creditGone = true;
+    await releaseChapters(h.db as never, ready as unknown as ElProfesorMergeJobRow, chapterIds);
+    // A refused call is retried a few minutes later (three tries): time is fast-forwarded between runs.
+    for (let i = 0; i < 20; i++) {
+      await processMergeJobs({ budgetMs: 280_000, startBeforeMs: 270_000 });
+      for (const t of h.db.table("el_profesor_merge_tasks")) if (t.status === "waiting") t.next_attempt_at = new Date(0).toISOString();
+      if (h.db.table("el_profesor_merge_jobs").find((j) => j.id === job.id)!.stage === "done") break;
+    }
+    const afterFail = h.db.table("el_profesor_merge_jobs").find((j) => j.id === job.id)!;
+    expect(afterFail.stage).toBe("done");
+    const failedRepairs = h.db.table("el_profesor_merge_tasks").filter((t) => t.job_id === job.id && t.stage === "repair" && t.status === "failed");
+    expect(failedRepairs.length).toBeGreaterThan(0);
+    const before = mergedContent(h.db, merged.id);
+    const verbatimBefore = before.blocks.filter((b) => b.needs_review).length + before.cards.filter((c) => c.needs_review).length;
+    expect(verbatimBefore).toBeGreaterThan(0);
+
+    h.creditGone = false;
+    const redo = await redoFailedRepairs(h.db as never, afterFail as unknown as ElProfesorMergeJobRow);
+    expect(redo.fiches).toBe(failedRepairs.length);
+    expect(redo.blocksRemoved + redo.cardsRemoved).toBeGreaterThan(0);
+    // The queue waits two minutes before taking the repairs again: let time pass.
+    for (const t of h.db.table("el_profesor_merge_tasks")) if (t.status === "waiting") t.next_attempt_at = new Date(0).toISOString();
+    const done = await runUntil(h.db, job.id, ["done", "failed"]);
+    expect(done.stage).toBe("done");
+    expect(h.db.table("el_profesor_merge_tasks").filter((t) => t.job_id === job.id && t.stage === "repair" && t.status === "failed")).toHaveLength(0);
+    expect(((done.stats as { rounds?: { kind?: string }[] }).rounds ?? []).some((r) => r.kind === "repair")).toBe(true);
+
+    const out = mergedContent(h.db, merged.id);
+    const src = sourceContent(h.db, sourceBookIds);
+    const cited = new Set(out.blocks.flatMap((b) => (b.citations as { sourceBlockId?: string }[]).map((c) => c.sourceBlockId)));
+    for (const b of src.blocks) expect(cited.has(b.id as string), `bloc source non repris : ${JSON.stringify(b.content)}`).toBe(true);
+    for (const c of src.cards) {
+      const holders = out.cards.filter((m) => (m.source_flashcard_ids as string[]).includes(c.id as string));
+      expect(holders.length, `carte source non reprise : ${JSON.stringify(c.front)}`).toBeGreaterThanOrEqual(1);
+      expect(holders.length).toBeLessThanOrEqual(2);
+    }
+    for (const f of out.fiches) {
+      const blocks = out.blocks.filter((b) => b.fiche_id === f.id).sort((a, b) => (a.order_index as number) - (b.order_index as number));
+      expect(blocks[blocks.length - 1].block_type, `fiche sans À retenir : ${f.title}`).toBe("a_retenir");
+    }
   });
 
   it("stops at the table of contents: every fiche placed, nothing written yet", async () => {

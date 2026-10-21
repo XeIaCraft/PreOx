@@ -67,6 +67,8 @@ export interface MergeStats {
 
 export interface MergeRound {
   round: number;
+  /** A lot that only re-ran failed repairs (« Refaire le rattrapage »). */
+  kind?: "repair";
   chapters: number;
   fiches: number;
   inputTokens: number;

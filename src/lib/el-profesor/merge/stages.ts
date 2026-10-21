@@ -1086,10 +1086,115 @@ export async function finalizeRepair(ctx: StageContext): Promise<void> {
       ...usage,
       rounds: [
         ...(previous.rounds ?? []).filter((r) => r.round !== job.round),
-        { round: job.round, chapters: chapterIds.length, fiches: lot.length, inputTokens: lotUsage.inputTokens, outputTokens: lotUsage.outputTokens, finishedAt: new Date().toISOString() },
+        lot.length
+          ? { round: job.round, chapters: chapterIds.length, fiches: lot.length, inputTokens: lotUsage.inputTokens, outputTokens: lotUsage.outputTokens, finishedAt: new Date().toISOString() }
+          : { round: job.round, chapters: 0, fiches: tasks.length, kind: "repair" as const, inputTokens: lotUsage.inputTokens, outputTokens: lotUsage.outputTokens, finishedAt: new Date().toISOString() },
       ],
     }),
   });
+}
+
+// -- Refaire un rattrapage ---------------------------------------------------
+
+/** Failed repairs that can be done again: not a fiche edited by hand meanwhile, and in a chapter not yet published. */
+export async function redoableRepairs(supabase: Admin, job: Job): Promise<Task[]> {
+  const failed = (await stageTasks(supabase, job.id, "repair")).filter((t) => t.status === "failed" && !(t.error ?? "").includes("modifiée"));
+  if (!failed.length) return [];
+  const chapterIds = [...new Set(failed.map((t) => (t.input as unknown as RepairInput).chapterId))];
+  const draft = new Set<string>();
+  for (const part of chunk(chapterIds, 150)) {
+    const { data } = await supabase.from("el_profesor_chapters").select("id").in("id", part).eq("status", "draft_ready");
+    (data ?? []).forEach((c) => draft.add(c.id));
+  }
+  return failed.filter((t) => draft.has((t.input as unknown as RepairInput).chapterId));
+}
+
+/**
+ * A repair the AI couldn't do (credit exhausted…) left the missing source
+ * blocks and cards copied as they are, « à vérifier ». Once the AI is
+ * available again: those copies are taken out — only exact copies of the
+ * missing items, still marked « à vérifier », never what the AI wrote — and
+ * the repair runs again as a small lot of its own.
+ */
+export async function redoFailedRepairs(supabase: Admin, job: Job): Promise<{ fiches: number; blocksRemoved: number; cardsRemoved: number }> {
+  const tasks = await redoableRepairs(supabase, job);
+  if (!tasks.length) throw new GeminiError("Aucun rattrapage à refaire.");
+  const round = (job.round ?? 0) + 1;
+  const { data: moved } = await supabase
+    .from("el_profesor_merge_jobs")
+    .update({ stage: "repair", round, error: null, finished_at: null, locked_until: new Date(Date.now() + 4 * 60_000).toISOString() })
+    .eq("id", job.id)
+    .in("stage", ["ready", "done"])
+    .select("id")
+    .maybeSingle();
+  if (!moved) throw new GeminiError("Un lot est déjà en cours pour cette fusion.");
+
+  // Queued first (starting in two minutes, once the copies are out): whatever happens next, the repair runs
+  // again and puts back what's still missing — nothing can end up removed and not repaired.
+  const startAt = new Date(Date.now() + 2 * 60_000).toISOString();
+  for (const part of chunk(tasks, 200)) {
+    const { error } = await supabase.from("el_profesor_merge_tasks").upsert(
+      part.map((t) => ({
+        id: t.id,
+        job_id: job.id,
+        stage: "repair" as const,
+        ref_key: t.ref_key,
+        input: t.input,
+        output: null,
+        status: "waiting" as const,
+        round,
+        attempts: 0,
+        error: null,
+        claude_batch_id: null,
+        next_attempt_at: startAt,
+      })),
+      { onConflict: "id" }
+    );
+    if (error) {
+      await supabase.from("el_profesor_merge_jobs").update({ stage: job.stage, round: job.round ?? 0, locked_until: null }).eq("id", job.id);
+      throw new GeminiError(`Relance du rattrapage impossible : ${error.message}`);
+    }
+  }
+
+  let blocksRemoved = 0;
+  let cardsRemoved = 0;
+  try {
+    const inputs = tasks.map((t) => t.input as unknown as RepairInput);
+    const content = await loadSourceContent(supabase, [...new Set(inputs.flatMap((i) => i.sources.map((s) => s.ficheId)))], job.include_drafts);
+    const sourceBlocks = new Map([...content.blocksByFiche.values()].flat().map((b) => [b.id, b]));
+    const sourceCards = new Map([...content.cardsByFiche.values()].flat().map((c) => [c.id, c]));
+    for (const input of inputs) {
+      const missingBlocks = new Set(input.blockIds);
+      const blocks = await loadFicheBlocks(supabase, input.ficheId);
+      const copies = blocks.filter((b) => {
+        if (!b.needs_review) return false;
+        // A copy cites its one source block, possibly on several pages (the same id repeated).
+        const cited = [...new Set(((b.citations as unknown as { sourceBlockId?: string }[]) ?? []).map((c) => c.sourceBlockId).filter((id): id is string => Boolean(id)))];
+        const source = cited.length === 1 && missingBlocks.has(cited[0]) ? sourceBlocks.get(cited[0]) : undefined;
+        return Boolean(source) && JSON.stringify(b.content) === JSON.stringify(source!.content);
+      });
+      if (copies.length) {
+        const gone = new Set(copies.map((b) => b.id));
+        await supabase.from("el_profesor_fiche_blocks").delete().in("id", [...gone]);
+        await rewriteFicheBlocks(supabase, input.ficheId, blocks.filter((b) => !gone.has(b.id)).map((b) => ({ id: b.id })));
+        blocksRemoved += gone.size;
+      }
+      const missingCards = new Set(input.cardIds);
+      const { data: cards } = await supabase.from("el_profesor_flashcards").select("id, front, back, needs_review, source_flashcard_ids, status").eq("fiche_id", input.ficheId);
+      const cardCopies = (cards ?? []).filter((c) => {
+        const ids = c.source_flashcard_ids ?? [];
+        const source = c.needs_review && c.status === "draft" && ids.length === 1 && missingCards.has(ids[0]) ? sourceCards.get(ids[0]) : undefined;
+        return Boolean(source) && (c.front as { text?: string } | null)?.text === source!.front && (c.back as { text?: string } | null)?.text === source!.back;
+      });
+      if (cardCopies.length) {
+        await supabase.from("el_profesor_flashcards").delete().in("id", cardCopies.map((c) => c.id));
+        cardsRemoved += cardCopies.length;
+      }
+    }
+    return { fiches: tasks.length, blocksRemoved, cardsRemoved };
+  } finally {
+    await supabase.from("el_profesor_merge_jobs").update({ locked_until: null }).eq("id", job.id);
+  }
 }
 
 /** Tokens spent by the whole fusion, or by one lot (round 0 = the table of contents). */
