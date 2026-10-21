@@ -15,7 +15,7 @@ import "server-only";
 // integration (review/bookmark/note/readingPosition/exclude). Despite the
 // historical name, entries aren't necessarily admin-only: each action
 // enforces its own access rules.
-import { moveBook, moveChapter, renameChapter, deleteChapter, deleteBook } from "@/app/apps/el-profesor/actions/library";
+import { moveBook, moveChapter, renameChapter, renameMergedSection, deleteChapter, deleteBook } from "@/app/apps/el-profesor/actions/library";
 import { bulkPublishChapters } from "@/app/apps/el-profesor/actions/extraction";
 import { markBlockReviewed } from "@/app/apps/el-profesor/actions/block-review";
 import { setBookmarkTags } from "@/app/apps/el-profesor/actions/bookmarks";
@@ -25,6 +25,7 @@ export const ACTION_REGISTRY = {
   "library.moveBook": moveBook,
   "library.moveChapter": moveChapter,
   "library.renameChapter": renameChapter,
+  "library.renameMergedSection": renameMergedSection,
   "library.deleteChapter": deleteChapter,
   "library.deleteBook": deleteBook,
   "library.bulkPublishChapters": bulkPublishChapters,

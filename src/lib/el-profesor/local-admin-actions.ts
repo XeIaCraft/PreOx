@@ -75,6 +75,37 @@ export async function applyLocalRenameChapter(chapterId: string, title: string):
   return nextBooks;
 }
 
+/** A merged book's part or sub-part renamed on every chapter under it — shared with board.tsx's optimistic reducer. */
+export function renameSectionInBooks(books: Books, bookId: string, level: "part" | "subPart", oldTitle: string, newTitle: string, partTitle: string | null): Books {
+  return books.map((book) =>
+    book.id !== bookId
+      ? book
+      : {
+          ...book,
+          chapters: book.chapters.map((c) =>
+            level === "part"
+              ? c.partTitle === oldTitle
+                ? { ...c, partTitle: newTitle }
+                : c
+              : c.subPartTitle === oldTitle && (!partTitle || c.partTitle === partTitle)
+                ? { ...c, subPartTitle: newTitle }
+                : c
+          ),
+        }
+  );
+}
+
+export async function applyLocalRenameSection(bookId: string, level: "part" | "subPart", oldTitle: string, newTitle: string, partTitle: string | null): Promise<Books | null> {
+  const nextBooks = await patchCachedDashboardBooks((books) => renameSectionInBooks(books, bookId, level, oldTitle, newTitle, partTitle));
+  await enqueuePendingWrite({
+    id: crypto.randomUUID(),
+    kind: "adminAction",
+    createdAt: new Date().toISOString(),
+    payload: { action: "library.renameMergedSection", args: [bookId, level, oldTitle, newTitle, partTitle] },
+  });
+  return nextBooks;
+}
+
 /** Mirrors applyBoardAction's "publishChapters" case exactly — flips status only for chapters that are actually draft_ready, same guard bulkPublishChapters applies server-side. */
 export function publishChaptersInBooks(books: Books, chapterIds: string[]): Books {
   const ids = new Set(chapterIds);

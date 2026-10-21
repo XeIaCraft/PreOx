@@ -92,6 +92,7 @@ const ADMIN_ACTION_TARGETS: Partial<Record<RegisteredActionName, { table: "books
   "library.moveBook": { table: "books", argIndex: 0 },
   "library.moveChapter": { table: "chapters", argIndex: 0 },
   "library.renameChapter": { table: "chapters", argIndex: 0 },
+  "library.renameMergedSection": { table: "books", argIndex: 0 },
   "library.deleteChapter": { table: "chapters", argIndex: 0 },
   "library.deleteBook": { table: "books", argIndex: 0 },
   "blockReview.mark": { table: "blocks", argIndex: 0 },

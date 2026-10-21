@@ -70,7 +70,7 @@ import {
   swapChapterOrder,
   applyLocalMoveBook,
   applyLocalMoveChapter,
-  applyLocalRenameChapter,
+  applyLocalRenameChapter, applyLocalRenameSection, renameSectionInBooks,
   applyLocalBulkPublish,
   applyLocalDeleteChapter,
   applyLocalDeleteBook,
@@ -494,7 +494,8 @@ type BoardAction =
   | { type: "moveBook"; bookId: string; direction: "up" | "down" }
   | { type: "moveChapter"; chapterId: string; direction: "up" | "down" }
   | { type: "publishChapters"; chapterIds: string[] }
-  | { type: "renameChapter"; chapterId: string; title: string };
+  | { type: "renameChapter"; chapterId: string; title: string }
+  | { type: "renameSection"; bookId: string; level: "part" | "subPart"; oldTitle: string; newTitle: string; partTitle: string | null };
 
 /**
  * Reorders swap one adjacent pair by id (swapBookOrder/swapChapterOrder,
@@ -520,6 +521,8 @@ function applyBoardAction(current: BookWithChapters[], action: BoardAction): Boo
       return swapBookOrder(current, action.bookId, action.direction);
     case "moveChapter":
       return swapChapterOrder(current, action.chapterId, action.direction);
+    case "renameSection":
+      return renameSectionInBooks(current, action.bookId, action.level, action.oldTitle, action.newTitle, action.partTitle);
     case "renameChapter":
       return current.map((book) => ({
         ...book,
@@ -824,6 +827,14 @@ export function ElProfesorBoard({
     startTransition(async () => {
       applyOptimisticAction({ type: "renameChapter", chapterId, title });
       const nextBooks = await applyLocalRenameChapter(chapterId, title);
+      if (nextBooks) onLocalBooksChange?.(nextBooks);
+    });
+  }
+
+  function handleRenameSection(bookId: string, level: "part" | "subPart", oldTitle: string, newTitle: string, partTitle: string | null) {
+    startTransition(async () => {
+      applyOptimisticAction({ type: "renameSection", bookId, level, oldTitle, newTitle, partTitle });
+      const nextBooks = await applyLocalRenameSection(bookId, level, oldTitle, newTitle, partTitle);
       if (nextBooks) onLocalBooksChange?.(nextBooks);
     });
   }
@@ -1258,7 +1269,15 @@ export function ElProfesorBoard({
       {viewMode === "notion" && (
         <div className="mt-6">
           <RenderErrorBoundary fallbackTitle="Notions" compact>
-            <MergedBooksPanel books={mergedBooks} dueCounts={dueCounts} masteryCounts={masteryCounts} readProgressByChapter={readProgressByChapter} isAdmin={isAdmin} />
+            <MergedBooksPanel
+              books={mergedBooks}
+              dueCounts={dueCounts}
+              masteryCounts={masteryCounts}
+              readProgressByChapter={readProgressByChapter}
+              isAdmin={isAdmin}
+              onRenameChapter={handleRenameChapter}
+              onRenameSection={handleRenameSection}
+            />
           </RenderErrorBoundary>
           <GlobalProgressCard progress={globalProgress} />
         </div>

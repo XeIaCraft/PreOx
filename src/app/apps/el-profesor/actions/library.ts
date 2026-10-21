@@ -4,6 +4,9 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireElProfesorAdmin } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { MergePlan } from "@/lib/el-profesor/merge/types";
+import type { Json } from "@/lib/supabase/types";
 import { deleteChapterPdf, downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import { extractDocxText, extractPptxText } from "@/lib/el-profesor/office-text";
 import { getPdfPageCount } from "@/lib/el-profesor/pdf-split";
@@ -367,9 +370,54 @@ export async function renameChapter(chapterId: string, title: string): Promise<A
   if (!trimmed) return { error: "Le titre du chapitre est obligatoire." };
 
   const supabase = await createClient();
-  const { error } = await supabase.from("el_profesor_chapters").update({ title: trimmed }).eq("id", chapterId);
+  const { data: renamed, error } = await supabase.from("el_profesor_chapters").update({ title: trimmed }).eq("id", chapterId).select("book_id").maybeSingle();
   if (error) return { error: "Impossible de renommer ce chapitre." };
+  // A merged book's chapter: its fusion's table of contents follows (shown on the Notions page).
+  if (renamed) await editMergePlan(renamed.book_id, (plan) => plan.parts.forEach((p) => p.subParts.forEach((sp) => sp.chapters.forEach((c) => c.chapterId === chapterId && (c.title = trimmed)))));
 
   revalidatePath("/apps/el-profesor");
   return { success: "Chapitre renommé." };
+}
+
+/** Applies an edit to the table of contents of the fusion that built this merged book (no-op for an ordinary book). */
+async function editMergePlan(bookId: string, edit: (plan: MergePlan) => void) {
+  const admin = createAdminClient();
+  const { data: jobs } = await admin.from("el_profesor_merge_jobs").select("id, plan").eq("book_id", bookId).not("plan", "is", null);
+  for (const job of jobs ?? []) {
+    const plan = job.plan as unknown as MergePlan;
+    if (!plan?.parts) continue;
+    edit(plan);
+    await admin.from("el_profesor_merge_jobs").update({ plan: plan as unknown as Json }).eq("id", job.id);
+  }
+}
+
+/**
+ * Renames a part or a sub-part of a merged book: every chapter under it, and
+ * the fusion's table of contents — chapters written in a later lot get the
+ * new title too. `partTitle` is the sub-part's part (sub-part titles can repeat across parts).
+ */
+export async function renameMergedSection(bookId: string, level: "part" | "subPart", oldTitle: string, newTitle: string, partTitle: string | null = null): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const trimmed = newTitle.trim();
+  if (!trimmed) return { error: "Le titre est obligatoire." };
+  if (trimmed === oldTitle) return { success: "Rien à changer." };
+
+  const supabase = await createClient();
+  let query = supabase
+    .from("el_profesor_chapters")
+    .update(level === "part" ? { part_title: trimmed } : { sub_part_title: trimmed })
+    .eq("book_id", bookId)
+    .eq(level === "part" ? "part_title" : "sub_part_title", oldTitle);
+  if (level === "subPart" && partTitle) query = query.eq("part_title", partTitle);
+  const { error } = await query;
+  if (error) return { error: "Impossible de renommer." };
+
+  await editMergePlan(bookId, (plan) => {
+    for (const p of plan.parts) {
+      if (level === "part" && p.title === oldTitle) p.title = trimmed;
+      if (level === "subPart" && (!partTitle || p.title === partTitle)) for (const sp of p.subParts) if (sp.title === oldTitle) sp.title = trimmed;
+    }
+  });
+  revalidatePath("/apps/el-profesor");
+  return { success: level === "part" ? "Partie renommée." : "Sous-partie renommée." };
 }
