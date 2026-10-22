@@ -11,7 +11,7 @@ import { setNewCardsAfterReading } from "@/app/apps/el-profesor/actions/progress
 import { useToast } from "@/components/ui/toast";
 import { loadLocalDashboardView, type LocalDashboardView } from "@/lib/el-profesor/local-dashboard";
 import { runBackgroundSync, type SyncOutcome } from "@/lib/el-profesor/sync-runner";
-import { fetchDashboardSnapshot } from "@/lib/el-profesor/sync-api";
+import { fetchSyncManifest } from "@/lib/el-profesor/sync-api";
 import { consumeAutoSyncAfterReset } from "@/lib/el-profesor/cache-reset";
 import type { DashboardSnapshot, DashboardAiConfigData, DashboardNotionViewData } from "@/lib/el-profesor/dashboard-types";
 
@@ -107,9 +107,16 @@ export function DashboardWithLocalCache({
         onCacheMiss();
         return;
       }
-      fetchDashboardSnapshot()
-        .then((snapshot) => {
-          if (!cancelled) setServerSnapshot(snapshot);
+      // Nothing on this device: the library's structure (light) right away,
+      // and the sync downloads the rest — the counts are computed from it.
+      // The full server-side snapshot aggregated the whole library on every
+      // try and timed out once the merged book was in (2026-10-22).
+      fetchSyncManifest()
+        .then((manifest) => {
+          if (cancelled) return;
+          setServerSnapshot(manifest.snapshot);
+          setAutoStartSync(true);
+          setSyncOpen(true);
         })
         .catch(() => {
           if (!cancelled) setServerSnapshotFailed(true);
@@ -184,9 +191,17 @@ export function DashboardWithLocalCache({
     <>
       {!snapshot ? (
         serverSnapshotFailed ? (
-          <p className="mx-auto max-w-4xl px-4 py-8 text-sm text-foreground-muted sm:px-6">
-            Impossible de charger le tableau de bord — vérifiez votre connexion, puis synchronisez ou rechargez la page.
-          </p>
+          <div className="mx-auto max-w-4xl px-4 py-8 text-sm text-foreground-muted sm:px-6">
+            <p>Impossible de charger le tableau de bord — vérifiez votre connexion, puis synchronisez ou rechargez la page.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => setSyncOpen(true)}>
+                Synchroniser
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => window.location.reload()}>
+                Réessayer
+              </Button>
+            </div>
+          </div>
         ) : (
           <DashboardSkeleton />
         )

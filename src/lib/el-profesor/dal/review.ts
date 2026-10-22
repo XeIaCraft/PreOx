@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { computeAdjustedRetention } from "../fsrs";
 import { isCardDue, OPEN_GATE, type NewCardGate } from "../new-card-gate";
 import { blockToPlainText } from "../block-text";
-import { getChapterContent, activeFlashcards, shuffle, toReviewState, toFlashcard, resolveFicheContexts, selectInChunks, getActiveFlashcardsByChapterBatch } from "./shared";
+import { getChapterContent, activeFlashcards, shuffle, toReviewState, toFlashcard, resolveFicheContexts, selectInChunks, selectAllPages, getActiveFlashcardsByChapterBatch } from "./shared";
 import type { Chapter, Flashcard, ReviewState, FlashcardSide, Book, BlockType, BlockContent, FlashcardVariant } from "../types";
 import type { ElProfesorReviewStateRow, ElProfesorFicheRow, ElProfesorFlashcardRow } from "@/lib/supabase/types";
 
@@ -618,32 +618,29 @@ export async function getNeedsReviewCounts(chapterIds: string[]): Promise<Chapte
   const counts: ChapterDueCounts = {};
   if (chapterIds.length === 0) return counts;
   const supabase = await createClient();
+  const wanted = new Set(chapterIds);
 
-  // Chunked (piste 2026-09-24): single unbounded .in() filters over every
-  // sub-entity/fiche of the library overflowed the URL or got truncated at
-  // PostgREST's row cap, silently dropping badges.
-  const subEntities = await selectInChunks(chapterIds, (chunk) => supabase.from("el_profesor_sub_entities").select("id, chapter_id").in("chapter_id", chunk));
-  const chapterBySubEntity = new Map(subEntities.map((s) => [s.id, s.chapter_id]));
-  const subEntityIds = subEntities.map((s) => s.id);
-  if (subEntityIds.length === 0) return counts;
-
-  const fiches = await selectInChunks(subEntityIds, (chunk) => supabase.from("el_profesor_fiches").select("id, sub_entity_id").in("sub_entity_id", chunk));
-  const chapterByFiche = new Map(fiches.map((f) => [f.id, chapterBySubEntity.get(f.sub_entity_id)]));
-  const ficheIds = fiches.map((f) => f.id);
-  if (ficheIds.length === 0) return counts;
-
-  const [blockRows, flashcardRows] = await Promise.all([
-    selectInChunks(ficheIds, (chunk) =>
-      supabase.from("el_profesor_fiche_blocks").select("fiche_id").eq("needs_review", true).eq("status", "draft").in("fiche_id", chunk)
-    ),
-    selectInChunks(ficheIds, (chunk) =>
-      supabase.from("el_profesor_flashcards").select("fiche_id").eq("needs_review", true).eq("status", "draft").in("fiche_id", chunk)
-    ),
-  ]);
+  // Only the flagged drafts (a few thousand at most), each with its chapter
+  // through the fiche: no library-wide id list. Walking every chapter's
+  // sub-entities and fiches cost 200+ requests per sync once the merged
+  // book was in (2026-10-22).
+  type Row = { id: string; fiche: { sub_entity: { chapter_id: string } | null } | null };
+  const flagged = (table: "el_profesor_fiche_blocks" | "el_profesor_flashcards") =>
+    selectAllPages<Row>(
+      (from, to) =>
+        supabase
+          .from(table)
+          .select("id, fiche:el_profesor_fiches!inner(sub_entity:el_profesor_sub_entities!inner(chapter_id))")
+          .eq("needs_review", true)
+          .eq("status", "draft")
+          .order("id")
+          .range(from, to) as unknown as PromiseLike<{ data: Row[] | null; error: { message: string } | null }>
+    );
+  const [blockRows, flashcardRows] = await Promise.all([flagged("el_profesor_fiche_blocks"), flagged("el_profesor_flashcards")]);
 
   for (const row of [...blockRows, ...flashcardRows]) {
-    const chapterId = chapterByFiche.get(row.fiche_id);
-    if (!chapterId) continue;
+    const chapterId = row.fiche?.sub_entity?.chapter_id;
+    if (!chapterId || !wanted.has(chapterId)) continue;
     counts[chapterId] = (counts[chapterId] ?? 0) + 1;
   }
   return counts;

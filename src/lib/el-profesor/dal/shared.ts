@@ -248,6 +248,7 @@ export const getChapterContent = cache(async function getChapterContent(
 });
 
 const IN_CHUNK_SIZE = 150;
+const IN_CHUNK_CONCURRENCY = 4;
 
 /**
  * Supabase's .in() filter is serialized straight into the request's query
@@ -265,7 +266,18 @@ export async function selectInChunks<T>(
   if (ids.length === 0) return [];
   const chunks: string[][] = [];
   for (let i = 0; i < ids.length; i += IN_CHUNK_SIZE) chunks.push(ids.slice(i, i + IN_CHUNK_SIZE));
-  const results = await Promise.all(chunks.map((chunk) => runChunkUntruncated(chunk, runQuery)));
+  // A few at a time: since the merged book (9,000+ fiches), firing every
+  // chunk at once sent hundreds of simultaneous requests per dashboard
+  // load and saturated the database (2026-10-22).
+  const results: T[][] = new Array(chunks.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < chunks.length) {
+      const i = next++;
+      results[i] = await runChunkUntruncated(chunks[i], runQuery);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(IN_CHUNK_CONCURRENCY, chunks.length) }, worker));
   return results.flat();
 }
 
@@ -380,7 +392,15 @@ export interface ChapterFicheRef {
  * per-chapter getChapterContent loop whenever the caller needs fiches
  * across every chapter rather than one chapter's full nested content.
  */
-export async function getFichesByChapterBatch(chapterIds: string[], includeDrafts = false): Promise<ChapterFicheRef[]> {
+export function getFichesByChapterBatch(chapterIds: string[], includeDrafts = false): Promise<ChapterFicheRef[]> {
+  return fichesByChapterOnce([...chapterIds].sort().join(","), includeDrafts);
+}
+
+// Once per request for the same chapters: the dashboard's aggregates (due,
+// mastery, difficult, read progress, global mastery) each asked for it.
+const fichesByChapterOnce = cache(async (key: string, includeDrafts: boolean) => fichesByChapter(key ? key.split(",") : [], includeDrafts));
+
+async function fichesByChapter(chapterIds: string[], includeDrafts: boolean): Promise<ChapterFicheRef[]> {
   if (chapterIds.length === 0) return [];
   const supabase = await createClient();
 
@@ -406,7 +426,13 @@ export async function getFichesByChapterBatch(chapterIds: string[], includeDraft
 }
 
 /** Batched equivalent of calling getChapterContent(chapterId, false) once per chapter and running activeFlashcards() over each result — see getFichesByChapterBatch above for why this exists. */
-export async function getActiveFlashcardsByChapterBatch(chapterIds: string[]): Promise<Map<string, Flashcard[]>> {
+export function getActiveFlashcardsByChapterBatch(chapterIds: string[]): Promise<Map<string, Flashcard[]>> {
+  return activeFlashcardsByChapterOnce([...chapterIds].sort().join(","));
+}
+
+const activeFlashcardsByChapterOnce = cache(async (key: string) => activeFlashcardsByChapter(key ? key.split(",") : []));
+
+async function activeFlashcardsByChapter(chapterIds: string[]): Promise<Map<string, Flashcard[]>> {
   const result = new Map<string, Flashcard[]>();
   if (chapterIds.length === 0) return result;
 
