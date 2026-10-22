@@ -36,6 +36,7 @@ import type {
   FlashcardSide,
 } from "@/lib/el-profesor/types";
 import { replaceSourceCards } from "@/lib/el-profesor/merge/publish";
+import { selectInChunksStrict } from "@/lib/el-profesor/dal/shared";
 
 export interface ActionState {
   error?: string;
@@ -589,13 +590,11 @@ export async function finalizeChapterPublication(chapterId: string): Promise<Act
   const subEntityIds = (subEntities ?? []).map((s) => s.id);
   if (subEntityIds.length === 0) return { error: "Ce chapitre n'a pas encore été extrait." };
 
-  const { data: fiches } = await supabase.from("el_profesor_fiches").select("id").in("sub_entity_id", subEntityIds);
-  const ficheIds = (fiches ?? []).map((f) => f.id);
+  const ficheIds = (await selectInChunksStrict(subEntityIds, (chunk) => supabase.from("el_profesor_fiches").select("id").in("sub_entity_id", chunk))).map((f) => f.id);
 
   if (ficheIds.length > 0) {
-    await supabase.from("el_profesor_fiches").update({ status: "published" }).in("id", ficheIds);
-    await supabase.from("el_profesor_fiche_blocks").update({ status: "published" }).in("fiche_id", ficheIds);
-    await supabase.from("el_profesor_flashcards").update({ status: "published" }).in("fiche_id", ficheIds).neq("status", "replaced");
+    const failed = await publishFicheContent(supabase, ficheIds);
+    if (failed) return { error: failed };
     await replaceSourceCards(ficheIds);
   }
 
@@ -607,6 +606,30 @@ export async function finalizeChapterPublication(chapterId: string): Promise<Act
 }
 
 const PUBLISH_CHUNK_SIZE = 150;
+
+/**
+ * Fiches, blocks and cards of these fiches go live, a chunk at a time, each
+ * update checked (and tried twice). Fired all at once with no check, a
+ * merged book's chapters were marked published while 16,000 of their cards
+ * and 11,000 blocks stayed in draft (2026-10-22): a chapter is only marked
+ * published once this has gone through. Returns the error, if any.
+ */
+async function publishFicheContent(supabase: Awaited<ReturnType<typeof createClient>>, ficheIds: string[]): Promise<string | null> {
+  const run = async (query: () => PromiseLike<{ error: { message: string } | null }>) => {
+    const first = await query();
+    if (!first.error) return null;
+    const second = await query();
+    return second.error?.message ?? null;
+  };
+  for (const chunk of chunkIds(ficheIds)) {
+    const error =
+      (await run(() => supabase.from("el_profesor_fiches").update({ status: "published" }).in("id", chunk))) ??
+      (await run(() => supabase.from("el_profesor_fiche_blocks").update({ status: "published" }).in("fiche_id", chunk))) ??
+      (await run(() => supabase.from("el_profesor_flashcards").update({ status: "published" }).in("fiche_id", chunk).neq("status", "replaced")));
+    if (error) return `Publication incomplète (${error}) : réessayez, rien n'est perdu.`;
+  }
+  return null;
+}
 
 function chunkIds(ids: string[]): string[][] {
   const chunks: string[][] = [];
@@ -639,22 +662,18 @@ export async function bulkPublishChapters(chapterIds: string[]): Promise<ActionS
   }
 
   const chapterChunks = chunkIds(publishableIds);
-  const subEntityIds = (
-    await Promise.all(chapterChunks.map((chunk) => supabase.from("el_profesor_sub_entities").select("id").in("chapter_id", chunk)))
-  ).flatMap((r) => (r.data ?? []).map((s) => s.id));
+  // Split when a chunk comes back at PostgREST's 1,000-row cap: 150 chapters
+  // of a merged book hold more sub-entities than that, and the rest was
+  // silently never published.
+  const subEntityIds = (await selectInChunksStrict(publishableIds, (chunk) => supabase.from("el_profesor_sub_entities").select("id").in("chapter_id", chunk))).map(
+    (s) => s.id
+  );
 
   if (subEntityIds.length > 0) {
-    const ficheIds = (
-      await Promise.all(chunkIds(subEntityIds).map((chunk) => supabase.from("el_profesor_fiches").select("id").in("sub_entity_id", chunk)))
-    ).flatMap((r) => (r.data ?? []).map((f) => f.id));
+    const ficheIds = (await selectInChunksStrict(subEntityIds, (chunk) => supabase.from("el_profesor_fiches").select("id").in("sub_entity_id", chunk))).map((f) => f.id);
 
-    await Promise.all(
-      chunkIds(ficheIds).flatMap((chunk) => [
-        supabase.from("el_profesor_fiches").update({ status: "published" }).in("id", chunk),
-        supabase.from("el_profesor_fiche_blocks").update({ status: "published" }).in("fiche_id", chunk),
-        supabase.from("el_profesor_flashcards").update({ status: "published" }).in("fiche_id", chunk).neq("status", "replaced"),
-      ])
-    );
+    const failed = await publishFicheContent(supabase, ficheIds);
+    if (failed) return { error: failed };
     await replaceSourceCards(ficheIds);
   }
 
