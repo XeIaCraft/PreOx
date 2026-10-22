@@ -189,6 +189,18 @@ async function claim(ctx: StageContext, tasks: Task[]): Promise<Task[]> {
   return (data ?? []) as Task[];
 }
 
+/** Takes a submitted task's batch answer for this run; false when another run already has it. */
+async function claimSubmitted(ctx: StageContext, task: Task): Promise<boolean> {
+  const { data } = await ctx.supabase
+    .from("el_profesor_merge_tasks")
+    .update({ status: "running", started_at: new Date().toISOString() })
+    .eq("id", task.id)
+    .eq("status", "submitted")
+    .select("id")
+    .maybeSingle();
+  return !!data;
+}
+
 async function settleFailure(ctx: StageContext, task: Task, err: unknown, summary: MergeRunSummary): Promise<"retry" | "failed"> {
   const quota = isQuotaOrCapacityError(err);
   const attempts = task.attempts + 1;
@@ -281,12 +293,14 @@ async function runClaude(ctx: StageContext, stage: ElProfesorMergeTaskStage, clo
       const task = byId.get(r.customId);
       if (!task) continue;
       byId.delete(r.customId);
+      // Runs overlap every minute: only the one that takes the answer applies it (once).
+      if (!(await claimSubmitted(ctx, task))) continue;
       const prepared = (task.input as { prepared?: Json } | null)?.prepared;
       if (r.outcome === "succeeded") await settleSuccess(ctx, task, prepared, r.output, r.usage, summary);
       else await settleFailure(ctx, task, new GeminiError(r.outcome === "errored" ? r.message : `Requête ${r.outcome === "expired" ? "expirée" : "annulée"} par Anthropic.`), summary);
     }
     // Tasks the batch didn't answer for at all go back in the queue.
-    for (const task of byId.values()) await settleFailure(ctx, task, new GeminiError("Absente des résultats du lot."), summary);
+    for (const task of byId.values()) if (await claimSubmitted(ctx, task)) await settleFailure(ctx, task, new GeminiError("Absente des résultats du lot."), summary);
   }
 
   // 2. Send what's waiting, a batch at a time — only with room left to prepare and send a whole batch.

@@ -49,7 +49,7 @@ import {
 } from "./schemas";
 import { appendMergedCards, loadFicheBlocks, rewriteFicheBlocks, writeMergedFiche, type MergedBlockDraft, type MergedCardDraft } from "./persist";
 import { loadSourceCatalog, loadSourceContent, type SourceBlock, type SourceCard } from "./source";
-import type { MergePlan, MergeStats, SourceFicheRef } from "./types";
+import type { MergePlan, MergeProvider, MergeStats, SourceFicheRef } from "./types";
 
 // What each fusion stage does, provider-agnostic: build its prompts
 // (`prepare`), turn one answer into stored output or merged content
@@ -448,7 +448,32 @@ export async function finalizeChapters(ctx: StageContext): Promise<void> {
  * and a block or card added since to a source shared between several merged
  * fiches goes to the first of this lot that uses it — nothing new is lost.
  */
-export async function releaseChapters(supabase: Admin, job: Job, chapterIds: string[]): Promise<{ chapters: number; fiches: number; dropped: number }> {
+/** Model a lot is written with, when not the fusion's current one. */
+export interface LotModel {
+  provider: MergeProvider;
+  model: string;
+}
+
+/**
+ * The job's fields when a lot starts: the model it's written with, the tokens
+ * spent so far (the lot costs what's spent after) and, kept once, the table
+ * of contents' own tokens and model — each lot can use another model.
+ */
+async function lotStartFields(supabase: Admin, job: Job, lotModel?: LotModel): Promise<Partial<Job>> {
+  const stats = (job.stats as MergeStats | null) ?? {};
+  let toc = stats.toc;
+  if (!toc) {
+    const spent = await jobUsage(supabase, job.id, undefined, ["plan", "assign", "chapter"]);
+    toc = { provider: job.provider as MergeProvider, model: job.model, inputTokens: spent.inputTokens, outputTokens: spent.outputTokens };
+  }
+  const { inputTokens, outputTokens } = await jobUsage(supabase, job.id);
+  return {
+    ...(lotModel ? { provider: lotModel.provider, model: lotModel.model } : {}),
+    stats: { ...stats, toc, lotStart: { inputTokens, outputTokens } } as unknown as Json,
+  };
+}
+
+export async function releaseChapters(supabase: Admin, job: Job, chapterIds: string[], lotModel?: LotModel): Promise<{ chapters: number; fiches: number; dropped: number }> {
   const wanted = new Set(chapterIds);
   const all = await stageTasks(supabase, job.id, "fiche");
   const held = all.filter((t) => t.status === "held" && wanted.has((t.input as unknown as FicheTaskInput).chapterId));
@@ -458,7 +483,7 @@ export async function releaseChapters(supabase: Admin, job: Job, chapterIds: str
   const round = (job.round ?? 0) + 1;
   const { data: moved } = await supabase
     .from("el_profesor_merge_jobs")
-    .update({ stage: "fiches", round, error: null, locked_until: new Date(Date.now() + 4 * 60_000).toISOString() })
+    .update({ ...(await lotStartFields(supabase, job, lotModel)), stage: "fiches", round, error: null, locked_until: new Date(Date.now() + 4 * 60_000).toISOString() })
     .eq("id", job.id)
     .eq("stage", "ready")
     .select("id")
@@ -1076,8 +1101,12 @@ export async function finalizeRepair(ctx: StageContext): Promise<void> {
     await supabase.from("el_profesor_chapters").update({ status: "draft_ready", extraction_error: null }).in("id", part).eq("status", "extracting");
 
   const usage = await jobUsage(supabase, job.id);
-  const lotUsage = await jobUsage(supabase, job.id, job.round);
   const previous = (job.stats as MergeStats | null) ?? {};
+  // A task taken up again in a later lot keeps the tokens of its earlier one: the lot costs what was spent since it started.
+  const lotUsage = previous.lotStart
+    ? { inputTokens: usage.inputTokens - previous.lotStart.inputTokens, outputTokens: usage.outputTokens - previous.lotStart.outputTokens }
+    : await jobUsage(supabase, job.id, job.round);
+  const lotModel = { provider: job.provider as MergeProvider, model: job.model };
   const left = ficheTasks.some((t) => t.status === "held");
   await transition(supabase, job, left ? "ready" : "done", {
     stats: mergeStats(job, {
@@ -1087,8 +1116,8 @@ export async function finalizeRepair(ctx: StageContext): Promise<void> {
       rounds: [
         ...(previous.rounds ?? []).filter((r) => r.round !== job.round),
         lot.length
-          ? { round: job.round, chapters: chapterIds.length, fiches: lot.length, inputTokens: lotUsage.inputTokens, outputTokens: lotUsage.outputTokens, finishedAt: new Date().toISOString() }
-          : { round: job.round, chapters: 0, fiches: tasks.length, kind: "repair" as const, inputTokens: lotUsage.inputTokens, outputTokens: lotUsage.outputTokens, finishedAt: new Date().toISOString() },
+          ? { round: job.round, chapters: chapterIds.length, fiches: lot.length, inputTokens: lotUsage.inputTokens, outputTokens: lotUsage.outputTokens, finishedAt: new Date().toISOString(), ...lotModel }
+          : { round: job.round, chapters: 0, fiches: tasks.length, kind: "repair" as const, inputTokens: lotUsage.inputTokens, outputTokens: lotUsage.outputTokens, finishedAt: new Date().toISOString(), ...lotModel },
       ],
     }),
   });
@@ -1122,7 +1151,7 @@ export async function redoFailedRepairs(supabase: Admin, job: Job): Promise<{ fi
   const round = (job.round ?? 0) + 1;
   const { data: moved } = await supabase
     .from("el_profesor_merge_jobs")
-    .update({ stage: "repair", round, error: null, finished_at: null, locked_until: new Date(Date.now() + 4 * 60_000).toISOString() })
+    .update({ ...(await lotStartFields(supabase, job)), stage: "repair", round, error: null, finished_at: null, locked_until: new Date(Date.now() + 4 * 60_000).toISOString() })
     .eq("id", job.id)
     .in("stage", ["ready", "done"])
     .select("id")
@@ -1198,7 +1227,12 @@ export async function redoFailedRepairs(supabase: Admin, job: Job): Promise<{ fi
 }
 
 /** Tokens spent by the whole fusion, or by one lot (round 0 = the table of contents). */
-export async function jobUsage(supabase: Admin, jobId: string, round?: number): Promise<{ inputTokens: number; outputTokens: number; tasksTotal: number; tasksDone: number }> {
+export async function jobUsage(
+  supabase: Admin,
+  jobId: string,
+  round?: number,
+  stages?: ElProfesorMergeTaskStage[]
+): Promise<{ inputTokens: number; outputTokens: number; tasksTotal: number; tasksDone: number }> {
   let inputTokens = 0;
   let outputTokens = 0;
   let tasksTotal = 0;
@@ -1206,6 +1240,7 @@ export async function jobUsage(supabase: Admin, jobId: string, round?: number): 
   for (let from = 0; ; from += 1000) {
     let query = supabase.from("el_profesor_merge_tasks").select("input_tokens, output_tokens, status").eq("job_id", jobId);
     if (round !== undefined) query = query.eq("round", round);
+    if (stages) query = query.in("stage", stages);
     const { data } = await query.order("id").range(from, from + 999);
     for (const r of data ?? []) {
       inputTokens += r.input_tokens ?? 0;

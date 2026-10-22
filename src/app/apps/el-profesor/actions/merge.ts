@@ -14,13 +14,14 @@ import {
 } from "@/lib/el-profesor/dal/ai-config";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { selectAllPages } from "@/lib/el-profesor/dal/shared";
-import { estimateLot, estimateMerge, type MergeEstimate } from "@/lib/el-profesor/merge/estimate";
+import { estimateMerge, type MergeEstimate } from "@/lib/el-profesor/merge/estimate";
+import { mergeCosts, type MergeCosts } from "@/lib/el-profesor/merge/costs";
 import { flattenChapters } from "@/lib/el-profesor/merge/plan";
 import { loadSourceCatalog } from "@/lib/el-profesor/merge/source";
-import { redoFailedRepairs, redoableRepairs, releaseChapters, type FicheTaskInput } from "@/lib/el-profesor/merge/stages";
+import { jobUsage, redoFailedRepairs, redoableRepairs, releaseChapters, type FicheTaskInput, type LotModel } from "@/lib/el-profesor/merge/stages";
 import { estimateCostUsd } from "@/lib/el-profesor/ai-pricing";
 import type { MergePlan, MergeProvider, MergeStats } from "@/lib/el-profesor/merge/types";
-import type { ElProfesorMergeJobRow, ElProfesorMergeStage } from "@/lib/supabase/types";
+import type { ElProfesorMergeJobRow, ElProfesorMergeStage, Json } from "@/lib/supabase/types";
 
 export interface ActionState {
   error?: string;
@@ -189,6 +190,8 @@ export interface MergeJobView {
   chapters: { total: number; published: number; draftIds: string[]; firstDraftId: string | null };
   /** Repairs the AI couldn't do (credit exhausted…), in chapters not yet published: they can be done again. */
   repairRedo: { fiches: number; costUsd: number | null } | null;
+  /** Spent so far: the table of contents and each lot, each at the model it used. */
+  costs: MergeCosts;
 }
 
 export async function getMergeJobs(): Promise<MergeJobView[]> {
@@ -249,7 +252,7 @@ export async function getMergeJobs(): Promise<MergeJobView[]> {
         model: j.model,
         stage: j.stage,
         round: j.round ?? 0,
-        stats: (j.stats as MergeStats | null) ?? {},
+        stats: viewStats(j.stats),
         error: j.error,
         createdAt: j.created_at,
         finishedAt: j.finished_at,
@@ -257,9 +260,23 @@ export async function getMergeJobs(): Promise<MergeJobView[]> {
         lastTaskError,
         chapters: chaptersOf(j.book_id),
         repairRedo: j.stage === "ready" || j.stage === "done" ? await repairRedoOf(j as ElProfesorMergeJobRow) : null,
+        costs: await costsOf(j as ElProfesorMergeJobRow),
       };
     })
   );
+}
+
+/** The job's stats without what's only kept for the server (the table of contents' summary). */
+function viewStats(stats: Json | null): MergeStats {
+  const rest = { ...((stats as (MergeStats & { tocSummary?: unknown }) | null) ?? {}) };
+  delete rest.tocSummary;
+  return rest;
+}
+
+async function costsOf(job: ElProfesorMergeJobRow): Promise<MergeCosts> {
+  const stats = viewStats(job.stats);
+  const tocUsage = stats.toc ?? (stats.inputTokens ? await jobUsage(createAdminClient(), job.id, undefined, ["plan", "assign", "chapter"]) : { inputTokens: 0, outputTokens: 0 });
+  return mergeCosts({ provider: job.provider, model: job.model, stage: job.stage, round: job.round ?? 0, stats }, tocUsage);
 }
 
 /** How many failed repairs can be done again, and roughly what that costs (from the repairs already done). */
@@ -371,86 +388,137 @@ export interface MergeTocChapter {
   lot: number;
   ficheCount: number;
   sourceCount: number;
-  /** Estimated cost of writing it, at the fusion's model. */
-  costUsd: number | null;
+  /** Characters of its source fiches: what writing it costs (estimateLot), at whichever model the lot uses. */
   sourceChars: number;
 }
 
 export interface MergeToc {
   parts: { title: string; subParts: { title: string; chapters: MergeTocChapter[] }[] }[];
-  coverage: {
-    /** Source fiches the books hold now. */
-    sourceFiches: number;
-    /** …of which some merged fiche uses. */
-    used: number;
-    /** Fiches added to the books since the table of contents: not in it (a few shown). */
-    addedSince: { book: string; chapter: string; title: string }[];
-    addedSinceCount: number;
-    /** Source fiches of the table of contents deleted since: left out when their chapter is written. */
-    goneSince: number;
-  };
 }
 
-/** The whole planned book, chapter by chapter, with each merged fiche's sources — to check it and choose what to write. */
+export interface MergeTocCoverage {
+  /** Source fiches the books hold now. */
+  sourceFiches: number;
+  /** …of which some merged fiche uses. */
+  used: number;
+  /** Fiches added to the books since the table of contents: not in it (a few shown). */
+  addedSince: { book: string; chapter: string; title: string }[];
+  addedSinceCount: number;
+  /** Source fiches of the table of contents deleted since: left out when their chapter is written. */
+  goneSince: number;
+}
+
+/** Per chapter (plan order): source fiches and their characters. Only changes when a lot starts (sources re-read), hence kept per lot. */
+interface TocSummary {
+  round: number;
+  chapters: [sources: number, chars: number][];
+}
+
+/** Fiche tasks by chapter, read from their ref_key ("fiche:<chapter order>:<fiche order>"): no task input to load. */
+function chapterIndexOf(refKey: string): number {
+  return Number(refKey.split(":")[1]);
+}
+
 export async function getMergeToc(jobId: string): Promise<MergeToc | { error: string }> {
   await requireElProfesorAdmin();
   const supabase = createAdminClient();
   const { data: job } = await supabase.from("el_profesor_merge_jobs").select("*").eq("id", jobId).maybeSingle();
   if (!job?.plan) return { error: "La table des matières n'est pas encore établie." };
-  const plan = job.plan as unknown as MergePlan;
-  // Only what the list needs (a big fusion holds several MB of task inputs); a chapter's fiches come with getMergeTocChapter.
-  type LightTask = { status: string; round: number; chapterId: string; chars: number; sources: { ficheId: string }[] };
-  const tasks = await selectAllPages<LightTask>(
-    (from, to) =>
-      supabase
-        .from("el_profesor_merge_tasks")
-        .select("status, round, chapterId:input->>chapterId, chars:input->chars, sources:input->sources")
-        .eq("job_id", jobId)
-        .eq("stage", "fiche")
-        .order("ref_key")
-        .range(from, to) as unknown as PromiseLike<{ data: LightTask[] | null; error: { message: string } | null }>
-  );
-  const byChapter = new Map<string, LightTask[]>();
-  for (const t of tasks) byChapter.set(t.chapterId, [...(byChapter.get(t.chapterId) ?? []), t]);
+  const plan = flattenChapters(job.plan as unknown as MergePlan);
+  const stats = (job.stats as (MergeStats & { tocSummary?: TocSummary }) | null) ?? {};
+
+  type LightTask = { status: string; round: number; ref_key: string };
+  const [tasks, summary] = await Promise.all([
+    selectAllPages<LightTask>((from, to) =>
+      supabase.from("el_profesor_merge_tasks").select("status, round, ref_key").eq("job_id", jobId).eq("stage", "fiche").order("ref_key").range(from, to)
+    ),
+    stats.tocSummary?.round === job.round ? stats.tocSummary : buildTocSummary(job as ElProfesorMergeJobRow, plan.length),
+  ]);
+  const byChapter = new Map<number, LightTask[]>();
+  for (const t of tasks) {
+    const i = chapterIndexOf(t.ref_key);
+    byChapter.set(i, [...(byChapter.get(i) ?? []), t]);
+  }
   const writingLot = job.stage === "fiches" || job.stage === "repair" ? job.round : -1;
   const chapters = new Map(
-    flattenChapters(plan).map((c) => {
-      const own = byChapter.get(c.chapterId) ?? [];
-      const chars = own.map((t) => Number(t.chars) || 0);
+    plan.map((c) => {
+      const own = byChapter.get(c.orderIndex) ?? [];
       const lot = Math.max(0, ...own.map((t) => t.round));
+      const [sourceCount, sourceChars] = summary.chapters[c.orderIndex] ?? [0, 0];
       const state: MergeTocChapter["state"] = own.some((t) => t.status === "held") ? "held" : lot === writingLot ? "writing" : "written";
-      return [
-        c.chapterId,
-        {
-          chapterId: c.chapterId,
-          title: c.title,
-          state,
-          lot,
-          ficheCount: own.length,
-          sourceCount: own.reduce((n, t) => n + (t.sources?.length ?? 0), 0),
-          costUsd: estimateLot(chars, job.provider, job.model).costUsd,
-          sourceChars: chars.reduce((a, b) => a + b, 0),
-        } satisfies MergeTocChapter,
-      ];
+      return [c.chapterId, { chapterId: c.chapterId, title: c.title, state, lot, ficheCount: own.length, sourceCount, sourceChars } satisfies MergeTocChapter];
     })
   );
-
-  const catalog = await loadSourceCatalog(supabase, job.source_book_ids, job.include_drafts);
-  const used = new Set(tasks.flatMap((t) => (t.sources ?? []).map((src) => src.ficheId)));
-  const now = new Set(catalog.fiches.map((f) => f.ficheId));
-  const added = catalog.fiches.filter((f) => !used.has(f.ficheId));
+  const toc = job.plan as unknown as MergePlan;
   return {
-    parts: plan.parts.map((p) => ({
+    parts: toc.parts.map((p) => ({
       title: p.title,
       subParts: p.subParts.map((sp) => ({ title: sp.title, chapters: sp.chapters.map((c) => chapters.get(c.chapterId)).filter((c): c is MergeTocChapter => Boolean(c)) })),
     })),
-    coverage: {
-      sourceFiches: catalog.fiches.length,
-      used: catalog.fiches.length - added.length,
-      addedSince: added.slice(0, 30).map((f) => ({ book: f.bookTitle, chapter: f.chapterTitle, title: f.title })),
-      addedSinceCount: added.length,
-      goneSince: [...used].filter((id) => !now.has(id)).length,
-    },
+  };
+}
+
+/** The sources and characters of every chapter, from the fiche tasks' inputs (several MB on a big fusion): read once per lot, then kept on the job. */
+async function buildTocSummary(job: ElProfesorMergeJobRow, chapterCount: number): Promise<TocSummary> {
+  const supabase = createAdminClient();
+  type Row = { ref_key: string; chars: number; sources: unknown[] | null };
+  const rows = await selectAllPages<Row>(
+    (from, to) =>
+      supabase
+        .from("el_profesor_merge_tasks")
+        .select("ref_key, chars:input->chars, sources:input->sources")
+        .eq("job_id", job.id)
+        .eq("stage", "fiche")
+        .order("ref_key")
+        .range(from, to) as unknown as PromiseLike<{ data: Row[] | null; error: { message: string } | null }>
+  );
+  const chapters: TocSummary["chapters"] = Array.from({ length: chapterCount }, () => [0, 0]);
+  for (const r of rows) {
+    const c = chapters[chapterIndexOf(r.ref_key)];
+    if (!c) continue;
+    c[0] += r.sources?.length ?? 0;
+    c[1] += Number(r.chars) || 0;
+  }
+  const summary = { round: job.round, chapters };
+  // Kept only if the job hasn't moved on meanwhile (a lot starting re-reads the sources).
+  await supabase
+    .from("el_profesor_merge_jobs")
+    .update({ stats: { ...((job.stats as object | null) ?? {}), tocSummary: summary } as unknown as Json })
+    .eq("id", job.id)
+    .eq("stage", job.stage)
+    .eq("round", job.round);
+  return summary;
+}
+
+/** Whether every fiche of the books is in the table of contents — loaded after it, the books' catalog being long to read. */
+export async function getMergeTocCoverage(jobId: string): Promise<MergeTocCoverage | { error: string }> {
+  await requireElProfesorAdmin();
+  const supabase = createAdminClient();
+  const { data: job } = await supabase.from("el_profesor_merge_jobs").select("id, source_book_ids, include_drafts").eq("id", jobId).maybeSingle();
+  if (!job) return { error: "Fusion introuvable." };
+  type Row = { sources: { ficheId: string }[] | null };
+  const [rows, catalog] = await Promise.all([
+    selectAllPages<Row>(
+      (from, to) =>
+        supabase
+          .from("el_profesor_merge_tasks")
+          .select("sources:input->sources")
+          .eq("job_id", jobId)
+          .eq("stage", "fiche")
+          .order("ref_key")
+          .range(from, to) as unknown as PromiseLike<{ data: Row[] | null; error: { message: string } | null }>
+    ),
+    loadSourceCatalog(supabase, job.source_book_ids, job.include_drafts),
+  ]);
+  const used = new Set(rows.flatMap((t) => (t.sources ?? []).map((src) => src.ficheId)));
+  const now = new Set(catalog.fiches.map((f) => f.ficheId));
+  const added = catalog.fiches.filter((f) => !used.has(f.ficheId));
+  return {
+    sourceFiches: catalog.fiches.length,
+    used: catalog.fiches.length - added.length,
+    addedSince: added.slice(0, 30).map((f) => ({ book: f.bookTitle, chapter: f.chapterTitle, title: f.title })),
+    addedSinceCount: added.length,
+    goneSince: [...used].filter((id) => !now.has(id)).length,
   };
 }
 
@@ -472,15 +540,19 @@ export async function getMergeTocChapter(jobId: string, chapterId: string): Prom
 }
 
 /** Writes the chosen chapters now (one lot): the rest of the table of contents waits, at no cost. */
-export async function generateMergeChapters(jobId: string, chapterIds: string[]): Promise<ActionState> {
+export async function generateMergeChapters(jobId: string, chapterIds: string[], lotModel?: LotModel): Promise<ActionState> {
   await requireElProfesorAdmin();
   if (chapterIds.length === 0) return { error: "Choisissez au moins un chapitre." };
+  const model = lotModel ? { provider: lotModel.provider, model: lotModel.model.trim() } : undefined;
+  if (model && !model.model) return { error: "Choisissez un modèle." };
+  if (model && (model.provider === "gemini" ? !(await hasElProfesorGeminiKey()) : !(await hasElProfesorClaudeKey())))
+    return { error: `Clé API ${model.provider === "gemini" ? "Gemini" : "Claude"} non configurée (Réglages IA).` };
   const supabase = createAdminClient();
   const { data: job } = await supabase.from("el_profesor_merge_jobs").select("*").eq("id", jobId).maybeSingle();
   if (!job) return { error: "Fusion introuvable." };
   if (job.stage !== "ready") return { error: job.stage === "fiches" || job.stage === "repair" ? "Un lot est déjà en cours : attendez qu'il se termine." : "La table des matières n'est pas prête." };
   try {
-    const lot = await releaseChapters(supabase, job as ElProfesorMergeJobRow, chapterIds);
+    const lot = await releaseChapters(supabase, job as ElProfesorMergeJobRow, chapterIds, model);
     await kickMergeQueue();
     revalidatePath("/apps/el-profesor");
     revalidatePath("/apps/el-profesor/notions");

@@ -5,11 +5,8 @@
 
 import { estimateCostUsd } from "../ai-pricing";
 import { ASSIGN_CHUNK, targetSubPartCount } from "./plan";
+import { CHARS_PER_TOKEN, pricedModel as priced, writingStages } from "./lot-estimate";
 import type { MergeProvider } from "./types";
-
-/** Characters per token for this content: JSON-quoted French and English medical prose. */
-const CHARS_PER_TOKEN = 3.2;
-const FICHE_PROMPT_TOKENS = 3_800;
 
 export interface MergeEstimateInput {
   fiches: { title: string; summary: string; chars: number }[];
@@ -25,26 +22,6 @@ export interface MergeEstimate {
   costUsd: number | null;
   /** The table of contents alone (plan, répartition, chapitres): what launching the fusion costs; the fiches are written later, lot by lot. */
   tocCostUsd: number | null;
-}
-
-const priced = (provider: MergeProvider, model: string) => (provider === "claude" ? `claude:${model}` : model);
-
-/** Writing merged fiches (fusion + rattrapage) from the characters of their sources. */
-function writingStages(mergedFiches: number, contentTokens: number) {
-  return [
-    // Sources go in with their labels; the merged fiche comes out about as long (nothing is dropped, duplicates are), plus its cards.
-    { requests: mergedFiches, input: mergedFiches * FICHE_PROMPT_TOKENS + contentTokens * 1.15, output: contentTokens * 0.85 + mergedFiches * 400 },
-    // Rattrapage: about one fiche in three (a value or a block to take up again).
-    { requests: Math.ceil(mergedFiches / 3), input: contentTokens * 0.2, output: contentTokens * 0.06 },
-  ];
-}
-
-/** Cost of writing a lot of chapters: one entry per merged fiche, with the characters of its sources. */
-export function estimateLot(sourceChars: number[], provider: MergeProvider, model: string): { inputTokens: number; outputTokens: number; costUsd: number | null } {
-  const stages = writingStages(sourceChars.length, sourceChars.reduce((s, c) => s + c, 0) / CHARS_PER_TOKEN);
-  const inputTokens = Math.round(stages.reduce((s, x) => s + x.input, 0));
-  const outputTokens = Math.round(stages.reduce((s, x) => s + x.output, 0));
-  return { inputTokens, outputTokens, costUsd: estimateCostUsd(priced(provider, model), inputTokens, outputTokens) };
 }
 
 export function estimateMerge(input: MergeEstimateInput, provider: MergeProvider, model: string): MergeEstimate {
@@ -79,3 +56,5 @@ export function estimateMerge(input: MergeEstimateInput, provider: MergeProvider
     tocCostUsd: estimateCostUsd(priced(provider, model), sum(toc, "input"), sum(toc, "output")),
   };
 }
+
+export { estimateLot } from "./lot-estimate";

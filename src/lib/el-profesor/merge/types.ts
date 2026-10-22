@@ -63,6 +63,10 @@ export interface MergeStats {
   unusedFiches?: number;
   /** One entry per lot of chapters written (migration 101). */
   rounds?: MergeRound[];
+  /** Tokens of the table of contents (plan, répartition, chapitres) and the model it was made with: each lot can use another one. */
+  toc?: { provider: MergeProvider; model: string; inputTokens: number; outputTokens: number };
+  /** Tokens spent when the lot being written started: its own cost is what's spent after. */
+  lotStart?: { inputTokens: number; outputTokens: number };
 }
 
 export interface MergeRound {
@@ -74,6 +78,9 @@ export interface MergeRound {
   inputTokens: number;
   outputTokens: number;
   finishedAt: string;
+  /** Model the lot was written with (absent: the table of contents' one). */
+  provider?: MergeProvider;
+  model?: string;
 }
 
 /** One active fiche of a source book, as listed by el_profesor_merge_source_fiches (migration 098). Prompts refer to it by a short alias ("F12") given per task. */

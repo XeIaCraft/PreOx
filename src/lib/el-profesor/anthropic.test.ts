@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeExtractionResult, normalizeComplementaryResult, coerceArray, coerceKeyedObjectArray, wasArrayFieldTruncated, repairPrematureClosers } from "./anthropic";
+import { normalizeExtractionResult, normalizeComplementaryResult, coerceArray, coerceKeyedObjectArray, wasArrayFieldTruncated, repairPrematureClosers, claudeToolRequest } from "./anthropic";
 
 // Regression test for the 2026-08-25 bug report: a Claude batch item came
 // back "succeeded" but with a required array (blocks/flashcards/citations/
@@ -251,5 +251,21 @@ describe("repairPrematureClosers", () => {
     expect(result.sub_entities[1].fiche.blocks.map((b) => b.citations.length)).toEqual([1, 1, 1, 0]);
     expect(result.sub_entities[1].fiche.flashcards).toHaveLength(1);
     expect(wasArrayFieldTruncated({ sub_entities: raw }, "sub_entities")).toBe(true);
+  });
+});
+
+describe("claudeToolRequest", () => {
+  const tool = { name: "write_fiche", description: "d", input_schema: { type: "object" as const } };
+  const content = [{ type: "text" as const, text: "Rédige." }];
+  it("forces the tool where the model allows it", () => {
+    expect(claudeToolRequest("claude-sonnet-5", content, tool)).toEqual({ content, tool_choice: { type: "tool", name: "write_fiche" } });
+    expect(claudeToolRequest("claude-haiku-5-5", content, tool).tool_choice.type).toBe("tool");
+  });
+  it("asks for the tool in words where forcing it is refused", () => {
+    for (const model of ["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"]) {
+      const r = claudeToolRequest(model, content, tool);
+      expect(r.tool_choice).toEqual({ type: "auto" });
+      expect(JSON.stringify(r.content)).toContain("write_fiche");
+    }
   });
 });

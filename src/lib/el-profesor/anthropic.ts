@@ -329,6 +329,21 @@ export function claudeTextContent(text: string): ClaudeContentBlock[] {
 
 export type { ClaudeTool };
 
+/**
+ * Models that answer 400 to a forced tool (`tool_choice` "tool"/"any"):
+ * they get "auto" and the instruction to answer through the tool instead —
+ * results are read from the first tool_use block either way.
+ */
+const NO_FORCED_TOOL = /sonnet-5-5|opus-5-5|fable-5-1|mythos-5-1/i;
+
+export function claudeToolRequest(model: string, content: ClaudeContentBlock[], tool: ClaudeTool) {
+  if (!NO_FORCED_TOOL.test(model)) return { content, tool_choice: { type: "tool" as const, name: tool.name } };
+  return {
+    content: [...content, { type: "text", text: `Réponds uniquement en appelant l'outil « ${tool.name} », sans texte autour.` } as ClaudeContentBlock],
+    tool_choice: { type: "auto" as const },
+  };
+}
+
 /** Same as submitClaudeBatch, for callers bringing their own tool (the book fusion pipeline, merge/). */
 export async function submitClaudeToolBatch(config: ClaudeConfig, requests: ClaudeBatchRequestSpec[]): Promise<string> {
   if (requests.length === 0) throw new GeminiError("Aucune requête à soumettre.");
@@ -336,26 +351,29 @@ export async function submitClaudeToolBatch(config: ClaudeConfig, requests: Clau
   const client = claudeClient(config.apiKey);
   try {
     const batch = await client.messages.batches.create({
-      requests: requests.map((r) => ({
-        custom_id: r.customId,
-        params: {
-          model: config.model,
-          // 128,000 is the documented max output for claude-sonnet-5 (and
-          // every other current Claude model) — raised from 32,000 (found
-          // 2026-08-25, root-causing a batch that came back with required
-          // fields missing from its JSON: a content-rich chapter's
-          // extraction/complementary pass can genuinely need more than
-          // 32k output tokens, and hitting that cap truncates the tool-use
-          // JSON mid-structure rather than erroring clearly. The Batches
-          // API has no live connection to time out on unlike a synchronous
-          // request, so there's no reason to keep this conservative — it's
-          // a ceiling, not something the model is forced to spend.
-          max_tokens: 128000,
-          messages: [{ role: "user", content: r.content }],
-          tools: [r.tool],
-          tool_choice: { type: "tool", name: r.tool.name },
-        },
-      })),
+      requests: requests.map((r) => {
+        const { content, tool_choice } = claudeToolRequest(config.model, r.content, r.tool);
+        return {
+          custom_id: r.customId,
+          params: {
+            model: config.model,
+            // 128,000 is the documented max output for claude-sonnet-5 (and
+            // every other current Claude model) — raised from 32,000 (found
+            // 2026-08-25, root-causing a batch that came back with required
+            // fields missing from its JSON: a content-rich chapter's
+            // extraction/complementary pass can genuinely need more than
+            // 32k output tokens, and hitting that cap truncates the tool-use
+            // JSON mid-structure rather than erroring clearly. The Batches
+            // API has no live connection to time out on unlike a synchronous
+            // request, so there's no reason to keep this conservative — it's
+            // a ceiling, not something the model is forced to spend.
+            max_tokens: 128000,
+            messages: [{ role: "user", content }],
+            tools: [r.tool],
+            tool_choice,
+          },
+        };
+      }),
     });
     return batch.id;
   } catch (err) {

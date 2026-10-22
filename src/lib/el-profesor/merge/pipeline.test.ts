@@ -47,19 +47,22 @@ vi.mock("@/lib/el-profesor/anthropic", async (importOriginal) => {
       return id;
     },
     retrieveClaudeBatch: async () => ({ ended: true, succeeded: 1, errored: 0, processing: 0, canceled: 0, expired: 0 }),
-    getClaudeBatchResults: async (_key: string, batchId: string) =>
-      (h.batches.get(batchId) ?? []).map((r) => {
+    getClaudeBatchResults: async (_key: string, batchId: string) => {
+      // Downloading results takes a while: an overlapping run can read the same batch meanwhile.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return (h.batches.get(batchId) ?? []).map((r) => {
         h.prompts.push(r.prompt);
         if (h.creditGone && isRepairPrompt(r.prompt)) return { customId: r.customId, outcome: "errored" as const, message: "Your credit balance is too low to access the API.", usage: { inputTokens: 0, outputTokens: 0 } };
         return { customId: r.customId, outcome: "succeeded" as const, output: fakeAi(r.prompt), usage: { inputTokens: 1000, outputTokens: 300 } };
-      }),
+      });
+    },
   };
 });
 
 import { processMergeJobs } from "./pipeline";
 import { redoFailedRepairs, releaseChapters } from "./stages";
 import { flattenChapters } from "./plan";
-import type { MergePlan } from "./types";
+import type { MergePlan, MergeStats } from "./types";
 import type { ElProfesorMergeJobRow } from "@/lib/supabase/types";
 import { numericFacts, missingFacts } from "./plan";
 import { blockPromptText } from "./prompts";
@@ -340,6 +343,43 @@ describe.each(["gemini", "claude"] as const)("fusion de bout en bout (%s)", (pro
     for (const f of out.fiches) {
       const blocks = out.blocks.filter((b) => b.fiche_id === f.id).sort((a, b) => (a.order_index as number) - (b.order_index as number));
       expect(blocks[blocks.length - 1].block_type, `fiche sans À retenir : ${f.title}`).toBe("a_retenir");
+    }
+  });
+
+  it("writes a lot with another model and keeps each one's tokens apart", async () => {
+    const { job } = seed(h.db, provider);
+    const tocModel = job.model;
+    const ready = await runUntil(h.db, job.id, ["ready", "failed"]);
+    const chapterIds = flattenChapters(ready.plan as unknown as MergePlan).map((c) => c.chapterId);
+    const other = provider === "claude" ? { provider: "gemini" as const, model: "gemini-flash-latest" } : { provider: "claude" as const, model: "claude-haiku-5-5" };
+    await releaseChapters(h.db as never, ready as unknown as ElProfesorMergeJobRow, chapterIds.slice(0, 1), other);
+    const after = await runUntil(h.db, job.id, ["ready", "done", "failed"]);
+    expect(after.provider).toBe(other.provider);
+    const stats = after.stats as unknown as MergeStats;
+    expect(stats.toc).toMatchObject({ provider, model: tocModel });
+    expect(stats.toc!.inputTokens).toBeGreaterThan(0);
+    const lot = stats.rounds!.find((r) => r.round === 1)!;
+    expect(lot).toMatchObject(other);
+    // The table of contents and the lot share out every token spent, nothing counted twice.
+    expect(stats.toc!.inputTokens + lot.inputTokens).toBe(stats.inputTokens);
+  });
+
+  it("applies each answer once when two runs overlap", async () => {
+    const { job } = seed(h.db, provider);
+    const ready = await runUntil(h.db, job.id, ["ready", "failed"]);
+    const chapterIds = flattenChapters(ready.plan as unknown as MergePlan).map((c) => c.chapterId);
+    await releaseChapters(h.db as never, ready as unknown as ElProfesorMergeJobRow, chapterIds);
+    for (let i = 0; i < 12; i++) {
+      // The cron fires every minute and a run lasts longer: two collect the same finished batches.
+      await Promise.all([processMergeJobs({ budgetMs: 280_000, startBeforeMs: 270_000 }), processMergeJobs({ budgetMs: 280_000, startBeforeMs: 270_000 })]);
+      if (h.db.table("el_profesor_merge_jobs").find((j) => j.id === job.id)!.stage === "done") break;
+    }
+    expect(h.db.table("el_profesor_merge_jobs").find((j) => j.id === job.id)!.stage).toBe("done");
+    const written = h.db.table("el_profesor_merge_tasks").filter((t) => t.job_id === job.id && (t.stage === "fiche" || t.stage === "repair"));
+    expect(written.length).toBeGreaterThan(0);
+    for (const t of written) {
+      expect(t.status).toBe("done");
+      expect(t.attempts, `${t.stage} refaite : ${t.error}`).toBe(0);
     }
   });
 

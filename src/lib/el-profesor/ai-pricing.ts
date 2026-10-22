@@ -23,11 +23,18 @@ const GEMINI_PRICING: { match: RegExp; pricing: ModelPricing }[] = [
   { match: /pro/i, pricing: { inputPerM: 1.25, outputPerM: 10.0 } },
 ];
 
+// Rates of the current generations checked 2026-10-22 (Sonnet 5 had been
+// priced at the old 3/15 until then, overstating every Claude cost by half).
 const CLAUDE_PRICING: { match: RegExp; pricing: ModelPricing }[] = [
+  { match: /fable|mythos/i, pricing: { inputPerM: 10.0, outputPerM: 50.0 } },
+  { match: /opus-5-5/i, pricing: { inputPerM: 4.0, outputPerM: 20.0 } },
+  { match: /opus-(5|4-[5-9])/i, pricing: { inputPerM: 5.0, outputPerM: 25.0 } },
   { match: /opus/i, pricing: { inputPerM: 15.0, outputPerM: 75.0 } },
+  { match: /sonnet-5/i, pricing: { inputPerM: 2.0, outputPerM: 10.0 } },
   { match: /sonnet/i, pricing: { inputPerM: 3.0, outputPerM: 15.0 } },
+  { match: /haiku-5/i, pricing: { inputPerM: 0.1, outputPerM: 0.5 } },
+  { match: /haiku-4-5/i, pricing: { inputPerM: 1.0, outputPerM: 5.0 } },
   { match: /haiku/i, pricing: { inputPerM: 0.8, outputPerM: 4.0 } },
-  { match: /fable/i, pricing: { inputPerM: 10.0, outputPerM: 50.0 } },
 ];
 
 // Every Claude call in this app currently goes through the Message Batches

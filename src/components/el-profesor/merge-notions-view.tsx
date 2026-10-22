@@ -18,6 +18,7 @@ import {
   getMergeJobs,
   getMergeToc,
   getMergeTocChapter,
+  getMergeTocCoverage,
   redoMergeRepair,
   retryMerge,
   runMergeNow,
@@ -27,10 +28,12 @@ import {
   type MergeSetupData,
   type MergeToc,
   type MergeTocChapter,
+  type MergeTocCoverage,
   type MergeTocFiche,
 } from "@/app/apps/el-profesor/actions/merge";
 import { bulkPublishChapters } from "@/app/apps/el-profesor/actions/extraction";
-import { formatUsd, estimateCostUsd } from "@/lib/el-profesor/ai-pricing";
+import { formatUsd } from "@/lib/el-profesor/ai-pricing";
+import { estimateLot } from "@/lib/el-profesor/merge/lot-estimate";
 import { shortBookTitle } from "@/lib/el-profesor/book-title";
 import type { MergeProvider } from "@/lib/el-profesor/merge/types";
 
@@ -145,10 +148,8 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
   const stageDone = p.done + p.failed;
   const overall = job.stage === "done" ? 1 : stageIndex < 0 ? 0 : (stageIndex + (stageTotal ? stageDone / stageTotal : 0)) / STAGES.length;
   const s = job.stats;
-  const priced = job.provider === "claude" ? `claude:${job.model}` : job.model;
-  const cost = s.inputTokens ? estimateCostUsd(priced, s.inputTokens, s.outputTokens ?? 0) : null;
-  const lots = s.rounds ?? [];
-  const lotsCost = lots.reduce((sum, r) => sum + (estimateCostUsd(priced, r.inputTokens, r.outputTokens) ?? 0), 0);
+  const cost = s.inputTokens ? job.costs.totalUsd : null;
+  const lots = job.costs.lots;
 
   function run(action: () => Promise<{ error?: string; success?: string }>) {
     startTransition(async () => {
@@ -220,12 +221,17 @@ function MergeJobCard({ job, onChanged }: { job: MergeJobView; onChanged: () => 
       )}
       {lots.length > 0 && (
         <p className="mt-3 text-xs text-foreground-muted">
-          {cost != null && `Table des matières ≈ ${formatUsd(Math.max(0, cost - lotsCost))}`}
+          {job.costs.toc.costUsd != null && `Table des matières ≈ ${formatUsd(job.costs.toc.costUsd)}`}
           {lots.map((r) => {
-            const c = estimateCostUsd(priced, r.inputTokens, r.outputTokens);
-            const date = new Date(r.finishedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short" });
-            const what = r.kind === "repair" ? `Rattrapage refait (${date}) : ${r.fiches} fiche${r.fiches > 1 ? "s" : ""}` : `Lot ${r.round} (${date}) : ${r.chapters} chapitre${r.chapters > 1 ? "s" : ""}`;
-            return ` · ${what}${c != null ? `, ≈ ${formatUsd(c)}` : ""}`;
+            const date = r.finishedAt ? new Date(r.finishedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short" }) : null;
+            const what =
+              date == null
+                ? `Lot ${r.round} en cours`
+                : r.kind === "repair"
+                  ? `Rattrapage refait (${date}) : ${r.fiches} fiche${r.fiches > 1 ? "s" : ""}`
+                  : `Lot ${r.round} (${date}) : ${r.chapters} chapitre${r.chapters > 1 ? "s" : ""}`;
+            const other = r.model !== job.costs.toc.model ? ` (${r.model})` : "";
+            return ` · ${what}${other}${r.costUsd != null ? `, ≈ ${formatUsd(r.costUsd)}` : ""}`;
           })}
         </p>
       )}
@@ -382,14 +388,28 @@ const STATE_LABEL: Record<MergeTocChapter["state"], { label: (lot: number) => st
  * fiche fuses — to check that every fiche of the books is used, then choose
  * which chapters to write now (one lot) and leave the rest for later.
  */
+/** Lots can be written with another model than the table of contents: a cheaper one spreads the cost further. */
+const LOT_MODELS: { provider: MergeProvider; model: string; label: string; detail: string }[] = [
+  { provider: "claude", model: "claude-sonnet-5", label: "Claude Sonnet 5", detail: "La meilleure rédaction ; celle des premiers lots." },
+  { provider: "claude", model: "claude-haiku-5-5", label: "Claude Haiku 5.5", detail: "Bien moins cher, rédaction plus simple. Le contrôle de couverture garde tout." },
+  { provider: "gemini", model: "gemini-flash-latest", label: "Gemini Flash", detail: "Bon marché, plus rapide (pas de lot), soumis aux quotas Gemini." },
+];
+
+// Kept while the page is open: reopening the panel shows the last table at once, refreshed behind.
+const tocCache = new Map<string, MergeToc>();
+const coverageCache = new Map<string, MergeTocCoverage>();
+
 function MergeTocPanel({ job, onChanged }: { job: MergeJobView; onChanged: () => Promise<void> }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(job.stage === "ready");
-  const [toc, setToc] = useState<MergeToc | null>(null);
+  const cacheKey = `${job.id}:${job.stage}:${job.round}`;
+  const [toc, setToc] = useState<MergeToc | null>(() => tocCache.get(cacheKey) ?? tocCache.get(job.id) ?? null);
+  const [coverage, setCoverage] = useState<MergeTocCoverage | null>(() => coverageCache.get(`${job.id}:${job.round}`) ?? null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showAdded, setShowAdded] = useState(false);
+  const [lotModel, setLotModel] = useState<{ provider: MergeProvider; model: string }>({ provider: job.provider, model: job.model });
   const [pending, startTransition] = useTransition();
   const canChoose = job.stage === "ready";
 
@@ -401,6 +421,8 @@ function MergeTocPanel({ job, onChanged }: { job: MergeJobView; onChanged: () =>
       if (cancelled) return;
       if ("error" in result) setLoadError(result.error);
       else {
+        tocCache.set(cacheKey, result);
+        tocCache.set(job.id, result);
         setToc(result);
         setLoadError(null);
       }
@@ -408,15 +430,39 @@ function MergeTocPanel({ job, onChanged }: { job: MergeJobView; onChanged: () =>
     return () => {
       cancelled = true;
     };
-  }, [open, job.id, job.stage, job.round]);
+  }, [open, job.id, cacheKey]);
+
+  // The coverage check reads the whole catalog of the books: it comes after the list, without holding it up.
+  const coverageKey = `${job.id}:${job.round}`;
+  useEffect(() => {
+    if (!open || coverageCache.has(coverageKey)) return;
+    let cancelled = false;
+    void getMergeTocCoverage(job.id).then((result) => {
+      if (cancelled || "error" in result) return;
+      coverageCache.set(coverageKey, result);
+      setCoverage(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, job.id, coverageKey]);
 
   const chapters = useMemo(() => (toc ? toc.parts.flatMap((p) => p.subParts.flatMap((sp) => sp.chapters)) : []), [toc]);
   const held = chapters.filter((c) => c.state === "held");
   const written = chapters.filter((c) => c.state === "written").length;
   const chosen = held.filter((c) => selected.has(c.chapterId));
-  const sumCost = (list: MergeTocChapter[]) => (list.some((c) => c.costUsd == null) ? null : list.reduce((s, c) => s + (c.costUsd ?? 0), 0));
-  const chosenCost = sumCost(chosen);
-  const leftCost = sumCost(held);
+  const costOf = (list: MergeTocChapter[], m = lotModel) =>
+    estimateLot(
+      list.reduce((n, c) => n + c.ficheCount, 0),
+      list.reduce((n, c) => n + c.sourceChars, 0),
+      m.provider,
+      m.model
+    ).costUsd;
+  const chosenCost = costOf(chosen);
+  const leftCost = costOf(held);
+  const models = LOT_MODELS.some((m) => m.provider === job.provider && m.model === job.model)
+    ? LOT_MODELS
+    : [{ provider: job.provider, model: job.model, label: job.model, detail: "Le modèle de la table des matières." }, ...LOT_MODELS];
 
   function toggle(ids: string[], on: boolean) {
     setSelected((prev) => {
@@ -430,7 +476,8 @@ function MergeTocPanel({ job, onChanged }: { job: MergeJobView; onChanged: () =>
     startTransition(async () => {
       const result = await generateMergeChapters(
         job.id,
-        chosen.map((c) => c.chapterId)
+        chosen.map((c) => c.chapterId),
+        lotModel
       );
       if (result.error) toast(result.error, { variant: "error" });
       else {
@@ -460,46 +507,73 @@ function MergeTocPanel({ job, onChanged }: { job: MergeJobView; onChanged: () =>
 
       {open && (
         <div className="border-t border-border px-3 pb-3 pt-3">
-          {loadError ? (
+          {loadError && !toc ? (
             <p className="text-sm text-danger">{loadError}</p>
           ) : !toc ? (
             <p className="text-sm text-foreground-subtle">Chargement…</p>
           ) : (
             <>
               <div className="space-y-1 text-xs">
-                {toc.coverage.used === toc.coverage.sourceFiches ? (
+                {!coverage ? (
+                  <p className="text-foreground-subtle">Vérification que toutes les fiches des livres sont utilisées…</p>
+                ) : coverage.used === coverage.sourceFiches ? (
                   <p className="flex items-start gap-1.5 text-success">
-                    <Check className="mt-px h-3.5 w-3.5 shrink-0" /> Les {nf.format(toc.coverage.sourceFiches)} fiches des livres sont toutes utilisées.
+                    <Check className="mt-px h-3.5 w-3.5 shrink-0" /> Les {nf.format(coverage.sourceFiches)} fiches des livres sont toutes utilisées.
                   </p>
                 ) : (
                   <div className="text-accent">
                     <p>
-                      {nf.format(toc.coverage.addedSinceCount)} fiche{toc.coverage.addedSinceCount > 1 ? "s" : ""} des livres ne figure
-                      {toc.coverage.addedSinceCount > 1 ? "nt" : ""} pas dans cette table des matières (ajoutée{toc.coverage.addedSinceCount > 1 ? "s" : ""} depuis sa création) : elle
-                      {toc.coverage.addedSinceCount > 1 ? "s" : ""} ne ser{toc.coverage.addedSinceCount > 1 ? "ont" : "a"} pas fusionnée{toc.coverage.addedSinceCount > 1 ? "s" : ""}.{" "}
+                      {nf.format(coverage.addedSinceCount)} fiche{coverage.addedSinceCount > 1 ? "s" : ""} des livres ne figure
+                      {coverage.addedSinceCount > 1 ? "nt" : ""} pas dans cette table des matières (ajoutée{coverage.addedSinceCount > 1 ? "s" : ""} depuis sa création) : elle
+                      {coverage.addedSinceCount > 1 ? "s" : ""} ne ser{coverage.addedSinceCount > 1 ? "ont" : "a"} pas fusionnée{coverage.addedSinceCount > 1 ? "s" : ""}.{" "}
                       <button type="button" className="underline" onClick={() => setShowAdded((v) => !v)}>
                         {showAdded ? "Masquer" : "Voir"}
                       </button>
                     </p>
                     {showAdded && (
                       <ul className="mt-1 list-disc space-y-0.5 pl-5 text-foreground-muted">
-                        {toc.coverage.addedSince.map((f, i) => (
+                        {coverage.addedSince.map((f, i) => (
                           <li key={i}>
                             {shortBookTitle(f.book)} · {f.chapter} — {f.title}
                           </li>
                         ))}
-                        {toc.coverage.addedSinceCount > toc.coverage.addedSince.length && <li>…</li>}
+                        {coverage.addedSinceCount > coverage.addedSince.length && <li>…</li>}
                       </ul>
                     )}
                   </div>
                 )}
-                {toc.coverage.goneSince > 0 && (
+                {coverage && coverage.goneSince > 0 && (
                   <p className="text-foreground-muted">
-                    {nf.format(toc.coverage.goneSince)} fiche{toc.coverage.goneSince > 1 ? "s" : ""} source{toc.coverage.goneSince > 1 ? "s" : ""} supprimée
-                    {toc.coverage.goneSince > 1 ? "s" : ""} depuis : simplement laissée{toc.coverage.goneSince > 1 ? "s" : ""} de côté à la rédaction.
+                    {nf.format(coverage.goneSince)} fiche{coverage.goneSince > 1 ? "s" : ""} source{coverage.goneSince > 1 ? "s" : ""} supprimée
+                    {coverage.goneSince > 1 ? "s" : ""} depuis : simplement laissée{coverage.goneSince > 1 ? "s" : ""} de côté à la rédaction.
                   </p>
                 )}
               </div>
+
+              {canChoose && held.length > 0 && (
+                <fieldset className="mt-3">
+                  <legend className="text-xs font-medium text-foreground">Modèle de ce lot</legend>
+                  <div className="mt-1.5 grid gap-1.5 sm:grid-cols-3">
+                    {models.map((m) => {
+                      const on = lotModel.provider === m.provider && lotModel.model === m.model;
+                      const all = costOf(held, m);
+                      return (
+                        <label
+                          key={`${m.provider}:${m.model}`}
+                          className={`flex cursor-pointer items-start gap-2 rounded-[var(--radius-sm)] border p-2 text-xs ${on ? "border-primary bg-primary-tint/40" : "border-border"}`}
+                        >
+                          <input type="radio" name={`lot-model-${job.id}`} className="mt-0.5" checked={on} onChange={() => setLotModel({ provider: m.provider, model: m.model })} />
+                          <span>
+                            <span className="block font-medium text-foreground">{m.label}</span>
+                            <span className="block text-foreground-subtle">{m.detail}</span>
+                            {all != null && <span className="block tabular-nums text-foreground-muted">Tout le reste ≈ {formatUsd(all)}</span>}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              )}
 
               {canChoose && held.length > 0 && (
                 <div className="sticky top-0 z-10 -mx-3 mt-3 flex flex-wrap items-center gap-2 border-y border-border bg-surface px-3 py-2">
@@ -578,7 +652,10 @@ function MergeTocPanel({ job, onChanged }: { job: MergeJobView; onChanged: () =>
                                       <span className="block text-xs tabular-nums text-foreground-subtle">
                                         {c.ficheCount} fiche{c.ficheCount > 1 ? "s" : ""} · {nf.format(c.sourceCount)} source
                                         {c.sourceCount > 1 ? "s" : ""}
-                                        {c.state === "held" && c.costUsd != null && ` · ≈ ${formatUsd(c.costUsd)}`}
+                                        {c.state === "held" && (() => {
+                                          const cost = costOf([c]);
+                                          return cost != null ? ` · ≈ ${formatUsd(cost)}` : "";
+                                        })()}
                                       </span>
                                     </button>
                                     <Badge variant={st.variant} className="shrink-0">
