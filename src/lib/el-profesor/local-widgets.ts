@@ -17,6 +17,7 @@
 // replaces — see local-widgets.test.ts. local-dashboard.ts loads the inputs.
 import { blockToPlainText } from "./block-text";
 import { computeLocalDueQueue } from "./local-review-queue";
+import type { NewCardGate } from "./new-card-gate";
 import type {
   SubEntityWithFiche,
   BookWithChapters,
@@ -151,8 +152,8 @@ export function computeOverconfidentMissCount(days: Record<string, ReviewDayStat
 // ---------------------------------------------------------------------------
 
 /** Mirrors getGlobalDueQueue's length: literally the sum of the per-chapter due queues, so it can never disagree with the chapter badges or the queue itself. */
-export function computeGlobalDueCount(library: LocalLibraryChapter[], reviewStates: Map<string, ReviewState>, suspendedIds: Set<string>, now: number): number {
-  return library.reduce((sum, chapter) => sum + computeLocalDueQueue(chapter.content, reviewStates, suspendedIds, now).length, 0);
+export function computeGlobalDueCount(library: LocalLibraryChapter[], reviewStates: Map<string, ReviewState>, suspendedIds: Set<string>, now: number, gate?: NewCardGate | null): number {
+  return library.reduce((sum, chapter) => sum + computeLocalDueQueue(chapter.content, reviewStates, suspendedIds, now, gate).length, 0);
 }
 
 function isDifficult(card: Flashcard, reviewStates: Map<string, ReviewState>, suspendedIds: Set<string>): boolean {
@@ -174,8 +175,8 @@ export function computeDifficultQueue(library: LocalLibraryChapter[], reviewStat
 }
 
 /** Every chapter's due queue, concatenated in library order — mirrors getGlobalDueQueue exactly. */
-export function computeGlobalDueQueue(library: LocalLibraryChapter[], reviewStates: Map<string, ReviewState>, suspendedIds: Set<string>, now: number): Flashcard[] {
-  return library.flatMap((chapter) => computeLocalDueQueue(chapter.content, reviewStates, suspendedIds, now));
+export function computeGlobalDueQueue(library: LocalLibraryChapter[], reviewStates: Map<string, ReviewState>, suspendedIds: Set<string>, now: number, gate?: NewCardGate | null): Flashcard[] {
+  return library.flatMap((chapter) => computeLocalDueQueue(chapter.content, reviewStates, suspendedIds, now, gate));
 }
 
 /**
@@ -405,6 +406,8 @@ export interface LocalWidgetInputs {
   notes: Record<string, CachedNote>;
   blockReviewStates: Record<string, BlockReviewState>;
   now: number;
+  /** New cards wait for their fiche to be read (new-card-gate.ts); absent = not gated. */
+  newCardGate?: NewCardGate | null;
 }
 
 /** The whole DashboardSecondaryData the widgets render, built locally; the cross-user fields come from the background-fetched extras when there are any, and are simply empty until then. */
@@ -415,7 +418,7 @@ export function computeLocalWidgets(input: LocalWidgetInputs, extras: DashboardE
     activity: computeActivitySummary(reviewDays, now),
     overconfidentMissCount: computeOverconfidentMissCount(reviewDays, now),
     forecast: computeForecast(library, reviewStates, suspendedIds, now),
-    globalDueCount: computeGlobalDueCount(library, reviewStates, suspendedIds, now),
+    globalDueCount: computeGlobalDueCount(library, reviewStates, suspendedIds, now, input.newCardGate),
     difficultCount: Object.values(difficultCounts).reduce((sum, n) => sum + n, 0),
     mostDifficultGlobal: extras?.mostDifficultGlobal ?? [],
     leechFlashcards: extras?.leechFlashcards ?? [],

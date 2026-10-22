@@ -165,6 +165,13 @@ export async function patchCachedDashboardBooks(
   return books;
 }
 
+/** Patches settings carried by the cached dashboard (e.g. newCardsAfterReading), keeping its sync time. */
+export async function patchCachedDashboardSettings(patch: Partial<Pick<DashboardSnapshot, "newCardsAfterReading">>): Promise<void> {
+  const current = await getCachedDashboard();
+  if (!current) return;
+  await putEntries(DASHBOARD_STORE, [[DASHBOARD_KEY, { ...current, ...patch }]]);
+}
+
 export async function getCachedChapterContent(chapterId: string): Promise<WithChapterSyncMeta<ChapterContentSnapshot> | null> {
   return getValue<WithChapterSyncMeta<ChapterContentSnapshot>>(CHAPTER_CONTENT_STORE, chapterId);
 }

@@ -20,7 +20,7 @@ import {
   getAllLocalReviewEvents,
   getCachedDashboardExtras,
 } from "./local-db";
-import { applyPendingExcludes, computeLocalDueCounts, computeLocalMasteryCounts, computeLocalReadProgressByChapter } from "./local-review-queue";
+import { applyPendingExcludes, computeLocalDueCounts, computeLocalMasteryCounts, computeLocalReadProgressByChapter, computeLocalWaitingCounts, localNewCardGate } from "./local-review-queue";
 import {
   buildLocalLibrary,
   computeGlobalDueQueue,
@@ -71,6 +71,7 @@ export async function loadLocalDashboardView(isAdmin: boolean, now: number = Dat
   const contentByChapterId = new Map([...allContent].map(([chapterId, c]) => [chapterId, c.subEntities]));
   const readProgressByChapterId = new Map([...allContent].map(([chapterId, c]) => [chapterId, c.ficheReadProgress]));
   const library = buildLocalLibrary(snapshot.books, contentByChapterId);
+  const newCardGate = localNewCardGate(snapshot.newCardsAfterReading, readProgressByChapterId.values());
 
   // Fallbacks for a cache written by an older version (before bookmarks and
   // block re-read states had their own entries): each chapter snapshot
@@ -83,7 +84,8 @@ export async function loadLocalDashboardView(isAdmin: boolean, now: number = Dat
 
   const view: DashboardSnapshot = {
     ...withExtras,
-    dueCounts: computeLocalDueCounts(contentByChapterId, reviewStates, suspendedIds, now),
+    dueCounts: computeLocalDueCounts(contentByChapterId, reviewStates, suspendedIds, now, newCardGate),
+    waitingCounts: computeLocalWaitingCounts(contentByChapterId, reviewStates, suspendedIds, newCardGate),
     masteryCounts: computeLocalMasteryCounts(contentByChapterId, reviewStates),
     difficultCounts: computeDifficultCountsByChapter(library, reviewStates, suspendedIds),
     readProgressByChapter: computeLocalReadProgressByChapter(contentByChapterId, readProgressByChapterId),
@@ -95,6 +97,7 @@ export async function loadLocalDashboardView(isAdmin: boolean, now: number = Dat
       library,
       reviewStates,
       suspendedIds,
+      newCardGate,
       reviewDays: mergeReviewDays(history?.days ?? {}, localEvents),
       bookmarks: applyPendingBookmarkWrites(bookmarks, pending),
       notes: applyPendingNoteWrites(cachedNotes ?? {}, pending),
@@ -134,5 +137,6 @@ export async function loadLocalGlobalReviewQueue(mode: "due" | "difficult", now:
   if (!cached || allContent.size === 0) return null;
   const library = buildLocalLibrary(cached.books, new Map([...allContent].map(([chapterId, c]) => [chapterId, c.subEntities])));
   const suspendedIds = applyPendingExcludes(cachedSuspendedIds ?? [], pending);
-  return mode === "due" ? computeGlobalDueQueue(library, reviewStates, suspendedIds, now) : shuffle(computeDifficultQueue(library, reviewStates, suspendedIds));
+  const gate = localNewCardGate(cached.newCardsAfterReading, [...allContent.values()].map((c) => c.ficheReadProgress));
+  return mode === "due" ? computeGlobalDueQueue(library, reviewStates, suspendedIds, now, gate) : shuffle(computeDifficultQueue(library, reviewStates, suspendedIds));
 }

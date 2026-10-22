@@ -312,6 +312,12 @@ export function GuideView({ isAdmin }: { isAdmin: boolean }) {
             l&apos;algorithme perd alors son intérêt. Ses paramètres sont réoptimisés périodiquement pour votre historique personnel
             une fois assez de révisions accumulées, plutôt que de rester génériques.
           </p>
+          <p>
+            Une carte jamais révisée n&apos;arrive dans vos révisions qu&apos;une fois sa fiche lue (80 % de la fiche parcourue ; une fiche
+            courte qui tient à l&apos;écran compte comme lue après quelques secondes) : « +N après lecture » à côté d&apos;un chapitre indique
+            les cartes qui attendent. Les cartes déjà révisées suivent leur propre calendrier, et la révision libre reste possible sur tout
+            le chapitre. Le bouton « Cartes neuves » en haut du tableau de bord permet de tout réviser, fiche lue ou non.
+          </p>
           <ul className="space-y-1.5">
             <IconRow icon={ThumbsUp}>
               Retournez la carte (tap ou espace), puis notez-vous : « Encore », « Difficile », « Correct » ou « Facile ».

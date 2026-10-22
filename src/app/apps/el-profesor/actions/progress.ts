@@ -23,6 +23,19 @@ export async function saveFicheReadProgress(ficheId: string, progressPct: number
     .upsert({ user_id: profile.id, fiche_id: ficheId, progress_pct: clamped, updated_at: new Date().toISOString() }, { onConflict: "user_id,fiche_id" });
 }
 
+/** « Cartes neuves après lecture » (new-card-gate.ts): a never-reviewed card waits until its fiche is read to 80 %. */
+export async function setNewCardsAfterReading(enabled: boolean): Promise<ActionState> {
+  const profile = await requireElProfesorAccess();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("el_profesor_user_fsrs_params")
+    .upsert({ user_id: profile.id, new_cards_after_reading: enabled, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  if (error) return { error: "Réglage non enregistré (la migration 103 est-elle appliquée ?)." };
+  return {
+    success: enabled ? "Les cartes neuves arrivent maintenant après la lecture de leur fiche." : "Toutes les cartes neuves sont à réviser, fiche lue ou non.",
+  };
+}
+
 export async function saveNotionReadProgress(notionId: string, progressPct: number): Promise<void> {
   const profile = await requireElProfesorAccess();
   const clamped = Math.max(0, Math.min(100, Math.round(progressPct)));

@@ -172,6 +172,28 @@ export function OptionToggleRow({
  * with layout-flavored FicheViewer body styling only, since the mockups
  * were explicitly a mobile redesign.
  */
+/**
+ * A fiche short enough to fit in its pane can't be scrolled, so it would
+ * never count as read — and its new flashcards would never arrive
+ * (new-card-gate.ts). Once it has stayed on screen a few seconds with
+ * nothing left to scroll, it counts as fully read.
+ */
+const FITS_READ_DELAY_MS = 3000;
+function useReadWhenFits(ref: React.RefObject<HTMLDivElement | null>, key: string | undefined, onRead: (pct: number) => void) {
+  const onReadRef = useRef(onRead);
+  useEffect(() => {
+    onReadRef.current = onRead;
+  });
+  useEffect(() => {
+    if (!key) return;
+    const timer = setTimeout(() => {
+      const el = ref.current;
+      if (el && el.scrollHeight - el.clientHeight <= 4) onReadRef.current(100);
+    }, FITS_READ_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [ref, key]);
+}
+
 function ImmersiveFicheReader({
   chapterTitle,
   layout,
@@ -212,6 +234,8 @@ function ImmersiveFicheReader({
   onScrollProgress: (pct: number) => void;
 }) {
   const swipeStartX = useRef<number | null>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
+  useReadWhenFits(paneRef, fiche.id, onScrollProgress);
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.pointerType !== "touch") return;
@@ -280,13 +304,14 @@ function ImmersiveFicheReader({
         </h1>
       </div>
       <div
+        ref={paneRef}
         className={`min-h-0 flex-1 overflow-y-auto px-5 ${layout === "livre" ? "pb-24" : "pb-6"}`}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onScroll={(e) => {
           const el = e.currentTarget;
           const max = el.scrollHeight - el.clientHeight;
-          onScrollProgress(max > 0 ? Math.min(100, (el.scrollTop / max) * 100) : 0);
+          onScrollProgress(max > 4 ? Math.min(100, (el.scrollTop / max) * 100) : 100);
         }}
       >
         <FicheViewer
@@ -556,6 +581,8 @@ export function ChapterView({
   }, [chapterId]);
 
   const selected = withFiche.find((s) => s.id === selectedId) ?? null;
+  // A short fiche fitting the content pane counts as read (it can't be scrolled).
+  useReadWhenFits(contentRef, selected?.fiche?.id, (pct) => reportReadProgress(pct));
 
   const coverage = useMemo<CoverageEntry[]>(() => buildCoverageEntries(withFiche), [withFiche]);
 
@@ -690,7 +717,7 @@ export function ChapterView({
     const el = contentRef.current;
     if (!el) return;
     const max = el.scrollHeight - el.clientHeight;
-    const pct = max > 0 ? Math.min(100, (el.scrollTop / max) * 100) : 0;
+    const pct = max > 4 ? Math.min(100, (el.scrollTop / max) * 100) : 100;
     setScrollProgress(pct);
     reportReadProgress(pct);
   }

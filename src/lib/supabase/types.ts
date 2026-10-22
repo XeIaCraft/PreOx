@@ -598,6 +598,8 @@ export type ElProfesorUserFsrsParamsRow = {
   user_id: string;
   request_retention: number;
   reviews_at_last_update: number;
+  /** New cards wait for their fiche to be read (migration 103) — on by default. */
+  new_cards_after_reading: boolean;
   updated_at: string;
 };
 

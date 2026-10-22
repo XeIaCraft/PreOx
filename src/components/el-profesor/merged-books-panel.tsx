@@ -8,6 +8,7 @@ import { CompactProgressBars } from "@/components/el-profesor/progress-bars";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { BookWithChapters, ChapterDueCounts, ChapterMasteryCounts } from "@/lib/el-profesor/dal";
+import { WaitingHint } from "@/components/el-profesor/waiting-hint";
 
 type Chapter = BookWithChapters["chapters"][number];
 type SectionLevel = "part" | "subPart";
@@ -118,6 +119,7 @@ function EditableTitle({ value, canEdit, onSave, className, label }: { value: st
 export function MergedBooksPanel({
   books,
   dueCounts,
+  waitingCounts = {},
   masteryCounts,
   readProgressByChapter,
   isAdmin,
@@ -126,6 +128,7 @@ export function MergedBooksPanel({
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
+  waitingCounts?: ChapterDueCounts;
   masteryCounts: ChapterMasteryCounts;
   readProgressByChapter: Record<string, number>;
   isAdmin: boolean;
@@ -154,6 +157,7 @@ export function MergedBooksPanel({
           key={book.id}
           book={book}
           dueCounts={dueCounts}
+          waitingCounts={waitingCounts}
           masteryCounts={masteryCounts}
           readProgressByChapter={readProgressByChapter}
           isAdmin={isAdmin}
@@ -183,6 +187,7 @@ export function MergedBooksPanel({
 function MergedBookSection({
   book,
   dueCounts,
+  waitingCounts,
   masteryCounts,
   readProgressByChapter,
   isAdmin,
@@ -191,6 +196,7 @@ function MergedBookSection({
 }: {
   book: BookWithChapters;
   dueCounts: ChapterDueCounts;
+  waitingCounts: ChapterDueCounts;
   masteryCounts: ChapterMasteryCounts;
   readProgressByChapter: Record<string, number>;
   isAdmin: boolean;
@@ -289,6 +295,7 @@ function MergedBookSection({
                           key={chapter.id}
                           chapter={chapter}
                           dueHere={dueCounts[chapter.id] ?? 0}
+                          waiting={waitingCounts[chapter.id] ?? 0}
                           masteryCounts={masteryCounts}
                           readPct={readProgressByChapter[chapter.id] ?? 0}
                           isAdmin={isAdmin}
@@ -310,6 +317,7 @@ function MergedBookSection({
 function ChapterRow({
   chapter,
   dueHere,
+  waiting,
   masteryCounts,
   readPct,
   isAdmin,
@@ -317,6 +325,7 @@ function ChapterRow({
 }: {
   chapter: Chapter;
   dueHere: number;
+  waiting: number;
   masteryCounts: ChapterMasteryCounts;
   readPct: number;
   isAdmin: boolean;
@@ -346,6 +355,7 @@ function ChapterRow({
                 {dueHere > 0 ? `Réviser (${dueHere})` : "À jour"}
               </Button>
             </LocalNavLink>
+            <WaitingHint count={waiting} />
             <LocalNavLink href={`/apps/el-profesor/chapters/${chapter.id}`}>
               <Button variant="secondary" size="sm">
                 <BookOpen className="h-3.5 w-3.5" /> Fiches

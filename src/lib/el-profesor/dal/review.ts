@@ -3,6 +3,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { computeAdjustedRetention } from "../fsrs";
+import { isCardDue, OPEN_GATE, type NewCardGate } from "../new-card-gate";
 import { blockToPlainText } from "../block-text";
 import { getChapterContent, activeFlashcards, shuffle, toReviewState, toFlashcard, resolveFicheContexts, selectInChunks, getActiveFlashcardsByChapterBatch } from "./shared";
 import type { Chapter, Flashcard, ReviewState, FlashcardSide, Book, BlockType, BlockContent, FlashcardVariant } from "../types";
@@ -74,7 +75,27 @@ export async function getSuspendedFlashcards(userId: string): Promise<SuspendedF
     .filter((c): c is SuspendedFlashcard => c !== null);
 }
 
-/** Flashcards due today (or new) for a chapter, for the scheduled review queue. */
+/** This reader's « cartes neuves après lecture » setting (migration 103): on by default, and when the column doesn't exist yet. */
+export async function getNewCardsAfterReading(userId: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("el_profesor_user_fsrs_params").select("new_cards_after_reading").eq("user_id", userId).maybeSingle();
+  if (error || !data) return true;
+  return data.new_cards_after_reading !== false;
+}
+
+/** The gate for these cards: the setting, and how far this reader has read each of their fiches. */
+export async function getNewCardGate(userId: string, cards: { ficheId: string }[]): Promise<NewCardGate> {
+  if (!(await getNewCardsAfterReading(userId))) return OPEN_GATE;
+  const ficheIds = [...new Set(cards.map((c) => c.ficheId))];
+  if (!ficheIds.length) return { enabled: true, ficheReadPct: {} };
+  const supabase = await createClient();
+  const rows = await selectInChunks(ficheIds, (chunk) =>
+    supabase.from("el_profesor_fiche_read_progress").select("fiche_id, progress_pct").eq("user_id", userId).in("fiche_id", chunk)
+  );
+  return { enabled: true, ficheReadPct: Object.fromEntries(rows.map((r) => [r.fiche_id, r.progress_pct])) };
+}
+
+/** Flashcards due today for a chapter (new ones once their fiche is read, see new-card-gate.ts), for the scheduled review queue. */
 export async function getDueQueue(userId: string, chapterId: string): Promise<Flashcard[]> {
   const supabase = await createClient();
   const content = await getChapterContent(chapterId, false);
@@ -94,12 +115,13 @@ export async function getDueQueue(userId: string, chapterId: string): Promise<Fl
   ]);
 
   const stateByCard = new Map((states ?? []).map((s) => [s.flashcard_id, s as ElProfesorReviewStateRow]));
+  const gate = await getNewCardGate(userId, flashcards);
   const now = Date.now();
 
   const due = flashcards
     .filter((card) => !suspended.has(card.id))
     .map((card) => ({ card, dueAt: stateByCard.get(card.id)?.due }))
-    .filter(({ dueAt }) => !dueAt || new Date(dueAt).getTime() <= now);
+    .filter(({ card, dueAt }) => isCardDue(card.ficheId, dueAt, now, gate));
 
   // Most-overdue first (never-reviewed cards sort as "due now", after any
   // genuinely overdue review), so lapsed knowledge gets priority over new material.
@@ -130,13 +152,14 @@ export async function getGlobalDueQueue(userId: string, chapters: Chapter[]): Pr
     supabase.from("el_profesor_review_state").select("flashcard_id, due").eq("user_id", userId).in("flashcard_id", chunk)
   );
   const dueByCard = new Map(states.map((s) => [s.flashcard_id, s.due]));
+  const gate = await getNewCardGate(userId, [...flashcardsByChapter.values()].flat());
   const now = Date.now();
 
   return published.flatMap((chapter) => {
     const due = (flashcardsByChapter.get(chapter.id) ?? [])
       .filter((card) => !suspended.has(card.id))
       .map((card) => ({ card, dueAt: dueByCard.get(card.id) }))
-      .filter(({ dueAt }) => !dueAt || new Date(dueAt).getTime() <= now);
+      .filter(({ card, dueAt }) => isCardDue(card.ficheId, dueAt, now, gate));
     due.sort((a, b) => (a.dueAt ? new Date(a.dueAt).getTime() : now) - (b.dueAt ? new Date(b.dueAt).getTime() : now));
     return due.map(({ card }) => card);
   });
@@ -182,12 +205,13 @@ export async function getNotionDueQueue(userId: string, notionId: string): Promi
       flashcards.map((f) => f.id)
     );
   const stateByCard = new Map(((states ?? []) as ElProfesorReviewStateRow[]).map((s) => [s.flashcard_id, s]));
+  const gate = await getNewCardGate(userId, flashcards);
   const now = Date.now();
 
   const due = flashcards
     .filter((card) => !suspended.has(card.id))
     .map((card) => ({ card, dueAt: stateByCard.get(card.id)?.due }))
-    .filter(({ dueAt }) => !dueAt || new Date(dueAt).getTime() <= now);
+    .filter(({ card, dueAt }) => isCardDue(card.ficheId, dueAt, now, gate));
 
   due.sort((a, b) => (a.dueAt ? new Date(a.dueAt).getTime() : now) - (b.dueAt ? new Date(b.dueAt).getTime() : now));
   return due.map(({ card }) => card);
@@ -533,16 +557,13 @@ export async function getDueCountsByChapter(userId: string, chapters: Chapter[])
     supabase.from("el_profesor_review_state").select("flashcard_id, due").eq("user_id", userId).in("flashcard_id", chunk)
   );
   const dueByCard = new Map(states.map((s) => [s.flashcard_id, s.due]));
+  const gate = await getNewCardGate(userId, [...flashcardsByChapter.values()].flat());
   const now = Date.now();
 
   const counts: ChapterDueCounts = {};
   for (const chapter of published) {
     const flashcards = flashcardsByChapter.get(chapter.id) ?? [];
-    counts[chapter.id] = flashcards.filter((card) => {
-      if (suspended.has(card.id)) return false;
-      const due = dueByCard.get(card.id);
-      return !due || new Date(due).getTime() <= now;
-    }).length;
+    counts[chapter.id] = flashcards.filter((card) => !suspended.has(card.id) && isCardDue(card.ficheId, dueByCard.get(card.id), now, gate)).length;
   }
   return counts;
 }

@@ -40,6 +40,7 @@ import {
   getFicheMasteryProgressBatch,
   getChapterContentBatch,
   getUserFsrsRetention,
+  getNewCardsAfterReading,
   getChapterLastModifiedTimestamps,
   getMostDifficultFlashcardsGlobal,
   getLeechFlashcards,
@@ -149,6 +150,7 @@ export async function getElProfesorDashboardSnapshot(ctx?: SyncContext): Promise
     readProgressByChapter,
     globalProgress,
     fsrsRetention,
+    newCardsAfterReading,
   ] = await Promise.all([
     getDueCountsByChapter(profileId, allChapters),
     isAdmin ? getNeedsReviewCounts(allChapters.map((c) => c.id)) : Promise.resolve({}),
@@ -160,6 +162,7 @@ export async function getElProfesorDashboardSnapshot(ctx?: SyncContext): Promise
     getReadProgressByChapter(profileId, allChapters),
     getGlobalProgressSummary(profileId),
     getUserFsrsRetention(profileId),
+    getNewCardsAfterReading(profileId),
   ]);
 
   return {
@@ -174,6 +177,7 @@ export async function getElProfesorDashboardSnapshot(ctx?: SyncContext): Promise
     hasGeminiKey,
     aiProvider,
     fsrsRetention,
+    newCardsAfterReading,
     effectiveIsAdmin: isAdmin,
     realIsAdmin,
     previewingAsUser,
@@ -196,11 +200,12 @@ export async function loadSyncManifest(ctx: SyncContext): Promise<SyncManifest> 
   const publishedChapterIds = allChapters.filter((c) => c.status === "published").map((c) => c.id);
   const supabase = await createClient();
 
-  const [needsReviewCounts, hasGeminiKey, aiProvider, fsrsRetention, suspendedRows, lastModified] = await Promise.all([
+  const [needsReviewCounts, hasGeminiKey, aiProvider, fsrsRetention, newCardsAfterReading, suspendedRows, lastModified] = await Promise.all([
     ctx.isAdmin ? settled(getNeedsReviewCounts(allChapters.map((c) => c.id)), {}) : Promise.resolve({}),
     ctx.isAdmin ? hasElProfesorGeminiKey() : Promise.resolve(false),
     ctx.isAdmin ? getElProfesorAiProvider() : Promise.resolve("gemini" as const),
     getUserFsrsRetention(ctx.profileId),
+    getNewCardsAfterReading(ctx.profileId),
     // Paged and throwing on error (unlike getSuspendedFlashcardIds): an
     // error must fail the sync, never be cached as "nothing excluded".
     selectAllPages((from, to) =>
@@ -222,6 +227,7 @@ export async function loadSyncManifest(ctx: SyncContext): Promise<SyncManifest> 
       hasGeminiKey,
       aiProvider,
       fsrsRetention,
+      newCardsAfterReading,
       effectiveIsAdmin: ctx.isAdmin,
       realIsAdmin: ctx.realIsAdmin,
       previewingAsUser: ctx.previewingAsUser,

@@ -54,6 +54,7 @@ import { useToast } from "@/components/ui/toast";
 import { LibrarySearch } from "@/components/el-profesor/library-search";
 import { NotesSearchDialog } from "@/components/el-profesor/notes-search-dialog";
 import { MergedBooksPanel } from "@/components/el-profesor/merged-books-panel";
+import { WaitingHint } from "@/components/el-profesor/waiting-hint";
 import { AddBookDialog } from "@/components/el-profesor/dialogs/add-book-dialog";
 import { UploadChapterDialog } from "@/components/el-profesor/dialogs/upload-chapter-dialog";
 import { SplitBookDialog } from "@/components/el-profesor/dialogs/split-book-dialog";
@@ -534,6 +535,7 @@ function applyBoardAction(current: BookWithChapters[], action: BoardAction): Boo
 export function ElProfesorBoard({
   books: booksProp,
   dueCounts,
+  waitingCounts = {},
   needsReviewCounts,
   masteryCounts,
   isAdmin,
@@ -553,6 +555,8 @@ export function ElProfesorBoard({
 }: {
   books: BookWithChapters[];
   dueCounts: ChapterDueCounts;
+  /** New cards waiting for their fiche to be read, per chapter (new-card-gate.ts). */
+  waitingCounts?: ChapterDueCounts;
   needsReviewCounts: ChapterDueCounts;
   masteryCounts: ChapterMasteryCounts;
   /** Average read % per chapter (piste 2026-08-29 — visible directly on the chapter card, next to its mastery bar). */
@@ -1272,6 +1276,7 @@ export function ElProfesorBoard({
             <MergedBooksPanel
               books={mergedBooks}
               dueCounts={dueCounts}
+              waitingCounts={waitingCounts}
               masteryCounts={masteryCounts}
               readProgressByChapter={readProgressByChapter}
               isAdmin={isAdmin}
@@ -1570,6 +1575,7 @@ export function ElProfesorBoard({
                               {due > 0 ? `Réviser (${due})` : "À jour"}
                             </Button>
                           </LocalNavLink>
+                          <WaitingHint count={waitingCounts[chapter.id] ?? 0} />
                           <LocalNavLink href={`/apps/el-profesor/chapters/${chapter.id}`}>
                             <Button variant="secondary" size="sm">
                               <BookOpen className="h-3.5 w-3.5" /> Fiches

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeLocalDueQueue, computeLocalFreeQueue, computeLocalDueCounts, computeLocalMasteryCounts, computeLocalReadProgressByChapter } from "./local-review-queue";
+import { computeLocalDueQueue, computeLocalFreeQueue, computeLocalDueCounts, computeLocalMasteryCounts, computeLocalReadProgressByChapter, computeLocalWaitingCounts, localNewCardGate } from "./local-review-queue";
 import type { Flashcard, ReviewState } from "./types";
 import type { SubEntityWithFiche } from "./dal";
 
@@ -202,5 +202,35 @@ describe("computeLocalReadProgressByChapter", () => {
     const content = [makeSubEntity("1", []), makeSubEntity("2", [])];
     const progress = computeLocalReadProgressByChapter(new Map([["chapter-1", content]]), new Map([["chapter-1", { "fiche-1": 60 }]]));
     expect(progress["chapter-1"]).toBe(30);
+  });
+});
+
+describe("new cards after reading", () => {
+  // Cards "a" and "b" sit on fiche-of-a / fiche-of-b (makeFlashcard): "a" never reviewed, "b" reviewed and due.
+  const content = [makeSubEntity("1", [makeFlashcard("a"), makeFlashcard("b"), makeFlashcard("c")])];
+  const states = new Map([["b", makeReviewState("b", PAST)]]);
+  const gate = (read: Record<string, number>) => localNewCardGate(true, [read]);
+
+  it("keeps a never-reviewed card out until its fiche is read to 80 %", () => {
+    expect(computeLocalDueQueue(content, states, new Set(), NOW, gate({})).map((c) => c.id)).toEqual(["b"]);
+    expect(computeLocalDueQueue(content, states, new Set(), NOW, gate({ "fiche-of-a": 79 })).map((c) => c.id)).toEqual(["b"]);
+    expect(computeLocalDueQueue(content, states, new Set(), NOW, gate({ "fiche-of-a": 80 })).map((c) => c.id)).toEqual(["b", "a"]);
+  });
+
+  it("never holds back a card already reviewed, and lets everything through when the setting is off", () => {
+    expect(computeLocalDueQueue(content, states, new Set(), NOW, localNewCardGate(false, [])).map((c) => c.id)).toEqual(["b", "a", "c"]);
+    expect(computeLocalDueQueue(content, states, new Set(), NOW).map((c) => c.id)).toEqual(["b", "a", "c"]);
+  });
+
+  it("counts what waits for reading, and the badge still equals the queue", () => {
+    const g = gate({ "fiche-of-c": 100 });
+    const byChapter = new Map([["chapter-1", content]]);
+    expect(computeLocalWaitingCounts(byChapter, states, new Set(), g)).toEqual({ "chapter-1": 1 });
+    expect(computeLocalWaitingCounts(byChapter, states, new Set(["a"]), g)).toEqual({ "chapter-1": 0 });
+    expect(computeLocalDueCounts(byChapter, states, new Set(), NOW, g)["chapter-1"]).toBe(computeLocalDueQueue(content, states, new Set(), NOW, g).length);
+  });
+
+  it("treats a cache written before the setting existed as on", () => {
+    expect(localNewCardGate(undefined, [{ x: 50 }])).toEqual({ enabled: true, ficheReadPct: { x: 50 } });
   });
 });

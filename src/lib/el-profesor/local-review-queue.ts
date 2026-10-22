@@ -21,12 +21,14 @@
 import {
   getAllCachedChapterContent,
   getAllCachedReviewStates,
+  getCachedDashboard,
   getCachedChapterContent,
   getCachedSuspendedFlashcardIds,
   getAllPendingWrites,
   type PendingWrite,
 } from "./local-db";
 import type { Flashcard, ReviewState } from "./types";
+import { isCardDue, isWaitingForReading, type NewCardGate } from "./new-card-gate";
 import type { SubEntityWithFiche, ChapterDueCounts, ChapterMasteryCounts } from "./dal";
 
 function activeFlashcards(content: SubEntityWithFiche[]): Flashcard[] {
@@ -47,17 +49,18 @@ function shuffle<T>(items: T[]): T[] {
   return copy;
 }
 
-/** Mirrors getDueQueue's exact filter + stable sort (dal/review.ts). */
+/** Mirrors getDueQueue's exact filter + stable sort (dal/review.ts), new cards gated on reading the same way (new-card-gate.ts). */
 export function computeLocalDueQueue(
   content: SubEntityWithFiche[],
   reviewStates: Map<string, ReviewState>,
   suspendedIds: Set<string>,
-  now: number = Date.now()
+  now: number = Date.now(),
+  gate?: NewCardGate | null
 ): Flashcard[] {
   const due = activeFlashcards(content)
     .filter((card) => !suspendedIds.has(card.id))
     .map((card) => ({ card, dueAt: reviewStates.get(card.id)?.due }))
-    .filter(({ dueAt }) => !dueAt || new Date(dueAt).getTime() <= now);
+    .filter(({ card, dueAt }) => isCardDue(card.ficheId, dueAt, now, gate));
 
   due.sort((a, b) => (a.dueAt ? new Date(a.dueAt).getTime() : now) - (b.dueAt ? new Date(b.dueAt).getTime() : now));
   return due.map(({ card }) => card);
@@ -78,13 +81,33 @@ export function computeLocalDueCounts(
   contentByChapterId: Map<string, SubEntityWithFiche[]>,
   reviewStates: Map<string, ReviewState>,
   suspendedIds: Set<string>,
-  now: number = Date.now()
+  now: number = Date.now(),
+  gate?: NewCardGate | null
 ): ChapterDueCounts {
   const counts: ChapterDueCounts = {};
   for (const [chapterId, content] of contentByChapterId) {
-    counts[chapterId] = computeLocalDueQueue(content, reviewStates, suspendedIds, now).length;
+    counts[chapterId] = computeLocalDueQueue(content, reviewStates, suspendedIds, now, gate).length;
   }
   return counts;
+}
+
+/** Per chapter: never-reviewed cards waiting for their fiche to be read (0 everywhere when the setting is off). */
+export function computeLocalWaitingCounts(
+  contentByChapterId: Map<string, SubEntityWithFiche[]>,
+  reviewStates: Map<string, ReviewState>,
+  suspendedIds: Set<string>,
+  gate?: NewCardGate | null
+): ChapterDueCounts {
+  const counts: ChapterDueCounts = {};
+  for (const [chapterId, content] of contentByChapterId)
+    counts[chapterId] = activeFlashcards(content).filter((card) => !suspendedIds.has(card.id) && isWaitingForReading(card.ficheId, reviewStates.get(card.id)?.due, gate)).length;
+  return counts;
+}
+
+/** The gate as this device knows it: the setting from the cached dashboard (on when unknown), reading from every cached chapter. */
+export function localNewCardGate(enabled: boolean | undefined, readProgress: Iterable<Record<string, number>>): NewCardGate {
+  if (enabled === false) return { enabled: false, ficheReadPct: {} };
+  return { enabled: true, ficheReadPct: Object.assign({}, ...readProgress) };
 }
 
 /** Mirrors getMasteryCountsByChapter's exact bucketing (dal/review.ts): no review-state row -> "new", state "review" -> "acquired", "learning"/"relearning" -> "learning". */
@@ -176,13 +199,14 @@ export function applyPendingExcludes(cachedIds: string[], pending: PendingWrite[
 
 /** Null when this chapter's content isn't cached yet — callers should fall back to the server in that case. */
 export async function getLocalDueQueue(chapterId: string): Promise<Flashcard[] | null> {
-  const [content, reviewStates, suspendedIds] = await Promise.all([
+  const [content, reviewStates, suspendedIds, dashboard] = await Promise.all([
     getCachedChapterContent(chapterId),
     getAllCachedReviewStates(),
     getEffectiveSuspendedFlashcardIds(),
+    getCachedDashboard(),
   ]);
   if (!content) return null;
-  return computeLocalDueQueue(content.subEntities, reviewStates, suspendedIds);
+  return computeLocalDueQueue(content.subEntities, reviewStates, suspendedIds, Date.now(), localNewCardGate(dashboard?.newCardsAfterReading, [content.ficheReadProgress]));
 }
 
 export async function getLocalFreeQueue(chapterId: string): Promise<Flashcard[] | null> {
@@ -195,9 +219,10 @@ export async function getLocalFreeQueue(chapterId: string): Promise<Flashcard[] 
 export async function getLocalDueCounts(): Promise<ChapterDueCounts | null> {
   const allContent = await getAllCachedChapterContent();
   if (allContent.size === 0) return null;
-  const [reviewStates, suspendedIds] = await Promise.all([getAllCachedReviewStates(), getEffectiveSuspendedFlashcardIds()]);
+  const [reviewStates, suspendedIds, dashboard] = await Promise.all([getAllCachedReviewStates(), getEffectiveSuspendedFlashcardIds(), getCachedDashboard()]);
   const contentByChapterId = new Map([...allContent].map(([chapterId, c]) => [chapterId, c.subEntities]));
-  return computeLocalDueCounts(contentByChapterId, reviewStates, suspendedIds);
+  const gate = localNewCardGate(dashboard?.newCardsAfterReading, [...allContent.values()].map((c) => c.ficheReadProgress));
+  return computeLocalDueCounts(contentByChapterId, reviewStates, suspendedIds, Date.now(), gate);
 }
 
 export async function getLocalMasteryCounts(): Promise<ChapterMasteryCounts | null> {

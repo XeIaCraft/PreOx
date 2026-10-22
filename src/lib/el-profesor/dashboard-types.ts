@@ -63,6 +63,10 @@ export interface DashboardSnapshot {
   aiProvider: ElProfesorAiProvider;
   /** getUserFsrsRetention's current value for this user — cached so a local review (local-review.ts) can call scheduleReview with the same personalized target the server would use. */
   fsrsRetention: number;
+  /** « Cartes neuves après lecture » (new-card-gate.ts) — absent in a cache written before it: treated as on. */
+  newCardsAfterReading?: boolean;
+  /** Per chapter: new cards waiting for their fiche to be read — computed on the device. */
+  waitingCounts?: ChapterDueCounts;
   /**
    * getEffectiveIsAdmin's result at sync time (piste 2026-09-24 — "module
    * 100% local") — lets the local nav shell (local-nav-shell.tsx) know

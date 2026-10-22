@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CloudDownload, RefreshCw, RotateCcw } from "lucide-react";
+import { BookOpenCheck, CloudDownload, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ElProfesorBoard } from "@/components/el-profesor/board";
 import { SyncModal } from "@/components/el-profesor/dialogs/sync-modal";
 import { ResetCacheModal } from "@/components/el-profesor/dialogs/reset-cache-modal";
-import { getCachedNotionViewData, getCachedAiConfigData, setCachedAiConfigData } from "@/lib/el-profesor/local-db";
+import { getCachedNotionViewData, getCachedAiConfigData, setCachedAiConfigData, patchCachedDashboardSettings } from "@/lib/el-profesor/local-db";
+import { setNewCardsAfterReading } from "@/app/apps/el-profesor/actions/progress";
+import { useToast } from "@/components/ui/toast";
 import { loadLocalDashboardView, type LocalDashboardView } from "@/lib/el-profesor/local-dashboard";
 import { runBackgroundSync, type SyncOutcome } from "@/lib/el-profesor/sync-runner";
 import { fetchDashboardSnapshot } from "@/lib/el-profesor/sync-api";
@@ -159,6 +161,24 @@ export function DashboardWithLocalCache({
   }
 
   const snapshot = local?.snapshot ?? serverSnapshot;
+  const { toast } = useToast();
+  const [savingGate, setSavingGate] = useState(false);
+  const newCardsAfterReading = snapshot?.newCardsAfterReading !== false;
+
+  async function toggleNewCardsAfterReading() {
+    const next = !newCardsAfterReading;
+    setSavingGate(true);
+    const result = await setNewCardsAfterReading(next);
+    setSavingGate(false);
+    if (result.error) {
+      toast(result.error, { variant: "error" });
+      return;
+    }
+    await patchCachedDashboardSettings({ newCardsAfterReading: next });
+    setServerSnapshot((s) => (s ? { ...s, newCardsAfterReading: next } : s));
+    reloadLocal();
+    toast(result.success ?? "Réglage enregistré.", { variant: "success" });
+  }
 
   return (
     <>
@@ -183,6 +203,20 @@ export function DashboardWithLocalCache({
             <Button
               variant="ghost"
               size="sm"
+              disabled={savingGate}
+              onClick={() => void toggleNewCardsAfterReading()}
+              aria-pressed={newCardsAfterReading}
+              title={
+                newCardsAfterReading
+                  ? "Une carte jamais révisée n'arrive dans vos révisions qu'une fois sa fiche lue à 80 %. Cliquer pour tout réviser, fiche lue ou non."
+                  : "Toutes les cartes neuves sont à réviser, fiche lue ou non. Cliquer pour attendre la lecture de la fiche."
+              }
+            >
+              <BookOpenCheck className="h-3.5 w-3.5" /> Cartes neuves : {newCardsAfterReading ? "après lecture" : "toutes"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setResetOpen(true)}
               title="Vider les données El Profesor enregistrées sur cet appareil et les retélécharger"
             >
@@ -193,6 +227,7 @@ export function DashboardWithLocalCache({
           <ElProfesorBoard
             books={snapshot.books}
             dueCounts={snapshot.dueCounts}
+            waitingCounts={snapshot.waitingCounts}
             needsReviewCounts={snapshot.needsReviewCounts}
             masteryCounts={snapshot.masteryCounts}
             difficultCounts={snapshot.difficultCounts}
