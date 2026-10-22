@@ -5,7 +5,7 @@ import { GeminiError } from "@/lib/gemini-shared";
 import type { ElProfesorMergeJobRow, ElProfesorMergeTaskRow, ElProfesorMergeTaskStage, Json } from "@/lib/supabase/types";
 import { getElProfesorClaudeConfig, getElProfesorGeminiConfig } from "../dal/ai-config";
 import { callGeminiTextJson, isQuotaOrCapacityError } from "../gemini";
-import { claudeTextContent, getClaudeBatchResults, retrieveClaudeBatch, submitClaudeToolBatch } from "../anthropic";
+import { claudeTextContent, getClaudeBatchResults, logClaudeBatchUsage, retrieveClaudeBatch, submitClaudeToolBatch } from "../anthropic";
 import { quotaBackoffMinutes } from "../gemini-queue";
 import { toGeminiSchema } from "./schemas";
 import { FINALIZERS, STAGE_HANDLERS, createPlanTask, estimatedSeconds, jobUsage, type StageContext } from "./stages";
@@ -286,7 +286,8 @@ async function runClaude(ctx: StageContext, stage: ElProfesorMergeTaskStage, clo
     const status = await retrieveClaudeBatch(config.apiKey, batchId).catch(() => null);
     if (!status?.ended) continue;
     const byId = new Map(tasks.map((t) => [t.id, t]));
-    const results = await getClaudeBatchResults(config.apiKey, batchId, config.model, undefined, new Set(byId.keys()));
+    // Logged below, once per answer applied: every overlapping run downloads the same results.
+    const results = await getClaudeBatchResults(config.apiKey, batchId, config.model, undefined, new Set());
     for (const r of results) {
       // Out of time: what's left of this batch is picked up by the next run (results stay available).
       if (Date.now() - clock.started > clock.budgetMs - 30_000) return;
@@ -295,6 +296,7 @@ async function runClaude(ctx: StageContext, stage: ElProfesorMergeTaskStage, clo
       byId.delete(r.customId);
       // Runs overlap every minute: only the one that takes the answer applies it (once).
       if (!(await claimSubmitted(ctx, task))) continue;
+      if (r.outcome === "succeeded" || r.outcome === "errored") await logClaudeBatchUsage(config.model, r);
       const prepared = (task.input as { prepared?: Json } | null)?.prepared;
       if (r.outcome === "succeeded") await settleSuccess(ctx, task, prepared, r.output, r.usage, summary);
       else await settleFailure(ctx, task, new GeminiError(r.outcome === "errored" ? r.message : `Requête ${r.outcome === "expired" ? "expirée" : "annulée"} par Anthropic.`), summary);

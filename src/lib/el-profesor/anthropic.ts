@@ -238,6 +238,19 @@ async function logClaudeUsage(entry: {
   }
 }
 
+/** One batch answer's usage, logged by a caller that applies each answer once (the book fusion: results are re-read by every overlapping run). */
+export async function logClaudeBatchUsage(model: string, result: { outcome: "succeeded"; usage: { inputTokens: number; outputTokens: number } } | { outcome: "errored"; message: string }) {
+  if (result.outcome === "succeeded")
+    await logClaudeUsage({
+      model,
+      success: true,
+      promptTokens: result.usage.inputTokens,
+      candidatesTokens: result.usage.outputTokens,
+      totalTokens: result.usage.inputTokens + result.usage.outputTokens,
+    });
+  else await logClaudeUsage({ model, success: false, errorMessage: result.message.slice(0, 300) });
+}
+
 type ClaudeTool = Anthropic.Messages.Tool;
 type ClaudeContentBlock = Anthropic.Messages.ContentBlockParam;
 
