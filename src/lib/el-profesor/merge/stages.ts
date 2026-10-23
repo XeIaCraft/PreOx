@@ -125,7 +125,10 @@ async function upsertTasks(
 export async function stageTasks(supabase: Admin, jobId: string, stage: ElProfesorMergeTaskStage): Promise<Task[]> {
   const out: Task[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data } = await supabase.from("el_profesor_merge_tasks").select("*").eq("job_id", jobId).eq("stage", stage).order("ref_key").range(from, from + 999);
+    const { data, error } = await supabase.from("el_profesor_merge_tasks").select("*").eq("job_id", jobId).eq("stage", stage).order("ref_key").range(from, from + 999);
+    // A failed read must stop the step (retried next run), never read as "no task": lot 5 was closed
+    // that way with no coverage check at all (2026-10-23, during a Supabase incident).
+    if (error) throw new GeminiError(`Lecture des tâches impossible : ${error.message}`);
     out.push(...((data ?? []) as Task[]));
     if (!data || data.length < 1000) break;
   }
@@ -862,6 +865,7 @@ export async function finalizeFiches(ctx: StageContext): Promise<void> {
   const { supabase, job } = ctx;
   // This lot only: earlier lots are closed, later ones still held.
   const tasks = (await stageTasks(supabase, job.id, "fiche")).filter((t) => t.round === job.round && t.status !== "held");
+  if (!tasks.length) throw new GeminiError(`Aucune fiche trouvée pour le lot ${job.round} : contrôle de couverture reporté.`);
   const outputs = new Map<string, FicheOutput>();
   let failed = 0;
 
@@ -1241,7 +1245,8 @@ export async function jobUsage(
     let query = supabase.from("el_profesor_merge_tasks").select("input_tokens, output_tokens, status").eq("job_id", jobId);
     if (round !== undefined) query = query.eq("round", round);
     if (stages) query = query.in("stage", stages);
-    const { data } = await query.order("id").range(from, from + 999);
+    const { data, error } = await query.order("id").range(from, from + 999);
+    if (error) throw new GeminiError(`Lecture de la consommation impossible : ${error.message}`);
     for (const r of data ?? []) {
       inputTokens += r.input_tokens ?? 0;
       outputTokens += r.output_tokens ?? 0;
