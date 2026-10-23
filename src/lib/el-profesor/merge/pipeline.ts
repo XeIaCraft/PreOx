@@ -189,6 +189,12 @@ async function claim(ctx: StageContext, tasks: Task[]): Promise<Task[]> {
   return (data ?? []) as Task[];
 }
 
+/** The Claude model a task asks for, when not the fusion's own. */
+function taskModel(task: Task): string | undefined {
+  const model = (task.input as { model?: unknown } | null)?.model;
+  return typeof model === "string" && model ? model : undefined;
+}
+
 /** Takes a submitted task's batch answer for this run; false when another run already has it. */
 async function claimSubmitted(ctx: StageContext, task: Task): Promise<boolean> {
   const { data } = await ctx.supabase
@@ -296,7 +302,7 @@ async function runClaude(ctx: StageContext, stage: ElProfesorMergeTaskStage, clo
       byId.delete(r.customId);
       // Runs overlap every minute: only the one that takes the answer applies it (once).
       if (!(await claimSubmitted(ctx, task))) continue;
-      if (r.outcome === "succeeded" || r.outcome === "errored") await logClaudeBatchUsage(config.model, r);
+      if (r.outcome === "succeeded" || r.outcome === "errored") await logClaudeBatchUsage(taskModel(task) ?? config.model, r);
       const prepared = (task.input as { prepared?: Json } | null)?.prepared;
       if (r.outcome === "succeeded") await settleSuccess(ctx, task, prepared, r.output, r.usage, summary);
       else await settleFailure(ctx, task, new GeminiError(r.outcome === "errored" ? r.message : `Requête ${r.outcome === "expired" ? "expirée" : "annulée"} par Anthropic.`), summary);
@@ -307,27 +313,35 @@ async function runClaude(ctx: StageContext, stage: ElProfesorMergeTaskStage, clo
 
   // 2. Send what's waiting, a batch at a time — only with room left to prepare and send a whole batch.
   while (Date.now() - clock.started < Math.min(clock.startBeforeMs, clock.budgetMs - 90_000)) {
-    const tasks = await claim(ctx, await dueTasks(ctx, stage, CLAUDE_BATCH_SIZE));
-    if (!tasks.length) return;
-    try {
-      const prepared = await handler.prepare(ctx, tasks);
-      const tool = { name: handler.toolName, description: handler.toolDescription, input_schema: handler.schema as { type: "object" } };
-      const batchId = await submitClaudeToolBatch(
-        config,
-        tasks.map((t) => ({ customId: t.id, content: claudeTextContent(prepared.get(t.id)!.prompt), tool }))
-      );
-      await Promise.all(
-        tasks.map((t) =>
-          ctx.supabase
-            .from("el_profesor_merge_tasks")
-            .update({ status: "submitted", claude_batch_id: batchId, input: { ...((t.input as Record<string, Json>) ?? {}), prepared: prepared.get(t.id)!.prepared ?? null } })
-            .eq("id", t.id)
-        )
-      );
-      summary.submitted += tasks.length;
-    } catch (err) {
-      for (const t of tasks) await settleFailure(ctx, t, err, summary);
-      return;
+    const claimed = await claim(ctx, await dueTasks(ctx, stage, CLAUDE_BATCH_SIZE));
+    if (!claimed.length) return;
+    // A batch has one model: tasks naming their own (the second try at « À retenir ») go in their own batch.
+    const byModel = new Map<string, Task[]>();
+    for (const t of claimed) {
+      const model = taskModel(t) ?? config.model;
+      byModel.set(model, [...(byModel.get(model) ?? []), t]);
+    }
+    for (const [model, tasks] of byModel) {
+      try {
+        const prepared = await handler.prepare(ctx, tasks);
+        const tool = { name: handler.toolName, description: handler.toolDescription, input_schema: handler.schema as { type: "object" } };
+        const batchId = await submitClaudeToolBatch(
+          { ...config, model },
+          tasks.map((t) => ({ customId: t.id, content: claudeTextContent(prepared.get(t.id)!.prompt), tool }))
+        );
+        await Promise.all(
+          tasks.map((t) =>
+            ctx.supabase
+              .from("el_profesor_merge_tasks")
+              .update({ status: "submitted", claude_batch_id: batchId, input: { ...((t.input as Record<string, Json>) ?? {}), prepared: prepared.get(t.id)!.prepared ?? null } })
+              .eq("id", t.id)
+          )
+        );
+        summary.submitted += tasks.length;
+      } catch (err) {
+        for (const t of tasks) await settleFailure(ctx, t, err, summary);
+        return;
+      }
     }
   }
 }

@@ -8,7 +8,14 @@ import { FakeDb } from "@/test/fake-supabase";
 // does, every block, card and value of the sources must end up in the
 // merged book, nothing duplicated, and the job must finish.
 
-const h = vi.hoisted(() => ({ db: null as unknown as FakeDb, prompts: [] as string[], batches: new Map<string, { customId: string; prompt: string }[]>(), creditGone: false }));
+const h = vi.hoisted(() => ({
+  db: null as unknown as FakeDb,
+  prompts: [] as string[],
+  batches: new Map<string, { customId: string; prompt: string; model: string }[]>(),
+  creditGone: false,
+  /** Like Haiku on lot 5: asked for « À retenir » in a repair, it doesn't write it. */
+  lightModelSkipsKeyPoints: false,
+}));
 const isRepairPrompt = (p: string) => !p.includes("Conçois les PARTIES") && !p.includes("Tu ranges") && !p.includes("Tu organises") && !p.includes("Tu rédiges");
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.db }));
@@ -41,9 +48,9 @@ vi.mock("@/lib/el-profesor/anthropic", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/el-profesor/anthropic")>();
   return {
     ...actual,
-    submitClaudeToolBatch: async (_config: unknown, requests: { customId: string; content: { text: string }[] }[]) => {
+    submitClaudeToolBatch: async (config: { model: string }, requests: { customId: string; content: { text: string }[] }[]) => {
       const id = `batch-${h.batches.size + 1}`;
-      h.batches.set(id, requests.map((r) => ({ customId: r.customId, prompt: r.content[0].text })));
+      h.batches.set(id, requests.map((r) => ({ customId: r.customId, prompt: r.content[0].text, model: config.model })));
       return id;
     },
     retrieveClaudeBatch: async () => ({ ended: true, succeeded: 1, errored: 0, processing: 0, canceled: 0, expired: 0 }),
@@ -53,7 +60,8 @@ vi.mock("@/lib/el-profesor/anthropic", async (importOriginal) => {
       return (h.batches.get(batchId) ?? []).map((r) => {
         h.prompts.push(r.prompt);
         if (h.creditGone && isRepairPrompt(r.prompt)) return { customId: r.customId, outcome: "errored" as const, message: "Your credit balance is too low to access the API.", usage: { inputTokens: 0, outputTokens: 0 } };
-        return { customId: r.customId, outcome: "succeeded" as const, output: fakeAi(r.prompt), usage: { inputTokens: 1000, outputTokens: 300 } };
+        const prompt = h.lightModelSkipsKeyPoints && r.model.includes("haiku") ? r.prompt.replace("n'a pas de bloc « À retenir »", "") : r.prompt;
+        return { customId: r.customId, outcome: "succeeded" as const, output: fakeAi(prompt), usage: { inputTokens: 1000, outputTokens: 300 } };
       });
     },
   };
@@ -298,6 +306,7 @@ describe.each(["gemini", "claude"] as const)("fusion de bout en bout (%s)", (pro
     h.prompts = [];
     h.batches = new Map();
     h.creditGone = false;
+    h.lightModelSkipsKeyPoints = false;
   });
 
   it("redoes the repairs the AI couldn't do: copies out, missing items integrated, nothing lost or doubled", async () => {
@@ -362,6 +371,25 @@ describe.each(["gemini", "claude"] as const)("fusion de bout en bout (%s)", (pro
     expect(lot).toMatchObject(other);
     // The table of contents and the lot share out every token spent, nothing counted twice.
     expect(stats.toc!.inputTokens + lot.inputTokens).toBe(stats.inputTokens);
+  });
+
+  it("gives « À retenir » a second try with a stronger model when a light one skips it", async () => {
+    if (provider !== "claude") return;
+    const { job, merged } = seed(h.db, provider);
+    const ready = await runUntil(h.db, job.id, ["ready", "failed"]);
+    const chapterIds = flattenChapters(ready.plan as unknown as MergePlan).map((c) => c.chapterId);
+    h.lightModelSkipsKeyPoints = true;
+    await releaseChapters(h.db as never, ready as unknown as ElProfesorMergeJobRow, chapterIds, { provider: "claude", model: "claude-haiku-5-5" });
+    const done = await runUntil(h.db, job.id, ["done", "failed"]);
+    expect(done.stage).toBe("done");
+    const retries = h.db.table("el_profesor_merge_tasks").filter((t) => t.job_id === job.id && String(t.ref_key).startsWith("keypoints:"));
+    expect(retries.length).toBeGreaterThan(0);
+    for (const t of retries) expect((t.input as { model?: string }).model).toBe("claude-sonnet-5");
+    const out = mergedContent(h.db, merged.id);
+    for (const f of out.fiches) {
+      const blocks = out.blocks.filter((b) => b.fiche_id === f.id).sort((a, b) => (a.order_index as number) - (b.order_index as number));
+      expect(blocks[blocks.length - 1].block_type, `fiche sans À retenir : ${f.title}`).toBe("a_retenir");
+    }
   });
 
   it("applies each answer once when two runs overlap", async () => {

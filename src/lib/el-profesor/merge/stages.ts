@@ -49,6 +49,7 @@ import {
 } from "./schemas";
 import { appendMergedCards, loadFicheBlocks, rewriteFicheBlocks, writeMergedFiche, type MergedBlockDraft, type MergedCardDraft } from "./persist";
 import { loadSourceCatalog, loadSourceContent, type SourceBlock, type SourceCard } from "./source";
+import { selectInChunksStrict } from "../dal/shared";
 import type { MergePlan, MergeProvider, MergeStats, SourceFicheRef } from "./types";
 
 // What each fusion stage does, provider-agnostic: build its prompts
@@ -859,7 +860,37 @@ export type RepairInput = FicheTaskInput & {
   cardIds: string[];
   lostValues: Record<string, string[]>;
   needsKeyPoints: boolean;
+  /** Claude model for this task only (the second try at « À retenir », see keyPointsRetries). */
+  model?: string;
 };
+
+/** Writes « À retenir » reliably: the second try for the fiches a lighter model left without one. */
+export const KEY_POINTS_MODEL = "claude-sonnet-5";
+const STRONG_MODEL = /sonnet|opus|fable|mythos/i;
+
+/**
+ * Fiches of this lot still without « À retenir » once the repair pass is
+ * done, written with a lighter model: each gets one more try with
+ * KEY_POINTS_MODEL, asked for « À retenir » only. Haiku left 96 of 351
+ * fiches without one, even when asked again (lot 5, 2026-10-23).
+ */
+async function keyPointsRetries(ctx: StageContext, repairs: Task[]): Promise<{ refKey: string; input: RepairInput }[]> {
+  const { supabase, job } = ctx;
+  if (job.provider !== "claude" || STRONG_MODEL.test(job.model)) return [];
+  const tried = new Set(repairs.filter((t) => t.ref_key.startsWith("keypoints:")).map((t) => t.ref_key));
+  const lot = (await stageTasks(supabase, job.id, "fiche")).filter((t) => t.round === job.round && t.status === "done");
+  const inputs = lot.map((t) => ({ refKey: t.ref_key.replace(/^fiche:/, "keypoints:"), input: t.input as unknown as FicheTaskInput })).filter((x) => !tried.has(x.refKey));
+  if (!inputs.length) return [];
+  const blocks = await selectInChunksStrict(
+    inputs.map((x) => x.input.ficheId),
+    (ids) => supabase.from("el_profesor_fiche_blocks").select("fiche_id, block_type").in("fiche_id", ids)
+  );
+  const withBlocks = new Set(blocks.map((b) => b.fiche_id));
+  const withKeyPoints = new Set(blocks.filter((b) => b.block_type === "a_retenir").map((b) => b.fiche_id));
+  return inputs
+    .filter((x) => withBlocks.has(x.input.ficheId) && !withKeyPoints.has(x.input.ficheId))
+    .map((x) => ({ refKey: x.refKey, input: { ...x.input, blockIds: [], cardIds: [], lostValues: {}, needsKeyPoints: true, model: KEY_POINTS_MODEL } }));
+}
 
 export async function finalizeFiches(ctx: StageContext): Promise<void> {
   const { supabase, job } = ctx;
@@ -1096,6 +1127,13 @@ export async function finalizeRepair(ctx: StageContext): Promise<void> {
       cardsKept += cards.length;
     }
     await saveOutput(supabase, t, { ...output, keptVerbatim: true });
+  }
+
+  // One more pass, for « À retenir » only: the lot closes once it's done.
+  const retries = await keyPointsRetries(ctx, tasks);
+  if (retries.length) {
+    await upsertTasks(supabase, job.id, "repair", retries, { round: job.round });
+    return;
   }
 
   const ficheTasks = await stageTasks(supabase, job.id, "fiche");

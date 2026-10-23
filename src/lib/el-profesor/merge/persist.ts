@@ -31,7 +31,15 @@ export interface MergedCardDraft {
   copyOf?: SourceCard;
 }
 
-function blockRow(ficheId: string, b: MergedBlockDraft, orderIndex: number) {
+type ContentStatus = "draft" | "published";
+
+/** What's added to an existing fiche goes live with it: a fiche already published gets published additions. */
+async function ficheStatus(supabase: Admin, ficheId: string): Promise<ContentStatus> {
+  const { data } = await supabase.from("el_profesor_fiches").select("status").eq("id", ficheId).maybeSingle();
+  return data?.status === "published" ? "published" : "draft";
+}
+
+function blockRow(ficheId: string, b: MergedBlockDraft, orderIndex: number, status: ContentStatus = "draft") {
   return {
     fiche_id: ficheId,
     order_index: orderIndex,
@@ -39,7 +47,7 @@ function blockRow(ficheId: string, b: MergedBlockDraft, orderIndex: number) {
     content: b.content as never,
     citations: b.citations as never,
     needs_review: b.needsReview,
-    status: "draft" as const,
+    status,
     is_emergency: b.isEmergency,
     image_url: b.imageUrl,
     image_alt: b.imageAlt,
@@ -47,14 +55,14 @@ function blockRow(ficheId: string, b: MergedBlockDraft, orderIndex: number) {
   };
 }
 
-function cardRow(ficheId: string, c: MergedCardDraft) {
+function cardRow(ficheId: string, c: MergedCardDraft, status: ContentStatus = "draft") {
   const src = c.copyOf?.row;
   return {
     fiche_id: ficheId,
     front: { text: c.front } as never,
     back: { text: c.back } as never,
     citations: c.citations as never,
-    status: "draft" as const,
+    status,
     needs_review: c.needsReview,
     image_url: c.imageUrl,
     image_alt: c.imageAlt,
@@ -88,7 +96,8 @@ export async function writeMergedFiche(
 
 export async function appendMergedCards(supabase: Admin, ficheId: string, cards: MergedCardDraft[]): Promise<void> {
   if (!cards.length) return;
-  const { error } = await supabase.from("el_profesor_flashcards").insert(cards.map((c) => cardRow(ficheId, c)));
+  const status = await ficheStatus(supabase, ficheId);
+  const { error } = await supabase.from("el_profesor_flashcards").insert(cards.map((c) => cardRow(ficheId, c, status)));
   if (error) throw new GeminiError(`Enregistrement des cartes reprises impossible : ${error.message}`);
 }
 
@@ -109,9 +118,10 @@ export async function rewriteFicheBlocks(
 ): Promise<void> {
   const inserts: ReturnType<typeof blockRow>[] = [];
   const updates: PromiseLike<unknown>[] = [];
+  const status = ordered.some((e) => "draft" in e) ? await ficheStatus(supabase, ficheId) : "draft";
   ordered.forEach((entry, orderIndex) => {
     if ("draft" in entry) {
-      inserts.push(blockRow(ficheId, entry.draft, orderIndex));
+      inserts.push(blockRow(ficheId, entry.draft, orderIndex, status));
       return;
     }
     const patch: Record<string, unknown> = { order_index: orderIndex };
