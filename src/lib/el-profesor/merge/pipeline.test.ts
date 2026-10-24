@@ -215,6 +215,18 @@ function seed(db: FakeDb, provider: "gemini" | "claude") {
   ], [{ front: "VT protecteur ?", back: "6 à 8 mL/kg de poids idéal" }]);
   fiche(cA2, "PEEP et recrutement", [{ type: "definition_mecanisme", content: { text: "La PEP de 5 à 10 cmH2O limite les atélectasies." } }], [{ front: "PEP habituelle ?", back: "5 à 10 cmH2O" }], "draft");
 
+  // Same rule as migration 098: a published merged card takes over from the published sources it lists.
+  db.rpcs.el_profesor_replace_source_cards = (args) => {
+    const ficheIds = new Set(args.p_fiche_ids as string[]);
+    let replaced = 0;
+    for (const merged of db.table("el_profesor_flashcards").filter((c) => ficheIds.has(c.fiche_id as string) && c.status === "published"))
+      for (const src of db.table("el_profesor_flashcards").filter((c) => ((merged.source_flashcard_ids as string[] | null) ?? []).includes(c.id as string) && c.id !== merged.id && c.status === "published")) {
+        src.status = "replaced";
+        src.replaced_by_flashcard_id = merged.id;
+        replaced++;
+      }
+    return [{ replaced, histories: 0 }];
+  };
   db.rpcs.el_profesor_merge_source_fiches = (args) => {
     const bookIds = args.p_book_ids as string[];
     const drafts = args.p_include_drafts as boolean;

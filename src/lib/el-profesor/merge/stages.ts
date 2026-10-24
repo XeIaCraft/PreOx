@@ -5,6 +5,7 @@ import { GeminiError } from "@/lib/gemini-shared";
 import type { Database, ElProfesorMergeJobRow, ElProfesorMergeTaskRow, ElProfesorMergeTaskStage, Json } from "@/lib/supabase/types";
 import type { BlockContent, BlockType, Citation, SuggestedImage } from "../types";
 import { stableUuid } from "./ids";
+import { replaceSourceCards } from "./publish";
 import {
   ASSIGN_CHUNK,
   chapterPath,
@@ -1136,6 +1137,8 @@ export async function finalizeRepair(ctx: StageContext): Promise<void> {
     }
     await saveOutput(supabase, t, { ...output, keptVerbatim: true });
   }
+  // Cards a repair adds to an already published fiche take over from their sources too: publishing only did it for the cards it saw.
+  await replaceSourceCards([...new Set(tasks.map((t) => (t.input as unknown as RepairInput).ficheId))]);
 
   // One more pass, for « À retenir » only: the lot closes once it's done.
   const retries = await keyPointsRetries(ctx, tasks);
