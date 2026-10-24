@@ -111,9 +111,13 @@ async function advanceJob(initial: Job, clock: Clock, summary: MergeRunSummary):
     if (job.provider === "claude") await runClaude(ctx, TASK_STAGE[stage], clock, summary);
     else await runGemini(ctx, TASK_STAGE[stage], clock, summary);
 
-    // Tokens spent so far, for the cost shown while the fusion runs.
-    job.stats = { ...((job.stats as MergeStats | null) ?? {}), ...(await jobUsage(supabase, job.id)) } as unknown as Json;
-    await supabase.from("el_profesor_merge_jobs").update({ stats: job.stats }).eq("id", job.id);
+    // Tokens spent so far, for the cost shown while the fusion runs — display only: a slow database mustn't hold the job back.
+    try {
+      job.stats = { ...((job.stats as MergeStats | null) ?? {}), ...(await jobUsage(supabase, job.id)) } as unknown as Json;
+      await supabase.from("el_profesor_merge_jobs").update({ stats: job.stats }).eq("id", job.id);
+    } catch {
+      // Refreshed on the next run.
+    }
 
     const { count } = await supabase
       .from("el_profesor_merge_tasks")
