@@ -25,6 +25,7 @@ export type Profile = {
   hidden_widgets: string[];
   high_contrast: boolean;
   font_scale: "normal" | "large" | "larger";
+  default_view: "admin" | "user";
   created_at: string;
   updated_at: string;
 };

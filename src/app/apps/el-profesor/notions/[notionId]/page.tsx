@@ -10,7 +10,7 @@ export const maxDuration = 60;
 export default async function NotionSynthesisPage({ params }: { params: Promise<{ notionId: string }> }) {
   const profile = await requireElProfesorAccess();
   const { notionId } = await params;
-  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
+  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile);
 
   return (
     <ToastProvider>

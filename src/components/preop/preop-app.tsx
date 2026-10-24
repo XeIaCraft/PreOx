@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Activity, BookMarked, ClipboardList, FolderOpen, Loader2, NotebookTabs, Pill, Settings2, Sparkles, Stethoscope } from "lucide-react";
+import { Activity, BookMarked, ClipboardList, Eye, FolderOpen, Loader2, NotebookTabs, Pill, Settings2, ShieldCheck, Sparkles, Stethoscope } from "lucide-react";
+import { setViewMode } from "@/app/actions/view-mode";
 import { AiSettings } from "@/components/preop/ai-assistant";
 import { ConsultationView } from "@/components/preop/consultation";
 import { DossierList } from "@/components/preop/dossiers";
@@ -45,6 +46,8 @@ const SETTINGS_SECTIONS: { view: View; label: string; icon: typeof Stethoscope }
 ];
 
 const VIEWS: View[] = ["consultation", "dossiers", "dossier", "fiches", "traitements", "protocoles", "regles", "nouvelle", "parametres", "ia", "bloc"];
+/** A user (or an admin in the user view) only consults: the surgery sheets and the treatments. */
+const USER_VIEWS: View[] = ["fiches", "traitements"];
 
 /**
  * The "Préop" module, one client-side app: the consultation (kept only if
@@ -64,10 +67,13 @@ export function PreopApp() {
 function PreopScreens() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  const { userId, carnetEnabled } = usePreopSession();
+  const { userId, carnetEnabled, isAdmin, realIsAdmin } = usePreopSession();
   const { toast } = useToast();
   const fromUrl = searchParams.get("v") as View | null;
-  const view: View = fromUrl && VIEWS.includes(fromUrl) ? fromUrl : "consultation";
+  const home: View = isAdmin ? "consultation" : "fiches";
+  const view: View = fromUrl && (isAdmin ? VIEWS : USER_VIEWS).includes(fromUrl) ? fromUrl : home;
+  const tabs = isAdmin ? TABS : TABS.filter((t) => USER_VIEWS.includes(t.view));
+  const [switchingView, setSwitchingView] = useState(false);
   const dossierId = searchParams.get("id");
   const tabParam = searchParams.get("t") as DossierTab | null;
   const dossierTab: DossierTab = tabParam && DOSSIER_TABS.some((t) => t.tab === tabParam) ? tabParam : "consultation";
@@ -87,7 +93,7 @@ function PreopScreens() {
   const [wizardKey, setWizardKey] = useState(0);
 
   function go(next: View, params: Record<string, string> = {}) {
-    const q = new URLSearchParams(next === "consultation" ? {} : { v: next, ...params });
+    const q = new URLSearchParams(next === home ? {} : { v: next, ...params });
     const qs = q.toString();
     window.history.pushState(null, "", qs ? `${pathname}?${qs}` : pathname);
     window.scrollTo(0, 0);
@@ -103,18 +109,44 @@ function PreopScreens() {
   const activeTab: View = view === "dossier" ? "dossiers" : view === "nouvelle" || view === "regles" || view === "protocoles" || view === "ia" || view === "bloc" ? "parametres" : view;
   const settingsSection: View = view === "nouvelle" ? "regles" : view;
 
+  async function switchView() {
+    setSwitchingView(true);
+    const result = await setViewMode(isAdmin ? "user" : "admin");
+    if (result.error) {
+      toast(result.error, { variant: "error" });
+      setSwitchingView(false);
+      return;
+    }
+    // The tabs come from the layout: a real reload, on this module's first screen.
+    window.location.href = pathname;
+  }
+
   return (
     <div className="min-w-0 space-y-5 [&_.grid>*]:min-w-0">
       <header className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="font-serif-display text-3xl font-medium text-foreground">Préop</h1>
-          <span className="flex items-center gap-1.5 text-xs text-foreground-subtle">
-            {(loading || protocolLib.loading) && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {error ? <span className="text-danger">{error}</span> : `${rules.filter((r) => r.status === "active").length} règle(s) · ${protocolLib.protocols.length} protocole(s)`}
+          <span className="flex items-center gap-3 text-xs text-foreground-subtle">
+            <span className="flex items-center gap-1.5">
+              {(loading || protocolLib.loading) && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {error ? <span className="text-danger">{error}</span> : isAdmin && `${rules.filter((r) => r.status === "active").length} règle(s) · ${protocolLib.protocols.length} protocole(s)`}
+            </span>
+            {realIsAdmin && (
+              <button
+                type="button"
+                onClick={() => void switchView()}
+                disabled={switchingView}
+                className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1 font-medium text-foreground-muted hover:bg-surface-muted disabled:opacity-60"
+                title={isAdmin ? "Voir Préop comme un utilisateur" : "Revenir à la vue admin"}
+              >
+                {switchingView ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : isAdmin ? <Eye className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                {isAdmin ? "Vue utilisateur" : "Vue admin"}
+              </button>
+            )}
           </span>
         </div>
-        <nav className="grid grid-cols-5 gap-1 sm:flex" aria-label="Sections">
-          {TABS.map((t) => (
+        <nav className={cn("grid gap-1 sm:flex", isAdmin ? "grid-cols-5" : "grid-cols-2")} aria-label="Sections">
+          {tabs.map((t) => (
             <button
               key={t.view}
               type="button"
@@ -138,19 +170,21 @@ function PreopScreens() {
       {dossierStore.error && <p className="text-sm text-danger">{dossierStore.error}</p>}
 
       {/* The consultation stays mounted (hidden) so switching away and back doesn't wipe it. */}
-      <div hidden={view !== "consultation"}>
-        <ConsultationView
-          rules={rules}
-          protocols={protocolLib.protocols}
-          draft={dossierStore.draft}
-          onAskQuestion={askQuestion}
-          onKeep={async (initials, consultation) => {
-            const d = emptyDossier(initials, consultation);
-            await dossierStore.put(d, true);
-            toast(`Dossier ${d.initials} gardé sur cet appareil.`, { variant: "success", actionLabel: "Ouvrir", onAction: () => openDossier(d.id, "preparation") });
-          }}
-        />
-      </div>
+      {isAdmin && (
+        <div hidden={view !== "consultation"}>
+          <ConsultationView
+            rules={rules}
+            protocols={protocolLib.protocols}
+            draft={dossierStore.draft}
+            onAskQuestion={askQuestion}
+            onKeep={async (initials, consultation) => {
+              const d = emptyDossier(initials, consultation);
+              await dossierStore.put(d, true);
+              toast(`Dossier ${d.initials} gardé sur cet appareil.`, { variant: "success", actionLabel: "Ouvrir", onAction: () => openDossier(d.id, "preparation") });
+            }}
+          />
+        </div>
+      )}
 
       {view === "dossiers" && (
         <DossierList

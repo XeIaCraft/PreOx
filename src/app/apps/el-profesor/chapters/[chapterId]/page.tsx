@@ -16,7 +16,7 @@ export default async function ChapterPage({
   const profile = await requireElProfesorAccess();
   const { chapterId } = await params;
   const { entity } = await searchParams;
-  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
+  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile);
 
   // Both cheap, single indexed lookups — kept awaited, they were never the
   // slow part. getElProfesorChapterContentBatch is the expensive one (the

@@ -5,7 +5,7 @@ import { BookTocWithLocalCache } from "@/components/el-profesor/book-toc-with-lo
 export default async function BookTocPage({ params }: { params: Promise<{ bookId: string }> }) {
   const profile = await requireElProfesorAccess();
   const { bookId } = await params;
-  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
+  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile);
 
   // Not awaited — BookTocWithLocalCache assembles the table of contents
   // straight from the dashboard + per-chapter caches already downloaded by

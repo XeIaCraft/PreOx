@@ -8,6 +8,7 @@ import { SessionsSection } from "@/components/profile/sessions-section";
 import { MfaSection } from "@/components/profile/mfa-section";
 import { NotificationPrefsSection } from "@/components/profile/notification-prefs-section";
 import { PersonalizationSection } from "@/components/profile/personalization-section";
+import { DefaultViewSection } from "@/components/profile/default-view-section";
 import { SetPasswordForm } from "@/components/auth/set-password-form";
 import { ToastProvider } from "@/components/ui/toast";
 import { listMySessions, listMyLoginHistory } from "@/app/actions/security";
@@ -48,6 +49,8 @@ export default async function ProfilePage() {
           highContrast={profile.high_contrast}
           fontScale={profile.font_scale}
         />
+
+        {profile.role === "admin" && <DefaultViewSection defaultView={profile.default_view === "user" ? "user" : "admin"} />}
 
         <NotificationPrefsSection notifyEmailDigest={profile.notify_email_digest} notifyPush={profile.notify_push} />
 

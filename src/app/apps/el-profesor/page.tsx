@@ -15,7 +15,7 @@ import { recordAppVisit } from "@/app/actions/discovery";
 export default async function ElProfesorPage() {
   const profile = (await getCurrentProfile())!;
   const realIsAdmin = profile.role === "admin";
-  const { effectiveIsAdmin: isAdmin, previewingAsUser } = await getEffectiveIsAdmin(realIsAdmin);
+  const { effectiveIsAdmin: isAdmin, previewingAsUser } = await getEffectiveIsAdmin(profile);
 
   // Both single cheap indexed lookups (analytics insert, one row by user
   // id). Nothing heavier is computed here any more (piste 2026-09-24):

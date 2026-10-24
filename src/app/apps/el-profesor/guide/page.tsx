@@ -4,6 +4,6 @@ import { GuideView } from "@/components/el-profesor/guide-view";
 
 export default async function GuidePage() {
   const profile = await requireElProfesorAccess();
-  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile.role === "admin");
+  const { effectiveIsAdmin: isAdmin } = await getEffectiveIsAdmin(profile);
   return <GuideView isAdmin={isAdmin} />;
 }

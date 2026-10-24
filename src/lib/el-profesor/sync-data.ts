@@ -119,7 +119,7 @@ export interface SyncContext {
 export async function resolveSyncContext(): Promise<SyncContext> {
   const profile = await requireElProfesorAccess();
   const realIsAdmin = profile.role === "admin";
-  const { effectiveIsAdmin, previewingAsUser } = await getEffectiveIsAdmin(realIsAdmin);
+  const { effectiveIsAdmin, previewingAsUser } = await getEffectiveIsAdmin(profile);
   return { profileId: profile.id, realIsAdmin, isAdmin: effectiveIsAdmin, previewingAsUser };
 }
 
