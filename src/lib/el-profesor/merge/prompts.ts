@@ -252,6 +252,19 @@ export function buildRepairPrompt(
   cards: { alias: string; bookTitle: string; front: string; back: string; lostValues: string[] }[],
   needsKeyPoints: boolean
 ): string {
+  // Nothing to take up, only the closing « À retenir » to write: the repair wording would only confuse the model.
+  if (!missing.length && !cards.length && needsKeyPoints)
+    return `
+Fiche « ${context.title} » (chapitre « ${context.chapterTitle} », livre de révision « ${context.bookTitle} »). Il lui manque son bloc final « À retenir ».
+Écris-le, et rien d'autre : une seule entrée dans "insertions", type "a_retenir", "after_block_index" égal au numéro du dernier bloc, "source_block_ids" vide, contenu en texte : 5 à 12 points « • » courts, un par ligne, à savoir par cœur — uniquement des informations déjà présentes dans la fiche, valeurs chiffrées comprises. "replacements", "already_covered" et "flashcards" restent vides. Ne commente pas la tâche.
+
+${MERGE_LANGUAGE_RULE}
+
+${STRICT_ARRAY_FORMAT_RULE}
+
+Fiche actuelle :
+${current.map((b) => `#${b.index} ${blockLabel(b.blockType)} : ${blockPromptText(b.blockType, b.content)}`).join("\n")}
+`.trim();
   return `
 Fiche « ${context.title} » (chapitre « ${context.chapterTitle} », livre de révision « ${context.bookTitle} », fusion de plusieurs livres). Le contrôle de couverture a trouvé ce que la fiche ne reprend pas encore. Complète-la sans rien retirer de l'existant, en gardant son style (texte brut, intertitres courts, puces « • ») :
 - pour intégrer une information : remplace un bloc existant par une version enrichie ("replacements" : son numéro, son contenu complet réécrit — même forme que le bloc d'origine : texte, tableau ou étapes —, et les blocs sources ajoutés), ou insère un nouveau bloc au bon endroit du déroulé ("insertions" : après quel numéro de bloc, -1 pour la tête ; jamais après le bloc « À retenir » final) ;

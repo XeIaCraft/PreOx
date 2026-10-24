@@ -268,6 +268,14 @@ describe("prompts", () => {
     expect(prompt).toContain("n'a pas de bloc « À retenir »");
   });
 
+  it("asks only for the « À retenir » when there's nothing else to take up", () => {
+    const prompt = buildRepairPrompt({ bookTitle: "N", chapterTitle: "C", title: "T" }, [{ index: 0, blockType: "definition_mecanisme", content: { text: "x" } }], [], [], true);
+    expect(prompt).toContain("Il lui manque son bloc final « À retenir »");
+    expect(prompt).toContain("#0");
+    expect(prompt).not.toContain("Blocs sources à intégrer");
+    expect(prompt).not.toContain("contrôle de couverture");
+  });
+
   it("lists the catalogue by book and source chapter", () => {
     const text = buildCatalogText([{ id: "b", title: "Miller" }], [ref("f1", "x", "A"), ref("f2", "x", "B"), ref("f3", "y", "C")]);
     expect(text).toBe("Livre « Miller » (3 fiches)\n  chap-x : A · B\n  chap-y : C");

@@ -16,6 +16,8 @@ const h = vi.hoisted(() => ({
   /** Like Haiku on lot 5: asked for « À retenir » in a repair, it doesn't write it. */
   lightModelSkipsKeyPoints: false,
 }));
+/** How a repair prompt asks for the missing « À retenir » (with other items to take up, or alone). */
+const ASKS_KEY_POINTS = /n'a pas de bloc « À retenir »|Il lui manque son bloc final « À retenir »/;
 const isRepairPrompt = (p: string) => !p.includes("Conçois les PARTIES") && !p.includes("Tu ranges") && !p.includes("Tu organises") && !p.includes("Tu rédiges");
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.db }));
@@ -60,7 +62,7 @@ vi.mock("@/lib/el-profesor/anthropic", async (importOriginal) => {
       return (h.batches.get(batchId) ?? []).map((r) => {
         h.prompts.push(r.prompt);
         if (h.creditGone && isRepairPrompt(r.prompt)) return { customId: r.customId, outcome: "errored" as const, message: "Your credit balance is too low to access the API.", usage: { inputTokens: 0, outputTokens: 0 } };
-        const prompt = h.lightModelSkipsKeyPoints && r.model.includes("haiku") ? r.prompt.replace("n'a pas de bloc « À retenir »", "") : r.prompt;
+        const prompt = h.lightModelSkipsKeyPoints && r.model.includes("haiku") ? r.prompt.replace(ASKS_KEY_POINTS, "") : r.prompt;
         return { customId: r.customId, outcome: "succeeded" as const, output: fakeAi(prompt), usage: { inputTokens: 1000, outputTokens: 300 } };
       });
     },
@@ -136,11 +138,11 @@ function fakeAi(prompt: string): unknown {
     flashcards.push({ front: "Nouvelle carte sur un point clé ?", back: "Réponse", source_flashcard_ids: [] });
     return { summary: "Chapeau de la fiche.", blocks: merged, flashcards };
   }
-  if (prompt.includes("Le contrôle de couverture a trouvé")) {
+  if (prompt.includes("Le contrôle de couverture a trouvé") || prompt.includes("Il lui manque son bloc final")) {
     const blocks = [...prompt.matchAll(/^\[(B\d+)\] « [^»]* » — [^:]+ : (.*)$/gm)].map(([, alias, text]) => ({ alias, text }));
     const cards = [...prompt.matchAll(/^\[(K\d+)\] « [^»]* » — Q : (.*) — R : (.*?)(?: \(valeurs perdues : [^)]*\))?$/gm)].map(([, alias, front, back]) => ({ alias, front, back }));
     const insertions: unknown[] = blocks.map((b) => ({ after_block_index: 0, block_type: "texte_libre", heading: "Complément", content: { text: b.text }, source_block_ids: [b.alias] }));
-    if (prompt.includes("n'a pas de bloc « À retenir »")) insertions.push({ after_block_index: 99, block_type: "a_retenir", content: { text: "• Ajouté au rattrapage." }, source_block_ids: [] });
+    if (ASKS_KEY_POINTS.test(prompt)) insertions.push({ after_block_index: 99, block_type: "a_retenir", content: { text: "• Ajouté au rattrapage." }, source_block_ids: [] });
     return { replacements: [], insertions, already_covered: [], flashcards: cards.map((c) => ({ front: c.front, back: c.back, source_flashcard_ids: [c.alias] })) };
   }
   throw new Error(`Prompt inattendu : ${prompt.slice(0, 80)}`);
