@@ -249,7 +249,8 @@ function PhaseView({ phase, open, onToggle, filter }: { phase: SheetPhase; open:
   );
 }
 
-export function AnaesthesiaProtocol({ surgery, protocol, onEdit, commonNote }: { surgery: SurgeryItem; protocol: Protocol | null; onEdit: () => void; commonNote?: React.ReactNode }) {
+/** Without `onEdit` (a user's view) the protocol can't be changed from here. */
+export function AnaesthesiaProtocol({ surgery, protocol, onEdit, commonNote }: { surgery: SurgeryItem; protocol: Protocol | null; onEdit?: () => void; commonNote?: React.ReactNode }) {
   const modes = useMemo(() => sheetModes(surgery, protocol), [surgery, protocol]);
   // The technique picked for this procedure (back to its usual one on another procedure).
   const [picked, setPicked] = useState<{ id: string; mode: SheetMode } | null>(null);
@@ -278,9 +279,11 @@ export function AnaesthesiaProtocol({ surgery, protocol, onEdit, commonNote }: {
           <Button size="sm" variant="ghost" onClick={() => setOpen(Object.fromEntries(phases.map((p) => [p.code, !allOpen])))} className="print:hidden">
             {allOpen ? <ChevronsDownUp className="h-3.5 w-3.5" /> : <ChevronsUpDown className="h-3.5 w-3.5" />} {allOpen ? "Tout replier" : "Tout déplier"}
           </Button>
-          <Button size="sm" variant="ghost" onClick={onEdit} className="print:hidden">
-            {protocol ? "Changer" : "Lier un protocole"}
-          </Button>
+          {onEdit && (
+            <Button size="sm" variant="ghost" onClick={onEdit} className="print:hidden">
+              {protocol ? "Changer" : "Lier un protocole"}
+            </Button>
+          )}
         </>
       }
     >

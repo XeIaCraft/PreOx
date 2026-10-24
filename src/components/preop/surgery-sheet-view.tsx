@@ -7,6 +7,7 @@ import { Combobox, Panel } from "@/components/preop/ui";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { SurgeryForm } from "@/components/preop/settings";
 import { AnaesthesiaProtocol } from "@/components/preop/anaesthesia-sheet-view";
+import { usePreopSession } from "@/components/preop/session";
 import { useToast } from "@/components/ui/toast";
 import { DEFAULT_CATALOGS } from "@/lib/preop/catalog-defaults";
 import { emptyOverrides, fold, type CatalogOverrides, type SurgeryItem } from "@/lib/preop/catalog";
@@ -43,13 +44,15 @@ function blankSurgery(name: string): SurgeryItem {
   return { id: "", name, category: "", grade: "intermediate", cardiacRisk: "low", bleedingRisk: "low", rcriHighRisk: false, incision: "peripheral" };
 }
 
+/** A user (or an admin in the user view) consults the sheets; only the admin view edits or creates an intervention. */
 export function SurgerySheetView({ protocols }: { protocols: Protocol[] }) {
   const { catalogs } = useCatalogs();
+  const { isAdmin } = usePreopSession();
   const [id, setId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ item: SurgeryItem; isNew: boolean } | null>(null);
   const surgery = id ? catalogs.surgeries.find((x) => x.id === id) : undefined;
 
-  if (editing)
+  if (editing && isAdmin)
     return (
       <SurgeryEditor
         item={editing.item}
@@ -69,7 +72,7 @@ export function SurgerySheetView({ protocols }: { protocols: Protocol[] }) {
         <p className="text-sm text-foreground-muted">
           Choisissez une intervention : examens à demander et leurs conditions, destination après l&apos;intervention, risque hémorragique, puis le
           protocole anesthésique phase par phase (recommandations récentes, différences selon le patient, contre-indications de ce qui est utilisé),
-          sans patient. Tout se corrige avec « Modifier » (enregistré pour vous, comme dans Paramètres › Interventions).
+          sans patient.{isAdmin && " Tout se corrige avec « Modifier » (enregistré pour vous, comme dans Paramètres › Interventions)."}
         </p>
         {surgery ? (
           <div className="flex items-start gap-2 rounded-[var(--radius-md)] bg-surface-muted/60 px-3 py-2">
@@ -77,9 +80,11 @@ export function SurgerySheetView({ protocols }: { protocols: Protocol[] }) {
               <p className="text-sm font-medium text-foreground">{surgery.name}</p>
               <p className="text-xs text-foreground-subtle">{hint(surgery)}</p>
             </div>
-            <Button variant="secondary" size="sm" onClick={() => setEditing({ item: structuredClone(surgery), isNew: false })} className="print:hidden">
-              <Pencil className="h-3.5 w-3.5" /> Modifier
-            </Button>
+            {isAdmin && (
+              <Button variant="secondary" size="sm" onClick={() => setEditing({ item: structuredClone(surgery), isNew: false })} className="print:hidden">
+                <Pencil className="h-3.5 w-3.5" /> Modifier
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => window.print()} className="print:hidden" title="Imprimer la fiche">
               <Printer className="h-4 w-4" />
             </Button>
@@ -94,8 +99,8 @@ export function SurgerySheetView({ protocols }: { protocols: Protocol[] }) {
             placeholder="Intervention (PTG, colectomie cœlio, néphrectomie partielle robot…)"
             search={(q) => searchSurgeries(catalogs.surgeries, q).map((x) => ({ key: x.id, label: x.name, hint: hint(x) }))}
             onPick={(o) => setId(o.key)}
-            onFree={(q) => setEditing({ item: blankSurgery(q), isNew: true })}
-            freeLabel={(q) => `Créer « ${q} »`}
+            onFree={isAdmin ? (q) => setEditing({ item: blankSurgery(q), isNew: true }) : undefined}
+            freeLabel={isAdmin ? (q) => `Créer « ${q} »` : undefined}
           />
         )}
         {surgery && <Variants surgery={surgery} items={catalogs.surgeries} onPick={setId} />}
@@ -105,7 +110,7 @@ export function SurgerySheetView({ protocols }: { protocols: Protocol[] }) {
           key={surgery.id}
           surgery={surgery}
           protocol={matchProtocol(protocols, { name: surgery.name, category: surgery.category, catalogId: surgery.id }, "", catalogs.surgeries)}
-          onEdit={() => setEditing({ item: structuredClone(surgery), isNew: false })}
+          onEdit={isAdmin ? () => setEditing({ item: structuredClone(surgery), isNew: false }) : undefined}
         />
       )}
     </div>
@@ -208,7 +213,7 @@ function Fact({ label, value, tone }: { label: string; value: React.ReactNode; t
   );
 }
 
-function Sheet({ surgery: s, protocol, onEdit }: { surgery: SurgeryItem; protocol: Protocol | null; onEdit: () => void }) {
+function Sheet({ surgery: s, protocol, onEdit }: { surgery: SurgeryItem; protocol: Protocol | null; onEdit?: () => void }) {
   const sheet = useMemo(() => surgerySheet(s), [s]);
   const bleeding = BLEEDING_RISKS.find((b) => b.code === s.bleedingRisk);
   const plan = protocol?.content;
