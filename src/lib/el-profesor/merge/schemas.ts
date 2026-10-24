@@ -266,18 +266,50 @@ export function normalizeOutline(raw: unknown): { title: string; fiches: { title
     .filter((c) => c.fiches.length > 0);
 }
 
+/**
+ * Text that says nothing: a lone bullet, the bare heading « À retenir », a
+ * "placeholder" the model left in (2026-10-24: 191 empty « À retenir » and 29
+ * "placeholder" blocks in the merged book). Such a block is dropped, so the
+ * coverage check sees what is really missing.
+ */
+export function isFillerText(text: string): boolean {
+  const meaningful = text
+    .toLowerCase()
+    .replace(/placeholder|à retenir|a retenir|étapes|etapes|todo|lorem ipsum/g, "")
+    .replace(/[\s•·\-–—*.:;,!?…()[\]]/g, "");
+  return meaningful.length === 0;
+}
+
+/**
+ * An « À retenir » that only announces its points (« Points clés à
+ * mémoriser. ») without listing them: Haiku wrote 681 of those (lots 5-6).
+ * It counts as missing, so the repair pass writes the real one.
+ */
+export function isKeyPointsIntroOnly(text: string): boolean {
+  return !/[•\n]/.test(text) && text.trim().length < 120;
+}
+
+/** Points the model listed apart from the text (`items`, `points`, `bullets`), turned into the bullets the reader shows. */
+function listedPoints(c: Record<string, unknown>): string {
+  for (const key of ["items", "points", "bullets"]) {
+    const list = coerceArray(c[key]).map((x) => str(x).trim()).filter(Boolean);
+    if (list.length) return list.map((x) => (x.startsWith("•") ? x : `• ${x}`)).join("\n");
+  }
+  return "";
+}
+
 /** Keeps only the fields the block type actually uses, so a stray empty `rows` never turns a text block into a broken table. */
 export function normalizeContent(blockType: BlockType, raw: unknown): BlockContent | null {
   const c = (raw ?? {}) as { text?: unknown; headers?: unknown; rows?: unknown; steps?: unknown };
   // « Études et auteurs clés »: a table when there is one, else text.
   if (blockType === "etudes_cles" && coerceArray(c.rows).length === 0) {
     const text = str(c.text).trim();
-    return text ? { text } : null;
+    return text && !isFillerText(text) ? { text } : null;
   }
   if (blockType === "tableau_comparatif" || blockType === "etudes_cles") {
     const headers = coerceArray(c.headers).map(str);
     const rows = coerceArray(c.rows).map((r) => coerceArray(r).map(str));
-    if (rows.length === 0) return typeof c.text === "string" && c.text.trim() ? { text: c.text } : null;
+    if (rows.length === 0) return typeof c.text === "string" && !isFillerText(c.text) ? { text: c.text } : null;
     return { headers, rows };
   }
   if (blockType === "protocole_paliers") {
@@ -288,11 +320,13 @@ export function normalizeContent(blockType: BlockType, raw: unknown): BlockConte
         return { label: str(step.label), detail: str(step.detail), ...(condition ? { condition } : {}) };
       })
       .filter((s) => s.label || s.detail);
-    if (steps.length === 0) return typeof c.text === "string" && c.text.trim() ? { text: c.text } : null;
+    if (steps.length === 0) return typeof c.text === "string" && !isFillerText(c.text) ? { text: c.text } : null;
     return { steps };
   }
-  const text = str(c.text).trim();
-  return text ? { text } : null;
+  const listed = listedPoints(c as Record<string, unknown>);
+  const text = [str(c.text).trim(), listed].filter(Boolean).join("\n");
+  if (blockType === "a_retenir" && isKeyPointsIntroOnly(text)) return null;
+  return text && !isFillerText(text) ? { text } : null;
 }
 
 /** A table or protocol answer whose structure was empty falls back to plain text — the type follows the content actually kept. */

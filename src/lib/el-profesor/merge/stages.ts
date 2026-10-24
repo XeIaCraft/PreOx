@@ -46,6 +46,8 @@ import {
   normalizeOutline,
   normalizePlan,
   normalizeRepair,
+  isFillerText,
+  isKeyPointsIntroOnly,
 } from "./schemas";
 import { appendMergedCards, loadFicheBlocks, rewriteFicheBlocks, writeMergedFiche, type MergedBlockDraft, type MergedCardDraft } from "./persist";
 import { loadSourceCatalog, loadSourceContent, type SourceBlock, type SourceCard } from "./source";
@@ -864,6 +866,11 @@ export type RepairInput = FicheTaskInput & {
   model?: string;
 };
 
+function hasKeyPointsText(content: unknown): boolean {
+  const text = (content as { text?: unknown } | null)?.text;
+  return typeof text === "string" && !isFillerText(text) && !isKeyPointsIntroOnly(text);
+}
+
 /** Writes « À retenir » reliably: the second try for the fiches a lighter model left without one. */
 export const KEY_POINTS_MODEL = "claude-sonnet-5";
 const STRONG_MODEL = /sonnet|opus|fable|mythos/i;
@@ -883,10 +890,11 @@ async function keyPointsRetries(ctx: StageContext, repairs: Task[]): Promise<{ r
   if (!inputs.length) return [];
   const blocks = await selectInChunksStrict(
     inputs.map((x) => x.input.ficheId),
-    (ids) => supabase.from("el_profesor_fiche_blocks").select("fiche_id, block_type").in("fiche_id", ids)
+    (ids) => supabase.from("el_profesor_fiche_blocks").select("fiche_id, block_type, content").in("fiche_id", ids)
   );
   const withBlocks = new Set(blocks.map((b) => b.fiche_id));
-  const withKeyPoints = new Set(blocks.filter((b) => b.block_type === "a_retenir").map((b) => b.fiche_id));
+  // An « À retenir » with nothing in it (a lone bullet) doesn't count.
+  const withKeyPoints = new Set(blocks.filter((b) => b.block_type === "a_retenir" && hasKeyPointsText(b.content)).map((b) => b.fiche_id));
   return inputs
     .filter((x) => withBlocks.has(x.input.ficheId) && !withKeyPoints.has(x.input.ficheId))
     .map((x) => ({ refKey: x.refKey, input: { ...x.input, blockIds: [], cardIds: [], lostValues: {}, needsKeyPoints: true, model: KEY_POINTS_MODEL } }));
