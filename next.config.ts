@@ -27,6 +27,9 @@ const nextConfig: NextConfig = {
   // native/runtime asset (their docs use `sharp`/`aws-crt` as examples).
   outputFileTracingIncludes: {
     "/*": ["node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+    // The book export (src/lib/el-profesor/export/run.ts) reads its fonts
+    // from disk at runtime: nothing imports them, so tracing can't see them.
+    "/api/el-profesor/export": ["src/lib/el-profesor/export/fonts/*.ttf"],
   },
   experimental: {
     // Default is 1MB — raised to 8MB for importChapterContent's hand-pasted

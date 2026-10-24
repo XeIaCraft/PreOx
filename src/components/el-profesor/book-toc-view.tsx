@@ -6,6 +6,7 @@ import { LocalNavLink } from "@/components/el-profesor/local-nav-link";
 import Image from "next/image";
 import { ArrowLeft, ChevronDown, ChevronRight, FileText, FileX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { BookExportButton } from "@/components/el-profesor/book-export-dialog";
 import type { BookTableOfContents } from "@/lib/el-profesor/dal";
 import type { ChapterStatus } from "@/lib/el-profesor/types";
 
@@ -85,6 +86,9 @@ export function BookTocView({ toc }: { toc: BookTableOfContents }) {
           {book.theme && (
             <span className="mt-1 inline-block rounded-full border border-border px-2 py-0.5 text-[11px] text-foreground-subtle">{book.theme}</span>
           )}
+        </div>
+        <div className="ml-auto shrink-0">
+          <BookExportButton bookId={book.id} />
         </div>
       </div>
 
