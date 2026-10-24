@@ -78,8 +78,8 @@ function PreopScreens() {
   const tabParam = searchParams.get("t") as DossierTab | null;
   const dossierTab: DossierTab = tabParam && DOSSIER_TABS.some((t) => t.tab === tabParam) ? tabParam : "consultation";
 
-  const { rules, loading, error, save, remove, autoUpdated: rulesUpdated } = useRules();
-  const protocolLib = useProtocols();
+  const { rules, loading, error, save, remove, autoUpdated: rulesUpdated } = useRules(realIsAdmin);
+  const protocolLib = useProtocols(realIsAdmin);
   // Reference protocols and rules follow their new version by themselves: say so, once.
   useEffect(() => {
     if (protocolLib.autoUpdated.length) toast(`${protocolLib.autoUpdated.length} protocole(s) de référence mis à jour automatiquement.`, { variant: "success" });
@@ -256,6 +256,9 @@ function PreopScreens() {
             </button>
           ))}
         </nav>
+      )}
+      {activeTab === "parametres" && (
+        <p className="text-xs text-foreground-subtle">Listes, protocoles et règles sont communs : ce que vous changez ici s&apos;applique aux fiches et aux traitements de tous les utilisateurs.</p>
       )}
 
       {view === "protocoles" && (

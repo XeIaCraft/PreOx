@@ -7,7 +7,8 @@ import "server-only";
 import { notFound } from "next/navigation";
 import { requireProfile } from "@/lib/auth/dal";
 import { getAppBySlugForProfile } from "@/lib/apps";
-import { createClient } from "@/lib/supabase/server";
+import { cache } from "react";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { ruleSchema } from "./rules/schema";
 import type { Rule } from "./rules/types";
 import { protocolSchema } from "./protocol-schema";
@@ -27,6 +28,21 @@ export async function requirePreopAccess(): Promise<Profile> {
   return profile;
 }
 
+/**
+ * The library — rules, protocols, catalogues, the service's preferences and
+ * the plan lists, everything the surgery sheets and the treatments run on —
+ * is common to everyone: the first admin's. Everyone reads it; only an admin
+ * changes it. Its rows belong to that admin, so it is read and written here
+ * with the service role (always filtered on its owner), only after
+ * requirePreopAccess. The patient dossiers stay on each device, the AI
+ * settings each user's own.
+ */
+export const preopLibrary = cache(async (profile: Profile): Promise<{ ownerId: string; canEdit: boolean }> => {
+  const { data, error } = await createAdminClient().from("profiles").select("id").eq("role", "admin").order("created_at").limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
+  return { ownerId: data?.id ?? profile.id, canEdit: profile.role === "admin" };
+});
+
 function withoutOwner(row: Rule & { user_id: string }): Rule {
   const rule: Partial<Rule & { user_id: string }> = { ...row };
   delete rule.user_id;
@@ -34,7 +50,7 @@ function withoutOwner(row: Rule & { user_id: string }): Rule {
 }
 
 export async function listRules(userId: string): Promise<Rule[]> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase.from("preop_rules").select("*").eq("user_id", userId).order("created_at");
   if (error) throw new Error(error.message);
   return (data ?? []).map(withoutOwner);
@@ -45,7 +61,7 @@ export type SaveResult = { ok: true; rule: Rule } | { ok: false; error: string }
 export async function saveRule(userId: string, input: unknown): Promise<SaveResult> {
   const parsed = ruleSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Règle invalide" };
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("preop_rules")
     .upsert({ ...parsed.data, user_id: userId } as never, { onConflict: "id" })
@@ -56,7 +72,7 @@ export async function saveRule(userId: string, input: unknown): Promise<SaveResu
 }
 
 export async function deleteRule(userId: string, id: string): Promise<void> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { error } = await supabase.from("preop_rules").delete().eq("id", id).eq("user_id", userId);
   if (error) throw new Error(error.message);
 }
@@ -70,7 +86,7 @@ function protocolWithoutOwner(row: Protocol & { user_id: string }): Protocol {
 }
 
 export async function listProtocols(userId: string): Promise<Protocol[]> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase.from("preop_protocols").select("*").eq("user_id", userId).order("name");
   if (error) throw new Error(error.message);
   return (data ?? []).map(protocolWithoutOwner);
@@ -81,7 +97,7 @@ export type SaveProtocolResult = { ok: true; protocol: Protocol } | { ok: false;
 export async function saveProtocol(userId: string, input: unknown): Promise<SaveProtocolResult> {
   const parsed = protocolSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Protocole invalide" };
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("preop_protocols")
     .upsert({ ...parsed.data, user_id: userId } as never, { onConflict: "id" })
@@ -92,7 +108,7 @@ export async function saveProtocol(userId: string, input: unknown): Promise<Save
 }
 
 export async function deleteProtocol(userId: string, id: string): Promise<void> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { error } = await supabase.from("preop_protocols").delete().eq("id", id).eq("user_id", userId);
   if (error) throw new Error(error.message);
 }
@@ -100,7 +116,7 @@ export async function deleteProtocol(userId: string, id: string): Promise<void> 
 // -- Catalogues (the user's changes to the default lists) -------------------------
 
 export async function listCatalogOverrides(userId: string): Promise<AllOverrides> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase.from("preop_catalogs").select("kind, overrides").eq("user_id", userId);
   if (error) throw new Error(error.message);
   return Object.fromEntries((data ?? []).filter((r) => r.kind !== SERVICE_KIND && r.kind !== LISTS_KIND).map((r) => [r.kind, r.overrides])) as AllOverrides;
@@ -111,7 +127,7 @@ const SERVICE_KIND = "service";
 const LISTS_KIND = "plan_lists";
 
 export async function getPlanLists(userId: string): Promise<PlanLists> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase.from("preop_catalogs").select("overrides").eq("user_id", userId).eq("kind", LISTS_KIND).maybeSingle();
   if (error) throw new Error(error.message);
   const parsed = planListsSchema.safeParse(data?.overrides ?? {});
@@ -121,13 +137,13 @@ export async function getPlanLists(userId: string): Promise<PlanLists> {
 export async function savePlanLists(userId: string, input: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
   const parsed = planListsSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Listes invalides" };
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { error } = await supabase.from("preop_catalogs").upsert({ user_id: userId, kind: LISTS_KIND, overrides: parsed.data } as never, { onConflict: "user_id,kind" });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
 export async function getServicePrefs(userId: string): Promise<ServicePrefs> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase.from("preop_catalogs").select("overrides").eq("user_id", userId).eq("kind", SERVICE_KIND).maybeSingle();
   if (error) throw new Error(error.message);
   const parsed = servicePrefsSchema.safeParse({ ...DEFAULT_SERVICE_PREFS, ...((data?.overrides as object | undefined) ?? {}) });
@@ -137,7 +153,7 @@ export async function getServicePrefs(userId: string): Promise<ServicePrefs> {
 export async function saveServicePrefs(userId: string, input: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
   const parsed = servicePrefsSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Préférences invalides" };
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { error } = await supabase.from("preop_catalogs").upsert({ user_id: userId, kind: SERVICE_KIND, overrides: parsed.data } as never, { onConflict: "user_id,kind" });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
@@ -147,7 +163,7 @@ export async function saveCatalogOverrides(userId: string, kind: unknown, input:
   if (!k.success) return { ok: false, error: "Catalogue inconnu" };
   const parsed = catalogOverridesSchema[k.data].safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Catalogue invalide" };
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { error } = await supabase.from("preop_catalogs").upsert({ user_id: userId, kind: k.data, overrides: parsed.data } as never, { onConflict: "user_id,kind" });
   return error ? { ok: false, error: error.message } : { ok: true };
 }

@@ -17,7 +17,8 @@ const CACHE_KEY = "preox:preop:rules";
 const readCache = () => readAny<Rule>(CACHE_KEY);
 const writeCache = (rules: Rule[]) => writeAny(CACHE_KEY, rules);
 
-export function useRules() {
+/** `canEdit`: an admin — the common library is only brought up to date (and changed) by one. */
+export function useRules(canEdit = true) {
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +34,7 @@ export function useRules() {
       setError(null);
       // Once per visit: proposed rules you have not changed follow their new version, and the
       // proposed rules you do not have yet are added, active « à relire » (older ones they replace are archived).
-      if (!synced.current) {
+      if (canEdit && !synced.current) {
         synced.current = true;
         const now = new Date().toISOString();
         const toSave = ruleUpdates(fresh, now)
@@ -69,7 +70,7 @@ export function useRules() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canEdit]);
 
   useEffect(() => {
     // Cached copy first (instant, offline), then the server's.

@@ -72,7 +72,7 @@ export function SurgerySheetView({ protocols }: { protocols: Protocol[] }) {
         <p className="text-sm text-foreground-muted">
           Choisissez une intervention : examens à demander et leurs conditions, destination après l&apos;intervention, risque hémorragique, puis le
           protocole anesthésique phase par phase (recommandations récentes, différences selon le patient, contre-indications de ce qui est utilisé),
-          sans patient.{isAdmin && " Tout se corrige avec « Modifier » (enregistré pour vous, comme dans Paramètres › Interventions)."}
+          sans patient.{isAdmin && " Tout se corrige avec « Modifier » (enregistré pour tous les utilisateurs, comme dans Paramètres › Interventions)."}
         </p>
         {surgery ? (
           <div className="flex items-start gap-2 rounded-[var(--radius-md)] bg-surface-muted/60 px-3 py-2">

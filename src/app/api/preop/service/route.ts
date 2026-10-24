@@ -1,17 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServicePrefs, requirePreopAccess, saveServicePrefs } from "@/lib/preop/dal";
+import { getServicePrefs, preopLibrary, requirePreopAccess, saveServicePrefs } from "@/lib/preop/dal";
 import { isSameOrigin } from "@/lib/preop/same-origin";
 
-// The service's preferences (volatile agent, FiO₂, fresh gas flow, setron,
-// dexamethasone): GET returns them, PUT replaces them.
+// The service's preferences, common to everyone (preopLibrary) (volatile agent, FiO₂, fresh gas flow, setron,
+// dexamethasone): GET returns them, PUT (an admin) replaces them.
 export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
 export async function GET() {
-  const profile = await requirePreopAccess();
+  const { ownerId } = await preopLibrary(await requirePreopAccess());
   try {
-    return NextResponse.json({ prefs: await getServicePrefs(profile.id) }, { headers: NO_STORE });
+    return NextResponse.json({ prefs: await getServicePrefs(ownerId) }, { headers: NO_STORE });
   } catch (err) {
     console.error("[preop/service] get failed:", err);
     return NextResponse.json({ error: "Échec du chargement." }, { status: 500, headers: NO_STORE });
@@ -20,13 +20,14 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   if (!isSameOrigin(request, true)) return NextResponse.json({ error: "Requête refusée." }, { status: 403, headers: NO_STORE });
-  const profile = await requirePreopAccess();
+  const { ownerId, canEdit } = await preopLibrary(await requirePreopAccess());
+  if (!canEdit) return NextResponse.json({ error: "Réservé aux administrateurs." }, { status: 403, headers: NO_STORE });
   let body: { prefs?: unknown } | null;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Corps invalide." }, { status: 400, headers: NO_STORE });
   }
-  const result = await saveServicePrefs(profile.id, body?.prefs);
+  const result = await saveServicePrefs(ownerId, body?.prefs);
   return result.ok ? NextResponse.json({ ok: true }, { headers: NO_STORE }) : NextResponse.json({ error: result.error }, { status: 422, headers: NO_STORE });
 }

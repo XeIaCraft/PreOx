@@ -12,7 +12,8 @@ const CACHE_KEY = "preox:preop:protocols";
 
 export type ProtocolInput = Omit<Protocol, "created_at" | "updated_at">;
 
-export function useProtocols() {
+/** `canEdit`: an admin — the common library is only brought up to date (and changed) by one. */
+export function useProtocols(canEdit = true) {
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +28,7 @@ export function useProtocols() {
       writeCache(CACHE_KEY, fresh);
       setError(null);
       // Once per visit: the reference protocols you have not changed follow the new version by themselves.
-      if (!synced.current) {
+      if (canEdit && !synced.current) {
         synced.current = true;
         const updated: string[] = [];
         for (const u of protocolUpdates(fresh).filter((x) => !x.modified)) {
@@ -54,7 +55,7 @@ export function useProtocols() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canEdit]);
 
   useEffect(() => {
     const cached = readCache<Protocol>(CACHE_KEY);
