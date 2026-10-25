@@ -12,7 +12,7 @@ import { ConfirmDeleteDialog } from "@/components/el-profesor/dialogs/confirm-de
 import { dismissDuplicateFlashcardPair, dismissSimilarSubEntityPair, dismissThinSubEntity } from "@/app/apps/el-profesor/actions/quality";
 import { deleteFlashcard } from "@/app/apps/el-profesor/actions/extraction";
 import { markFicheSuperseded } from "@/app/apps/el-profesor/actions/notions";
-import { deleteOrphanedPdf, type ActionState } from "@/app/apps/el-profesor/actions/library";
+import { deleteAllOrphanedPdfs, deleteOrphanedPdf, type ActionState } from "@/app/apps/el-profesor/actions/library";
 import type { BookQualityDashboard, OrphanedPdf } from "@/lib/el-profesor/dal";
 
 function timeAgoLabel(iso: string | null): string {
@@ -50,6 +50,8 @@ export function QualityDashboardView({
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [confirmDeletePdf, setConfirmDeletePdf] = useState<OrphanedPdf | null>(null);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const orphanBytes = orphanedPdfs.reduce((n, p) => n + (p.sizeBytes ?? 0), 0);
 
   function runAction(action: () => Promise<ActionState>) {
     startTransition(async () => {
@@ -70,9 +72,16 @@ export function QualityDashboardView({
       </p>
 
       <div className="mt-6">
-        <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground">
-          <FileWarning className="h-4 w-4" /> PDF orphelins ({orphanedPdfs.length})
-        </p>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+            <FileWarning className="h-4 w-4" /> PDF orphelins ({orphanedPdfs.length})
+          </p>
+          {orphanedPdfs.length > 1 && (
+            <Button variant="ghost" size="sm" className="shrink-0 text-danger" disabled={isPending} onClick={() => setConfirmDeleteAll(true)}>
+              <Trash2 className="h-3.5 w-3.5" /> Tout supprimer ({formatBytes(orphanBytes)})
+            </Button>
+          )}
+        </div>
         <p className="mb-2 text-xs text-foreground-subtle">
           Fichiers dans le stockage reliés à aucun chapitre — le plus souvent un import fermé avant validation. Concerne
           toute la bibliothèque, pas seulement le livre sélectionné ci-dessous.
@@ -282,6 +291,21 @@ export function QualityDashboardView({
             </>
           )}
         </>
+      )}
+
+      {confirmDeleteAll && (
+        <ConfirmDeleteDialog
+          title="Supprimer tous les PDF orphelins"
+          itemName={`${orphanedPdfs.length} fichiers`}
+          introText={`${orphanedPdfs.length} fichiers (${formatBytes(orphanBytes)}) seront supprimés définitivement du stockage.`}
+          consequences={["Aucun chapitre ne les référence — aucun contenu publié n'est concerné.", "Un fichier modifié dans les dernières 24 heures est gardé (import peut-être en cours)."]}
+          isPending={isPending}
+          onConfirm={() => {
+            setConfirmDeleteAll(false);
+            runAction(() => deleteAllOrphanedPdfs());
+          }}
+          onClose={() => setConfirmDeleteAll(false)}
+        />
       )}
 
       {confirmDeletePdf && (

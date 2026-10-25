@@ -46,3 +46,12 @@ export async function deleteChapterPdf(path: string): Promise<void> {
   const supabase = createAdminClient();
   await supabase.storage.from(BUCKET).remove([path]);
 }
+
+/** Several at once (the storage API takes up to 1000 paths a call; kept well under). */
+export async function deleteChapterPdfs(paths: string[]): Promise<void> {
+  const supabase = createAdminClient();
+  for (let i = 0; i < paths.length; i += 100) {
+    const { error } = await supabase.storage.from(BUCKET).remove(paths.slice(i, i + 100));
+    if (error) throw new GeminiError(`Suppression impossible : ${error.message}`);
+  }
+}

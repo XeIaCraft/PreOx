@@ -2,12 +2,12 @@
 
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { requireElProfesorAdmin } from "@/lib/el-profesor/dal";
+import { getOrphanedChapterPdfs, requireElProfesorAdmin } from "@/lib/el-profesor/dal";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { MergePlan } from "@/lib/el-profesor/merge/types";
 import type { Json } from "@/lib/supabase/types";
-import { deleteChapterPdf, downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
+import { deleteChapterPdf, deleteChapterPdfs, downloadChapterPdfBytes } from "@/lib/el-profesor/storage";
 import { extractDocxText, extractPptxText } from "@/lib/el-profesor/office-text";
 import { getPdfPageCount } from "@/lib/el-profesor/pdf-split";
 import { GeminiError } from "@/lib/gemini-shared";
@@ -281,6 +281,28 @@ export async function deleteOrphanedPdf(path: string): Promise<ActionState> {
   await deleteChapterPdf(path);
   revalidatePath("/apps/el-profesor/quality");
   return { success: "PDF supprimé." };
+}
+
+/**
+ * Every orphaned PDF at once (storage cleanup, 2026-10-25: the bucket was
+ * near the free plan's 1 GB). The orphans are worked out again here, from
+ * every chapter's reference, rather than trusted from the page; a file
+ * touched in the last 24 hours is left alone — it may be an import or a
+ * split still under way.
+ */
+export async function deleteAllOrphanedPdfs(): Promise<ActionState> {
+  await requireElProfesorAdmin();
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  const orphans = (await getOrphanedChapterPdfs()).filter((o) => !o.lastModified || new Date(o.lastModified).getTime() < dayAgo);
+  if (orphans.length === 0) return { success: "Aucun PDF orphelin à supprimer." };
+  try {
+    await deleteChapterPdfs(orphans.map((o) => o.path));
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Suppression impossible." };
+  }
+  const mb = orphans.reduce((n, o) => n + (o.sizeBytes ?? 0), 0) / 1024 / 1024;
+  revalidatePath("/apps/el-profesor/quality");
+  return { success: `${orphans.length} PDF orphelin(s) supprimé(s) (${Math.round(mb)} Mo libérés).` };
 }
 
 /** Word/PowerPoint chapter import — small enough (unlike a PDF) to pass directly as a Server Action argument. */
