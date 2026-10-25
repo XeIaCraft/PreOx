@@ -425,6 +425,53 @@ async function fichesByChapter(chapterIds: string[], includeDrafts: boolean): Pr
     .filter((f): f is ChapterFicheRef => f !== null);
 }
 
+export type CardRef = { id: string; ficheId: string };
+
+/**
+ * Same cards as getActiveFlashcardsByChapterBatch, ids only — for every
+ * count and aggregate that never shows a card. The full rows of the whole
+ * library (~70,000 cards) were read for those on every sync, and were most
+ * of the database's outgoing traffic (2026-10-25).
+ */
+export function getActiveCardRefsByChapterBatch(chapterIds: string[]): Promise<Map<string, CardRef[]>> {
+  return activeCardRefsByChapterOnce([...chapterIds].sort().join(","));
+}
+
+const activeCardRefsByChapterOnce = cache(async (key: string) => {
+  const result = new Map<string, CardRef[]>();
+  const chapterIds = key ? key.split(",") : [];
+  if (chapterIds.length === 0) return result;
+  const fiches = await getFichesByChapterBatch(chapterIds, false);
+  const chapterByFiche = new Map(fiches.map((f) => [f.ficheId, f.chapterId]));
+  const activeFicheIds = fiches.filter((f) => !f.supersededByFicheId).map((f) => f.ficheId);
+  if (activeFicheIds.length === 0) return result;
+  const supabase = await createClient();
+  const rows = await selectInChunks(activeFicheIds, (chunk) => supabase.from("el_profesor_flashcards").select("id, fiche_id").eq("status", "published").in("fiche_id", chunk));
+  for (const row of rows) {
+    const chapterId = chapterByFiche.get(row.fiche_id);
+    if (!chapterId) continue;
+    const list = result.get(chapterId);
+    if (list) list.push({ id: row.id, ficheId: row.fiche_id });
+    else result.set(chapterId, [{ id: row.id, ficheId: row.fiche_id }]);
+  }
+  return result;
+});
+
+export type UserCardState = { flashcard_id: string; due: string; state: string; lapses: number };
+
+/**
+ * One user's review states, read by user (a few hundred rows at most)
+ * rather than by asking for every card of the library in chunks of ids —
+ * once per request.
+ */
+export const getUserCardStates = cache(async (userId: string): Promise<Map<string, UserCardState>> => {
+  const supabase = await createClient();
+  const rows = await selectAllPages<UserCardState>((from, to) =>
+    supabase.from("el_profesor_review_state").select("flashcard_id, due, state, lapses").eq("user_id", userId).order("flashcard_id").range(from, to)
+  );
+  return new Map(rows.map((r) => [r.flashcard_id, r]));
+});
+
 /** Batched equivalent of calling getChapterContent(chapterId, false) once per chapter and running activeFlashcards() over each result — see getFichesByChapterBatch above for why this exists. */
 export function getActiveFlashcardsByChapterBatch(chapterIds: string[]): Promise<Map<string, Flashcard[]>> {
   return activeFlashcardsByChapterOnce([...chapterIds].sort().join(","));

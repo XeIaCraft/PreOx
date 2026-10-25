@@ -62,16 +62,19 @@ async function masteryForFlashcardIds(supabase: SupabaseClient<Database>, userId
   return { total: flashcardIds.length, acquired, learning };
 }
 
-/** Batched per-fiche mastery breakdown for a whole chapter — one flashcard fetch + one state fetch instead of one round trip per sub-entity. */
-export async function getFicheMasteryProgressBatch(userId: string, ficheIds: string[]): Promise<Record<string, MasteryProgress>> {
+/**
+ * Batched per-fiche mastery breakdown for a whole chapter — one flashcard fetch + one state fetch instead of one round trip per sub-entity.
+ * `cards`: the fiches' published cards when the caller already has them (skips the card read).
+ */
+export async function getFicheMasteryProgressBatch(userId: string, ficheIds: string[], cards?: { id: string; fiche_id: string }[]): Promise<Record<string, MasteryProgress>> {
   const result: Record<string, MasteryProgress> = {};
   for (const id of ficheIds) result[id] = { total: 0, acquired: 0, learning: 0 };
   if (ficheIds.length === 0) return result;
 
   const supabase = await createClient();
-  const rows = await selectInChunks(ficheIds, (chunk) =>
-    supabase.from("el_profesor_flashcards").select("id, fiche_id").in("fiche_id", chunk).eq("status", "published")
-  );
+  const rows =
+    cards ??
+    (await selectInChunks(ficheIds, (chunk) => supabase.from("el_profesor_flashcards").select("id, fiche_id").in("fiche_id", chunk).eq("status", "published")));
   if (rows.length === 0) return result;
 
   const states = await selectInChunks(

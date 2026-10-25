@@ -42,6 +42,7 @@ import {
   getUserFsrsRetention,
   getNewCardsAfterReading,
   getChapterLastModifiedTimestamps,
+  getChapterNeighbourhoods,
   getMostDifficultFlashcardsGlobal,
   getLeechFlashcards,
   getStaleChaptersForAdmin,
@@ -340,9 +341,9 @@ export async function getElProfesorChapterContentBatch(chapterIds: string[]): Pr
   const result: Record<string, ChapterContentSnapshot> = {};
   if (chapterIds.length === 0) return result;
 
-  const [contentByChapter, libraryBooks, bookmarkedIdSet] = await Promise.all([
+  const [contentByChapter, neighbourhoods, bookmarkedIdSet] = await Promise.all([
     getChapterContentBatch(chapterIds, false),
-    getLibrary(),
+    getChapterNeighbourhoods(chapterIds),
     getBookmarkedSubEntityIds(profile.id),
   ]);
   const bookmarkedIds = [...bookmarkedIdSet];
@@ -354,7 +355,12 @@ export async function getElProfesorChapterContentBatch(chapterIds: string[]): Pr
   const [blockReviewStates, ficheReadProgress, ficheMasteryProgress] = await Promise.all([
     getBlockReviewStates(profile.id, allBlockIds),
     getFicheReadProgressBatch(profile.id, allFicheIds),
-    getFicheMasteryProgressBatch(profile.id, allFicheIds),
+    // The cards are in the content just read: no second read of them.
+    getFicheMasteryProgressBatch(
+      profile.id,
+      allFicheIds,
+      allSubEntities.flatMap((s) => s.fiche?.flashcards.map((c) => ({ id: c.id, fiche_id: c.ficheId })) ?? [])
+    ),
   ]);
 
   for (const chapterId of chapterIds) {
@@ -362,26 +368,17 @@ export async function getElProfesorChapterContentBatch(chapterIds: string[]): Pr
     const ficheIds = subEntities.flatMap((s) => (s.fiche ? [s.fiche.id] : []));
     const blockIds = subEntities.flatMap((s) => s.fiche?.blocks.map((b) => b.id) ?? []);
 
-    // Adjacent chapter for swipe-to-next-chapter navigation, derived purely
-    // from the library structure already fetched above — landing at the
-    // top of the neighboring chapter rather than resolving a specific
+    // Adjacent chapter for swipe-to-next-chapter navigation — landing at
+    // the top of the neighboring chapter rather than resolving a specific
     // "entry sub-entity" on it (which would mean fetching its content too).
-    const book = libraryBooks.find((b) => b.chapters.some((c) => c.id === chapterId));
-    const chapterRow = book?.chapters.find((c) => c.id === chapterId);
-    let adjacentChapters: ChapterContentSnapshot["adjacentChapters"] = { prev: null, next: null };
-    if (book) {
-      const publishedChapters = book.chapters.filter((c) => c.status === "published");
-      const index = publishedChapters.findIndex((c) => c.id === chapterId);
-      const prevChapter = index > 0 ? publishedChapters[index - 1] : undefined;
-      const nextChapter = index !== -1 && index < publishedChapters.length - 1 ? publishedChapters[index + 1] : undefined;
-      adjacentChapters = {
-        prev: prevChapter ? { chapterId: prevChapter.id, chapterTitle: prevChapter.title, entrySubEntityId: null } : null,
-        next: nextChapter ? { chapterId: nextChapter.id, chapterTitle: nextChapter.title, entrySubEntityId: null } : null,
-      };
-    }
-    // Skipped (not an error) if the chapter vanished between the
-    // getLibrary() call above and here — e.g. deleted mid-sync.
+    // Skipped (not an error) if the chapter vanished meanwhile — e.g.
+    // deleted mid-sync.
+    const chapterRow = neighbourhoods.get(chapterId);
     if (!chapterRow) continue;
+    const adjacentChapters: ChapterContentSnapshot["adjacentChapters"] = {
+      prev: chapterRow.prev ? { chapterId: chapterRow.prev.id, chapterTitle: chapterRow.prev.title, entrySubEntityId: null } : null,
+      next: chapterRow.next ? { chapterId: chapterRow.next.id, chapterTitle: chapterRow.next.title, entrySubEntityId: null } : null,
+    };
 
     result[chapterId] = {
       chapterTitle: chapterRow.title,

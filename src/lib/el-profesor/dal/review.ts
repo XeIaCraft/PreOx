@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { computeAdjustedRetention } from "../fsrs";
 import { isCardDue, OPEN_GATE, type NewCardGate } from "../new-card-gate";
 import { blockToPlainText } from "../block-text";
-import { getChapterContent, activeFlashcards, shuffle, toReviewState, toFlashcard, resolveFicheContexts, selectInChunks, selectAllPages, getActiveFlashcardsByChapterBatch } from "./shared";
+import { getChapterContent, activeFlashcards, shuffle, toReviewState, toFlashcard, resolveFicheContexts, selectInChunks, selectAllPages, getActiveFlashcardsByChapterBatch, getFichesByChapterBatch, getActiveCardRefsByChapterBatch, getUserCardStates } from "./shared";
 import type { Chapter, Flashcard, ReviewState, FlashcardSide, Book, BlockType, BlockContent, FlashcardVariant } from "../types";
 import type { ElProfesorReviewStateRow, ElProfesorFicheRow, ElProfesorFlashcardRow } from "@/lib/supabase/types";
 
@@ -88,11 +88,13 @@ export async function getNewCardGate(userId: string, cards: { ficheId: string }[
   if (!(await getNewCardsAfterReading(userId))) return OPEN_GATE;
   const ficheIds = [...new Set(cards.map((c) => c.ficheId))];
   if (!ficheIds.length) return { enabled: true, ficheReadPct: {} };
+  // This user's read progress (one row per fiche opened), not the cards' fiches in chunks of ids.
   const supabase = await createClient();
-  const rows = await selectInChunks(ficheIds, (chunk) =>
-    supabase.from("el_profesor_fiche_read_progress").select("fiche_id, progress_pct").eq("user_id", userId).in("fiche_id", chunk)
+  const wanted = new Set(ficheIds);
+  const rows = await selectAllPages<{ fiche_id: string; progress_pct: number }>((from, to) =>
+    supabase.from("el_profesor_fiche_read_progress").select("fiche_id, progress_pct").eq("user_id", userId).order("fiche_id").range(from, to)
   );
-  return { enabled: true, ficheReadPct: Object.fromEntries(rows.map((r) => [r.fiche_id, r.progress_pct])) };
+  return { enabled: true, ficheReadPct: Object.fromEntries(rows.filter((r) => wanted.has(r.fiche_id)).map((r) => [r.fiche_id, r.progress_pct])) };
 }
 
 /** Flashcards due today for a chapter (new ones once their fiche is read, see new-card-gate.ts), for the scheduled review queue. */
@@ -145,13 +147,8 @@ export async function getGlobalDueQueue(userId: string, chapters: Chapter[]): Pr
     getActiveFlashcardsByChapterBatch(published.map((c) => c.id)),
     getSuspendedFlashcardIds(userId),
   ]);
-  const allFlashcardIds = [...flashcardsByChapter.values()].flat().map((f) => f.id);
-
-  const supabase = await createClient();
-  const states = await selectInChunks(allFlashcardIds, (chunk) =>
-    supabase.from("el_profesor_review_state").select("flashcard_id, due").eq("user_id", userId).in("flashcard_id", chunk)
-  );
-  const dueByCard = new Map(states.map((s) => [s.flashcard_id, s.due]));
+  const states = await getUserCardStates(userId);
+  const dueByCard = new Map([...states.values()].map((s) => [s.flashcard_id, s.due]));
   const gate = await getNewCardGate(userId, [...flashcardsByChapter.values()].flat());
   const now = Date.now();
 
@@ -231,13 +228,7 @@ export async function getDifficultQueue(userId: string, chapters: Chapter[]): Pr
     getSuspendedFlashcardIds(userId),
   ]);
   const flashcards = published.flatMap((c) => flashcardsByChapter.get(c.id) ?? []);
-
-  const supabase = await createClient();
-  const states = await selectInChunks(
-    flashcards.map((f) => f.id),
-    (chunk) => supabase.from("el_profesor_review_state").select("flashcard_id, state, lapses").eq("user_id", userId).in("flashcard_id", chunk)
-  );
-  const stateByCard = new Map(states.map((s) => [s.flashcard_id, s]));
+  const stateByCard = await getUserCardStates(userId);
 
   return shuffle(
     flashcards.filter((card) => {
@@ -293,17 +284,11 @@ export async function getDailyCard(userId: string, chapters: Chapter[]): Promise
  */
 export async function getDifficultCountsByChapter(userId: string, chapters: Chapter[]): Promise<ChapterDueCounts> {
   const published = chapters.filter((c) => c.status === "published");
-  const [flashcardsByChapter, suspended] = await Promise.all([
-    getActiveFlashcardsByChapterBatch(published.map((c) => c.id)),
+  const [flashcardsByChapter, suspended, stateByCard] = await Promise.all([
+    getActiveCardRefsByChapterBatch(published.map((c) => c.id)),
     getSuspendedFlashcardIds(userId),
+    getUserCardStates(userId),
   ]);
-  const allFlashcardIds = [...flashcardsByChapter.values()].flat().map((f) => f.id);
-
-  const supabase = await createClient();
-  const states = await selectInChunks(allFlashcardIds, (chunk) =>
-    supabase.from("el_profesor_review_state").select("flashcard_id, state, lapses").eq("user_id", userId).in("flashcard_id", chunk)
-  );
-  const stateByCard = new Map(states.map((s) => [s.flashcard_id, s]));
 
   const counts: ChapterDueCounts = {};
   for (const chapter of published) {
@@ -546,17 +531,12 @@ export async function getUpcomingReviewForecast(userId: string, chapters: Chapte
  */
 export async function getDueCountsByChapter(userId: string, chapters: Chapter[]): Promise<ChapterDueCounts> {
   const published = chapters.filter((c) => c.status === "published");
-  const [flashcardsByChapter, suspended] = await Promise.all([
-    getActiveFlashcardsByChapterBatch(published.map((c) => c.id)),
+  const [flashcardsByChapter, suspended, states] = await Promise.all([
+    getActiveCardRefsByChapterBatch(published.map((c) => c.id)),
     getSuspendedFlashcardIds(userId),
+    getUserCardStates(userId),
   ]);
-  const allFlashcardIds = [...flashcardsByChapter.values()].flat().map((f) => f.id);
-
-  const supabase = await createClient();
-  const states = await selectInChunks(allFlashcardIds, (chunk) =>
-    supabase.from("el_profesor_review_state").select("flashcard_id, due").eq("user_id", userId).in("flashcard_id", chunk)
-  );
-  const dueByCard = new Map(states.map((s) => [s.flashcard_id, s.due]));
+  const dueByCard = new Map([...states.values()].map((s) => [s.flashcard_id, s.due]));
   const gate = await getNewCardGate(userId, [...flashcardsByChapter.values()].flat());
   const now = Date.now();
 
@@ -580,14 +560,8 @@ export type ChapterMasteryCounts = Record<string, { total: number; new: number; 
  */
 export async function getMasteryCountsByChapter(userId: string, chapters: Chapter[]): Promise<ChapterMasteryCounts> {
   const published = chapters.filter((c) => c.status === "published");
-  const flashcardsByChapter = await getActiveFlashcardsByChapterBatch(published.map((c) => c.id));
-  const allFlashcardIds = [...flashcardsByChapter.values()].flat().map((f) => f.id);
-
-  const supabase = await createClient();
-  const states = await selectInChunks(allFlashcardIds, (chunk) =>
-    supabase.from("el_profesor_review_state").select("flashcard_id, state").eq("user_id", userId).in("flashcard_id", chunk)
-  );
-  const stateByCard = new Map(states.map((s) => [s.flashcard_id, s.state]));
+  const [flashcardsByChapter, states] = await Promise.all([getActiveCardRefsByChapterBatch(published.map((c) => c.id)), getUserCardStates(userId)]);
+  const stateByCard = new Map([...states.values()].map((s) => [s.flashcard_id, s.state]));
 
   const counts: ChapterMasteryCounts = {};
   for (const chapter of published) {
@@ -908,17 +882,36 @@ export interface ChapterMasteryPercentile {
 export async function getGlobalChapterMasteryPercentages(chapters: Chapter[]): Promise<Record<string, ChapterMasteryPercentile>> {
   const published = chapters.filter((c) => c.status === "published");
   const result: Record<string, ChapterMasteryPercentile> = {};
-
-  const flashcardsByChapter = await getActiveFlashcardsByChapterBatch(published.map((c) => c.id));
-  const chapterByFlashcard = new Map<string, string>();
-  for (const [chapterId, cards] of flashcardsByChapter) for (const card of cards) chapterByFlashcard.set(card.id, chapterId);
-  const allFlashcardIds = [...chapterByFlashcard.keys()];
-  if (allFlashcardIds.length === 0) return result;
-
   const supabase = createAdminClient();
-  const states = await selectInChunks(allFlashcardIds, (chunk) =>
-    supabase.from("el_profesor_review_state").select("user_id, flashcard_id, state").in("flashcard_id", chunk)
+
+  // Every review state first (one row per card a user has reviewed — far
+  // fewer than the library's cards): with fewer than 3 users having reviewed
+  // anything, no chapter can reach the floor below, and the library-wide
+  // card read is skipped. It used to run on every sync for nothing, and was
+  // tens of MB of the database's outgoing traffic each time (2026-10-25).
+  type StateRow = { user_id: string; flashcard_id: string; state: string };
+  const allStates = await selectAllPages<StateRow>((from, to) =>
+    supabase.from("el_profesor_review_state").select("user_id, flashcard_id, state").order("id").range(from, to)
   );
+  if (new Set(allStates.map((s) => s.user_id)).size < 3) return result;
+
+  // Then which chapter each active card belongs to — ids only.
+  const fiches = (await getFichesByChapterBatch(published.map((c) => c.id), false)).filter((f) => !f.supersededByFicheId);
+  const chapterByFiche = new Map(fiches.map((f) => [f.ficheId, f.chapterId]));
+  const cardRows = await selectInChunks(
+    fiches.map((f) => f.ficheId),
+    (chunk) => supabase.from("el_profesor_flashcards").select("id, fiche_id").eq("status", "published").in("fiche_id", chunk)
+  );
+  const flashcardsByChapter = new Map<string, { id: string }[]>();
+  const chapterByFlashcard = new Map<string, string>();
+  for (const card of cardRows) {
+    const chapterId = chapterByFiche.get(card.fiche_id);
+    if (!chapterId) continue;
+    chapterByFlashcard.set(card.id, chapterId);
+    flashcardsByChapter.set(chapterId, [...(flashcardsByChapter.get(chapterId) ?? []), { id: card.id }]);
+  }
+  if (chapterByFlashcard.size === 0) return result;
+  const states = allStates.filter((s) => chapterByFlashcard.has(s.flashcard_id));
 
   const engagedUsersByChapter = new Map<string, Set<string>>();
   const acquiredByUserByChapter = new Map<string, Map<string, Set<string>>>();

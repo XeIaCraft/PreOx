@@ -1,8 +1,9 @@
 import "server-only";
 
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { toBook, toChapter, toFlag, getChapterContent, getChapterContentBatch, getActiveFlashcardsByChapterBatch, selectInChunks, selectAllPages } from "./shared";
+import { toBook, toChapter, toFlag, getChapterContent, getChapterContentBatch, getActiveCardRefsByChapterBatch, selectInChunks, selectAllPages } from "./shared";
 import { getMasteryCountsByChapter } from "./review";
 import type { Book, Chapter, ChapterStatus, Flag, FicheQuestion, FicheAnswer } from "../types";
 import type { ElProfesorBookRow, ElProfesorChapterRow, ElProfesorFlagRow } from "@/lib/supabase/types";
@@ -172,19 +173,6 @@ export async function getRecommendedNextBook(userId: string, books: BookWithChap
   for (const book of published) for (const c of book.chapters) if (c.status === "published") chapterToBook.set(c.id, book.id);
   if (chapterToBook.size === 0) return null;
 
-  // Batched (piste 2026-09-24): this used to put every sub-entity id, then
-  // every flashcard id of the whole library into single unchunked .in()
-  // filters — thousands of ids in one URL, which PostgREST rejects or
-  // silently truncates, so this quietly returned null on any real library.
-  const flashcardsByChapter = await getActiveFlashcardsByChapterBatch([...chapterToBook.keys()]);
-  const flashcardToBook = new Map<string, string>();
-  for (const [chapterId, cards] of flashcardsByChapter) {
-    const bookId = chapterToBook.get(chapterId);
-    if (bookId) for (const card of cards) flashcardToBook.set(card.id, bookId);
-  }
-  const allFlashcardIds = [...flashcardToBook.keys()];
-  if (allFlashcardIds.length === 0) return null;
-
   // Cross-user by definition, hence the service-role client:
   // el_profesor_review_state's RLS is strictly per-user, so the
   // request-scoped client only ever returned the caller's own rows here —
@@ -192,8 +180,22 @@ export async function getRecommendedNextBook(userId: string, books: BookWithChap
   // recommend anything. Same anonymous-aggregate pattern as
   // getGlobalChapterMasteryPercentages: only a per-book count of distinct
   // other users ever leaves this function, never who reviewed what.
+  // Every review state first (far fewer than the library's cards): when no
+  // one else has reviewed anything there is nothing to recommend, and the
+  // library-wide card read — run on every sync — is skipped (2026-10-25).
   const admin = createAdminClient();
-  const states = await selectInChunks(allFlashcardIds, (chunk) => admin.from("el_profesor_review_state").select("user_id, flashcard_id").in("flashcard_id", chunk));
+  const states = await selectAllPages<{ user_id: string; flashcard_id: string }>((from, to) =>
+    admin.from("el_profesor_review_state").select("user_id, flashcard_id").order("id").range(from, to)
+  );
+  if (!states.some((s) => s.user_id !== userId)) return null;
+
+  const flashcardsByChapter = await getActiveCardRefsByChapterBatch([...chapterToBook.keys()]);
+  const flashcardToBook = new Map<string, string>();
+  for (const [chapterId, cards] of flashcardsByChapter) {
+    const bookId = chapterToBook.get(chapterId);
+    if (bookId) for (const card of cards) flashcardToBook.set(card.id, bookId);
+  }
+  if (flashcardToBook.size === 0) return null;
 
   const engagedUsersByBook = new Map<string, Set<string>>();
   const myBookIds = new Set<string>();
@@ -241,14 +243,30 @@ export async function getReadingPosition(userId: string): Promise<ReadingPositio
 
 export type BookWithChapters = Book & { chapters: Chapter[] };
 
-/** Dashboard payload: every book with its chapters, in display order. */
-export async function getLibrary(): Promise<BookWithChapters[]> {
+/**
+ * What a chapter of the library listing needs (toChapter) — not the cached
+ * PDF text edges (text_head/text_tail, ~40 % of the table's weight) the
+ * extraction keeps for itself: the listing is read on every sync and most
+ * pages, and its weight was most of the database's outgoing traffic
+ * (2026-10-25).
+ */
+export const CHAPTER_LISTING_COLUMNS =
+  "id, book_id, title, order_index, pdf_storage_path, pdf_page_count, status, extraction_error, estimated_remaining_passes, source_kind, source_text, updated_at, part_title, sub_part_title";
+
+/** Dashboard payload: every book with its chapters, in display order. Once per request (several loaders of one sync step ask for it). */
+export const getLibrary = cache(async function getLibrary(): Promise<BookWithChapters[]> {
   const supabase = await createClient();
   const [booksRes, chaptersRes] = await Promise.all([
     supabase.from("el_profesor_books").select("*").order("order_index", { ascending: true }),
     // Paged: the library holds more chapters than PostgREST's 1000-row cap —
     // one plain select silently dropped the last books' later chapters.
-    selectAllPages<ElProfesorChapterRow>((from, to) => supabase.from("el_profesor_chapters").select("*").order("order_index", { ascending: true }).order("id").range(from, to)),
+    selectAllPages<ElProfesorChapterRow>(
+      (from, to) =>
+        supabase.from("el_profesor_chapters").select(CHAPTER_LISTING_COLUMNS).order("order_index", { ascending: true }).order("id").range(from, to) as unknown as PromiseLike<{
+          data: ElProfesorChapterRow[] | null;
+          error: { message: string } | null;
+        }>
+    ),
   ]);
 
   const books = (booksRes.data ?? []) as ElProfesorBookRow[];
@@ -258,6 +276,54 @@ export async function getLibrary(): Promise<BookWithChapters[]> {
     ...toBook(book),
     chapters: chapters.filter((c) => c.book_id === book.id).map(toChapter),
   }));
+});
+
+export type ChapterNeighbourhood = {
+  title: string;
+  sourceKind: Chapter["sourceKind"];
+  sourceText: string | null;
+  prev: { id: string; title: string } | null;
+  next: { id: string; title: string } | null;
+};
+
+/**
+ * For each chapter: what its content snapshot shows of the chapter itself,
+ * and the published chapters before and after it in its book (swipe to the
+ * next chapter). Reads only those chapters and their books' published
+ * chapter titles — the chapter content sync asks this for every chunk of
+ * ten chapters, and reading the whole library listing each time made a full
+ * sync download it ~170 times (2026-10-25).
+ */
+export async function getChapterNeighbourhoods(chapterIds: string[]): Promise<Map<string, ChapterNeighbourhood>> {
+  const result = new Map<string, ChapterNeighbourhood>();
+  if (chapterIds.length === 0) return result;
+  const supabase = await createClient();
+  const own = await selectInChunks(chapterIds, (chunk) => supabase.from("el_profesor_chapters").select("id, book_id, title, source_kind, source_text").in("id", chunk));
+  const bookIds = [...new Set(own.map((c) => c.book_id))];
+  const siblings = await selectAllPages<{ id: string; book_id: string; title: string }>((from, to) =>
+    supabase
+      .from("el_profesor_chapters")
+      .select("id, book_id, title")
+      .in("book_id", bookIds)
+      .eq("status", "published")
+      .order("order_index", { ascending: true })
+      .order("id")
+      .range(from, to)
+  );
+  const byBook = new Map<string, { id: string; title: string }[]>();
+  for (const c of siblings) byBook.set(c.book_id, [...(byBook.get(c.book_id) ?? []), { id: c.id, title: c.title }]);
+  for (const c of own) {
+    const list = byBook.get(c.book_id) ?? [];
+    const i = list.findIndex((x) => x.id === c.id);
+    result.set(c.id, {
+      title: c.title,
+      sourceKind: c.source_kind as Chapter["sourceKind"],
+      sourceText: c.source_text,
+      prev: i > 0 ? list[i - 1] : null,
+      next: i !== -1 && i < list.length - 1 ? list[i + 1] : null,
+    });
+  }
+  return result;
 }
 
 /**
