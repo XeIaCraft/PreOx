@@ -6,9 +6,10 @@ const AUTH_PREFIXES = ["/login", "/forgot-password"];
 
 /**
  * Runs on every request to refresh the Supabase session cookie and perform
- * an *optimistic* authentication check (no DB round-trip beyond validating
- * the JWT). Role-based authorization (admin vs. user) is enforced later,
- * close to the data, in `requireAdmin()` — see `src/lib/auth/dal.ts`.
+ * an *optimistic* authentication check (the JWT is verified locally, no
+ * round-trip to the Auth server). Role-based authorization (admin vs. user)
+ * is enforced later, close to the data, in `requireAdmin()` — see
+ * `src/lib/auth/dal.ts`.
  */
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -35,9 +36,13 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getClaims() verifies the session's JWT locally (asymmetric ES256 signing
+  // key, public key cached) and refreshes it when expired — getUser() asked
+  // the Auth server on every request, prefetches and sync calls included,
+  // although the authoritative check (getCurrentUser in lib/auth/dal.ts)
+  // runs again close to the data anyway.
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims ?? null;
 
   const pathname = request.nextUrl.pathname;
   const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));

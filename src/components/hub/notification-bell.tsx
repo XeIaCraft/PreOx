@@ -16,12 +16,20 @@ export function NotificationBell() {
   const containerRef = useRef<HTMLDivElement>(null);
   const unreadCount = notifications.filter((n) => !n.read).length;
 
+  // Every minute while the page is in view only: a tab left open in the
+  // background used to ask the server around the clock. Back in view, it
+  // catches up at once.
   useEffect(() => {
-    listMyNotifications().then(setNotifications);
-    const interval = setInterval(() => {
-      listMyNotifications().then(setNotifications);
-    }, 60_000);
-    return () => clearInterval(interval);
+    const load = () => {
+      if (document.visibilityState === "visible") listMyNotifications().then(setNotifications);
+    };
+    load();
+    const interval = setInterval(load, 60_000);
+    document.addEventListener("visibilitychange", load);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", load);
+    };
   }, []);
 
   useEffect(() => {
