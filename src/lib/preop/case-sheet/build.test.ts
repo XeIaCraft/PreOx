@@ -180,4 +180,25 @@ describe("case sheet", () => {
     const r = buildCaseSheet(p, ctx, { plan });
     expect(r.sheet.rows.find((x) => x.label === "Rachi")?.parts[0].text).toMatch(/12,5 mg/);
   });
+
+  it("prepares a general anaesthesia behind a spinal, even when the protocol has none", () => {
+    const r = buildCaseSheet(parseConsultation(CLINIC), ctx);
+    expect(r.sheet.fallback?.mode).toBe("general");
+    expect(r.sheet.fallback?.technique).toMatch(/^AG, (ML|IOT)/);
+    const induction = r.sheet.fallback?.rows.find((x) => x.label === "Induction")?.parts.map((t) => t.text).join(" ") ?? "";
+    expect(induction).toMatch(/Propofol \d+ mg/);
+    expect(induction).toMatch(/Sufentanil [\d,]+ µg/);
+    expect(r.sheet.fallback?.rows.find((x) => x.label === "Entretien")?.parts[0].text).toMatch(/Sévoflurane/);
+    // None asked: no plan B.
+    expect(buildCaseSheet(parseConsultation(CLINIC), ctx, { fallback: null }).sheet.fallback).toBeUndefined();
+  });
+
+  it("offers the spinal as plan B of a general anaesthesia when the procedure allows it", () => {
+    const p = parseConsultation(CLINIC);
+    const ga = buildCaseSheet(p, ctx, { mode: "general" });
+    expect(ga.sheet.fallback).toBeUndefined();
+    expect(ga.fallbackModes).toContain("neuraxial");
+    const withB = buildCaseSheet(p, ctx, { mode: "general", fallback: "neuraxial" });
+    expect(withB.sheet.fallback?.rows.find((x) => x.label === "Rachi")?.parts[0].text).toMatch(/Bupivacaïne/);
+  });
 });

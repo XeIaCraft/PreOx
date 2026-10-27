@@ -20,6 +20,8 @@ import { airwayChoice, defaultSheetMode, forMode, sheetModes, type SheetMode } f
 import { ventilationSettings } from "../ventilation";
 import { tciSummary, tciDrugOf } from "../tci";
 import { treatmentGuide } from "../treatment-guide";
+import { propofolInduction, rocuronium, sufentanil } from "../reference-protocol-kit";
+import { DEFAULT_GASES } from "../gases";
 import { postopLines } from "../postop";
 import { adjustedBodyWeight, bmi as bmiOf, idealBodyWeight } from "../scores";
 import type { Rule, Technique } from "../rules/types";
@@ -40,6 +42,12 @@ export interface CaseChoices {
   notes?: string;
   /** The plan adapted for this patient (« Adapter le protocole »): used as it is, instead of the protocol's. */
   plan?: ProtocolContent;
+  /**
+   * Plan B if the patient refuses or the technique fails: a technique, or
+   * null for none. Unset: a general anaesthesia behind any other technique,
+   * none behind a general anaesthesia.
+   */
+  fallback?: SheetMode | null;
 }
 
 export interface CaseQuestion {
@@ -56,6 +64,13 @@ export interface SheetText {
 export interface SheetRow {
   label: string;
   parts: SheetText[];
+}
+
+/** Plan B: the other technique, ready (« Si refus / échec → AG… »). */
+export interface SheetFallback {
+  mode: SheetMode;
+  technique: string;
+  rows: SheetRow[];
 }
 
 export interface CaseSheet {
@@ -77,6 +92,7 @@ export interface CaseSheet {
   /** « ! » lines: what must not be missed. */
   alerts: string[];
   notes: string[];
+  fallback?: SheetFallback;
 }
 
 export interface CaseResult {
@@ -89,6 +105,9 @@ export interface CaseResult {
   modes: SheetMode[];
   mode: SheetMode;
   tiva: boolean;
+  /** Plan B chosen (or the default one), and the techniques it can be. */
+  fallback?: SheetMode;
+  fallbackModes: SheetMode[];
   /** For keeping the patient as a Préop dossier. */
   consultation: ConsultationState;
   plan: ProtocolContent;
@@ -263,6 +282,13 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     const reduced = item && protocol ? forMode(item, protocol, mode).protocol : protocol;
     plan = reduced ? structuredClone(reduced.content) : { techniques: [], drugs: [], targets: [], material: [], risks: [], postop: [], tourniquetAlertMin: null, notes: "" };
     if (plan.techniques.length === 0) plan.techniques = MODE_TECHNIQUES[mode];
+    // A general anaesthesia the protocol doesn't give (a procedure usually done under a spinal):
+    // the usual adult induction and a volatile maintenance, to start from.
+    if (mode === "general" && !plan.drugs.some((d) => d.phase === "induction")) {
+      const tube = item ? airwayChoice({ ...item, techniques: plan.techniques }, plan, true).device === "ett" : false;
+      plan.drugs = [propofolInduction((age ?? 40) >= 65 ? 1.5 : 2, "lean"), sufentanil(0.2), ...(tube ? [rocuronium(0.6)] : []), ...plan.drugs];
+      plan.gases ??= { ...DEFAULT_GASES };
+    }
     plan = applyServicePrefs(plan, ctx.service, age).plan;
     c.techniques = plan.techniques;
     const scores0 = consultationScores(c, { plan, catalogs });
@@ -413,7 +439,20 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     .split(/\n{2,}|\n(?=\S)/)
     .map((x) => x.trim())
     .filter(Boolean);
-  if (!protocol && item) notes.unshift("Pas de protocole pour cette intervention dans la bibliothèque : doses à compléter.");
+  if (!protocol && item && !choices.plan)
+    notes.unshift(mode === "general" ? "Pas de protocole pour cette intervention dans la bibliothèque : AG de base, à adapter (ATB, analgésie, NVPO à compléter)." : "Pas de protocole pour cette intervention dans la bibliothèque : doses à compléter.");
+
+  // --- Plan B: the other technique, computed the same way, only what differs ----------------
+  const fallbackModes = (["general", "neuraxial", "regional", "sedation"] as SheetMode[]).filter((m) => m !== mode && (m === "general" || modes.includes(m)));
+  const fallbackMode = choices.fallback === null ? undefined : (choices.fallback ?? (mode !== "general" ? "general" : undefined));
+  let fallback: SheetFallback | undefined;
+  if (fallbackMode && fallbackModes.includes(fallbackMode)) {
+    const b = buildCaseSheet(p, ctx, { ...choices, mode: fallbackMode, plan: undefined, fallback: null, tiva: fallbackMode === "general" ? choices.tiva : undefined });
+    const OWN = new Set(["Induction", "Entretien", "Entretien (TIVA)", "Rachi", "ALR", "Sédation / entretien", "Analgésie", "NVPO"]);
+    const textOf = (r: SheetRow) => r.parts.map((x) => x.text).join(" · ");
+    const mine = new Map(rows.map((r) => [r.label, textOf(r)]));
+    fallback = { mode: fallbackMode, technique: b.sheet.technique, rows: b.sheet.rows.filter((r) => OWN.has(r.label) && mine.get(r.label) !== textOf(r)) };
+  }
 
   return {
     sheet: {
@@ -430,6 +469,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
       allergies,
       alerts,
       notes,
+      fallback,
     },
     questions,
     candidates,
@@ -438,6 +478,8 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     modes,
     mode,
     tiva,
+    fallback: fallback?.mode,
+    fallbackModes,
     consultation: c,
     plan,
     quick,

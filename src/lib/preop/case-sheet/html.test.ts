@@ -38,4 +38,12 @@ describe("lines taken off the sheet", () => {
     const html = caseSheetHtml(sheet, 1, { hidden: new Set(["Analgésie:Kétorolac 30 mg"]), editable: true });
     expect(html).toMatch(/class="off" data-k="Analgésie:Kétorolac 30 mg"[^>]*aria-pressed="true"/);
   });
+
+  it("prints plan B under the plan, its lines removable on their own", () => {
+    const withB: CaseSheet = { ...sheet, fallback: { mode: "general", technique: "AG, ML i-gel 5", rows: [{ label: "Induction", parts: [{ text: "Propofol 200 mg" }] }] } };
+    const html = caseSheetHtml(withB, 1);
+    expect(html).toMatch(/Plan B \(refus \/ échec\) → AG :<\/span> ML i-gel 5/);
+    expect(html).toContain("Induction :</span> <span>Propofol 200 mg");
+    expect(caseSheetHtml(withB, 1, { hidden: new Set(["planb"]) })).not.toContain("Plan B");
+  });
 });

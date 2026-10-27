@@ -275,6 +275,19 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 )}
               </div>
 
+              {/* Plan B: what to start from if the patient refuses or the technique fails. */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-medium text-foreground-subtle">Plan B (refus / échec) :</span>
+                {r.fallbackModes.map((m) => (
+                  <Chip key={m} on={r.fallback === m} onClick={() => choose(e.id, { fallback: m })}>
+                    {MODE_LABEL[m]}
+                  </Chip>
+                ))}
+                <Chip on={!r.fallback} onClick={() => choose(e.id, { fallback: null })}>
+                  Aucun
+                </Chip>
+              </div>
+
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <MiniNumber key={`a-${e.id}`} label="Âge" value={r.consultation.patient.age} onChange={(v) => choose(e.id, { age: v })} unit="ans" />
                 <MiniNumber key={`w-${e.id}`} label="Poids" value={r.consultation.patient.weightKg} onChange={(v) => choose(e.id, { weightKg: v })} unit="kg" />

@@ -32,14 +32,14 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
   };
   const textOf = (t: SheetText) => (t.strong ? `<b>${esc(t.text)}</b>` : esc(t.text));
   /** « Label : a · b · c » — the label takes the whole line off, each item itself. */
-  const line = (prefix: string, label: string, items: SheetText[], sep: string, empty?: string) => {
+  const line = (prefix: string, label: string, items: SheetText[], sep: string, empty?: string, display = label) => {
     const rowKey = `row:${label}`;
     const shown = items.map((t) => piece(`${prefix}:${t.text}`, textOf(t))).filter(Boolean);
     if (!shown.length && !empty) return "";
     if (hidden.has(rowKey) && !edit) return "";
     if (!edit && items.length && items.every((t) => hidden.has(`${prefix}:${t.text}`))) return "";
     const body = shown.length ? shown.join(sep) : esc(empty!);
-    return piece(rowKey, `<span class="k">${esc(label)} :</span> ${body}`, "p");
+    return piece(rowKey, `<span class="k">${esc(display)} :</span> ${body}`, "p");
   };
   const head = [sheet.surgery, ...sheet.tags].map(esc).join(", ");
   return `<article class="case">
@@ -47,6 +47,7 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
 <p>${esc(sheet.body)}</p>
 ${piece("tech", esc(sheet.technique), "p", "tech")}
 ${sheet.rows.map((r) => line(r.label, r.label, r.parts, " · ")).join("")}
+${fallbackHtml(sheet, piece, line)}
 ${line("atcd", "ATCD", sheet.antecedents, ", ", "RAS")}
 ${sheet.implications.map((i) => piece(`imp:${i}`, `→ ${esc(i)}`, "p", "imp")).join("")}
 ${sheet.surgical ? piece("chir", `<span class="k">Chir. :</span> ${esc(sheet.surgical)}`, "p") : ""}
@@ -55,6 +56,21 @@ ${line("allergy", "Allergies", sheet.allergies, ", ")}
 ${sheet.alerts.map((a) => piece(`alert:${a}`, `! ${esc(a)}`, "p", "alert")).join("")}
 ${sheet.notes.map((n) => `<p class="note">${esc(n)}</p>`).join("")}
 </article>`;
+}
+
+const FALLBACK_LABEL = { general: "AG", neuraxial: "rachi", regional: "ALR", sedation: "sédation" } as const;
+
+/** « Plan B (refus / échec) → AG, IOT sonde 7… » then the lines that differ; « planb » takes the whole of it off. */
+function fallbackHtml(
+  sheet: CaseSheet,
+  piece: (key: string, html: string, tag?: string, cls?: string) => string,
+  line: (prefix: string, label: string, items: SheetText[], sep: string, empty?: string, display?: string) => string
+): string {
+  const b = sheet.fallback;
+  if (!b) return "";
+  const head = piece("planb", `<span class="k">Plan B (refus / échec) → ${esc(FALLBACK_LABEL[b.mode])} :</span> ${esc(b.technique.includes(",") ? b.technique.replace(/^[^,]+,\s*/, "") : "")}`, "p", "planb");
+  if (!head) return "";
+  return `<div class="planb-box">${head}${b.rows.map((r) => line(`B ${r.label}`, `B ${r.label}`, r.parts, " · ", undefined, r.label)).join("")}</div>`;
 }
 
 /** Styles of the sheet, scoped under `scope` (the preview) or the page (print). */
@@ -73,6 +89,7 @@ ${s(".case [data-k]")}{cursor:pointer;border-radius:1mm}
 ${s(".case [data-k]:hover")}{background:#eef3f3}
 ${s(".case [data-k]:focus-visible")}{outline:2px solid #2f5d54;outline-offset:1px}
 ${s(".case .off")}{opacity:.38;text-decoration:line-through}
+${s(".case .planb-box")}{margin:0.8mm 0;padding:0.6mm 0 0.6mm 2mm;border-left:0.6mm dashed #8fa9ab}
 ${s(".case .note")}{padding-left:2mm;border-left:0.6mm solid #9fb6b9;color:#333a3f;white-space:pre-wrap}
 `;
 }
