@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, FileText, FolderInput, Printer, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, FilePlus2, FileText, FolderInput, Pencil, Printer, RotateCcw, Trash2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { Combobox, Disclosure, FieldLabel, MiniNumber, Panel } from "@/components/preop/ui";
 import { usePreopSession } from "@/components/preop/session";
+import { PlanEditor } from "@/components/preop/plan-editor";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { SecureStore } from "@/lib/preop/secure-store";
 import { parseConsultation, splitConsultations } from "@/lib/preop/case-sheet/parse";
@@ -92,12 +93,24 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   if (!sheet) return <p className="text-sm text-foreground-muted">Ouverture de la feuille…</p>;
 
   const setEntry = (id: string, patch: Partial<DayEntry>) => update({ ...sheet, entries: sheet.entries.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
-  const choose = (id: string, choices: CaseChoices) => setEntry(id, { choices: { ...sheet.entries.find((e) => e.id === id)!.choices, ...choices } });
+  const choose = (id: string, choices: CaseChoices) => {
+    const current = sheet.entries.find((e) => e.id === id)!.choices;
+    // Another intervention or technique: the adapted plan was for the previous one.
+    if (current.plan && ("surgeryId" in choices || "mode" in choices)) {
+      if (!confirm("Le protocole adapté pour ce patient sera remplacé par celui de ce choix. Continuer ?")) return;
+      choices = { ...choices, plan: undefined, tiva: undefined };
+    }
+    setEntry(id, { choices: { ...current, ...choices } });
+  };
+
+  function addEntries(raws: string[]) {
+    update({ ...sheet!, entries: [...sheet!.entries, ...raws.map((raw) => ({ id: crypto.randomUUID(), raw, choices: {} }))] });
+  }
 
   function read() {
     const pieces = splitConsultations(paste);
     if (!pieces.length) return;
-    update({ ...sheet!, entries: [...sheet!.entries, ...pieces.map((raw) => ({ id: crypto.randomUUID(), raw, choices: {} }))] });
+    addEntries(pieces);
     setPaste("");
     toast(`${pieces.length} consultation(s) lue(s).`, { variant: "success" });
   }
@@ -185,6 +198,13 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
         <Button size="sm" onClick={read} disabled={!paste.trim()}>
           <FileText className="h-3.5 w-3.5" /> Lire et ajouter
         </Button>
+        <QuickPatient
+          catalogs={catalogs}
+          onAdd={(raw) => {
+            addEntries([raw]);
+            toast("Patient ajouté à la feuille.", { variant: "success" });
+          }}
+        />
       </Panel>
 
       {sheet.entries.map((e, i) => {
@@ -270,6 +290,46 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 />
               </label>
 
+              <Disclosure
+                summary={
+                  <span className="flex items-center gap-1.5">
+                    <Pencil className="h-3.5 w-3.5" /> {e.choices.plan ? "Protocole adapté pour ce patient" : "Adapter le protocole pour ce patient"}
+                  </span>
+                }
+                className="rounded-[var(--radius-md)] border border-border"
+                summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground"
+              >
+                <div className="space-y-2 px-3 pb-3">
+                  {e.choices.plan ? (
+                    <>
+                      <p className="text-xs text-foreground-muted">Touchez un produit pour changer sa dose, sa voie ou son moment ; la feuille se met à jour. Le protocole de la bibliothèque, lui, ne change pas.</p>
+                      <PlanEditor
+                        compact
+                        formKey={e.id}
+                        value={e.choices.plan}
+                        onChange={(plan) => choose(e.id, { plan })}
+                        body={{ sex: r.consultation.patient.sex, weightKg: r.consultation.patient.weightKg, heightCm: r.consultation.patient.heightCm }}
+                        patient={{ age: r.consultation.patient.age, weightKg: r.consultation.patient.weightKg }}
+                      />
+                      <Button size="sm" variant="ghost" onClick={() => confirm("Revenir au protocole de la bibliothèque (vos modifications pour ce patient sont perdues) ?") && choose(e.id, { plan: undefined })}>
+                        <RotateCcw className="h-3.5 w-3.5" /> Revenir au protocole
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-foreground-muted">
+                        Partez du plan ci-contre ({r.protocol ? `protocole « ${r.protocol.name} »` : "aucun protocole"}) et ajustez-le pour ce patient : produits, doses (calculées à son poids), technique, gaz, post-op.
+                      </p>
+                      <Button size="sm" variant="secondary" onClick={() => choose(e.id, { plan: structuredClone(r.plan) })}>
+                        <Pencil className="h-3.5 w-3.5" /> Adapter pour ce patient
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </Disclosure>
+
+              <Complement onAdd={(text) => setEntry(e.id, { raw: `${e.raw}\n---\n${text}` })} />
+
               <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="secondary" disabled={!!e.dossierId} onClick={() => void keep(e, r)}>
                   <FolderInput className="h-3.5 w-3.5" /> {e.dossierId ? "Gardé comme dossier" : "Garder comme dossier"}
@@ -327,4 +387,134 @@ function Question({ q, onAnswer }: { q: CaseQuestion; onAnswer: (c: CaseChoices)
   }
   // Values are typed in the fields below (they stay while typing).
   return <p className="text-sm text-foreground">{q.text} À saisir ci-dessous.</p>;
+}
+
+const inputClass =
+  "h-9 w-full min-w-0 rounded-[var(--radius-sm)] border border-border bg-surface px-3 text-sm text-foreground placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30";
+const areaClass =
+  "block w-full min-w-0 resize-y rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30";
+
+/**
+ * A patient with no consultation as such — only the questionnaire filled in
+ * on paper: the few values by hand, the rest dictated or pasted from
+ * another consultation (emergencies, surgery, a letter). Written as a
+ * consultation the reader (parse.ts) knows.
+ */
+function QuickPatient({ catalogs, onAdd }: { catalogs: ReturnType<typeof useCatalogs>["catalogs"]; onAdd: (raw: string) => void }) {
+  const [f, setF] = useState<{ initials: string; sex?: "F" | "M"; age?: number; weight?: number; height?: number; surgery: string; mode?: SheetMode; text: string }>({ initials: "", surgery: "", text: "" });
+  const [formKey, setFormKey] = useState(0);
+  const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch }));
+  const ready = f.initials.trim() && (f.surgery.trim() || f.text.trim());
+
+  function add() {
+    const body = [f.age !== undefined ? `Age ${f.age} ans` : "", f.weight !== undefined ? `Poids ${f.weight} kg` : "", f.height !== undefined ? `Taille ${f.height} cm` : ""].filter(Boolean).join(" ");
+    const raw = [
+      `Initiales : ${f.initials.trim()}`,
+      f.sex ? `Sexe : ${f.sex}` : "",
+      f.surgery.trim() ? `Intervention : ${f.surgery.trim()}` : "",
+      f.mode ? `Type d'anesthésie : ${MODE_LABEL[f.mode]}` : "",
+      body,
+      "---",
+      f.text.trim(),
+    ]
+      .filter(Boolean)
+      .join("\n");
+    onAdd(raw);
+    setF({ initials: "", surgery: "", text: "" });
+    setFormKey((k) => k + 1);
+  }
+
+  return (
+    <Disclosure
+      summary={
+        <span className="flex items-center gap-1.5">
+          <UserPlus className="h-3.5 w-3.5" /> Patient sans consultation (questionnaire papier)
+        </span>
+      }
+      className="rounded-[var(--radius-md)] border border-border"
+      summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground"
+    >
+      <div key={formKey} className="space-y-2.5 px-3 pb-3">
+        <p className="text-xs text-foreground-muted">
+          Recopiez les quelques valeurs, puis dictez ou collez le reste : antécédents, traitements, allergies — ou une autre consultation (urgences, chirurgie, lettre). Préop y retrouve ce qu&apos;il faut.
+        </p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <label className="block min-w-0">
+            <span className="block text-[11px] font-medium text-foreground-subtle">Initiales</span>
+            <input value={f.initials} onChange={(e) => set({ initials: e.target.value.toUpperCase().slice(0, 4) })} placeholder="AB" className={cn(inputClass, "mt-0.5")} />
+          </label>
+          <MiniNumber label="Âge" value={f.age} onChange={(age) => set({ age })} unit="ans" />
+          <MiniNumber label="Poids" value={f.weight} onChange={(weight) => set({ weight })} unit="kg" />
+          <MiniNumber label="Taille" value={f.height} onChange={(height) => set({ height })} unit="cm" />
+          <div className="min-w-0">
+            <span className="block text-[11px] font-medium text-foreground-subtle">Sexe</span>
+            <div className="mt-0.5 flex gap-1">
+              {(["F", "M"] as const).map((s) => (
+                <Chip key={s} on={f.sex === s} onClick={() => set({ sex: s })}>
+                  {s}
+                </Chip>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <FieldLabel>Intervention</FieldLabel>
+          <Combobox
+            ariaLabel="Intervention"
+            placeholder={f.surgery || "Chercher dans le catalogue ou taper le libellé du chirurgien…"}
+            search={(q) => searchSurgeries(catalogs.surgeries, q, { age: f.age, sex: f.sex }).map((x) => ({ key: x.id, label: x.name }))}
+            onPick={(o) => set({ surgery: o.label })}
+            onFree={(q) => set({ surgery: q })}
+            freeLabel={(q) => `Garder « ${q} »`}
+          />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {(Object.keys(MODE_LABEL) as SheetMode[]).map((m) => (
+            <Chip key={m} on={f.mode === m} onClick={() => set({ mode: f.mode === m ? undefined : m })}>
+              {MODE_LABEL[m]}
+            </Chip>
+          ))}
+        </div>
+        <label className="block space-y-1">
+          <FieldLabel>Antécédents, traitements, allergies</FieldLabel>
+          <textarea rows={4} value={f.text} onChange={(e) => set({ text: e.target.value })} placeholder="« Diabète type 2, HTA ; metformine 1 g 2x/j, lisinopril 10 mg ; allergie latex » — ou une consultation collée." className={areaClass} />
+        </label>
+        <Button size="sm" onClick={add} disabled={!ready}>
+          <UserPlus className="h-3.5 w-3.5" /> Ajouter à la feuille
+        </Button>
+      </div>
+    </Disclosure>
+  );
+}
+
+/** Another consultation of the same patient (emergencies, surgery, cardiology…), read with the first. */
+function Complement({ onAdd }: { onAdd: (text: string) => void }) {
+  const [text, setText] = useState("");
+  return (
+    <Disclosure
+      summary={
+        <span className="flex items-center gap-1.5">
+          <FilePlus2 className="h-3.5 w-3.5" /> Compléter avec une autre consultation
+        </span>
+      }
+      className="rounded-[var(--radius-md)] border border-border"
+      summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground"
+    >
+      <div className="space-y-2 px-3 pb-3">
+        <p className="text-xs text-foreground-muted">Urgences, chirurgie, lettre de sortie… : ses antécédents, traitements et allergies s&apos;ajoutent à ceux du patient.</p>
+        <textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="Collez la consultation ici…" className={areaClass} />
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={!text.trim()}
+          onClick={() => {
+            onAdd(text.trim());
+            setText("");
+          }}
+        >
+          <FilePlus2 className="h-3.5 w-3.5" /> Lire et ajouter
+        </Button>
+      </div>
+    </Disclosure>
+  );
 }

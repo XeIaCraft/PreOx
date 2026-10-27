@@ -150,4 +150,34 @@ describe("case sheet", () => {
     expect(r.questions.map((q) => q.id)).toEqual(expect.arrayContaining(["sex", "age", "weightKg", "heightCm"]));
     expect(r.sheet.alerts).toContain("Allergies non renseignées dans la consultation");
   });
+
+  it("reads a patient entered by hand, with a dictation or another consultation pasted under it", () => {
+    const raw = [
+      "Initiales : AB",
+      "Sexe : M",
+      "Intervention : Hémorroïdectomie",
+      "Type d'anesthésie : AG",
+      "Age 42 ans Poids 110 kg Taille 173 cm",
+      "",
+      "Diabète type 2 et HTA, sous metformine 1000 mg 2x/j et Coversyl 5 mg. Allergie au latex.",
+    ].join("\n");
+    const r = buildCaseSheet(parseConsultation(raw), ctx);
+    expect(r.sheet.initials).toBe("AB");
+    expect(r.sheet.body).toMatch(/^42 ans, M, 110 kg, 173 cm/);
+    expect(r.sheet.antecedents.map((a) => a.text).join(" | ")).toMatch(/Diabète/);
+    expect(r.sheet.treatments.map((t) => t.text).join(" | ")).toMatch(/metformine/i);
+    expect(r.sheet.allergies.map((a) => a.text).join(" ")).toMatch(/latex/);
+
+    // An emergency note added below a « --- » line: read too, under no heading.
+    const more = buildCaseSheet(parseConsultation(`${raw}\n---\nUrgences : patient connu pour un SAOS appareillé.`), ctx);
+    expect(more.sheet.antecedents.map((a) => a.text).join(" | ")).toMatch(/SAOS/);
+  });
+
+  it("uses the plan adapted for the patient instead of the protocol's", () => {
+    const p = parseConsultation(CLINIC);
+    const base = buildCaseSheet(p, ctx);
+    const plan = { ...base.plan, drugs: base.plan.drugs.map((d) => (/bupivaca/i.test(d.name) ? { ...d, amount: 12.5 } : d)) };
+    const r = buildCaseSheet(p, ctx, { plan });
+    expect(r.sheet.rows.find((x) => x.label === "Rachi")?.parts[0].text).toMatch(/12,5 mg/);
+  });
 });

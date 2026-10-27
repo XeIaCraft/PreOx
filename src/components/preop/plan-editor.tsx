@@ -265,6 +265,7 @@ export function PlanEditor({
   formKey = 0,
   patient,
   riskContext,
+  compact = false,
 }: {
   value: ProtocolContent;
   onChange: (c: ProtocolContent) => void;
@@ -274,6 +275,8 @@ export function PlanEditor({
   patient?: PostopPatient;
   /** Words of the patient and the surgery, to propose the risks that fit. */
   riskContext?: string;
+  /** Technique, products, gases and post-op only (the day's case sheet). */
+  compact?: boolean;
 }) {
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const { lists } = useCatalogs();
@@ -283,8 +286,7 @@ export function PlanEditor({
   const laLoad = localAnaestheticLoad(c.drugs, body?.weightKg, (d) => computeDose(d as ProtocolDrug, body ?? {}));
   const hasLa = laLoad.parts.length + laLoad.unknown.length > 0;
 
-  return (
-    <div key={formKey} className="space-y-4">
+  const products = (
       <Panel title="Technique et produits">
         <MultiChipGroup options={TECHNIQUES.map((t) => ({ code: t.code, label: t.label }))} value={c.techniques} onChange={(v) => set({ techniques: v as Technique[] })} />
         {hasLa && (
@@ -323,6 +325,24 @@ export function PlanEditor({
         />
         {body && !body.weightKg && c.drugs.some((d) => d.doseMode === "per_kg") && <p className="text-xs text-accent">Renseignez le poids (et la taille, le sexe pour le poids idéal/maigre) dans la consultation pour calculer les doses.</p>}
       </Panel>
+  );
+
+  if (compact)
+    return (
+      <div key={formKey} className="space-y-4">
+        {products}
+        {c.techniques.includes("general") && (
+          <Panel title="Gaz">
+            <GasesEditor value={c.gases} age={patient?.age} onChange={(gases) => set({ gases })} />
+          </Panel>
+        )}
+        <PostopEditor plan={c.postopPlan} onChange={(postopPlan) => set({ postopPlan })} lines={c.postop} onLines={(postop) => set({ postop })} patient={patient} />
+      </div>
+    );
+
+  return (
+    <div key={formKey} className="space-y-4">
+      {products}
 
       <Panel
         title={

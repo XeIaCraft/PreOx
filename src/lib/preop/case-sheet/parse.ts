@@ -144,6 +144,9 @@ const FIELDS: [key: string, re: RegExp][] = [
   ["weight", /\bpoids\b/g],
   ["height", /\btaille\b/g],
   ["bmi", /\b(bmi|imc)\b/g],
+  // The quick entry of a patient without a consultation (case-sheet-view.tsx).
+  ["initials", /\binitiales\b/g],
+  ["sex", /\bsexe\b/g],
 ];
 
 /** The fields of a line, and where the first label starts. */
@@ -271,6 +274,12 @@ export function parseConsultation(text: string): PastedConsultation {
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
+    // Another consultation added to this patient (« Compléter… »): its lines start under no heading.
+    if (SEPARATOR.test(line)) {
+      section = null;
+      header = false;
+      continue;
+    }
     // The patient: the name line, the birth date (and the sex it is written with).
     const birth = line.match(BIRTH);
     if (birth) {
@@ -321,6 +330,10 @@ export function parseConsultation(text: string): PastedConsultation {
         out.admission = /jour|ambulatoire|hdj|\bj0\b/.test(a) ? "HDJ" : /usi|soins intensifs|reanimation|rea\b/.test(a) ? "USI" : /complete|conventionnelle|classique|traditionnelle|\boui\b/.test(a) ? "Hospit." : v("admission");
       }
       if (v("anaesthesia")) out.anaesthesia = v("anaesthesia");
+      if (v("initials")) out.initials = v("initials")!.replace(/[^A-Za-zÀ-ÿ]/g, "").toUpperCase().slice(0, 4);
+      const sexValue = v("sex") ? fold(v("sex")!) : "";
+      if (/^(f|femme|feminin)/.test(sexValue)) out.sex = "F";
+      else if (/^(m|h|homme|masculin)/.test(sexValue)) out.sex = "M";
       const age = v("age")?.match(/(\d{1,3})/);
       if (age) out.age = Number(age[1]);
       const w = v("weight")?.match(/(\d{1,3}(?:[.,]\d)?)/);

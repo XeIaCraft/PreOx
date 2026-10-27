@@ -20,6 +20,7 @@ import { airwayChoice, defaultSheetMode, forMode, sheetModes, type SheetMode } f
 import { ventilationSettings } from "../ventilation";
 import { tciSummary, tciDrugOf } from "../tci";
 import { treatmentGuide } from "../treatment-guide";
+import { postopLines } from "../postop";
 import { adjustedBodyWeight, bmi as bmiOf, idealBodyWeight } from "../scores";
 import type { Rule, Technique } from "../rules/types";
 import type { PastedConsultation } from "./parse";
@@ -37,6 +38,8 @@ export interface CaseChoices {
   heightCm?: number;
   /** Other consultations (cardiology, intensive care transfer…), as pasted. */
   notes?: string;
+  /** The plan adapted for this patient (« Adapter le protocole »): used as it is, instead of the protocol's. */
+  plan?: ProtocolContent;
 }
 
 export interface CaseQuestion {
@@ -252,14 +255,20 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   const mode: SheetMode = choices.mode ?? (p.mode && modes.includes(p.mode) ? p.mode : p.mode ?? (item ? defaultSheetMode(item, protocol) : "general"));
 
   // The plan: the protocol for that technique, the service's habits, the patient's own precautions.
-  const reduced = item && protocol ? forMode(item, protocol, mode).protocol : protocol;
-  let plan: ProtocolContent = reduced ? structuredClone(reduced.content) : { techniques: [], drugs: [], targets: [], material: [], risks: [], postop: [], tourniquetAlertMin: null, notes: "" };
-  if (plan.techniques.length === 0) plan.techniques = MODE_TECHNIQUES[mode];
-  plan = applyServicePrefs(plan, ctx.service, age).plan;
-  c.techniques = plan.techniques;
-  const scores0 = consultationScores(c, { plan, catalogs });
-  const points0 = attentionPoints(c, scores0, plan);
-  plan = withAdditions(plan, points0.filter((x) => x.material?.length || x.risk));
+  let plan: ProtocolContent;
+  if (choices.plan) {
+    plan = choices.plan;
+    c.techniques = plan.techniques;
+  } else {
+    const reduced = item && protocol ? forMode(item, protocol, mode).protocol : protocol;
+    plan = reduced ? structuredClone(reduced.content) : { techniques: [], drugs: [], targets: [], material: [], risks: [], postop: [], tourniquetAlertMin: null, notes: "" };
+    if (plan.techniques.length === 0) plan.techniques = MODE_TECHNIQUES[mode];
+    plan = applyServicePrefs(plan, ctx.service, age).plan;
+    c.techniques = plan.techniques;
+    const scores0 = consultationScores(c, { plan, catalogs });
+    const points0 = attentionPoints(c, scores0, plan);
+    plan = withAdditions(plan, points0.filter((x) => x.material?.length || x.risk));
+  }
   const scores = consultationScores(c, { plan, catalogs });
   const points = attentionPoints(c, scores, plan);
   const tiva = choices.tiva ?? plan.gases?.agent === "tiva";
@@ -327,13 +336,26 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   row("NVPO", drugTexts(phase("ponv"), body));
   row("Hémodynamique", drugTexts(phase("haemodynamic"), body));
   row("Autres", drugTexts(phase("other"), body));
-  const postop = [...plan.postop, ...drugTexts(phase("postop"), body)];
-  if (postop.length) rows.push({ label: "Post-op", parts: [{ text: postop.slice(0, 6).join(" · ") }] });
+  // Post-op: the orders ticked (computed for the patient), the protocol's own lines, its post-op drugs.
+  // A5: the destination in a word, no monitoring lines (the recovery room's).
+  const orders = postopLines(plan.postopPlan, { age, weightKg, crcl: scores.derived.crcl })
+    .map((l) => l.text.replace(/^Destination : (.)/, (_, x: string) => x.toUpperCase()))
+    .filter((t) => !/^Surveillance\b/.test(t));
+  const postop = [...orders, ...plan.postop, ...drugTexts(phase("postop"), body)];
+  if (postop.length) rows.push({ label: "Post-op", parts: [{ text: postop.slice(0, 8).join(" · ") }] });
 
   // --- Antecedents: the pasted lines, in bold the ones that change the anaesthesia ---------
   const pointOf = new Map<string, AttentionPoint>(points.filter((x) => x.id.startsWith("cond-")).map((x) => [x.id.slice(5), x]));
   const implications: string[] = [];
-  const antecedents: SheetText[] = p.history.map((line) => {
+  // Antecedents found outside a « Antécédents » section — a dictation, an emergency or surgical
+  // consultation added to the patient — are listed by the words they were found in.
+  const inLines = (from: string, lines: string[]) => lines.some((l) => fold(l).includes(fold(from)) || fold(from).includes(fold(l)));
+  const historyLines = [
+    ...p.history,
+    ...[...new Set(quick.conditions.filter((q) => !inLines(q.from, p.history)).map((q) => q.from.replace(/\s*[?.;:]$/, "").trim()))],
+    ...(p.history.length ? [] : quick.history),
+  ];
+  const antecedents: SheetText[] = historyLines.map((line) => {
     const matched = quick.conditions.filter((q) => fold(line).includes(fold(q.from)) || fold(q.from).includes(fold(line)));
     const notable = matched.map((q) => pointOf.get(q.id)).filter((x): x is AttentionPoint => !!x);
     for (const pt of notable) {
@@ -344,7 +366,8 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   });
 
   // --- Treatments and what to do with each -----------------------------------------------
-  const treatments: SheetText[] = p.treatments.map((line) => {
+  const treatmentLines = [...p.treatments, ...[...new Set(quick.treatments.filter((q) => !inLines(q.from, p.treatments)).map((q) => q.from.trim()))], ...(p.treatments.length ? [] : quick.freeTreatments)];
+  const treatments: SheetText[] = treatmentLines.map((line) => {
     const t = c.treatments.find((x) => quick.treatments.some((q) => q.name === x.name && (fold(line).includes(fold(q.from)) || fold(q.from).includes(fold(line)))));
     if (!t) return { text: `${line} (non reconnu : conduite à vérifier)` };
     const g = treatmentGuide(t, ctx.rules, catalogs, { techniques: plan.techniques, bleedingRisk: c.surgery.bleedingRisk, crcl: scores.derived.crcl });
@@ -354,7 +377,9 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   });
 
   // --- Allergies ---------------------------------------------------------------------------
-  const allergies: SheetText[] = p.allergies.length ? p.allergies.map((a) => ({ text: a, strong: true })) : [{ text: p.noKnownAllergy ? "Pas d'allergie connue" : "Allergies non renseignées" }];
+  const allergyLines = [...p.allergies, ...quick.allergies.filter((a) => !inLines(a.from, p.allergies)).map((a) => a.from)];
+  const noKnownAllergy = p.noKnownAllergy || (!allergyLines.length && !!quick.noKnownAllergy);
+  const allergies: SheetText[] = allergyLines.length ? allergyLines.map((a) => ({ text: a, strong: true })) : [{ text: noKnownAllergy ? "Pas d'allergie connue" : "Allergies non renseignées" }];
 
   // --- What must not be missed ------------------------------------------------------------
   const alerts: string[] = [];
@@ -366,7 +391,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   const others = points.filter((pt) => !own(pt) && pt.level !== "info");
   // A5: the title, and the start of what to do when it fits on the line.
   for (const pt of [...others.filter((x) => x.level === "high"), ...others.filter((x) => x.level === "medium").slice(0, 3)]) alerts.push(alertText(pt));
-  if (!p.allergies.length && !p.noKnownAllergy) alerts.push("Allergies non renseignées dans la consultation");
+  if (!allergyLines.length && !noKnownAllergy) alerts.push("Allergies non renseignées dans la consultation");
 
   // --- Questions -------------------------------------------------------------------------
   const questions: CaseQuestion[] = [];
