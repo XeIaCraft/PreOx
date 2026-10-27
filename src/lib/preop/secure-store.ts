@@ -96,22 +96,23 @@ export class SecureStore {
     await run(db, DOSSIERS, "readwrite", (s) => s.delete(`${this.userId}:${id}`));
   }
 
-  // The consultation in progress (not kept as a dossier yet): one sealed
-  // record per user, under a separate index value so it never shows in
-  // the dossier list — survives a reload, never leaves the device.
-  private draftKey(): string {
-    return `${this.userId}:__draft`;
+  // Sealed records that are not dossiers — the consultation in progress (not
+  // kept as a dossier yet), the day's case sheet: one per user and name,
+  // under a separate index value so they never show in the dossier list —
+  // survive a reload, never leave the device.
+  private recordKey(name: string): string {
+    return `${this.userId}:__${name}`;
   }
 
-  async saveDraft<T>(value: T): Promise<void> {
+  async saveRecord<T>(name: string, value: T): Promise<void> {
     const db = await this.db();
     const sealed = await seal(await this.key(), value);
-    await run(db, DOSSIERS, "readwrite", (s) => s.put({ key: this.draftKey(), userId: `${this.userId}#draft`, sealed }));
+    await run(db, DOSSIERS, "readwrite", (s) => s.put({ key: this.recordKey(name), userId: `${this.userId}#${name}`, sealed }));
   }
 
-  async loadDraft<T>(): Promise<T | null> {
+  async loadRecord<T>(name: string): Promise<T | null> {
     const db = await this.db();
-    const row = await run<StoredDossier | undefined>(db, DOSSIERS, "readonly", (s) => s.get(this.draftKey()) as IDBRequest<StoredDossier | undefined>);
+    const row = await run<StoredDossier | undefined>(db, DOSSIERS, "readonly", (s) => s.get(this.recordKey(name)) as IDBRequest<StoredDossier | undefined>);
     if (!row) return null;
     try {
       return await unseal<T>(await this.key(), row.sealed);
@@ -120,9 +121,21 @@ export class SecureStore {
     }
   }
 
-  async clearDraft(): Promise<void> {
+  async clearRecord(name: string): Promise<void> {
     const db = await this.db();
-    await run(db, DOSSIERS, "readwrite", (s) => s.delete(this.draftKey()));
+    await run(db, DOSSIERS, "readwrite", (s) => s.delete(this.recordKey(name)));
+  }
+
+  saveDraft<T>(value: T): Promise<void> {
+    return this.saveRecord("draft", value);
+  }
+
+  loadDraft<T>(): Promise<T | null> {
+    return this.loadRecord<T>("draft");
+  }
+
+  clearDraft(): Promise<void> {
+    return this.clearRecord("draft");
   }
 
   /** Every dossier, re-encrypted with a passphrase — to keep a copy or move to another device. */

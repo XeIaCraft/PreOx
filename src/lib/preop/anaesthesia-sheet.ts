@@ -967,7 +967,7 @@ export function defaultSheetMode(s: SurgeryItem, protocol: Protocol | null): She
 }
 
 /** The procedure and its protocol reduced to the chosen technique. */
-function forMode(s: SurgeryItem, protocol: Protocol | null, mode: SheetMode): { s: SurgeryItem; protocol: Protocol | null } {
+export function forMode(s: SurgeryItem, protocol: Protocol | null, mode: SheetMode): { s: SurgeryItem; protocol: Protocol | null } {
   const plan = protocol?.content;
   const t = allTechniques(s, plan);
   const blocks = BLOCKS.filter((b) => t.has(b));

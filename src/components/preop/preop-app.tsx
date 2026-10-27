@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Activity, BookMarked, ClipboardList, Eye, FolderOpen, Loader2, NotebookTabs, Pill, Settings2, ShieldCheck, Sparkles, Stethoscope } from "lucide-react";
+import { Activity, BookMarked, CalendarDays, ClipboardList, Eye, FolderOpen, Loader2, NotebookTabs, Pill, Settings2, ShieldCheck, Sparkles, Stethoscope } from "lucide-react";
 import { setViewMode } from "@/app/actions/view-mode";
 import { AiSettings } from "@/components/preop/ai-assistant";
 import { ConsultationView } from "@/components/preop/consultation";
@@ -22,14 +22,16 @@ import { ServicePrefsPanel } from "@/components/preop/service-prefs-panel";
 import { PlanListsSettings } from "@/components/preop/plan-lists-settings";
 import { SurgerySheetView } from "@/components/preop/surgery-sheet-view";
 import { TreatmentsGuideView } from "@/components/preop/treatments-guide-view";
+import { CaseSheetView } from "@/components/preop/case-sheet-view";
 import { emptyDossier, withAutoStatus } from "@/lib/preop/dossier";
 import type { QuestionInput } from "@/lib/preop/rules/question";
 import { cn } from "@/lib/utils";
 
-type View = "consultation" | "dossiers" | "dossier" | "fiches" | "traitements" | "protocoles" | "regles" | "nouvelle" | "parametres" | "ia" | "bloc";
+type View = "consultation" | "jour" | "dossiers" | "dossier" | "fiches" | "traitements" | "protocoles" | "regles" | "nouvelle" | "parametres" | "ia" | "bloc";
 
 const TABS: { view: View; label: string; short: string; icon: typeof Stethoscope }[] = [
   { view: "consultation", label: "Consultation", short: "Consult.", icon: Stethoscope },
+  { view: "jour", label: "Feuille de jour", short: "Jour", icon: CalendarDays },
   { view: "dossiers", label: "Dossiers", short: "Dossiers", icon: FolderOpen },
   { view: "fiches", label: "Fiches interventions", short: "Fiches", icon: ClipboardList },
   { view: "traitements", label: "Traitements", short: "Trait.", icon: Pill },
@@ -45,7 +47,7 @@ const SETTINGS_SECTIONS: { view: View; label: string; icon: typeof Stethoscope }
   { view: "ia", label: "Assistant IA", icon: Sparkles },
 ];
 
-const VIEWS: View[] = ["consultation", "dossiers", "dossier", "fiches", "traitements", "protocoles", "regles", "nouvelle", "parametres", "ia", "bloc"];
+const VIEWS: View[] = ["consultation", "jour", "dossiers", "dossier", "fiches", "traitements", "protocoles", "regles", "nouvelle", "parametres", "ia", "bloc"];
 /** A user (or an admin in the user view) only consults: the surgery sheets and the treatments. */
 const USER_VIEWS: View[] = ["fiches", "traitements"];
 
@@ -145,7 +147,7 @@ function PreopScreens() {
             )}
           </span>
         </div>
-        <nav className={cn("grid gap-1 sm:flex", isAdmin ? "grid-cols-5" : "grid-cols-2")} aria-label="Sections">
+        <nav className={cn("grid gap-1 sm:flex", isAdmin ? "grid-cols-6" : "grid-cols-2")} aria-label="Sections">
           {tabs.map((t) => (
             <button
               key={t.view}
@@ -234,6 +236,15 @@ function PreopScreens() {
           <p className="text-sm text-foreground-muted">Ce dossier n&apos;est pas sur cet appareil.</p>
         ))}
 
+      {view === "jour" && (
+        <CaseSheetView
+          rules={rules}
+          protocols={protocolLib.protocols}
+          onKeep={async (d) => {
+            await dossierStore.put(d, true);
+          }}
+        />
+      )}
       {view === "fiches" && <SurgerySheetView protocols={protocolLib.protocols} />}
       {view === "traitements" && <TreatmentsGuideView rules={rules} />}
 

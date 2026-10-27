@@ -9,8 +9,8 @@ import { positionsOf } from "@/lib/preop/plan-lists";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { OPERATION_CATEGORIES } from "@/lib/carnet/referentiel";
 import { RISK_GRADES, URGENCIES, urgencyOf, type RiskGrade, type Surgery } from "@/lib/preop/dossier";
-import { fold, type BleedingRisk, type SurgeryItem } from "@/lib/preop/catalog";
-import { searchSurgeries, surgeryVariants, type SurgeryPatient } from "@/lib/preop/surgery-search";
+import { fold, type BleedingRisk } from "@/lib/preop/catalog";
+import { searchSurgeries, surgeryFromItem, surgeryVariants, type SurgeryPatient } from "@/lib/preop/surgery-search";
 import { APPROACH_SOURCE, APPROACH_SPECIFICS } from "@/lib/preop/surgeries-variants";
 import { APPROACHES, BLEEDING_RISKS, SURGERY_CATALOG_SOURCE, SURGERY_GRADES } from "@/lib/preop/surgeries";
 
@@ -84,26 +84,6 @@ function PositionPicker({ value, onChange }: { value: string; onChange: (v: stri
       </div>
     </div>
   );
-}
-
-/** Fills the intervention from a catalogue entry (Paramètres › Interventions). */
-export function surgeryFromItem(s: Surgery, c: SurgeryItem): Surgery {
-  return {
-    ...s,
-    name: c.name,
-    category: c.category,
-    kce: c.grade,
-    cardiacRisk: c.cardiacRisk,
-    bleedingRisk: c.bleedingRisk,
-    rcriHighRisk: c.rcriHighRisk,
-    incision: c.incision,
-    position: c.position ?? s.position,
-    durationHours: c.durationHours ?? s.durationHours,
-    catalogId: c.id,
-    setting: c.setting ?? s.setting,
-    tourniquet: c.tourniquet ?? s.tourniquet,
-    closedSpace: c.closedSpace ?? false,
-  };
 }
 
 /**

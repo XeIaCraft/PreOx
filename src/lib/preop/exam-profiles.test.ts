@@ -3,7 +3,7 @@ import { consultationScores } from "./consultation-scores";
 import { emptyConsultation, type ConsultationState } from "./dossier";
 import { DEFAULT_CATALOGS } from "./catalog-defaults";
 import { SURGERY_EXAM_PROFILES } from "./exams";
-import { surgeryFromItem } from "@/components/preop/surgery-panel";
+import { surgeryFromItem } from "@/lib/preop/surgery-search";
 import { parseQuickEntry } from "./quick-entry";
 
 function withSurgery(id: string, patch: Partial<ConsultationState> = {}): ConsultationState {

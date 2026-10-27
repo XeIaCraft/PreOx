@@ -5,7 +5,7 @@ import { Check, ClipboardPaste, Mic, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/preop/ui";
 import { useCatalogs } from "@/components/preop/use-catalogs";
-import { surgeryFromItem } from "@/components/preop/surgery-panel";
+import { surgeryFromItem } from "@/lib/preop/surgery-search";
 import { applyQuickEntry, isEmptyQuickEntry, parseQuickEntry, selectAll, type QuickSelection } from "@/lib/preop/quick-entry";
 import { DRUGS, QUALIFIER_LABELS } from "@/lib/preop/history";
 import { EXAM_LABELS, ecgSummary, type ConsultationState } from "@/lib/preop/dossier";

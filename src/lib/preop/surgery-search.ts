@@ -4,6 +4,7 @@
 // out, children's entries come first for a child and last for an adult.
 
 import { fold, type SurgeryItem } from "./catalog";
+import type { Surgery } from "./dossier";
 import { APPROACHES, type Approach } from "./surgeries";
 
 /** Everyday words for each approach, so « coelio », « robot », « VATS » find their variant. */
@@ -80,4 +81,24 @@ export function surgeryVariants(items: SurgeryItem[], s: { catalogId?: string },
   const current = s.catalogId ? items.find((x) => x.id === s.catalogId) : undefined;
   if (!current?.family) return [];
   return items.filter((x) => x.family === current.family && x.id !== current.id && !(patient.sex && x.sex && x.sex !== patient.sex));
+}
+
+/** Fills the intervention from a catalogue entry (Paramètres › Interventions). */
+export function surgeryFromItem(s: Surgery, c: SurgeryItem): Surgery {
+  return {
+    ...s,
+    name: c.name,
+    category: c.category,
+    kce: c.grade,
+    cardiacRisk: c.cardiacRisk,
+    bleedingRisk: c.bleedingRisk,
+    rcriHighRisk: c.rcriHighRisk,
+    incision: c.incision,
+    position: c.position ?? s.position,
+    durationHours: c.durationHours ?? s.durationHours,
+    catalogId: c.id,
+    setting: c.setting ?? s.setting,
+    tourniquet: c.tourniquet ?? s.tourniquet,
+    closedSpace: c.closedSpace ?? false,
+  };
 }
