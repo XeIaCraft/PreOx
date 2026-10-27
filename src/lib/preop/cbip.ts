@@ -42,8 +42,14 @@ const fold = (t: string) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
-/** Brand's first word, folded (« Asaflow 80 » → « asaflow »). */
-const brandKey = (b: string) => fold(b).split(" ")[0];
+/**
+ * Brand's first word, folded, hyphens kept inside it (« Asaflow 80 » →
+ * « asaflow », « Co-Bisoprolol EG » → « cobisoprolol »). Split at the
+ * hyphen, every « Co-… » combination had the key « co » and was taken for
+ * Co-Diovane: Lodoz (bisoprolol) and Atacand Plus (candésartan) read as
+ * valsartan (2026-10-27).
+ */
+const brandKey = (b: string) => fold(b.trim().split(/\s+/)[0].replace(/[-‐]/g, ""));
 
 export interface CbipMedication extends Medication {
   id: string;
@@ -75,7 +81,7 @@ export function buildMedicationList(curated: Medication[] = MEDICATIONS): CbipMe
     const brands = e.b.map(([b]) => b);
     const parts = e.n.split(" + ").map((s) => s.trim());
     // Known substance (by name), or a known product (by brand: Janumet, Coversyl Plus…).
-    const known = (parts.length === 1 ? byName.get(fold(parts[0])) : bySet.get(setKey(parts))) ?? brands.map((b) => byBrand.get(brandKey(b))).find((m) => m && (parts.length === 1 || m.components?.length));
+    const known = (parts.length === 1 ? byName.get(fold(parts[0])) : bySet.get(setKey(parts))) ?? brands.map((b) => byBrand.get(brandKey(b))).find((m) => m && (parts.length === 1 ? !m.components?.length : m.components?.length === parts.length));
     if (known) {
       const x = extra.get(known.atc) ?? { brands: new Set<string>(), pages: {} };
       brands.forEach((b) => x.brands.add(b));
