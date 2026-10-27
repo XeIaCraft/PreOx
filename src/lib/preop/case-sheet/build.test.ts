@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseConsultation } from "./parse";
-import { buildCaseSheet, surgeryCandidates, type CaseContext } from "./build";
+import { buildCaseSheet, surgeryCandidates, type CaseContext, type ItemSection } from "./build";
 import { DEFAULT_CATALOGS } from "../catalog-defaults";
 import { REFERENCE_PROTOCOLS } from "../reference-protocols";
 import { PROPOSED_GROUPS } from "../rules/proposed";
@@ -108,6 +108,12 @@ const ctx: CaseContext = {
   service: DEFAULT_SERVICE_PREFS,
 };
 
+type Result = ReturnType<typeof buildCaseSheet>;
+const sec = (r: Result, s: ItemSection) => r.sheet.items.filter((i) => i.section === s);
+const texts = (r: Result, s: ItemSection) => sec(r, s).map((i) => i.text);
+/** Treatments as printed: « line → conduct ». */
+const ttt = (r: Result) => sec(r, "ttt").map((i) => `${i.text}${i.detail ? ` → ${i.detail}` : ""}`);
+
 describe("case sheet", () => {
   it("finds the catalogue's intervention behind the surgeon's wording", () => {
     const names = (t: string, sex?: "M" | "F") => surgeryCandidates(DEFAULT_CATALOGS.surgeries, t, { sex }).map((s) => s.name);
@@ -138,17 +144,17 @@ describe("case sheet", () => {
     expect(r.sheet.surgery).toBe("Résection transurétrale de prostate");
     expect(r.sheet.technique).toBe("Rachianesthésie");
     expect(r.sheet.rows.find((x) => x.label === "Rachi")?.parts[0].text).toMatch(/Bupivacaïne/);
-    expect(r.sheet.antecedents.filter((a) => a.strong).map((a) => a.text)).toEqual(["Glaucome à angle fermé", "Diabète de type 2 non insulinorequérant", "SAOS appareillé"]);
-    expect(r.sheet.implications.join(" ")).toMatch(/anticholinergiques/);
-    expect(r.sheet.treatments.map((t) => t.text)).toEqual(expect.arrayContaining([expect.stringMatching(/^Tadalafil 5 mg le soir → STOP/)]));
+    expect(sec(r, "atcd").filter((a) => a.strong).map((a) => a.text)).toEqual(["Glaucome à angle fermé", "Diabète de type 2 non insulinorequérant", "SAOS appareillé"]);
+    expect(sec(r, "atcd").map((a) => a.detail ?? "").join(" ")).toMatch(/anticholinergiques/);
+    expect(ttt(r)).toEqual(expect.arrayContaining([expect.stringMatching(/^Tadalafil 5 mg le soir → STOP/)]));
     // A beta-lactam in the plan of a patient allergic to penicillin.
-    expect(r.sheet.alerts.join(" ")).toMatch(/Céfuroxime au plan malgré l'allergie/);
+    expect(texts(r, "alert").join(" ")).toMatch(/Céfuroxime au plan malgré l'allergie/);
   });
 
   it("asks for what is missing to compute the doses", () => {
     const r = buildCaseSheet(parseConsultation("Intervention : Cholécystectomie par cœlioscopie\nAntécédents : HTA"), ctx);
     expect(r.questions.map((q) => q.id)).toEqual(expect.arrayContaining(["sex", "age", "weightKg", "heightCm"]));
-    expect(r.sheet.alerts).toContain("Allergies non renseignées dans la consultation");
+    expect(texts(r, "alert")).toContain("Allergies non renseignées dans la consultation");
   });
 
   it("reads a patient entered by hand, with a dictation or another consultation pasted under it", () => {
@@ -164,13 +170,13 @@ describe("case sheet", () => {
     const r = buildCaseSheet(parseConsultation(raw), ctx);
     expect(r.sheet.initials).toBe("AB");
     expect(r.sheet.body).toMatch(/^42 ans, M, 110 kg, 173 cm/);
-    expect(r.sheet.antecedents.map((a) => a.text).join(" | ")).toMatch(/Diabète/);
-    expect(r.sheet.treatments.map((t) => t.text).join(" | ")).toMatch(/metformine/i);
-    expect(r.sheet.allergies.map((a) => a.text).join(" ")).toMatch(/latex/);
+    expect(texts(r, "atcd").join(" | ")).toMatch(/Diabète/);
+    expect(ttt(r).join(" | ")).toMatch(/metformine/i);
+    expect(texts(r, "allergy").join(" ")).toMatch(/latex/);
 
     // An emergency note added below a « --- » line: read too, under no heading.
     const more = buildCaseSheet(parseConsultation(`${raw}\n---\nUrgences : patient connu pour un SAOS appareillé.`), ctx);
-    expect(more.sheet.antecedents.map((a) => a.text).join(" | ")).toMatch(/SAOS/);
+    expect(texts(more, "atcd").join(" | ")).toMatch(/SAOS/);
   });
 
   it("uses the plan adapted for the patient instead of the protocol's", () => {
@@ -204,7 +210,7 @@ describe("case sheet", () => {
 
   it("knows the onset and context-sensitive half-time of the plan's anaesthesia drugs, plan B's too", () => {
     const r = buildCaseSheet(parseConsultation(CLINIC), ctx);
-    const pk = r.sheet.kinetics.map((k) => k.text).join(" | ");
+    const pk = r.sheet.kinetics.map((k) => `${k.name} : onset ${k.onset}${k.csht ? ` · ½-vie contextuelle ${k.csht}` : ""}`).join(" | ");
     expect(pk).toMatch(/Bupivacaïne hyperbare : onset 5–10 min/);
     expect(pk).toMatch(/Propofol : onset 30–45 s · ½-vie contextuelle ≈ 10 min \(1 h\)/);
     expect(pk).toMatch(/Sévoflurane : onset/);
@@ -224,16 +230,31 @@ describe("case sheet", () => {
     ].join("\n");
     const raw = `Initiales : AB\nSexe : M\nIntervention : Fissure anale\nAge 60 ans Poids 80 kg Taille 175 cm\n---\n${er}\n---\nTabagisme très ancien\nVit seul, autonome`;
     const r = buildCaseSheet(parseConsultation(raw), ctx);
-    expect(r.sheet.antecedents.map((a) => a.text)).toEqual(["HTA traitée depuis 2015", "FA paroxystique sous Eliquis"]);
-    expect(r.sheet.habits.map((h) => h.text)).toEqual(["Tabagisme très ancien (sevré depuis 20 ans, 30 PA)", "Tabagisme très ancien"]);
-    expect(r.sheet.treatments.map((t) => t.text)).toEqual([expect.stringMatching(/^Eliquis 5 mg 1-0-1 → (STOP|arrêt)/)]);
-    expect(r.sheet.allergies.map((a) => a.text)).toEqual(["iode (éruption cutanée)"]);
-    const asked = r.questions.filter((q) => q.id === "line").map((q) => q.line);
-    expect(asked).toEqual(["Motif d'admission : douleur anale", "Vit seul, autonome"]);
-    // Answered: the line goes there.
-    const placed = buildCaseSheet(parseConsultation(raw), ctx, { lines: { "Vit seul, autonome": "note", "Motif d'admission : douleur anale": "ignore" } });
-    expect(placed.questions.filter((q) => q.id === "line")).toEqual([]);
-    expect(placed.sheet.notes).toContain("Vit seul, autonome");
+    expect(texts(r, "atcd")).toEqual(["HTA traitée depuis 2015", "FA paroxystique sous Eliquis"]);
+    expect(texts(r, "habit")).toEqual(["Tabagisme très ancien (sevré depuis 20 ans, 30 PA)", "Tabagisme très ancien"]);
+    expect(ttt(r)).toEqual([expect.stringMatching(/^Eliquis 5 mg 1-0-1 → (STOP|arrêt)/)]);
+    expect(texts(r, "allergy")).toEqual(["iode (éruption cutanée)"]);
+    // Nothing recognised: in the notes as written, no question.
+    expect(texts(r, "note")).toEqual(["Motif d'admission : douleur anale", "Vit seul, autonome"]);
+    expect(r.questions).toEqual([]);
+    // Moved, corrected, added, in bold on the sheet: read again.
+    const changed = buildCaseSheet(parseConsultation(raw), ctx, {
+      lines: { "Vit seul, autonome": "habit", "Motif d'admission : douleur anale": "ignore" },
+      edits: { "HTA traitée depuis 2015": "HTA mal contrôlée" },
+      added: [
+        { id: "a1", section: "atcd", text: "Asthme sévère" },
+        { id: "a2", section: "ttt", text: "Metformine 1 g 2x/j" },
+      ],
+      strong: { "atcd:HTA traitée depuis 2015": true },
+    });
+    expect(texts(changed, "note")).toEqual([]);
+    expect(texts(changed, "habit")).toContain("Vit seul, autonome");
+    const hta = sec(changed, "atcd").find((a) => a.text === "HTA mal contrôlée")!;
+    expect(hta.strong).toBe(true);
+    const asthma = sec(changed, "atcd").find((a) => a.text === "Asthme sévère")!;
+    expect(asthma).toMatchObject({ key: "add:a1", strong: true });
+    expect(asthma.detail).toBeTruthy();
+    expect(ttt(changed)).toEqual(expect.arrayContaining([expect.stringMatching(/^Metformine 1 g 2x\/j → arrêt/)]));
   });
 
   it("uses another protocol of the library when one is chosen", () => {

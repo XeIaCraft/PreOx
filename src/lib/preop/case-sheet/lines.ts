@@ -4,15 +4,15 @@
 // examination or a value already read. A line under a heading goes where
 // its heading says; a line with none (a dictation, an emergency or surgical
 // consultation added to the patient) is sorted by what the dictation reader
-// recognises in it, and when it recognises nothing the sheet asks where to
-// put it rather than dropping it.
+// recognises in it, and when it recognises nothing it goes to the notes as
+// it is (to be moved from the sheet if need be) rather than dropped.
 
 import type { Catalogs } from "../catalog";
 import { parseQuickEntry, type QuickEntryResult } from "../quick-entry";
 
 export type LineKind = "atcd" | "ttt" | "allergy" | "habit" | "note" | "info" | "ignore";
 
-/** What a line can be made (the questions' answers). */
+/** What a line can be made. */
 export const LINE_KINDS: { code: LineKind; label: string }[] = [
   { code: "atcd", label: "Antécédent" },
   { code: "ttt", label: "Traitement" },
@@ -61,7 +61,7 @@ export function sectionKind(section: LineKind, text: string, q: QuickEntryResult
 
 /**
  * Where a line with no heading goes, from what is recognised in it; null:
- * nothing recognised — the sheet asks.
+ * nothing recognised — a note.
  */
 export function autoKind(text: string, q: QuickEntryResult): LineKind | null {
   if (EMPTY.test(text)) return "ignore";

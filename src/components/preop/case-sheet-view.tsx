@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, FilePlus2, Timer, FileText, FolderInput, Pencil, Printer, RotateCcw, Trash2, UserPlus } from "lucide-react";
+import { ArrowDown, ArrowUp, Bold, Eye, EyeOff, FilePlus2, FileText, FolderInput, Pencil, Plus, Printer, RotateCcw, SlidersHorizontal, Trash2, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { Combobox, Disclosure, FieldLabel, MiniNumber, Panel } from "@/components/preop/ui";
@@ -10,10 +10,10 @@ import { PlanEditor } from "@/components/preop/plan-editor";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { SecureStore } from "@/lib/preop/secure-store";
 import { parseConsultation, splitConsultations } from "@/lib/preop/case-sheet/parse";
-import { buildCaseSheet, type CaseChoices, type CaseQuestion, type CaseResult } from "@/lib/preop/case-sheet/build";
-import { caseSheetCss, caseSheetDocument, caseSheetHtml, dayKinetics, kineticsHtml } from "@/lib/preop/case-sheet/html";
+import { buildCaseSheet, type CaseChoices, type CaseQuestion, type CaseResult, type ItemSection } from "@/lib/preop/case-sheet/build";
+import { caseSheetCss, caseSheetDocument, caseSheetHtml, dayKinetics, DEFAULT_SETTINGS, kineticsHtml, type SheetSettings } from "@/lib/preop/case-sheet/html";
 import type { LineKind } from "@/lib/preop/case-sheet/lines";
-import { fold } from "@/lib/preop/catalog";
+import { fold, searchItems, type Catalogs } from "@/lib/preop/catalog";
 import { searchSurgeries } from "@/lib/preop/surgery-search";
 import { emptyDossier, type Dossier } from "@/lib/preop/dossier";
 import type { Protocol } from "@/lib/preop/protocols";
@@ -39,8 +39,8 @@ interface DayEntry {
 interface DaySheet {
   title: string;
   entries: DayEntry[];
-  /** Onsets and context-sensitive half-times on the sheet (screen and print). */
-  kinetics?: boolean;
+  /** What the sheet shows and how much it says (kept when the sheet is cleared). */
+  settings?: SheetSettings;
   /** Drugs taken off the « Pharmaco » list (« pk:… »). */
   hiddenKinetics?: string[];
 }
@@ -62,6 +62,23 @@ function plannedAtOf(date: string | undefined): string {
 
 const SCOPE = ".case-preview";
 
+/** A line of the preview touched: its menu, under it. */
+interface MenuAt {
+  entryId: string;
+  key: string;
+  top: number;
+  left: number;
+}
+
+const MENU_WIDTH = 288;
+const MOVABLE: { code: LineKind & ItemSection; label: string }[] = [
+  { code: "atcd", label: "ATCD" },
+  { code: "ttt", label: "TTT" },
+  { code: "allergy", label: "Allergie" },
+  { code: "habit", label: "Habitus" },
+  { code: "note", label: "Note" },
+];
+
 export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; protocols: Protocol[]; onKeep: (d: Dossier) => Promise<void> }) {
   const { userId } = usePreopSession();
   const { catalogs, service } = useCatalogs();
@@ -69,6 +86,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   const store = useMemo(() => new SecureStore(userId), [userId]);
   const [sheet, setSheet] = useState<DaySheet | null>(null);
   const [paste, setPaste] = useState("");
+  const [menu, setMenu] = useState<MenuAt | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // The sheet kept on this device, sealed.
@@ -99,6 +117,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   const results = useMemo(() => new Map((sheet?.entries ?? []).map((e) => [e.id, buildCaseSheet(parseConsultation(e.raw), ctx, e.choices)])), [sheet?.entries, ctx]);
 
   if (!sheet) return <p className="text-sm text-foreground-muted">Ouverture de la feuille…</p>;
+  const settings = { ...DEFAULT_SETTINGS, ...sheet.settings };
 
   const setEntry = (id: string, patch: Partial<DayEntry>) => update({ ...sheet, entries: sheet.entries.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
   const choose = (id: string, choices: CaseChoices) => {
@@ -111,14 +130,15 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     setEntry(id, { choices: { ...current, ...choices } });
   };
 
-  /** A line of the preview touched: off the printed sheet, or back on it. */
-  function toggleLine(e: DayEntry, target: HTMLElement) {
-    const key = target.closest("[data-k]")?.getAttribute("data-k");
-    if (!key) return;
-    const hidden = new Set(e.hidden ?? []);
-    if (hidden.has(key)) hidden.delete(key);
-    else hidden.add(key);
-    setEntry(e.id, { hidden: [...hidden] });
+  /** The menu of the line touched in a patient's preview, under it. */
+  function openMenu(e: DayEntry, ev: React.SyntheticEvent<HTMLElement>) {
+    const el = (ev.target as HTMLElement).closest<HTMLElement>("[data-k]");
+    const box = ev.currentTarget.parentElement?.getBoundingClientRect();
+    if (!el || !box) return;
+    const at = el.getBoundingClientRect();
+    const key = el.dataset.k!;
+    if (menu?.entryId === e.id && menu.key === key) return setMenu(null);
+    setMenu({ entryId: e.id, key, top: at.bottom - box.top + 4, left: Math.max(0, Math.min(at.left - box.left, box.width - MENU_WIDTH)) });
   }
 
   function toggleKinetics(target: HTMLElement) {
@@ -152,13 +172,13 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   }
 
   function print() {
-    const sheets = sheet!.entries.map((e) => ({ sheet: results.get(e.id)!.sheet, hidden: new Set(e.hidden ?? []) }));
+    const sheets = sheet!.entries.map((e) => ({ sheet: results.get(e.id)!.sheet, hidden: new Set(e.hidden ?? []), edits: e.choices.edits }));
     const w = window.open("", "_blank", "width=700,height=900");
     if (!w) {
       toast("La fenêtre d'impression a été bloquée par le navigateur.", { variant: "error" });
       return;
     }
-    w.document.write(caseSheetDocument(sheets, sheet!.title, { kinetics: sheet!.kinetics, hiddenKinetics: new Set(sheet!.hiddenKinetics ?? []) }));
+    w.document.write(caseSheetDocument(sheets, sheet!.title, { settings, hiddenKinetics: new Set(sheet!.hiddenKinetics ?? []) }));
     w.document.close();
     w.focus();
     setTimeout(() => w.print(), 150);
@@ -176,23 +196,67 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     toast(`Dossier ${dossier.initials} gardé sur cet appareil (onglet Dossiers).`, { variant: "success" });
   }
 
+  /** What can be done with a line of the sheet: correct it, bold, move, take off. */
+  function lineMenu(e: DayEntry, r: CaseResult, key: string): MenuProps {
+    const c = e.choices;
+    const item = r.sheet.items.find((i) => i.key === key);
+    // A product of the plan: « Analgésie:Kétorolac 30 mg ».
+    const product = !item && key.includes(":") && !/^(row|imp):/.test(key);
+    const original = product ? key.slice(key.indexOf(":") + 1) : item?.text;
+    const editKey = product ? key : item?.addedId ? undefined : (item?.source ?? (item?.section === "alert" ? item.key : undefined));
+    const off = (e.hidden ?? []).includes(key);
+    const close = () => setMenu(null);
+    const changed = !!editKey && (c.edits?.[editKey] !== undefined || (item?.source !== undefined && c.lines?.[item.source] !== undefined) || c.strong?.[key] !== undefined);
+    const without = <T,>(rec: Record<string, T> | undefined, k?: string) => Object.fromEntries(Object.entries(rec ?? {}).filter(([x]) => x !== k));
+    return {
+      title: product ? (c.edits?.[key] ?? original!) : (item?.text ?? (key === "tech" ? "Technique" : key === "planb" ? "Plan B" : key.startsWith("row:") ? `Ligne « ${key.slice(4)} »` : "Ce que ça implique")),
+      text: product ? (c.edits?.[key] ?? original) : item && (item.addedId || editKey) ? item.text : undefined,
+      onText: (t) => {
+        const v = t.trim();
+        if (!v) return;
+        if (item?.addedId) choose(e.id, { added: (c.added ?? []).map((a) => (a.id === item.addedId ? { ...a, text: v } : a)) });
+        else if (editKey) choose(e.id, { edits: v === original && product ? without(c.edits, editKey) : { ...(c.edits ?? {}), [editKey]: v } });
+        close();
+      },
+      strong: item && item.section !== "alert" ? !!item.strong : undefined,
+      onBold: () => item && choose(e.id, { strong: { ...(c.strong ?? {}), [key]: !item.strong } }),
+      section: item && (item.addedId || item.source) && MOVABLE.some((m) => m.code === item.section) ? (item.section as LineKind) : undefined,
+      onMove: (kind) => {
+        if (!item) return;
+        if (item.addedId) choose(e.id, { added: (c.added ?? []).map((a) => (a.id === item.addedId ? { ...a, section: kind as ItemSection } : a)) });
+        else if (item.source) choose(e.id, { lines: { ...(c.lines ?? {}), [item.source]: kind } });
+        close();
+      },
+      off,
+      onToggle: () => {
+        setEntry(e.id, { hidden: off ? (e.hidden ?? []).filter((k) => k !== key) : [...(e.hidden ?? []), key] });
+        close();
+      },
+      onDelete: item?.addedId
+        ? () => {
+            choose(e.id, { added: (c.added ?? []).filter((a) => a.id !== item.addedId) });
+            close();
+          }
+        : undefined,
+      onReset:
+        changed && editKey
+          ? () => {
+              choose(e.id, { edits: without(c.edits, editKey), lines: without(c.lines, item?.source), strong: without(c.strong, key) });
+              close();
+            }
+          : undefined,
+      onClose: close,
+    };
+  }
+
   return (
     <div className="space-y-4">
-      <style>{caseSheetCss(SCOPE)}</style>
+      <style>{caseSheetCss(SCOPE, settings)}</style>
       <Panel
         title="Feuille de jour"
         actions={
           sheet.entries.length > 0 && (
             <>
-              <Button
-                size="sm"
-                variant={sheet.kinetics ? "outline" : "ghost"}
-                aria-pressed={!!sheet.kinetics}
-                title="Délai d'action (onset) et demi-vie contextuelle des produits d'anesthésie, à titre indicatif"
-                onClick={() => update({ ...sheet, kinetics: !sheet.kinetics })}
-              >
-                <Timer className="h-3.5 w-3.5" /> Pharmaco {sheet.kinetics ? "affichée" : "masquée"}
-              </Button>
               <Button size="sm" onClick={print}>
                 <Printer className="h-3.5 w-3.5" /> Imprimer (A5)
               </Button>
@@ -200,7 +264,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 size="sm"
                 variant="ghost"
                 onClick={() => {
-                  if (confirm("Effacer toute la feuille de cet appareil ?")) update({ title: tomorrowTitle(), entries: [] });
+                  if (confirm("Effacer toute la feuille de cet appareil ? (Les réglages sont gardés.)")) update({ title: tomorrowTitle(), entries: [], settings: sheet.settings });
                 }}
               >
                 <Trash2 className="h-3.5 w-3.5" /> Tout effacer
@@ -215,21 +279,11 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
         </p>
         <label className="block space-y-1">
           <FieldLabel>Titre de la feuille</FieldLabel>
-          <input
-            value={sheet.title}
-            onChange={(e) => update({ ...sheet, title: e.target.value })}
-            className="h-9 w-full min-w-0 rounded-[var(--radius-sm)] border border-border bg-surface px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-          />
+          <input value={sheet.title} onChange={(e) => update({ ...sheet, title: e.target.value })} className={inputClass} />
         </label>
         <label className="block space-y-1">
           <FieldLabel>Consultations à ajouter</FieldLabel>
-          <textarea
-            rows={6}
-            value={paste}
-            onChange={(e) => setPaste(e.target.value)}
-            placeholder="Collez ici une ou plusieurs consultations…"
-            className="block w-full min-w-0 resize-y rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 font-mono text-xs text-foreground placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-          />
+          <textarea rows={6} value={paste} onChange={(e) => setPaste(e.target.value)} placeholder="Collez ici une ou plusieurs consultations…" className={cn(areaClass, "font-mono text-xs")} />
         </label>
         <Button size="sm" onClick={read} disabled={!paste.trim()}>
           <FileText className="h-3.5 w-3.5" /> Lire et ajouter
@@ -241,12 +295,14 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
             toast("Patient ajouté à la feuille.", { variant: "success" });
           }}
         />
+        <SettingsPanel value={settings} onChange={(s) => update({ ...sheet, settings: s })} />
       </Panel>
 
       {sheet.entries.map((e, i) => {
         const r = results.get(e.id)!;
+        const open = menu?.entryId === e.id ? menu : null;
         return (
-          <section key={e.id} className="grid grid-cols-[minmax(0,1fr)] gap-3 rounded-[var(--radius-lg)] border border-border bg-surface p-3 sm:p-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <section key={e.id} className="grid grid-cols-[minmax(0,1fr)] gap-3 rounded-[var(--radius-lg)] border border-border bg-surface p-3 sm:p-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
             <div className="min-w-0 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold text-foreground">
@@ -259,7 +315,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                   <Button size="icon" variant="ghost" aria-label="Descendre" disabled={i === sheet.entries.length - 1} onClick={() => move(e.id, 1)}>
                     <ArrowDown className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" variant="ghost" aria-label="Retirer de la feuille" onClick={() => update({ ...sheet, entries: sheet.entries.filter((x) => x.id !== e.id) })}>
+                  <Button size="icon" variant="ghost" aria-label="Retirer le patient de la feuille" onClick={() => confirm("Retirer ce patient de la feuille ?") && update({ ...sheet, entries: sheet.entries.filter((x) => x.id !== e.id) })}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -269,22 +325,8 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 <div className="space-y-2 rounded-[var(--radius-md)] border border-accent/40 bg-accent-tint p-2.5">
                   <p className="text-xs font-semibold uppercase tracking-wide text-foreground">À préciser</p>
                   {r.questions.map((q) => (
-                    <Question
-                      key={q.line ? `line:${q.line}` : q.id}
-                      q={q}
-                      onAnswer={(c) => choose(e.id, c)}
-                      onLine={(line, kind) => choose(e.id, { lines: { ...(e.choices.lines ?? {}), [line]: kind } })}
-                    />
+                    <Question key={q.id} q={q} onAnswer={(c) => choose(e.id, c)} />
                   ))}
-                  {r.questions.filter((q) => q.line).length > 1 && (
-                    <button
-                      type="button"
-                      className="text-xs font-medium text-primary-strong underline-offset-2 hover:underline"
-                      onClick={() => choose(e.id, { lines: { ...(e.choices.lines ?? {}), ...Object.fromEntries(r.questions.filter((q) => q.line).map((q) => [q.line!, "ignore" as LineKind])) } })}
-                    >
-                      Ignorer toutes les lignes non classées
-                    </button>
-                  )}
                 </div>
               )}
 
@@ -299,22 +341,6 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 />
               </div>
 
-              <div className="space-y-1">
-                <FieldLabel>Protocole</FieldLabel>
-                <Combobox
-                  ariaLabel="Choisir un autre protocole"
-                  placeholder={r.protocol ? `${r.protocol.name} — chercher un autre protocole…` : "Aucun pour cette intervention — chercher un protocole…"}
-                  onEmpty={() => protocols.slice(0, 8).map((x) => ({ key: x.id, label: x.name, hint: x.surgery }))}
-                  search={(q) => searchProtocols(protocols, q).map((x) => ({ key: x.id, label: x.name, hint: x.surgery }))}
-                  onPick={(o) => choose(e.id, { protocolId: o.key })}
-                />
-                {e.choices.protocolId && (
-                  <button type="button" className="text-xs font-medium text-primary-strong underline-offset-2 hover:underline" onClick={() => choose(e.id, { protocolId: null })}>
-                    Revenir au protocole de l&apos;intervention
-                  </button>
-                )}
-              </div>
-
               <div className="flex flex-wrap items-center gap-1.5">
                 {r.modes.map((m) => (
                   <Chip key={m} on={r.mode === m} onClick={() => choose(e.id, { mode: m })}>
@@ -326,19 +352,6 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                     TIVA (AIVOC)
                   </Chip>
                 )}
-              </div>
-
-              {/* Plan B: what to start from if the patient refuses or the technique fails. */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs font-medium text-foreground-subtle">Plan B (refus / échec) :</span>
-                {r.fallbackModes.map((m) => (
-                  <Chip key={m} on={r.fallback === m} onClick={() => choose(e.id, { fallback: m })}>
-                    {MODE_LABEL[m]}
-                  </Chip>
-                ))}
-                <Chip on={!r.fallback} onClick={() => choose(e.id, { fallback: null })}>
-                  Aucun
-                </Chip>
               </div>
 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -357,83 +370,103 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 </div>
               </div>
 
-              <label className="block space-y-1">
-                <FieldLabel>Autres consultations (cardio, transfert USI…)</FieldLabel>
-                <textarea
-                  rows={3}
-                  defaultValue={e.choices.notes ?? ""}
-                  onChange={(ev) => choose(e.id, { notes: ev.target.value })}
-                  placeholder="Collez ou résumez : elles s'impriment sous le patient."
-                  className="block w-full min-w-0 resize-y rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-                />
-              </label>
-
-              <Disclosure
-                summary={
-                  <span className="flex items-center gap-1.5">
-                    <Pencil className="h-3.5 w-3.5" /> {e.choices.plan ? "Protocole adapté pour ce patient" : "Adapter le protocole pour ce patient"}
-                  </span>
-                }
-                className="rounded-[var(--radius-md)] border border-border"
-                summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground"
-              >
-                <div className="space-y-2 px-3 pb-3">
-                  {e.choices.plan ? (
-                    <>
-                      <p className="text-xs text-foreground-muted">Touchez un produit pour changer sa dose, sa voie ou son moment ; la feuille se met à jour. Le protocole de la bibliothèque, lui, ne change pas.</p>
-                      <PlanEditor
-                        compact
-                        formKey={e.id}
-                        value={e.choices.plan}
-                        onChange={(plan) => choose(e.id, { plan })}
-                        body={{ sex: r.consultation.patient.sex, weightKg: r.consultation.patient.weightKg, heightCm: r.consultation.patient.heightCm }}
-                        patient={{ age: r.consultation.patient.age, weightKg: r.consultation.patient.weightKg }}
-                      />
-                      <Button size="sm" variant="ghost" onClick={() => confirm("Revenir au protocole de la bibliothèque (vos modifications pour ce patient sont perdues) ?") && choose(e.id, { plan: undefined })}>
-                        <RotateCcw className="h-3.5 w-3.5" /> Revenir au protocole
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-xs text-foreground-muted">
-                        Partez du plan ci-contre ({r.protocol ? `protocole « ${r.protocol.name} »` : "aucun protocole"}) et ajustez-le pour ce patient : produits, doses (calculées à son poids), technique, gaz, post-op.
-                      </p>
-                      <Button size="sm" variant="secondary" onClick={() => choose(e.id, { plan: structuredClone(r.plan) })}>
-                        <Pencil className="h-3.5 w-3.5" /> Adapter pour ce patient
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </Disclosure>
-
               <Complement onAdd={(text) => setEntry(e.id, { raw: `${e.raw}\n---\n${text}` })} />
 
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="secondary" disabled={!!e.dossierId} onClick={() => void keep(e, r)}>
-                  <FolderInput className="h-3.5 w-3.5" /> {e.dossierId ? "Gardé comme dossier" : "Garder comme dossier"}
-                </Button>
-              </div>
-              <Disclosure summary="Texte collé" summaryClassName="text-xs text-foreground-subtle">
-                <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-[var(--radius-sm)] bg-surface-muted p-2 text-[11px] text-foreground-muted">{e.raw}</pre>
+              <Disclosure summary="Plus d'options" className="rounded-[var(--radius-md)] border border-border" summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground">
+                <div className="space-y-3 px-3 pb-3">
+                  <div className="space-y-1">
+                    <FieldLabel>Protocole</FieldLabel>
+                    <Combobox
+                      ariaLabel="Choisir un autre protocole"
+                      placeholder={r.protocol ? `${r.protocol.name} — chercher un autre protocole…` : "Aucun pour cette intervention — chercher un protocole…"}
+                      onEmpty={() => protocols.slice(0, 8).map((x) => ({ key: x.id, label: x.name, hint: x.surgery }))}
+                      search={(q) => searchProtocols(protocols, q).map((x) => ({ key: x.id, label: x.name, hint: x.surgery }))}
+                      onPick={(o) => choose(e.id, { protocolId: o.key })}
+                    />
+                    {e.choices.protocolId && (
+                      <button type="button" className="text-xs font-medium text-primary-strong underline-offset-2 hover:underline" onClick={() => choose(e.id, { protocolId: null })}>
+                        Revenir au protocole de l&apos;intervention
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Plan B: what to start from if the patient refuses or the technique fails. */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-medium text-foreground-subtle">Plan B (refus / échec) :</span>
+                    {r.fallbackModes.map((m) => (
+                      <Chip key={m} on={r.fallback === m} onClick={() => choose(e.id, { fallback: m })}>
+                        {MODE_LABEL[m]}
+                      </Chip>
+                    ))}
+                    <Chip on={!r.fallback} onClick={() => choose(e.id, { fallback: null })}>
+                      Aucun
+                    </Chip>
+                  </div>
+
+                  <div className="space-y-2 rounded-[var(--radius-md)] border border-border p-2.5">
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                      <Pencil className="h-3.5 w-3.5" /> {e.choices.plan ? "Protocole adapté pour ce patient" : "Adapter le protocole pour ce patient"}
+                    </p>
+                    {e.choices.plan ? (
+                      <>
+                        <p className="text-xs text-foreground-muted">Touchez un produit pour changer sa dose, sa voie ou son moment ; la feuille se met à jour. Le protocole de la bibliothèque, lui, ne change pas.</p>
+                        <PlanEditor
+                          compact
+                          formKey={e.id}
+                          value={e.choices.plan}
+                          onChange={(plan) => choose(e.id, { plan })}
+                          body={{ sex: r.consultation.patient.sex, weightKg: r.consultation.patient.weightKg, heightCm: r.consultation.patient.heightCm }}
+                          patient={{ age: r.consultation.patient.age, weightKg: r.consultation.patient.weightKg }}
+                        />
+                        <Button size="sm" variant="ghost" onClick={() => confirm("Revenir au protocole de la bibliothèque (vos modifications pour ce patient sont perdues) ?") && choose(e.id, { plan: undefined })}>
+                          <RotateCcw className="h-3.5 w-3.5" /> Revenir au protocole
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs text-foreground-muted">
+                          Ajouter ou retirer des produits, changer la technique, les gaz, le post-op ({r.protocol ? `protocole « ${r.protocol.name} »` : "aucun protocole"}). Pour une simple dose, touchez-la sur la feuille.
+                        </p>
+                        <Button size="sm" variant="secondary" onClick={() => choose(e.id, { plan: structuredClone(r.plan) })}>
+                          <Pencil className="h-3.5 w-3.5" /> Adapter pour ce patient
+                        </Button>
+                      </>
+                    )}
+                  </div>
+
+                  <label className="block space-y-1">
+                    <FieldLabel>Texte libre sous le patient (cardio, transfert USI…)</FieldLabel>
+                    <textarea rows={3} defaultValue={e.choices.notes ?? ""} onChange={(ev) => choose(e.id, { notes: ev.target.value })} placeholder="Imprimé tel quel sous le patient." className={areaClass} />
+                  </label>
+
+                  <Button size="sm" variant="secondary" disabled={!!e.dossierId} onClick={() => void keep(e, r)}>
+                    <FolderInput className="h-3.5 w-3.5" /> {e.dossierId ? "Gardé comme dossier" : "Garder comme dossier"}
+                  </Button>
+                  <Disclosure summary="Texte collé" summaryClassName="text-xs text-foreground-subtle">
+                    <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-[var(--radius-sm)] bg-surface-muted p-2 text-[11px] text-foreground-muted">{e.raw}</pre>
+                  </Disclosure>
+                </div>
               </Disclosure>
             </div>
 
-            {/* The sheet as printed: a sheet of paper, the same in both themes. */}
-            <div className="min-w-0 space-y-1.5 self-start">
-              {/* Touch a line to take it off the printed sheet; touch it again to bring it back. */}
+            {/* The sheet as printed: a sheet of paper, the same in both themes. Touch a line: its menu. */}
+            <div className="relative min-w-0 space-y-2 self-start">
               <div
                 role="presentation"
                 className="case-preview overflow-x-auto rounded-[var(--radius-md)] border border-border bg-white p-3 text-[#15191c] shadow-sm"
-                onClick={(ev) => toggleLine(e, ev.target as HTMLElement)}
+                onClick={(ev) => openMenu(e, ev)}
                 onKeyDown={(ev) => {
+                  if (ev.key === "Escape") return setMenu(null);
                   if (ev.key !== "Enter" && ev.key !== " ") return;
                   ev.preventDefault();
-                  toggleLine(e, ev.target as HTMLElement);
+                  openMenu(e, ev);
                 }}
-                dangerouslySetInnerHTML={{ __html: caseSheetHtml(r.sheet, i + 1, { hidden: new Set(e.hidden ?? []), editable: true }) }}
+                dangerouslySetInnerHTML={{ __html: caseSheetHtml(r.sheet, i + 1, { hidden: new Set(e.hidden ?? []), editable: true, settings, edits: e.choices.edits }) }}
               />
+              {open && <LineMenu key={open.key} at={open} {...lineMenu(e, r, open.key)} />}
+              <AddLine catalogs={catalogs} onAdd={(section, text) => choose(e.id, { added: [...(e.choices.added ?? []), { id: crypto.randomUUID().slice(0, 8), section, text }] })} />
               <p className="flex flex-wrap items-center gap-2 text-xs text-foreground-subtle">
-                Touchez une ligne ou un produit pour le retirer de la feuille imprimée.
+                Touchez une ligne pour la corriger, la mettre en gras, la déplacer ou la retirer.
                 {(e.hidden?.length ?? 0) > 0 && (
                   <button type="button" onClick={() => setEntry(e.id, { hidden: [] })} className="font-medium text-primary-strong underline-offset-2 hover:underline">
                     Tout remettre ({e.hidden!.length})
@@ -445,7 +478,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
         );
       })}
 
-      {sheet.kinetics && sheet.entries.length > 0 && (
+      {settings.pharmaco !== "off" && sheet.entries.length > 0 && (
         <div className="space-y-1.5">
           <div
             role="presentation"
@@ -456,12 +489,228 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
               ev.preventDefault();
               toggleKinetics(ev.target as HTMLElement);
             }}
-            dangerouslySetInnerHTML={{ __html: kineticsHtml(dayKinetics(sheet.entries.map((e) => results.get(e.id)!.sheet)), { hidden: new Set(sheet.hiddenKinetics ?? []), editable: true }) }}
+            dangerouslySetInnerHTML={{ __html: kineticsHtml(dayKinetics(sheet.entries.map((e) => results.get(e.id)!.sheet)), { hidden: new Set(sheet.hiddenKinetics ?? []), editable: true, settings }) }}
           />
           <p className="text-xs text-foreground-subtle">Imprimée une seule fois, en fin de feuille ; touchez un produit pour le retirer.</p>
         </div>
       )}
     </div>
+  );
+}
+
+interface MenuProps {
+  title: string;
+  /** The text that can be corrected; undefined: written by the sheet itself. */
+  text?: string;
+  onText: (t: string) => void;
+  strong?: boolean;
+  onBold: () => void;
+  /** Where the line is now, when it can be moved. */
+  section?: LineKind;
+  onMove: (k: LineKind) => void;
+  off: boolean;
+  onToggle: () => void;
+  onDelete?: () => void;
+  onReset?: () => void;
+  onClose: () => void;
+}
+
+function LineMenu({ at, title, text, onText, strong, onBold, section, onMove, off, onToggle, onDelete, onReset, onClose }: MenuProps & { at: MenuAt }) {
+  const [draft, setDraft] = useState(text ?? "");
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const away = (ev: PointerEvent) => {
+      const t = ev.target as HTMLElement;
+      if (!ref.current?.contains(t) && !t.closest?.(".case-preview")) onClose();
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [onClose]);
+  const small = "inline-flex min-h-8 items-center gap-1 rounded-[var(--radius-sm)] border border-border px-2 text-xs font-medium text-foreground hover:bg-surface-muted";
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label={`Ligne : ${title}`}
+      onKeyDown={(ev) => ev.key === "Escape" && onClose()}
+      style={{ top: at.top, left: at.left, width: MENU_WIDTH }}
+      className="absolute z-30 max-w-full space-y-2 rounded-[var(--radius-md)] border border-border bg-surface p-2.5 shadow-lg"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 text-xs font-semibold text-foreground line-clamp-2">{title}</p>
+        <button type="button" aria-label="Fermer" onClick={onClose} className="-m-1 rounded p-1 text-foreground-subtle hover:bg-surface-muted">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {text !== undefined && (
+        <form
+          className="flex gap-1.5"
+          onSubmit={(ev) => {
+            ev.preventDefault();
+            onText(draft);
+          }}
+        >
+          <input autoFocus value={draft} onChange={(ev) => setDraft(ev.target.value)} aria-label="Texte de la ligne" className={cn(inputClass, "h-8 text-xs")} />
+          <Button size="sm" type="submit" disabled={!draft.trim() || draft.trim() === text}>
+            OK
+          </Button>
+        </form>
+      )}
+      <div className="flex flex-wrap gap-1.5">
+        {strong !== undefined && (
+          <button type="button" aria-pressed={strong} onClick={onBold} className={cn(small, strong && "border-primary bg-primary-tint text-primary-strong")}>
+            <Bold className="h-3.5 w-3.5" /> Gras
+          </button>
+        )}
+        <button type="button" onClick={onToggle} className={small}>
+          {off ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />} {off ? "Remettre" : "Retirer"}
+        </button>
+        {onDelete && (
+          <button type="button" onClick={onDelete} className={cn(small, "text-danger")}>
+            <Trash2 className="h-3.5 w-3.5" /> Supprimer
+          </button>
+        )}
+        {onReset && (
+          <button type="button" onClick={onReset} className={small}>
+            <RotateCcw className="h-3.5 w-3.5" /> Comme à l&apos;import
+          </button>
+        )}
+      </div>
+      {section && (
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="text-[11px] font-medium text-foreground-subtle">Déplacer :</span>
+          {MOVABLE.filter((m) => m.code !== section).map((m) => (
+            <button key={m.code} type="button" onClick={() => onMove(m.code)} className="min-h-7 rounded-full border border-border px-2 text-[11px] font-medium text-foreground-muted hover:bg-surface-muted">
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const ADD_TO: { code: ItemSection; label: string; hint: string }[] = [
+  { code: "atcd", label: "ATCD", hint: "Chercher un antécédent ou le taper…" },
+  { code: "ttt", label: "TTT", hint: "Chercher un traitement (nom ou marque) ou le taper…" },
+  { code: "allergy", label: "Allergie", hint: "Chercher un allergène ou le taper…" },
+  { code: "habit", label: "Habitus", hint: "« Tabagisme sevré il y a 20 ans », « OH 2 verres/j »…" },
+  { code: "alert", label: "Alerte", hint: "« Sang compatible à prévoir »…" },
+  { code: "note", label: "Note", hint: "« Vit seul, retour accompagné à organiser »…" },
+];
+
+/** « + » a line to one section of the patient, with the catalogue's suggestions. */
+function AddLine({ catalogs, onAdd }: { catalogs: Catalogs; onAdd: (section: ItemSection, text: string) => void }) {
+  const [to, setTo] = useState<ItemSection | null>(null);
+  const target = ADD_TO.find((a) => a.code === to);
+  const search = (q: string) => {
+    if (to === "atcd") return searchItems(catalogs.conditions, q, (c) => [c.label, ...(c.keywords ?? [])]).map((c) => ({ key: c.id, label: c.label }));
+    if (to === "ttt") return searchItems(catalogs.medications, q, (m) => [m.name, ...(m.brands ?? [])]).map((m) => ({ key: m.id, label: m.name, hint: m.brands?.slice(0, 2).join(", ") }));
+    if (to === "allergy") return searchItems(catalogs.allergens, q, (a) => [a.label, ...a.keywords]).map((a) => ({ key: a.id, label: a.label }));
+    return [];
+  };
+  const add = (text: string) => {
+    if (!to || !text.trim()) return;
+    onAdd(to, text.trim());
+    setTo(null);
+  };
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground-subtle">
+          <Plus className="h-3.5 w-3.5" /> Ajouter :
+        </span>
+        {ADD_TO.map((a) => (
+          <Chip key={a.code} on={to === a.code} onClick={() => setTo(to === a.code ? null : a.code)}>
+            {a.label}
+          </Chip>
+        ))}
+      </div>
+      {target && (
+        <div className="flex items-start gap-1.5">
+          <div className="min-w-0 flex-1">
+            <Combobox key={target.code} autoFocus ariaLabel={`Ajouter : ${target.label}`} placeholder={target.hint} search={search} onPick={(o) => add(o.label)} onFree={add} freeLabel={(q) => `Ajouter « ${q} »`} />
+          </div>
+          <Button size="icon" variant="ghost" aria-label="Annuler" onClick={() => setTo(null)}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type Choice<T> = { value: T; label: string };
+
+/** What the printed sheet shows and how much it says — once for all patients. */
+function SettingsPanel({ value, onChange }: { value: SheetSettings; onChange: (s: SheetSettings) => void }) {
+  const set = (patch: Partial<SheetSettings>) => onChange({ ...value, ...patch });
+  const group = <K extends keyof SheetSettings>(label: string, key: K, choices: Choice<SheetSettings[K]>[]) => (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="w-full text-xs font-medium text-foreground-subtle sm:w-40">{label}</span>
+      {choices.map((c) => (
+        <Chip key={String(c.value)} on={value[key] === c.value} onClick={() => set({ [key]: c.value } as Partial<SheetSettings>)}>
+          {c.label}
+        </Chip>
+      ))}
+    </div>
+  );
+  const sections: { key: "habits" | "surgical" | "postop" | "planB" | "notes"; label: string }[] = [
+    { key: "habits", label: "Habitus" },
+    { key: "surgical", label: "ATCD chirurgicaux" },
+    { key: "postop", label: "Post-op" },
+    { key: "planB", label: "Plan B" },
+    { key: "notes", label: "Notes" },
+  ];
+  return (
+    <Disclosure
+      summary={
+        <span className="inline-flex items-center gap-1.5">
+          <SlidersHorizontal className="h-3.5 w-3.5" /> Réglages de la feuille
+        </span>
+      }
+      className="rounded-[var(--radius-md)] border border-border"
+      summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground"
+    >
+      <div className="space-y-2.5 px-3 pb-3">
+        <p className="text-xs text-foreground-muted">Pour tous les patients, à l&apos;écran comme à l&apos;impression ; gardés sur cet appareil.</p>
+        {group("Pathologies en gras", "detail", [
+          { value: "none", label: "Sans détail" },
+          { value: "short", label: "À quoi faire attention (court)" },
+          { value: "full", label: "Détaillé" },
+        ])}
+        {group("Traitements", "treatments", [
+          { value: "all", label: "Tous, avec la conduite" },
+          { value: "action", label: "Seulement à arrêter / adapter" },
+        ])}
+        {group("Alertes", "alerts", [
+          { value: "main", label: "Principales" },
+          { value: "all", label: "Toutes" },
+          { value: "none", label: "Aucune" },
+        ])}
+        {group("Pharmaco (fin de feuille)", "pharmaco", [
+          { value: "off", label: "Non" },
+          { value: "short", label: "Onset, ½-vie contextuelle" },
+          { value: "full", label: "+ durée, réveil" },
+        ])}
+        {group("Taille du texte", "size", [
+          { value: "compact", label: "Compacte" },
+          { value: "normal", label: "Normale" },
+          { value: "large", label: "Grande" },
+        ])}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="w-full text-xs font-medium text-foreground-subtle sm:w-40">Rubriques imprimées</span>
+          {sections.map((x) => (
+            <Chip key={x.key} on={value[x.key]} onClick={() => set({ [x.key]: !value[x.key] })}>
+              {x.label}
+            </Chip>
+          ))}
+        </div>
+        <button type="button" className="text-xs font-medium text-primary-strong underline-offset-2 hover:underline" onClick={() => onChange(DEFAULT_SETTINGS)}>
+          Réglages par défaut
+        </button>
+      </div>
+    </Disclosure>
   );
 }
 
@@ -484,7 +733,7 @@ function searchProtocols(protocols: Protocol[], q: string): Protocol[] {
   return protocols.filter((x) => words.every((w) => fold(`${x.name} ${x.surgery} ${x.hospital}`).includes(w))).slice(0, 12);
 }
 
-function Question({ q, onAnswer, onLine }: { q: CaseQuestion; onAnswer: (c: CaseChoices) => void; onLine: (line: string, kind: LineKind) => void }) {
+function Question({ q, onAnswer }: { q: CaseQuestion; onAnswer: (c: CaseChoices) => void }) {
   if (q.options) {
     return (
       <div className="space-y-1">
@@ -495,8 +744,7 @@ function Question({ q, onAnswer, onLine }: { q: CaseQuestion; onAnswer: (c: Case
               key={o.value || "none"}
               on={false}
               onClick={() => {
-                if (q.id === "line") onLine(q.line!, o.value as LineKind);
-                else if (q.id === "surgery") onAnswer({ surgeryId: o.value || null });
+                if (q.id === "surgery") onAnswer({ surgeryId: o.value || null });
                 else if (q.id === "mode") onAnswer({ mode: o.value as SheetMode });
                 else if (q.id === "sex") onAnswer({ sex: o.value as "M" | "F" });
               }}
@@ -550,7 +798,7 @@ function QuickPatient({ catalogs, onAdd }: { catalogs: ReturnType<typeof useCata
   return (
     <Disclosure
       summary={
-        <span className="flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-1.5">
           <UserPlus className="h-3.5 w-3.5" /> Patient sans consultation (questionnaire papier)
         </span>
       }
@@ -616,7 +864,7 @@ function Complement({ onAdd }: { onAdd: (text: string) => void }) {
   return (
     <Disclosure
       summary={
-        <span className="flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-1.5">
           <FilePlus2 className="h-3.5 w-3.5" /> Compléter avec une autre consultation
         </span>
       }
