@@ -210,4 +210,38 @@ describe("case sheet", () => {
     expect(pk).toMatch(/Sévoflurane : onset/);
     expect(pk).not.toMatch(/Paracétamol/);
   });
+
+  it("sorts every line of another consultation in its own words, and asks about the ones it can't place", () => {
+    const er = [
+      "Motif d'admission : douleur anale",
+      "Antécédents personnels :",
+      "- HTA traitée depuis 2015",
+      "- Tabagisme très ancien (sevré depuis 20 ans, 30 PA)",
+      "- FA paroxystique sous Eliquis",
+      "Traitement à domicile :",
+      "Eliquis 5 mg 1-0-1",
+      "Allergies : iode (éruption cutanée)",
+    ].join("\n");
+    const raw = `Initiales : AB\nSexe : M\nIntervention : Fissure anale\nAge 60 ans Poids 80 kg Taille 175 cm\n---\n${er}\n---\nTabagisme très ancien\nVit seul, autonome`;
+    const r = buildCaseSheet(parseConsultation(raw), ctx);
+    expect(r.sheet.antecedents.map((a) => a.text)).toEqual(["HTA traitée depuis 2015", "FA paroxystique sous Eliquis"]);
+    expect(r.sheet.habits.map((h) => h.text)).toEqual(["Tabagisme très ancien (sevré depuis 20 ans, 30 PA)", "Tabagisme très ancien"]);
+    expect(r.sheet.treatments.map((t) => t.text)).toEqual([expect.stringMatching(/^Eliquis 5 mg 1-0-1 → (STOP|arrêt)/)]);
+    expect(r.sheet.allergies.map((a) => a.text)).toEqual(["iode (éruption cutanée)"]);
+    const asked = r.questions.filter((q) => q.id === "line").map((q) => q.line);
+    expect(asked).toEqual(["Motif d'admission : douleur anale", "Vit seul, autonome"]);
+    // Answered: the line goes there.
+    const placed = buildCaseSheet(parseConsultation(raw), ctx, { lines: { "Vit seul, autonome": "note", "Motif d'admission : douleur anale": "ignore" } });
+    expect(placed.questions.filter((q) => q.id === "line")).toEqual([]);
+    expect(placed.sheet.notes).toContain("Vit seul, autonome");
+  });
+
+  it("uses another protocol of the library when one is chosen", () => {
+    const p = parseConsultation(CLINIC);
+    const other = ctx.protocols.find((x) => /cœlioscopie gynécologique/i.test(x.name))!;
+    const r = buildCaseSheet(p, ctx, { protocolId: other.id, mode: "general" });
+    expect(r.protocol?.id).toBe(other.id);
+    expect(r.sheet.rows.find((x) => x.label === "ATB")?.parts[0].text).toMatch(/Céfazoline/);
+    expect(buildCaseSheet(p, ctx, { protocolId: null }).protocol?.name).toMatch(/Résection transurétrale/);
+  });
 });

@@ -11,7 +11,9 @@ import { useCatalogs } from "@/components/preop/use-catalogs";
 import { SecureStore } from "@/lib/preop/secure-store";
 import { parseConsultation, splitConsultations } from "@/lib/preop/case-sheet/parse";
 import { buildCaseSheet, type CaseChoices, type CaseQuestion, type CaseResult } from "@/lib/preop/case-sheet/build";
-import { caseSheetCss, caseSheetDocument, caseSheetHtml } from "@/lib/preop/case-sheet/html";
+import { caseSheetCss, caseSheetDocument, caseSheetHtml, dayKinetics, kineticsHtml } from "@/lib/preop/case-sheet/html";
+import type { LineKind } from "@/lib/preop/case-sheet/lines";
+import { fold } from "@/lib/preop/catalog";
 import { searchSurgeries } from "@/lib/preop/surgery-search";
 import { emptyDossier, type Dossier } from "@/lib/preop/dossier";
 import type { Protocol } from "@/lib/preop/protocols";
@@ -39,6 +41,8 @@ interface DaySheet {
   entries: DayEntry[];
   /** Onsets and context-sensitive half-times on the sheet (screen and print). */
   kinetics?: boolean;
+  /** Drugs taken off the « Pharmaco » list (« pk:… »). */
+  hiddenKinetics?: string[];
 }
 
 const RECORD = "day-sheet";
@@ -100,7 +104,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   const choose = (id: string, choices: CaseChoices) => {
     const current = sheet.entries.find((e) => e.id === id)!.choices;
     // Another intervention or technique: the adapted plan was for the previous one.
-    if (current.plan && ("surgeryId" in choices || "mode" in choices)) {
+    if (current.plan && ("surgeryId" in choices || "mode" in choices || "protocolId" in choices)) {
       if (!confirm("Le protocole adapté pour ce patient sera remplacé par celui de ce choix. Continuer ?")) return;
       choices = { ...choices, plan: undefined, tiva: undefined };
     }
@@ -115,6 +119,15 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     if (hidden.has(key)) hidden.delete(key);
     else hidden.add(key);
     setEntry(e.id, { hidden: [...hidden] });
+  }
+
+  function toggleKinetics(target: HTMLElement) {
+    const key = target.closest("[data-k]")?.getAttribute("data-k");
+    if (!key) return;
+    const hidden = new Set(sheet!.hiddenKinetics ?? []);
+    if (hidden.has(key)) hidden.delete(key);
+    else hidden.add(key);
+    update({ ...sheet!, hiddenKinetics: [...hidden] });
   }
 
   function addEntries(raws: string[]) {
@@ -145,7 +158,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
       toast("La fenêtre d'impression a été bloquée par le navigateur.", { variant: "error" });
       return;
     }
-    w.document.write(caseSheetDocument(sheets, sheet!.title, { kinetics: sheet!.kinetics }));
+    w.document.write(caseSheetDocument(sheets, sheet!.title, { kinetics: sheet!.kinetics, hiddenKinetics: new Set(sheet!.hiddenKinetics ?? []) }));
     w.document.close();
     w.focus();
     setTimeout(() => w.print(), 150);
@@ -256,8 +269,22 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 <div className="space-y-2 rounded-[var(--radius-md)] border border-accent/40 bg-accent-tint p-2.5">
                   <p className="text-xs font-semibold uppercase tracking-wide text-foreground">À préciser</p>
                   {r.questions.map((q) => (
-                    <Question key={q.id} q={q} onAnswer={(c) => choose(e.id, c)} />
+                    <Question
+                      key={q.line ? `line:${q.line}` : q.id}
+                      q={q}
+                      onAnswer={(c) => choose(e.id, c)}
+                      onLine={(line, kind) => choose(e.id, { lines: { ...(e.choices.lines ?? {}), [line]: kind } })}
+                    />
                   ))}
+                  {r.questions.filter((q) => q.line).length > 1 && (
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-primary-strong underline-offset-2 hover:underline"
+                      onClick={() => choose(e.id, { lines: { ...(e.choices.lines ?? {}), ...Object.fromEntries(r.questions.filter((q) => q.line).map((q) => [q.line!, "ignore" as LineKind])) } })}
+                    >
+                      Ignorer toutes les lignes non classées
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -270,7 +297,22 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                   search={(q) => searchSurgeries(catalogs.surgeries, q, { age: r.consultation.patient.age, sex: r.consultation.patient.sex }).map((x) => ({ key: x.id, label: x.name }))}
                   onPick={(o) => choose(e.id, { surgeryId: o.key })}
                 />
-                <p className="text-xs text-foreground-subtle">{r.protocol ? `Protocole : ${r.protocol.name}` : "Aucun protocole de la bibliothèque pour cette intervention."}</p>
+              </div>
+
+              <div className="space-y-1">
+                <FieldLabel>Protocole</FieldLabel>
+                <Combobox
+                  ariaLabel="Choisir un autre protocole"
+                  placeholder={r.protocol ? `${r.protocol.name} — chercher un autre protocole…` : "Aucun pour cette intervention — chercher un protocole…"}
+                  onEmpty={() => protocols.slice(0, 8).map((x) => ({ key: x.id, label: x.name, hint: x.surgery }))}
+                  search={(q) => searchProtocols(protocols, q).map((x) => ({ key: x.id, label: x.name, hint: x.surgery }))}
+                  onPick={(o) => choose(e.id, { protocolId: o.key })}
+                />
+                {e.choices.protocolId && (
+                  <button type="button" className="text-xs font-medium text-primary-strong underline-offset-2 hover:underline" onClick={() => choose(e.id, { protocolId: null })}>
+                    Revenir au protocole de l&apos;intervention
+                  </button>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
@@ -388,7 +430,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                   ev.preventDefault();
                   toggleLine(e, ev.target as HTMLElement);
                 }}
-                dangerouslySetInnerHTML={{ __html: caseSheetHtml(r.sheet, i + 1, { hidden: new Set(e.hidden ?? []), editable: true, kinetics: sheet.kinetics }) }}
+                dangerouslySetInnerHTML={{ __html: caseSheetHtml(r.sheet, i + 1, { hidden: new Set(e.hidden ?? []), editable: true }) }}
               />
               <p className="flex flex-wrap items-center gap-2 text-xs text-foreground-subtle">
                 Touchez une ligne ou un produit pour le retirer de la feuille imprimée.
@@ -402,6 +444,23 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
           </section>
         );
       })}
+
+      {sheet.kinetics && sheet.entries.length > 0 && (
+        <div className="space-y-1.5">
+          <div
+            role="presentation"
+            className="case-preview overflow-x-auto rounded-[var(--radius-md)] border border-border bg-white p-3 text-[#15191c] shadow-sm"
+            onClick={(ev) => toggleKinetics(ev.target as HTMLElement)}
+            onKeyDown={(ev) => {
+              if (ev.key !== "Enter" && ev.key !== " ") return;
+              ev.preventDefault();
+              toggleKinetics(ev.target as HTMLElement);
+            }}
+            dangerouslySetInnerHTML={{ __html: kineticsHtml(dayKinetics(sheet.entries.map((e) => results.get(e.id)!.sheet)), { hidden: new Set(sheet.hiddenKinetics ?? []), editable: true }) }}
+          />
+          <p className="text-xs text-foreground-subtle">Imprimée une seule fois, en fin de feuille ; touchez un produit pour le retirer.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -419,7 +478,13 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
   );
 }
 
-function Question({ q, onAnswer }: { q: CaseQuestion; onAnswer: (c: CaseChoices) => void }) {
+/** Protocols whose name, intervention or hospital holds every word typed. */
+function searchProtocols(protocols: Protocol[], q: string): Protocol[] {
+  const words = fold(q).split(/\s+/).filter(Boolean);
+  return protocols.filter((x) => words.every((w) => fold(`${x.name} ${x.surgery} ${x.hospital}`).includes(w))).slice(0, 12);
+}
+
+function Question({ q, onAnswer, onLine }: { q: CaseQuestion; onAnswer: (c: CaseChoices) => void; onLine: (line: string, kind: LineKind) => void }) {
   if (q.options) {
     return (
       <div className="space-y-1">
@@ -430,7 +495,8 @@ function Question({ q, onAnswer }: { q: CaseQuestion; onAnswer: (c: CaseChoices)
               key={o.value || "none"}
               on={false}
               onClick={() => {
-                if (q.id === "surgery") onAnswer({ surgeryId: o.value || null });
+                if (q.id === "line") onLine(q.line!, o.value as LineKind);
+                else if (q.id === "surgery") onAnswer({ surgeryId: o.value || null });
                 else if (q.id === "mode") onAnswer({ mode: o.value as SheetMode });
                 else if (q.id === "sex") onAnswer({ sex: o.value as "M" | "F" });
               }}

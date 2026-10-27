@@ -21,6 +21,7 @@ import { ventilationSettings } from "../ventilation";
 import { tciSummary, tciDrugOf } from "../tci";
 import { treatmentGuide } from "../treatment-guide";
 import { kineticsFor, type Kinetics } from "../kinetics";
+import { autoKind, cleanLine, LINE_KINDS, readLine, sectionKind, type LineKind } from "./lines";
 import { propofolInduction, rocuronium, sufentanil } from "../reference-protocol-kit";
 import { DEFAULT_GASES } from "../gases";
 import { postopLines } from "../postop";
@@ -49,12 +50,18 @@ export interface CaseChoices {
    * none behind a general anaesthesia.
    */
   fallback?: SheetMode | null;
+  /** Another protocol of the library than the intervention's; null: back to the intervention's. */
+  protocolId?: string | null;
+  /** Where a line goes, chosen on the sheet (answers to « Où mettre … ? »), by its text. */
+  lines?: Record<string, LineKind>;
 }
 
 export interface CaseQuestion {
-  id: "surgery" | "mode" | "sex" | "age" | "weightKg" | "heightCm";
+  /** « line » questions carry the line in `line`. */
+  id: "surgery" | "mode" | "sex" | "age" | "weightKg" | "heightCm" | "line";
   text: string;
   options?: { value: string; label: string }[];
+  line?: string;
 }
 
 export interface SheetText {
@@ -87,6 +94,8 @@ export interface CaseSheet {
   /** Antecedents: the ones that matter in bold, then « → » what they imply. */
   antecedents: SheetText[];
   implications: string[];
+  /** Tobacco, alcohol, drugs — in the consultation's words. */
+  habits: SheetText[];
   surgical: string;
   treatments: SheetText[];
   allergies: SheetText[];
@@ -278,7 +287,8 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   c.surgery = item ? { ...surgeryFromItem(c.surgery, item), name: item.name } : { ...c.surgery, name: p.surgery };
   if (p.surgeon) c.surgery.surgeon = p.surgeon;
 
-  const protocol = item ? matchProtocol(ctx.protocols, { name: item.name, category: item.category, catalogId: item.id }, "", catalogs.surgeries) : null;
+  const chosenProtocol = choices.protocolId ? ctx.protocols.find((x) => x.id === choices.protocolId) : undefined;
+  const protocol = chosenProtocol ?? (item ? matchProtocol(ctx.protocols, { name: item.name, category: item.category, catalogId: item.id }, "", catalogs.surgeries) : null);
   const modes = item ? sheetModes(item, protocol) : (["general", "neuraxial", "regional", "sedation"] as SheetMode[]);
   const mode: SheetMode = choices.mode ?? (p.mode && modes.includes(p.mode) ? p.mode : p.mode ?? (item ? defaultSheetMode(item, protocol) : "general"));
 
@@ -383,39 +393,80 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   // --- Antecedents: the pasted lines, in bold the ones that change the anaesthesia ---------
   const pointOf = new Map<string, AttentionPoint>(points.filter((x) => x.id.startsWith("cond-")).map((x) => [x.id.slice(5), x]));
   const implications: string[] = [];
-  // Antecedents found outside a « Antécédents » section — a dictation, an emergency or surgical
-  // consultation added to the patient — are listed by the words they were found in.
-  const inLines = (from: string, lines: string[]) => lines.some((l) => fold(l).includes(fold(from)) || fold(from).includes(fold(l)));
-  const historyLines = [
-    ...p.history,
-    ...[...new Set(quick.conditions.filter((q) => !inLines(q.from, p.history)).map((q) => q.from.replace(/\s*[?.;:]$/, "").trim()))],
-    ...(p.history.length ? [] : quick.history),
+  // Every line, in its own words, where its heading says — or, without one, where what it
+  // says belongs (lines.ts); a line nothing is recognised in is asked about, never dropped.
+  type Line = { text: string; kind: LineKind | null; q: QuickEntryResult };
+  const sectioned: [string[], LineKind][] = [
+    [p.history, "atcd"],
+    [p.treatments, "ttt"],
+    [p.allergies, "allergy"],
+    [p.habits, "habit"],
   ];
-  const antecedents: SheetText[] = historyLines.map((line) => {
-    const matched = quick.conditions.filter((q) => fold(line).includes(fold(q.from)) || fold(q.from).includes(fold(line)));
-    const notable = matched.map((q) => pointOf.get(q.id)).filter((x): x is AttentionPoint => !!x);
+  const lines: Line[] = [];
+  const seen = new Set<string>();
+  const addLine = (raw: string, section?: LineKind) => {
+    const full = cleanLine(raw);
+    if (!full || seen.has(full)) return;
+    seen.add(full);
+    if (section) {
+      const q = readLine(full, catalogs, section);
+      lines.push({ text: full, q, kind: choices.lines?.[full] ?? sectionKind(section, full, q) });
+      return;
+    }
+    // « Conclusion : tabagisme très ancien » (a line that came under a heading this reader keeps):
+    // sorted, and printed, without the heading's name.
+    const bare = full.replace(/^(examen( clinique| physique)?|ecg|biologie|bilan( biologique| sanguin)?|examens complémentaires|conclusion|synthèse|asa) : /i, "");
+    const q = readLine(bare, catalogs);
+    const kind = choices.lines?.[full] ?? autoKind(bare, q);
+    lines.push({ text: kind === "atcd" || kind === "ttt" || kind === "allergy" || kind === "habit" ? bare : full, q, kind });
+  };
+  for (const [list, kind] of sectioned) for (const l of list) addLine(l, kind);
+  // Dictated, pasted below the patient, or under a heading this reader doesn't know.
+  // A dictation is often one long line: each sentence is sorted on its own (« …, sous metformine. Allergie au latex. »).
+  for (const l of p.other) for (const sentence of l.split(/(?<=[a-zà-ÿ)%])\.\s+|\s*;\s*/)) addLine(sentence.replace(/\.$/, ""));
+  const of = (k: LineKind) => lines.filter((l) => l.kind === k);
+
+  const antecedents: SheetText[] = of("atcd").map((l) => {
+    const notable = l.q.conditions.map((q) => pointOf.get(q.id)).filter((x): x is AttentionPoint => !!x);
     for (const pt of notable) {
-      const text = `${line.replace(/\s*[.;]$/, "")} → ${firstSentence(pt.detail)}`;
+      const text = `${l.text.replace(/\s*[.;]$/, "")} → ${firstSentence(pt.detail)}`;
       if (!implications.some((i) => i.endsWith(firstSentence(pt.detail)))) implications.push(text);
     }
-    return { text: line, strong: notable.length > 0 };
+    return { text: l.text, strong: notable.length > 0 };
   });
 
   // --- Treatments and what to do with each -----------------------------------------------
-  const treatmentLines = [...p.treatments, ...[...new Set(quick.treatments.filter((q) => !inLines(q.from, p.treatments)).map((q) => q.from.trim()))], ...(p.treatments.length ? [] : quick.freeTreatments)];
-  const treatments: SheetText[] = treatmentLines.map((line) => {
-    const t = c.treatments.find((x) => quick.treatments.some((q) => q.name === x.name && (fold(line).includes(fold(q.from)) || fold(q.from).includes(fold(line)))));
-    if (!t) return { text: `${line} (non reconnu : conduite à vérifier)` };
-    const g = treatmentGuide(t, ctx.rules, catalogs, { techniques: plan.techniques, bleedingRisk: c.surgery.bleedingRisk, crcl: scores.derived.crcl });
-    const v = g.verdict;
+  const conduct = (name: string) => {
+    const t = c.treatments.find((x) => x.name === name);
+    if (!t) return null;
+    const v = treatmentGuide(t, ctx.rules, catalogs, { techniques: plan.techniques, bleedingRisk: c.surgery.bleedingRisk, crcl: scores.derived.crcl }).verdict;
     const action = v.kind === "stop" ? `STOP ${v.text.replace(/^Arrêt /, "").replace(/ avant le geste$/, " avant")}` : v.kind === "continue" ? "poursuivre" : v.kind === "depends" ? v.text.replace(/^Arrêt /, "arrêt ") : "à vérifier";
-    return { text: `${line} → ${action}`, strong: v.kind === "stop" || v.kind === "depends" };
+    return { action, strong: v.kind === "stop" || v.kind === "depends" };
+  };
+  const listed = new Set<string>();
+  const treatments: SheetText[] = of("ttt").map((l) => {
+    const names = [...new Set(l.q.treatments.map((t) => t.name))];
+    names.forEach((n) => listed.add(n));
+    const verdicts = names.map((n) => ({ n, v: conduct(n) })).filter((x) => x.v);
+    if (!verdicts.length) return { text: `${l.text} (non reconnu : conduite à vérifier)` };
+    const action = verdicts.length === 1 ? verdicts[0].v!.action : verdicts.map((x) => `${x.n} : ${x.v!.action}`).join(", ");
+    return { text: `${l.text} → ${action}`, strong: verdicts.some((x) => x.v!.strong) };
   });
+  // A treatment only mentioned elsewhere (« FA sous Eliquis »), not in the list.
+  for (const l of lines.filter((x) => x.kind !== "ttt" && x.kind !== "ignore"))
+    for (const t of l.q.treatments) {
+      if (listed.has(t.name)) continue;
+      listed.add(t.name);
+      const v = conduct(t.name);
+      treatments.push({ text: `${t.name} (cité : « ${l.text} »)${v ? ` → ${v.action}` : ""}`, strong: v?.strong });
+    }
 
-  // --- Allergies ---------------------------------------------------------------------------
-  const allergyLines = [...p.allergies, ...quick.allergies.filter((a) => !inLines(a.from, p.allergies)).map((a) => a.from)];
+  // --- Allergies, habits, notes ---------------------------------------------------------------
+  const allergyLines = of("allergy").map((l) => l.text);
   const noKnownAllergy = p.noKnownAllergy || (!allergyLines.length && !!quick.noKnownAllergy);
-  const allergies: SheetText[] = allergyLines.length ? allergyLines.map((a) => ({ text: a, strong: true })) : [{ text: noKnownAllergy ? "Pas d'allergie connue" : "Allergies non renseignées" }];
+  const allergies: SheetText[] = allergyLines.length ? allergyLines.map((a) => ({ text: a, strong: !/^(pas d|aucune|non connue)/i.test(a) })) : [{ text: noKnownAllergy ? "Pas d'allergie connue" : "Allergies non renseignées" }];
+  const habits: SheetText[] = of("habit").map((l) => ({ text: l.text }));
+  const lineNotes = of("note").map((l) => l.text);
 
   // --- What must not be missed ------------------------------------------------------------
   const alerts: string[] = [];
@@ -428,6 +479,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   // A5: the title, and the start of what to do when it fits on the line.
   for (const pt of [...others.filter((x) => x.level === "high"), ...others.filter((x) => x.level === "medium").slice(0, 3)]) alerts.push(alertText(pt));
   if (!allergyLines.length && !noKnownAllergy) alerts.push("Allergies non renseignées dans la consultation");
+  const unsorted = lines.filter((l) => l.kind === null);
 
   // --- Questions -------------------------------------------------------------------------
   const questions: CaseQuestion[] = [];
@@ -442,12 +494,16 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   if (age === undefined) questions.push({ id: "age", text: "Âge ?" });
   if (!weightKg) questions.push({ id: "weightKg", text: "Poids (kg) ?" });
   if (!heightCm) questions.push({ id: "heightCm", text: "Taille (cm) ?" });
+  for (const l of unsorted) questions.push({ id: "line", line: l.text, text: `Où mettre « ${l.text} » ?`, options: LINE_KINDS.map((k) => ({ value: k.code, label: k.label })) });
 
   const tags = [p.admission, p.plannedDate].filter((x): x is string => !!x);
-  const notes = (choices.notes ?? "")
-    .split(/\n{2,}|\n(?=\S)/)
-    .map((x) => x.trim())
-    .filter(Boolean);
+  const notes = [
+    ...lineNotes,
+    ...(choices.notes ?? "")
+      .split(/\n{2,}|\n(?=\S)/)
+      .map((x) => x.trim())
+      .filter(Boolean),
+  ];
   if (!protocol && item && !choices.plan)
     notes.unshift(mode === "general" ? "Pas de protocole pour cette intervention dans la bibliothèque : AG de base, à adapter (ATB, analgésie, NVPO à compléter)." : "Pas de protocole pour cette intervention dans la bibliothèque : doses à compléter.");
 
@@ -488,6 +544,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
       rows,
       antecedents,
       implications,
+      habits,
       surgical: [...p.surgical, ...p.anaesthetic.map((a) => `anesth. : ${a}`)].join(", "),
       treatments,
       allergies,

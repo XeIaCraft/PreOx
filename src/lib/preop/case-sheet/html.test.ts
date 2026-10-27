@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { caseSheetHtml } from "./html";
+import { caseSheetDocument, caseSheetHtml } from "./html";
 import type { CaseSheet } from "./build";
 
 const sheet: CaseSheet = {
@@ -11,6 +11,7 @@ const sheet: CaseSheet = {
   rows: [{ label: "Analgésie", parts: [{ text: "Paracétamol 1 g" }, { text: "Kétorolac 30 mg" }] }],
   antecedents: [{ text: "Diabète", strong: true }],
   implications: ["Diabète → glycémies"],
+  habits: [{ text: "Tabagisme très ancien, sevré" }],
   surgical: "",
   treatments: [{ text: "lisinopril → arrêt 1 j" }],
   allergies: [{ text: "Allergies non renseignées" }],
@@ -48,8 +49,16 @@ describe("lines taken off the sheet", () => {
     expect(caseSheetHtml(withB, 1, { hidden: new Set(["planb"]) })).not.toContain("Plan B");
   });
 
-  it("shows the onsets and context-sensitive half-times only when asked", () => {
-    expect(caseSheetHtml(sheet, 1)).not.toContain("½-vie contextuelle");
-    expect(caseSheetHtml(sheet, 1, { kinetics: true })).toContain("Pharmaco :</span> <span>Propofol : onset 30–45 s");
+  it("lists the onsets and context-sensitive half-times once, at the end of the day's sheet", () => {
+    const one = caseSheetDocument([{ sheet }, { sheet }], "Jour");
+    expect(one).not.toContain("½-vie contextuelle");
+    const html = caseSheetDocument([{ sheet }, { sheet }], "Jour", { kinetics: true });
+    expect(html.match(/Propofol : onset/g)).toHaveLength(1);
+    expect(html.indexOf("Pharmaco")).toBeGreaterThan(html.lastIndexOf("</article>"));
+    expect(caseSheetDocument([{ sheet }], "Jour", { kinetics: true, hiddenKinetics: new Set([`pk:${sheet.kinetics[0].text}`]) })).not.toContain("Propofol : onset");
+  });
+
+  it("prints the habits in their own words", () => {
+    expect(caseSheetHtml(sheet, 1)).toContain("Habitus :</span> <span>Tabagisme très ancien, sevré");
   });
 });
