@@ -30,6 +30,8 @@ interface DayEntry {
   choices: CaseChoices;
   /** The Préop dossier it was kept as. */
   dossierId?: string;
+  /** Lines taken off the sheet (html.ts HiddenLines keys). */
+  hidden?: string[];
 }
 
 interface DaySheet {
@@ -103,6 +105,16 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     setEntry(id, { choices: { ...current, ...choices } });
   };
 
+  /** A line of the preview touched: off the printed sheet, or back on it. */
+  function toggleLine(e: DayEntry, target: HTMLElement) {
+    const key = target.closest("[data-k]")?.getAttribute("data-k");
+    if (!key) return;
+    const hidden = new Set(e.hidden ?? []);
+    if (hidden.has(key)) hidden.delete(key);
+    else hidden.add(key);
+    setEntry(e.id, { hidden: [...hidden] });
+  }
+
   function addEntries(raws: string[]) {
     update({ ...sheet!, entries: [...sheet!.entries, ...raws.map((raw) => ({ id: crypto.randomUUID(), raw, choices: {} }))] });
   }
@@ -125,7 +137,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   }
 
   function print() {
-    const sheets = sheet!.entries.map((e) => results.get(e.id)!.sheet);
+    const sheets = sheet!.entries.map((e) => ({ sheet: results.get(e.id)!.sheet, hidden: new Set(e.hidden ?? []) }));
     const w = window.open("", "_blank", "width=700,height=900");
     if (!w) {
       toast("La fenêtre d'impression a été bloquée par le navigateur.", { variant: "error" });
@@ -341,7 +353,28 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
             </div>
 
             {/* The sheet as printed: a sheet of paper, the same in both themes. */}
-            <div className="case-preview min-w-0 self-start overflow-x-auto rounded-[var(--radius-md)] border border-border bg-white p-3 text-[#15191c] shadow-sm" dangerouslySetInnerHTML={{ __html: caseSheetHtml(r.sheet, i + 1) }} />
+            <div className="min-w-0 space-y-1.5 self-start">
+              {/* Touch a line to take it off the printed sheet; touch it again to bring it back. */}
+              <div
+                role="presentation"
+                className="case-preview overflow-x-auto rounded-[var(--radius-md)] border border-border bg-white p-3 text-[#15191c] shadow-sm"
+                onClick={(ev) => toggleLine(e, ev.target as HTMLElement)}
+                onKeyDown={(ev) => {
+                  if (ev.key !== "Enter" && ev.key !== " ") return;
+                  ev.preventDefault();
+                  toggleLine(e, ev.target as HTMLElement);
+                }}
+                dangerouslySetInnerHTML={{ __html: caseSheetHtml(r.sheet, i + 1, { hidden: new Set(e.hidden ?? []), editable: true }) }}
+              />
+              <p className="flex flex-wrap items-center gap-2 text-xs text-foreground-subtle">
+                Touchez une ligne ou un produit pour le retirer de la feuille imprimée.
+                {(e.hidden?.length ?? 0) > 0 && (
+                  <button type="button" onClick={() => setEntry(e.id, { hidden: [] })} className="font-medium text-primary-strong underline-offset-2 hover:underline">
+                    Tout remettre ({e.hidden!.length})
+                  </button>
+                )}
+              </p>
+            </div>
           </section>
         );
       })}

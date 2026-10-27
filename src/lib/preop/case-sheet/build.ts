@@ -307,7 +307,8 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
 
   const rows: SheetRow[] = [];
   const row = (label: string, texts: string[]) => {
-    if (texts.length) rows.push({ label, parts: [{ text: texts.join(" · ") }] });
+    // One part per product: each can be taken off the sheet on its own.
+    if (texts.length) rows.push({ label, parts: texts.map((text) => ({ text })) });
   };
   row("ATB", drugTexts(phase("antibio"), body));
   row("Prémédication", drugTexts(phase("premed"), body));
@@ -342,7 +343,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     .map((l) => l.text.replace(/^Destination : (.)/, (_, x: string) => x.toUpperCase()))
     .filter((t) => !/^Surveillance\b/.test(t));
   const postop = [...orders, ...plan.postop, ...drugTexts(phase("postop"), body)];
-  if (postop.length) rows.push({ label: "Post-op", parts: [{ text: postop.slice(0, 8).join(" · ") }] });
+  if (postop.length) rows.push({ label: "Post-op", parts: postop.slice(0, 8).map((text) => ({ text })) });
 
   // --- Antecedents: the pasted lines, in bold the ones that change the anaesthesia ---------
   const pointOf = new Map<string, AttentionPoint>(points.filter((x) => x.id.startsWith("cond-")).map((x) => [x.id.slice(5), x]));
