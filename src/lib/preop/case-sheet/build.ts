@@ -20,6 +20,7 @@ import { airwayChoice, defaultSheetMode, forMode, sheetModes, type SheetMode } f
 import { ventilationSettings } from "../ventilation";
 import { tciSummary, tciDrugOf } from "../tci";
 import { treatmentGuide } from "../treatment-guide";
+import { kineticsFor, type Kinetics } from "../kinetics";
 import { propofolInduction, rocuronium, sufentanil } from "../reference-protocol-kit";
 import { DEFAULT_GASES } from "../gases";
 import { postopLines } from "../postop";
@@ -93,6 +94,8 @@ export interface CaseSheet {
   alerts: string[];
   notes: string[];
   fallback?: SheetFallback;
+  /** Onset and context-sensitive half-time of the anaesthesia drugs (plan and plan B) — shown on demand. */
+  kinetics: SheetText[];
 }
 
 export interface CaseResult {
@@ -238,6 +241,12 @@ function chosenSurgery(p: PastedConsultation, catalogs: Catalogs, choices: CaseC
   // Sure when the pasted wording is the catalogue's own, or a single candidate came out.
   const sure = !!item && (fold(item.name) === fold(p.surgery) || candidates.length === 1);
   return { candidates, item, sure };
+}
+
+/** « Propofol : onset 30–45 s · ½-vie contextuelle ≈ 10 min (1 h) · … », or the duration when it has none. */
+function kineticsText(k: Kinetics): string {
+  const name = k.name.replace(/\s*\(.*\)$/, "");
+  return `${name} : onset ${k.onset}${k.csht ? ` · ½-vie contextuelle ${k.csht}` : ` · durée ${k.duration}`}`;
 }
 
 /** « Ventilation au masque difficile prévisible : préoxygénation optimisée » — one printed line. */
@@ -442,6 +451,20 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   if (!protocol && item && !choices.plan)
     notes.unshift(mode === "general" ? "Pas de protocole pour cette intervention dans la bibliothèque : AG de base, à adapter (ATB, analgésie, NVPO à compléter)." : "Pas de protocole pour cette intervention dans la bibliothèque : doses à compléter.");
 
+  // --- How fast, how long: the anaesthesia drugs of the plan (and the volatile or TCI agents) ----
+  const PK_GROUPS = new Set<Kinetics["group"]>(["hypnotic", "opioid", "nmb", "inhaled", "local", "reversal"]);
+  const pkNames = [
+    ...drugs.map((d) => d.name),
+    ...(mode === "general" && tiva ? ["Propofol", "Rémifentanil"] : []),
+    ...(mode === "general" && !tiva && plan.gases && plan.gases.agent !== "tiva" ? [plan.gases.agent] : []),
+  ];
+  const pkCards: Kinetics[] = [];
+  for (const name of pkNames) {
+    const k = kineticsFor(name);
+    if (k && PK_GROUPS.has(k.group) && !pkCards.includes(k)) pkCards.push(k);
+  }
+  const kinetics: SheetText[] = pkCards.map((k) => ({ text: kineticsText(k) }));
+
   // --- Plan B: the other technique, computed the same way, only what differs ----------------
   const fallbackModes = (["general", "neuraxial", "regional", "sedation"] as SheetMode[]).filter((m) => m !== mode && (m === "general" || modes.includes(m)));
   const fallbackMode = choices.fallback === null ? undefined : (choices.fallback ?? (mode !== "general" ? "general" : undefined));
@@ -452,6 +475,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     const textOf = (r: SheetRow) => r.parts.map((x) => x.text).join(" · ");
     const mine = new Map(rows.map((r) => [r.label, textOf(r)]));
     fallback = { mode: fallbackMode, technique: b.sheet.technique, rows: b.sheet.rows.filter((r) => OWN.has(r.label) && mine.get(r.label) !== textOf(r)) };
+    for (const k of b.sheet.kinetics) if (!kinetics.some((x) => x.text === k.text)) kinetics.push(k);
   }
 
   return {
@@ -470,6 +494,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
       alerts,
       notes,
       fallback,
+      kinetics,
     },
     questions,
     candidates,

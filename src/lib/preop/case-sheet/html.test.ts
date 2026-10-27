@@ -16,6 +16,7 @@ const sheet: CaseSheet = {
   allergies: [{ text: "Allergies non renseignées" }],
   alerts: ["Kétorolac au plan : à éviter", "Allergies non renseignées dans la consultation"],
   notes: [],
+  kinetics: [{ text: "Propofol : onset 30–45 s · ½-vie contextuelle ≈ 10 min (1 h)" }],
 };
 
 describe("lines taken off the sheet", () => {
@@ -45,5 +46,10 @@ describe("lines taken off the sheet", () => {
     expect(html).toMatch(/Plan B \(refus \/ échec\) → AG :<\/span> ML i-gel 5/);
     expect(html).toContain("Induction :</span> <span>Propofol 200 mg");
     expect(caseSheetHtml(withB, 1, { hidden: new Set(["planb"]) })).not.toContain("Plan B");
+  });
+
+  it("shows the onsets and context-sensitive half-times only when asked", () => {
+    expect(caseSheetHtml(sheet, 1)).not.toContain("½-vie contextuelle");
+    expect(caseSheetHtml(sheet, 1, { kinetics: true })).toContain("Pharmaco :</span> <span>Propofol : onset 30–45 s");
   });
 });

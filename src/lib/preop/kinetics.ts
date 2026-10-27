@@ -111,7 +111,9 @@ export function kineticsFor(name: string): Kinetics | undefined {
   for (const k of KINETICS)
     for (const w of k.words) {
       const fw = fold(w);
-      if (n.includes(` ${fw} `) || n.includes(` ${fw}`)) if (!best || fw.length > best.len) best = { k, len: fw.length };
+      // The words in order, or each of them anywhere (« Bupivacaïne 0,5 % hyperbare »).
+      const all = fw.split(" ").every((x) => n.includes(` ${x}`));
+      if (n.includes(` ${fw} `) || n.includes(` ${fw}`) || all) if (!best || fw.length > best.len) best = { k, len: fw.length };
     }
   return best?.k;
 }

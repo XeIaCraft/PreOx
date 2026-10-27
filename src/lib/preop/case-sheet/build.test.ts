@@ -201,4 +201,13 @@ describe("case sheet", () => {
     const withB = buildCaseSheet(p, ctx, { mode: "general", fallback: "neuraxial" });
     expect(withB.sheet.fallback?.rows.find((x) => x.label === "Rachi")?.parts[0].text).toMatch(/Bupivacaïne/);
   });
+
+  it("knows the onset and context-sensitive half-time of the plan's anaesthesia drugs, plan B's too", () => {
+    const r = buildCaseSheet(parseConsultation(CLINIC), ctx);
+    const pk = r.sheet.kinetics.map((k) => k.text).join(" | ");
+    expect(pk).toMatch(/Bupivacaïne hyperbare : onset 5–10 min/);
+    expect(pk).toMatch(/Propofol : onset 30–45 s · ½-vie contextuelle ≈ 10 min \(1 h\)/);
+    expect(pk).toMatch(/Sévoflurane : onset/);
+    expect(pk).not.toMatch(/Paracétamol/);
+  });
 });

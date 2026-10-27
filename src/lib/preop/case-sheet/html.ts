@@ -18,6 +18,8 @@ export interface SheetHtmlOptions {
   hidden?: HiddenLines;
   /** The preview: every line can be touched, hidden ones shown struck through. */
   editable?: boolean;
+  /** Onset and context-sensitive half-times, under the plan (« Pharmaco » on demand). */
+  kinetics?: boolean;
 }
 
 export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOptions = {}): string {
@@ -48,6 +50,7 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
 ${piece("tech", esc(sheet.technique), "p", "tech")}
 ${sheet.rows.map((r) => line(r.label, r.label, r.parts, " · ")).join("")}
 ${fallbackHtml(sheet, piece, line)}
+${opts.kinetics && sheet.kinetics.length ? `<div class="pk">${line("pk", "Pharmaco", sheet.kinetics, " ; ")}</div>` : ""}
 ${line("atcd", "ATCD", sheet.antecedents, ", ", "RAS")}
 ${sheet.implications.map((i) => piece(`imp:${i}`, `→ ${esc(i)}`, "p", "imp")).join("")}
 ${sheet.surgical ? piece("chir", `<span class="k">Chir. :</span> ${esc(sheet.surgical)}`, "p") : ""}
@@ -90,13 +93,14 @@ ${s(".case [data-k]:hover")}{background:#eef3f3}
 ${s(".case [data-k]:focus-visible")}{outline:2px solid #2f5d54;outline-offset:1px}
 ${s(".case .off")}{opacity:.38;text-decoration:line-through}
 ${s(".case .planb-box")}{margin:0.8mm 0;padding:0.6mm 0 0.6mm 2mm;border-left:0.6mm dashed #8fa9ab}
+${s(".case .pk")}{font-size:7.8pt;color:#3d464b}
 ${s(".case .note")}{padding-left:2mm;border-left:0.6mm solid #9fb6b9;color:#333a3f;white-space:pre-wrap}
 `;
 }
 
 /** The whole printable page. */
-export function caseSheetDocument(sheets: { sheet: CaseSheet; hidden?: HiddenLines }[], title: string): string {
+export function caseSheetDocument(sheets: { sheet: CaseSheet; hidden?: HiddenLines }[], title: string, opts: { kinetics?: boolean } = {}): string {
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc(title)}</title>
 <style>@page{size:A5;margin:8mm 8mm 9mm}body{margin:0}h1{font:600 10pt -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;margin:0 0 3mm}${caseSheetCss()}</style>
-</head><body><h1>${esc(title)}</h1>${sheets.map((s, i) => caseSheetHtml(s.sheet, i + 1, { hidden: s.hidden })).join("")}</body></html>`;
+</head><body><h1>${esc(title)}</h1>${sheets.map((s, i) => caseSheetHtml(s.sheet, i + 1, { hidden: s.hidden, kinetics: opts.kinetics })).join("")}</body></html>`;
 }

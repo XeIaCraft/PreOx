@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, FilePlus2, FileText, FolderInput, Pencil, Printer, RotateCcw, Trash2, UserPlus } from "lucide-react";
+import { ArrowDown, ArrowUp, FilePlus2, Timer, FileText, FolderInput, Pencil, Printer, RotateCcw, Trash2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { Combobox, Disclosure, FieldLabel, MiniNumber, Panel } from "@/components/preop/ui";
@@ -37,6 +37,8 @@ interface DayEntry {
 interface DaySheet {
   title: string;
   entries: DayEntry[];
+  /** Onsets and context-sensitive half-times on the sheet (screen and print). */
+  kinetics?: boolean;
 }
 
 const RECORD = "day-sheet";
@@ -143,7 +145,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
       toast("La fenêtre d'impression a été bloquée par le navigateur.", { variant: "error" });
       return;
     }
-    w.document.write(caseSheetDocument(sheets, sheet!.title));
+    w.document.write(caseSheetDocument(sheets, sheet!.title, { kinetics: sheet!.kinetics }));
     w.document.close();
     w.focus();
     setTimeout(() => w.print(), 150);
@@ -169,6 +171,15 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
         actions={
           sheet.entries.length > 0 && (
             <>
+              <Button
+                size="sm"
+                variant={sheet.kinetics ? "outline" : "ghost"}
+                aria-pressed={!!sheet.kinetics}
+                title="Délai d'action (onset) et demi-vie contextuelle des produits d'anesthésie, à titre indicatif"
+                onClick={() => update({ ...sheet, kinetics: !sheet.kinetics })}
+              >
+                <Timer className="h-3.5 w-3.5" /> Pharmaco {sheet.kinetics ? "affichée" : "masquée"}
+              </Button>
               <Button size="sm" onClick={print}>
                 <Printer className="h-3.5 w-3.5" /> Imprimer (A5)
               </Button>
@@ -377,7 +388,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                   ev.preventDefault();
                   toggleLine(e, ev.target as HTMLElement);
                 }}
-                dangerouslySetInnerHTML={{ __html: caseSheetHtml(r.sheet, i + 1, { hidden: new Set(e.hidden ?? []), editable: true }) }}
+                dangerouslySetInnerHTML={{ __html: caseSheetHtml(r.sheet, i + 1, { hidden: new Set(e.hidden ?? []), editable: true, kinetics: sheet.kinetics }) }}
               />
               <p className="flex flex-wrap items-center gap-2 text-xs text-foreground-subtle">
                 Touchez une ligne ou un produit pour le retirer de la feuille imprimée.
