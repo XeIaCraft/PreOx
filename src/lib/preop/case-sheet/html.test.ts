@@ -103,5 +103,11 @@ describe("printed case sheet", () => {
     const html = caseSheetHtml(sheet, 1);
     expect(html).toMatch(/<span class="act">[^]*lisinopril[^]*?<\/span><span class="keep"><span class="cd">Poursuivre :<\/span> <span[^>]*>ésoméprazole<\/span>/);
   });
+
+  it("names the patient in full on this device's sheet, or by initials only", () => {
+    const named = { ...sheet, name: "DUPONT Jean", birthDate: "12/03/1958" };
+    expect(caseSheetHtml(named, 1)).toContain('<b>DUPONT Jean</b> <span class="dob">12/03/1958</span>');
+    expect(caseSheetHtml(named, 1, { settings: { ...DEFAULT_SETTINGS, identity: "initials" } })).not.toContain("DUPONT");
+  });
 });
 

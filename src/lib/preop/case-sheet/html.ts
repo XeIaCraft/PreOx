@@ -26,6 +26,8 @@ export interface SheetSettings {
   /** The « Pharmaco » list at the end: off, onset and half-times, or with the duration and the awakening. */
   pharmaco: "off" | "short" | "full";
   size: "compact" | "normal" | "large";
+  /** Who: surname, first name and birth date, or initials only. */
+  identity: "name" | "initials";
   /** Two A5 pages side by side on a landscape A4 (cut in half), or A5 paper. */
   paper: "a4x2" | "a5";
 }
@@ -43,6 +45,7 @@ export const DEFAULT_SETTINGS: SheetSettings = {
   pharmaco: "off",
   size: "normal",
   paper: "a4x2",
+  identity: "name",
 };
 
 /**
@@ -179,8 +182,11 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
     : "";
 
   const tags = sheet.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("");
+  const named = st.identity === "name" && !!sheet.name;
+  const who = named ? sheet.name! : sheet.initials;
+  const born = named && sheet.birthDate ? ` <span class="dob">${esc(sheet.birthDate)}</span>` : "";
   return `<article class="case">
-<header class="hd"><span class="no">${index}</span><span class="who"><b>${esc(sheet.initials)}</b> — ${esc(sheet.surgery)}</span>${tags}</header>
+<header class="hd"><span class="no">${index}</span><span class="who"><b>${esc(who)}</b>${born} — ${esc(sheet.surgery)}</span>${tags}</header>
 <p class="body">${esc(sheet.body)}</p>
 <section class="blk">
 ${piece("tech", esc(sheet.technique), "div", "tech")}
@@ -211,6 +217,8 @@ ${s(".case:last-of-type")}{border-bottom:0}
 ${s(".case .hd")}{display:flex;align-items:center;gap:1.6mm;margin:0 0 0.6mm;font-size:1.1em}
 ${s(".case .no")}{display:inline-flex;align-items:center;justify-content:center;min-width:5mm;height:5mm;padding:0 1mm;border-radius:1mm;background:#1f4f53;color:#fff;font-weight:700;font-size:.9em}
 ${s(".case .who")}{flex:1;min-width:0;text-transform:uppercase;letter-spacing:.01em}
+${s(".case .who b")}{text-transform:none}
+${s(".case .dob")}{font-size:.85em;color:#3c4549;text-transform:none}
 ${s(".case .tag")}{border:0.25mm solid #1f4f53;color:#1f4f53;border-radius:5mm;padding:0 1.4mm;font-size:.82em;font-weight:600;white-space:nowrap}
 ${s(".case .body")}{margin:0 0 1mm;color:#3c4549}
 ${s(".case .blk")}{margin:0 0 1mm}

@@ -134,6 +134,7 @@ describe("pasted consultations", () => {
 
   it("reads another layout: « Champ : valeur », heights in metres, a compound surname", () => {
     const c = parseConsultation(CLINIC);
+    expect(c.name).toBe("DUPONT DE LA TOUR Jean-Pierre");
     expect(c).toMatchObject({ initials: "DDLJ", sex: "M", heightCm: 176, weightKg: 85, mode: "neuraxial", surgeon: "Dr Martin", plannedDate: "28/10/2026", mallampati: 3 });
     expect(c.age).toBe(69);
     expect(c.surgery).toMatch(/^Résection endoscopique de prostate/);
@@ -153,4 +154,10 @@ describe("pasted consultations", () => {
     expect(c.history).toEqual(["Perte de poids de 10 kg en 3 mois", "Hospitalisation pour pneumopathie en 2020"]);
     expect(c.weightKg).toBeUndefined();
   });
+
+  it("takes the name typed for a patient without a consultation, and its initials", () => {
+    expect(parseConsultation("Nom : dupont jean\nIntervention : Hernie inguinale")).toMatchObject({ name: "DUPONT Jean", initials: "DJ", surgery: "Hernie inguinale" });
+    expect(parseConsultation("Nom du chirurgien : Dr Martin").name).toBeUndefined();
+  });
 });
+

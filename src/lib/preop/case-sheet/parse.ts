@@ -15,6 +15,8 @@ export interface PastedConsultation {
   raw: string;
   /** Surname then first name initials (« NP »); empty when no name was found. */
   initials: string;
+  /** « DUPONT Jean » — printed only on this device's sheet. */
+  name?: string;
   sex?: "M" | "F";
   /** dd/mm/yyyy, as written. */
   birthDate?: string;
@@ -123,8 +125,8 @@ const HEADINGS: [Section, RegExp][] = [
   ["hemstop", /^score hemstop/],
   ["airway", /^(evaluation (pour (l'|l’)?intubation|des voies aeriennes)|voies aeriennes( superieures)?|intubation|criteres d'intubation( difficile)?)$/],
   ["ignore", /^(informations? donnees? au patient|techniques d'anesthesie|information du patient|consentement)$/],
-  ["exams", /^(examens?( clinique| physique| paracliniques?)?|ecg|biologie|bilan( biologique| sanguin| preoperatoire)?|examens complementaires|imagerie|consultations? specialisees?|avis specialises?)$/],
-  ["keep", /^(conclusion|synthese|asa|commentaires?|remarques?)$/],
+  ["exams", /^(examens?( clinique| physique| paracliniques?)?|ecg|biologie|bilan( biologique| sanguin| preoperatoire)?|examens complementaires|imagerie|consultations? specialisees?|avis specialises?|asa)$/],
+  ["keep", /^(conclusion|synthese|commentaires?|remarques?)$/],
 ];
 
 function headingOf(line: string): { section: Section; head: string; rest: string } | null {
@@ -149,6 +151,7 @@ const FIELDS: [key: string, re: RegExp][] = [
   ["bmi", /\b(bmi|imc)\b/g],
   // The quick entry of a patient without a consultation (case-sheet-view.tsx).
   ["initials", /\binitiales\b/g],
+  ["name", /^nom( et prenom| complet| du patient)?\b/g],
   ["sex", /\bsexe\b/g],
 ];
 
@@ -190,6 +193,12 @@ function modeOf(text: string | undefined): PastedConsultation["mode"] {
   if (!text) return undefined;
   const f = fold(text);
   return MODE_WORDS.find(([, re]) => re.test(f))?.[0];
+}
+
+/** « DUPONT DE LA TOUR », « jean-pierre » → « DUPONT DE LA TOUR Jean-Pierre ». */
+function fullName(surname: string, given: string): string {
+  const cap = (w: string) => w.replace(/(^|[\s'’-])([a-zà-ÿ])/g, (_, a: string, b: string) => a + b.toUpperCase());
+  return `${surname.trim().toUpperCase()} ${cap(given.trim().toLowerCase())}`.trim();
 }
 
 function initialsOf(surname: string, given: string): string {
@@ -290,13 +299,17 @@ export function parseConsultation(text: string): PastedConsultation {
       out.sex ??= /\bn[ée]e\s+le/i.test(line) ? "F" : "M";
       const before = line.slice(0, birth.index).replace(/[-,\s]+$/, "");
       const name = before.match(NAME_LINE) ?? before.match(/^\s*([A-ZÀ-Ý][A-ZÀ-Ý'’-]+)\s+([A-ZÀ-Ýa-zà-ÿ'’-]+)/);
-      if (name && !out.initials) out.initials = initialsOf(name[1], name[2]);
+      if (name && !out.initials) {
+        out.initials = initialsOf(name[1], name[2]);
+        out.name = fullName(name[1], name[2]);
+      }
       continue;
     }
     if (header) {
       const name = line.match(NAME_LINE);
       if (name && /^[A-ZÀ-Ý'’ -]+$/.test(name[1].trim()) && !out.initials) {
         out.initials = initialsOf(name[1], name[2]);
+        out.name = fullName(name[1], name[2]);
         patientName.add(fold(line));
         if (/^\s*(Mme|Madame|Mlle)\b/.test(line)) out.sex = "F";
         if (/^\s*(M\.|Monsieur)\s/.test(line)) out.sex = "M";
@@ -334,6 +347,12 @@ export function parseConsultation(text: string): PastedConsultation {
       }
       if (v("anaesthesia")) out.anaesthesia = v("anaesthesia");
       if (v("initials")) out.initials = v("initials")!.replace(/[^A-Za-zÀ-ÿ]/g, "").toUpperCase().slice(0, 4);
+      // « Nom : Dupont Jean » (a patient entered by hand): the name, and its initials.
+      if (v("name")) {
+        const words = v("name")!.trim().split(/\s+/);
+        out.name = words.length > 1 ? fullName(words[0], words.slice(1).join(" ")) : words[0].toUpperCase();
+        if (!out.initials) out.initials = words.map((w) => w[0]).join("").toUpperCase().slice(0, 4);
+      }
       const sexValue = v("sex") ? fold(v("sex")!) : "";
       if (/^(f|femme|feminin)/.test(sexValue)) out.sex = "F";
       else if (/^(m|h|homme|masculin)/.test(sexValue)) out.sex = "M";

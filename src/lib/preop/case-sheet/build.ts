@@ -123,6 +123,9 @@ export interface SheetFallback {
 
 export interface CaseSheet {
   initials: string;
+  /** Surname and first name, and the birth date (« 12/03/1958 »): this device's sheet only. */
+  name?: string;
+  birthDate?: string;
   surgery: string;
   /** « HDJ », date… */
   tags: string[];
@@ -404,7 +407,8 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   ]
     .filter(Boolean)
     .join(", ")
-    .concat(ibw ? ` → PI ${Math.round(ibw)} kg${abw ? ` (PA ${Math.round(abw)} kg)` : ""}` : "");
+    .concat(ibw ? ` → PI ${Math.round(ibw)} kg${abw ? ` (PA ${Math.round(abw)} kg)` : ""}` : "")
+    .concat(c.asa ? ` · ASA ${c.asa}` : "");
 
   // --- How ----------------------------------------------------------------------------
   const drugs = plan.drugs;
@@ -621,6 +625,8 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   return {
     sheet: {
       initials: p.initials || "?",
+      name: p.name,
+      birthDate: p.birthDate,
       surgery: item && choices.surgeryId !== null ? item.name : p.surgery || "Intervention ?",
       tags,
       body: bodyText,

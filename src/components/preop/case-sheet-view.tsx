@@ -88,6 +88,8 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   const [sheet, setSheet] = useState<DaySheet | null>(null);
   const [paste, setPaste] = useState("");
   const [menu, setMenu] = useState<MenuAt | null>(null);
+  /** The patient whose pasted text is open (to read it again, or correct it). */
+  const [rawOpen, setRawOpen] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readRef = useRef<(text: string) => void>(() => {});
 
@@ -366,9 +368,12 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
             <div className="min-w-0 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold text-foreground">
-                  {i + 1}/ {r.sheet.initials} · {r.sheet.surgery}
+                  {i + 1}/ {r.sheet.name ?? r.sheet.initials} · {r.sheet.surgery}
                 </h3>
                 <div className="flex items-center gap-1">
+                  <Button size="sm" variant={rawOpen === e.id ? "secondary" : "ghost"} aria-expanded={rawOpen === e.id} onClick={() => setRawOpen(rawOpen === e.id ? null : e.id)}>
+                    <FileText className="h-3.5 w-3.5" /> Texte collé
+                  </Button>
                   <Button size="icon" variant="ghost" aria-label="Monter" disabled={i === 0} onClick={() => move(e.id, -1)}>
                     <ArrowUp className="h-4 w-4" />
                   </Button>
@@ -388,6 +393,18 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                     <Question key={q.id} q={q} onAnswer={(c) => choose(e.id, c)} />
                   ))}
                 </div>
+              )}
+
+              {rawOpen === e.id && (
+                <RawText
+                  raw={e.raw}
+                  onSave={(raw) => {
+                    setEntry(e.id, { raw });
+                    setRawOpen(null);
+                    toast("Texte relu : la feuille est à jour.", { variant: "success" });
+                  }}
+                  onClose={() => setRawOpen(null)}
+                />
               )}
 
               <WorkupCheck
@@ -507,9 +524,6 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                   <Button size="sm" variant="secondary" disabled={!!e.dossierId} onClick={() => void keep(e, r)}>
                     <FolderInput className="h-3.5 w-3.5" /> {e.dossierId ? "Gardé comme dossier" : "Garder comme dossier"}
                   </Button>
-                  <Disclosure summary="Texte collé" summaryClassName="text-xs text-foreground-subtle">
-                    <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-[var(--radius-sm)] bg-surface-muted p-2 text-[11px] text-foreground-muted">{e.raw}</pre>
-                  </Disclosure>
                 </div>
               </Disclosure>
             </div>
@@ -674,6 +688,25 @@ function LineMenu({ at, title, text, onText, strong, onBold, section, onMove, of
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** The text as pasted (consultations, biology added since), to read it again or correct it; read again on saving. */
+function RawText({ raw, onSave, onClose }: { raw: string; onSave: (raw: string) => void; onClose: () => void }) {
+  const [text, setText] = useState(raw);
+  return (
+    <div className="space-y-2 rounded-[var(--radius-md)] border border-border bg-surface-muted/50 p-2.5">
+      <p className="text-xs text-foreground-muted">Le texte tel qu&apos;il a été collé (les ajouts sont séparés par « --- »). Corrigez-le si besoin : la feuille est relue ; vos modifications faites sur la feuille sont gardées.</p>
+      <textarea value={text} onChange={(ev) => setText(ev.target.value)} rows={14} aria-label="Texte collé" className={cn(areaClass, "font-mono text-xs")} />
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" disabled={!text.trim() || text === raw} onClick={() => onSave(text)}>
+          <Check className="h-3.5 w-3.5" /> Enregistrer et relire
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onClose}>
+          Fermer
+        </Button>
+      </div>
     </div>
   );
 }
@@ -843,6 +876,10 @@ function SettingsPanel({ value, onChange }: { value: SheetSettings; onChange: (s
           { value: "short", label: "Onset, ½-vie contextuelle" },
           { value: "full", label: "+ durée, réveil" },
         ])}
+        {group("Patient", "identity", [
+          { value: "name", label: "Nom, prénom, date de naissance" },
+          { value: "initials", label: "Initiales" },
+        ])}
         {group("Papier", "paper", [
           { value: "a4x2", label: "2 A5 sur une A4 (paysage)" },
           { value: "a5", label: "A5" },
@@ -934,7 +971,8 @@ function QuickPatient({ catalogs, onAdd }: { catalogs: ReturnType<typeof useCata
   function add() {
     const body = [f.age !== undefined ? `Age ${f.age} ans` : "", f.weight !== undefined ? `Poids ${f.weight} kg` : "", f.height !== undefined ? `Taille ${f.height} cm` : ""].filter(Boolean).join(" ");
     const raw = [
-      `Initiales : ${f.initials.trim()}`,
+      // « Dupont Jean »: the name (its initials are taken from it); « DJ »: initials only.
+      /\s/.test(f.initials.trim()) || f.initials.trim().length > 4 ? `Nom : ${f.initials.trim()}` : `Initiales : ${f.initials.trim().toUpperCase()}`,
       f.sex ? `Sexe : ${f.sex}` : "",
       f.surgery.trim() ? `Intervention : ${f.surgery.trim()}` : "",
       f.mode ? `Type d'anesthésie : ${MODE_LABEL[f.mode]}` : "",
@@ -964,9 +1002,9 @@ function QuickPatient({ catalogs, onAdd }: { catalogs: ReturnType<typeof useCata
           Recopiez les quelques valeurs, puis dictez ou collez le reste : antécédents, traitements, allergies — ou une autre consultation (urgences, chirurgie, lettre). Préop y retrouve ce qu&apos;il faut.
         </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          <label className="block min-w-0">
-            <span className="block text-[11px] font-medium text-foreground-subtle">Initiales</span>
-            <input value={f.initials} onChange={(e) => set({ initials: e.target.value.toUpperCase().slice(0, 4) })} placeholder="AB" className={cn(inputClass, "mt-0.5")} />
+          <label className="col-span-2 block min-w-0 sm:col-span-1">
+            <span className="block text-[11px] font-medium text-foreground-subtle">Nom ou initiales</span>
+            <input value={f.initials} onChange={(e) => set({ initials: e.target.value.slice(0, 60) })} placeholder="Dupont Jean, ou DJ" className={cn(inputClass, "mt-0.5")} />
           </label>
           <MiniNumber label="Âge" value={f.age} onChange={(age) => set({ age })} unit="ans" />
           <MiniNumber label="Poids" value={f.weight} onChange={(weight) => set({ weight })} unit="kg" />
