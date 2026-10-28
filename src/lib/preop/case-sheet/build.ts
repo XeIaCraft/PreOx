@@ -552,6 +552,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     recommendations: scores.exams.recommendations,
     consultation: { ...c, patient: measured },
     techniques: plan.techniques,
+    drugs: plan.drugs.map((d) => d.name),
     lines: allLines,
     bleedingHistory: (p.hemstop ?? 0) >= 2 || Object.values(c.hemstop).some((v) => v === true),
     marks: choices.workup,

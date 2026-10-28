@@ -295,5 +295,15 @@ describe("case sheet", () => {
     expect(w(ticked, "haemostasis")?.status).toBe("ok");
     expect(w(ticked, "fbc")).toBeUndefined();
   });
+
+  it("asks the creatinine for an NSAID of the plan — recommended when the kidney is at risk", () => {
+    const r = buildCaseSheet(parseConsultation(HOSPITAL), ctx, { mode: "general" });
+    expect(r.sheet.rows.some((x) => x.parts.some((t) => /Kétorolac|Ibuprofène|Diclofénac|Kétoprofène/.test(t.text)))).toBe(true);
+    const renal = (x: Result) => x.sheet.workup.find((w) => w.code === "renal");
+    expect(renal(r)).toMatchObject({ strength: "consider", reason: expect.stringMatching(/au plan : créatinine/) });
+    const atRisk = buildCaseSheet(parseConsultation(`${HOSPITAL}\n---\nTraitement :\nCoversyl 5 mg`), ctx, { mode: "general" });
+    expect(renal(atRisk)).toMatchObject({ strength: "recommended" });
+    expect(renal(atRisk)?.reason).toMatch(/IEC/);
+  });
 });
 

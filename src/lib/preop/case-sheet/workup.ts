@@ -13,7 +13,7 @@ import type { ConsultationState } from "../dossier";
 import type { Technique } from "../rules/types";
 import { treatmentMatches } from "../medications";
 import { fold } from "../catalog";
-import { has } from "../history";
+import { anyOf, has } from "../history";
 
 export interface SheetWorkup {
   code: ExamCode;
@@ -63,10 +63,19 @@ const ASKED = /\b(a faire|a prevoir|a demander|a realiser|demande|prevu|en atten
 
 const n1 = (v: number) => String(v).replace(".", ",");
 
+/** NSAIDs (kétorolac, ibuprofène, diclofénac, kétoprofène, parécoxib, coxibs…). */
+const NSAID = /ketorolac|ibuprofen|diclofenac|ketoprofen|parecoxib|celecoxib|etoricoxib|naproxen|ains\b/;
+/** Nephrotoxic or renally dosed antibiotics. */
+const NEPHROTOXIC = /gentamicine|amikacine|tobramycine|vancomycine|colistine/;
+/** « Kétorolac 30 mg IV » → « Kétorolac ». */
+const short = (name: string) => name.split(/\s+\d|\s*\(/)[0];
+
 export interface WorkupInput {
   recommendations: ExamRecommendation[];
   consultation: ConsultationState;
   techniques: Technique[];
+  /** The plan's drugs (plan B's too): an NSAID, an aminoglycoside… ask for their own tests. */
+  drugs?: string[];
   /** Every line of the patient: consultation(s), biology pasted, notes, lines added. */
   lines: string[];
   bleedingHistory?: boolean;
@@ -74,7 +83,7 @@ export interface WorkupInput {
   marks?: Record<string, "done" | "skip">;
 }
 
-export function caseWorkup({ recommendations, consultation: c, techniques, lines, bleedingHistory, marks = {} }: WorkupInput): SheetWorkup[] {
+export function caseWorkup({ recommendations, consultation: c, techniques, drugs = [], lines, bleedingHistory, marks = {} }: WorkupInput): SheetWorkup[] {
   const needs = new Map<ExamCode, { strength: ExamStrength; reasons: string[] }>();
   const need = (code: ExamCode, strength: ExamStrength, reason: string) => {
     const x = needs.get(code);
@@ -100,6 +109,29 @@ export function caseWorkup({ recommendations, consultation: c, techniques, lines
   if (techniques.includes("deep_block") && (vka || doac)) need("haemostasis", "recommended", "bloc profond sous anticoagulant");
   if (vka) need("haemostasis", "recommended", "AVK : INR la veille");
   if (doac) need("renal", "recommended", "AOD : clairance (délai d'arrêt)");
+
+  // What the plan's drugs need.
+  const age = c.patient.age;
+  const on = (atc: string) => t.some((x) => treatmentMatches(x, atc));
+  const renalRisk = [
+    age !== undefined && age >= 65 && "≥ 65 ans",
+    (on("C09") || on("C03")) && "IEC/sartan/diurétique",
+    anyOf(c.conditions, ["ckd", "dialysis"]) && "IRC",
+    anyOf(c.conditions, ["diabetes_oral", "diabetes_insulin"]) && "diabète",
+    has(c.conditions, "heart_failure") && "insuffisance cardiaque",
+  ].filter((x): x is string => !!x);
+  const nsaid = drugs.find((d) => NSAID.test(fold(d)));
+  if (nsaid) need("renal", renalRisk.length ? "recommended" : "consider", `${short(nsaid)} au plan${renalRisk.length ? ` (${renalRisk.join(", ")})` : ""} : créatinine`);
+  const nephrotoxic = drugs.find((d) => NEPHROTOXIC.test(fold(d)));
+  if (nephrotoxic) need("renal", "recommended", `${short(nephrotoxic)} : créatinine (dose, néphrotoxicité)`);
+  const sux = drugs.find((d) => /succinylcholine|suxamethonium|celocurine/.test(fold(d)));
+  if (sux && (anyOf(c.conditions, ["ckd", "dialysis", "burns"]) || on("C03DA"))) need("renal", "recommended", "succinylcholine et risque d'hyperkaliémie : K⁺");
+
+  // What the patient's treatments need.
+  if (on("C03DA") || on("C09") || on("C01AA")) need("renal", "recommended", `${on("C01AA") ? "digoxine" : on("C03DA") ? "antialdostérone" : "IEC/sartan"} : K⁺, créatinine`);
+  if (on("A10BA")) need("renal", "recommended", "metformine : créatinine (reprise, acidose lactique)");
+  if (on("N05AN")) need("renal", "recommended", "lithium : Na⁺, créatinine (± lithémie)");
+  if (on("B01AB")) need("fbc", "recommended", "héparine : plaquettes (TIH)");
   if (bleedingHistory) need("haemostasis", "recommended", "anamnèse hémorragique positive");
 
   // What the text says.
