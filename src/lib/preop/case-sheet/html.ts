@@ -26,6 +26,8 @@ export interface SheetSettings {
   /** The « Pharmaco » list at the end: off, onset and half-times, or with the duration and the awakening. */
   pharmaco: "off" | "short" | "full";
   size: "compact" | "normal" | "large";
+  /** Two A5 pages side by side on a landscape A4 (cut in half), or A5 paper. */
+  paper: "a4x2" | "a5";
 }
 
 export const DEFAULT_SETTINGS: SheetSettings = {
@@ -40,6 +42,7 @@ export const DEFAULT_SETTINGS: SheetSettings = {
   workup: "required",
   pharmaco: "off",
   size: "normal",
+  paper: "a4x2",
 };
 
 /**
@@ -57,6 +60,11 @@ export interface SheetHtmlOptions {
   /** Products' text corrected on the sheet, by key (« Analgésie:Kétorolac 30 mg »). */
   edits?: Record<string, string>;
 }
+
+/** Labels kept to the grid's column. */
+const SHORT_LABEL: Record<string, string> = { Hémodynamique: "Hémodyn.", Prémédication: "Prémédic.", "Entretien (TIVA)": "Entretien", "Sédation / entretien": "Sédation", Antibioprophylaxie: "ATB" };
+/** A post-op instruction longer than this is cut (the whole one in the plan). */
+const POSTOP_CHARS = 90;
 
 const SECTION_LABEL: Record<ItemSection, string> = { atcd: "ATCD", habit: "Habitus", chir: "Chir.", ttt: "TTT", allergy: "Allergies", alert: "", note: "" };
 
@@ -76,13 +84,14 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
     return `<${tag}${classes ? ` class="${classes}"` : ""}${edit ? ` data-k="${esc(key)}"${data} role="button" tabindex="0" aria-pressed="${off}"` : ""}>${html}</${tag}>`;
   };
   /** A labelled line of the grid: « Induction | Propofol 200 mg · … ». */
-  const gridLine = (key: string, label: string, body: string, cls = "") => (body ? piece(key, `<span class="lb">${esc(label)}</span><span class="vl">${body}</span>`, "div", `ln ${cls}`.trim()) : "");
+  const gridLine = (key: string, label: string, body: string, cls = "") => (body ? piece(key, `<span class="lb">${esc(SHORT_LABEL[label] ?? label)}</span><span class="vl">${body}</span>`, "div", `ln ${cls}`.trim()) : "");
 
   const planRow = (r: SheetRow, prefix = "") => {
     const parts = r.parts
       .map((t) => {
         const key = `${prefix}${r.label}:${t.text}`;
-        return piece(key, withDose(edits[key] ?? t.text));
+        const text = edits[key] ?? t.text;
+        return piece(key, withDose(r.label === "Post-op" && text.length > POSTOP_CHARS ? `${text.slice(0, POSTOP_CHARS - 1).replace(/\s+\S*$/, "")}…` : text));
       })
       .filter(Boolean);
     if (!parts.length) return "";
@@ -113,6 +122,20 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
     const text = i.strong ? `<b>${esc(i.text)}</b>` : esc(i.text);
     const detail = i.section === "ttt" && i.detail ? ` <span class="cd${i.conduct === "stop" ? " stop" : ""}">→ ${esc(i.detail)}</span>` : "";
     return piece(i.key, text + detail, "span", "", ` data-s="${i.section}"`);
+  };
+  // Treatments: what to stop, adapt or check, each with its conduct; then the ones simply kept, in one list.
+  const tttLine = () => {
+    const list = shown("ttt");
+    const act = list.filter((i) => i.conduct !== "continue" && i.detail !== "idem");
+    const keep = list.filter((i) => i.conduct === "continue" || i.detail === "idem");
+    const actHtml = act.map(itemHtml).filter(Boolean);
+    const keepHtml = keep.map((i) => piece(i.key, esc(i.text), "span", "", ` data-s="ttt"`)).filter(Boolean);
+    if (!actHtml.length && !keepHtml.length) return list.length ? "" : gridLine("row:TTT", "TTT", "aucun");
+    const body = [
+      actHtml.length ? `<span class="act">${actHtml.join('<span class="sep"> ; </span>')}</span>` : "",
+      keepHtml.length ? `<span class="keep"><span class="cd">Poursuivre :</span> ${keepHtml.join('<span class="sep">, </span>')}</span>` : "",
+    ].filter(Boolean);
+    return gridLine("row:TTT", "TTT", body.join(""));
   };
   const itemLine = (s: ItemSection, sep: string, empty?: string) => {
     const list = shown(s);
@@ -169,7 +192,7 @@ ${itemLine("atcd", ", ", "RAS")}
 ${implications}
 ${st.habits ? itemLine("habit", " ; ") : ""}
 ${st.surgical ? itemLine("chir", ", ") : ""}
-${itemLine("ttt", " ; ", "aucun")}
+${tttLine()}
 ${itemLine("allergy", ", ")}
 ${workup}
 </section>
@@ -202,6 +225,8 @@ ${s(".case .ln.todo .vl")}{color:#8a1f12}
 ${s(".case .ln.todo .lb")}{color:#8a1f12}
 ${s(".case .why")}{color:#5b6569;font-weight:400;font-size:.9em}
 ${s(".case .cd")}{color:#3c4549}
+${s(".case .act, .case .keep")}{display:block}
+${s(".case .keep .cd")}{color:#1f4f53;font-weight:600}
 ${s(".case .cd.stop")}{color:#8a1f12;font-weight:600}
 ${s(".case .alerts")}{margin:0.8mm 0 0;padding:0.8mm 1.6mm 0.8mm 5mm;background:#fbeeea;border-left:0.8mm solid #b3432b;border-radius:0.8mm;color:#7a1d10;font-weight:600}
 ${s(".case .alerts li")}{margin:0.1mm 0}
@@ -246,14 +271,86 @@ export function kineticsHtml(items: SheetKinetics[], opts: SheetHtmlOptions = {}
   return `<section class="case pk"><header class="hd"><span class="who"><b>Pharmaco</b> — adulte, à titre indicatif</span></header><table><thead><tr>${head}</tr></thead><tbody>${rows.join("")}</tbody></table></section>`;
 }
 
-/** The whole printable page. */
+/**
+ * The whole printable page: A5 pages, two side by side on a landscape A4
+ * (to cut in half) or one per A5 sheet. A case is never split: the pages
+ * are filled in the print window (each case measured, put on the next page
+ * when it no longer fits), and a case taller than a page is set smaller
+ * until it fits on one.
+ */
 export function caseSheetDocument(
   sheets: { sheet: CaseSheet; hidden?: HiddenLines; edits?: Record<string, string> }[],
   title: string,
-  opts: { settings?: SheetSettings; hiddenKinetics?: HiddenLines } = {}
+  opts: { settings?: SheetSettings; hiddenKinetics?: HiddenLines; print?: boolean } = {}
 ): string {
   const st = opts.settings ?? DEFAULT_SETTINGS;
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc(title)}</title>
-<style>@page{size:A5;margin:7mm 7mm 8mm}body{margin:0}h1{font:700 10.5pt "Helvetica Neue",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;margin:0 0 2.6mm;padding-bottom:1.2mm;border-bottom:0.5mm solid #1f4f53;color:#1f4f53}${caseSheetCss("", st)}</style>
-</head><body><h1>${esc(title)}</h1>${sheets.map((s, i) => caseSheetHtml(s.sheet, i + 1, { hidden: s.hidden, settings: st, edits: s.edits })).join("")}${kineticsHtml(dayKinetics(sheets.map((s) => s.sheet)), { hidden: opts.hiddenKinetics, settings: st })}</body></html>`;
+  const a4 = st.paper !== "a5";
+  const cases = sheets.map((s, i) => caseSheetHtml(s.sheet, i + 1, { hidden: s.hidden, settings: st, edits: s.edits })).join("");
+  const pk = kineticsHtml(dayKinetics(sheets.map((s) => s.sheet)), { hidden: opts.hiddenKinetics, settings: st });
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title>
+<style>
+@page{size:${a4 ? "A4 landscape" : "A5"};margin:0}
+html,body{margin:0;background:#fff}
+.sheet{display:flex;width:${a4 ? "297mm" : "148mm"};height:209mm;overflow:hidden;break-after:page;page-break-after:always}
+.sheet:last-child{break-after:auto;page-break-after:auto}
+.pg{box-sizing:border-box;width:148mm;height:209mm;padding:7mm 7.5mm;overflow:hidden}
+.sheet .pg+.pg{border-left:0.2mm dashed #c3ccce}
+.ph{display:flex;justify-content:space-between;gap:3mm;margin:0 0 2.4mm;padding-bottom:1mm;border-bottom:0.45mm solid #1f4f53;color:#1f4f53;font:700 8.4pt "Helvetica Neue",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+.ph span:last-child{font-weight:500;white-space:nowrap}
+#src{width:133mm}
+@media screen{body{background:#e9edee}.sheet{margin:6mm auto;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2)}}
+${caseSheetCss("", st)}
+</style>
+</head><body data-a4="${a4 ? 1 : 0}" data-title="${esc(title)}"><div id="src">${cases}${pk}</div>
+<script>
+(function () {
+  var MM = 96 / 25.4, src = document.getElementById("src"), body = document.body;
+  var a4 = body.getAttribute("data-a4") === "1", title = body.getAttribute("data-title");
+  // One page, off screen, to measure what fits.
+  var probe = document.createElement("div");
+  probe.className = "pg";
+  probe.style.cssText = "position:absolute;left:-10000px;top:0;height:auto";
+  var header = function (no) {
+    var ph = document.createElement("div"), a = document.createElement("span"), b = document.createElement("span");
+    ph.className = "ph";
+    a.textContent = title;
+    b.textContent = no;
+    ph.appendChild(a);
+    ph.appendChild(b);
+    return ph;
+  };
+  probe.appendChild(header("1/1"));
+  body.appendChild(probe);
+  var room = 209 * MM - 14 * MM - probe.firstChild.getBoundingClientRect().height - 2.4 * MM - 1;
+  var cases = Array.prototype.slice.call(src.children);
+  var height = function (el) { return el.getBoundingClientRect().height + 3.2 * MM; };
+  var pages = [[]], used = 0;
+  cases.forEach(function (el) {
+    probe.appendChild(el);
+    // Taller than a page: smaller, down to 6 pt, so that it stays on one.
+    var size = parseFloat(getComputedStyle(el).fontSize) * 0.75;
+    while (height(el) > room && size > 6) { size -= 0.25; el.style.fontSize = size + "pt"; }
+    var h = height(el);
+    if (used + h > room && pages[pages.length - 1].length) { pages.push([]); used = 0; }
+    pages[pages.length - 1].push(el);
+    used += h;
+  });
+  body.removeChild(probe);
+  src.parentNode.removeChild(src);
+  var per = a4 ? 2 : 1, n = pages.length;
+  for (var i = 0; i < n; i += per) {
+    var sheet = document.createElement("div");
+    sheet.className = "sheet";
+    for (var j = i; j < Math.min(i + per, n); j++) {
+      var pg = document.createElement("div");
+      pg.className = "pg";
+      pg.appendChild(header(j + 1 + "/" + n));
+      pages[j].forEach(function (el) { pg.appendChild(el); });
+      sheet.appendChild(pg);
+    }
+    body.appendChild(sheet);
+  }
+  ${opts.print === false ? "" : 'setTimeout(function () { window.focus(); window.print(); }, 250);'}
+})();
+</script></body></html>`;
 }

@@ -145,7 +145,11 @@ export function caseWorkup({ recommendations, consultation: c, techniques, drugs
     const re = FOUND[code];
     const hit = re && folded.find((x) => re.test(x.f));
     if (!hit) return null;
-    const value = hit.l.length > 60 ? `${hit.l.slice(0, 59).replace(/\s+\S*$/, "")}…` : hit.l;
+    // « Examens complémentaires : ETT : FEVG préservée. Cinétique… » → « ETT : FEVG préservée ».
+    const said = hit.l.replace(/^(examens?( clinique| complémentaires| paracliniques)?|biologie|bilan[^:]*|imagerie)\s*:\s*/i, "").split(/(?<=[a-zà-ÿ)%])\.\s/)[0].replace(/\s*:\s*(\S[^:]*)\s*:\s*\1/i, " : $1");
+    // « Groupe sanguin : Groupe sanguin A + » → « Groupe sanguin A + ».
+    const once = said.replace(/^([^:]{3,30}?)\s*:\s*(?=\1)/i, "");
+    const value = once.length > 42 ? `${once.slice(0, 41).replace(/\s+\S*$/, "")}…` : once;
     return { status: ASKED.test(hit.f) ? "asked" : "ok", value };
   };
 

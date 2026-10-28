@@ -179,6 +179,12 @@ const firstSentence = (t: string, max = 160) => {
 /** A line with a biology value: « Hb 13,2 », « plaquettes 245 », « créat. 0,9 ». */
 const BIO_VALUE = /\b(hb|hgb|h[ée]moglobine|plaquettes|plaq|plq|plt|inr|cr[ée]at\w*|k\+?|na\+?|kali[ée]mie|natr[ée]mie|hba1c|ferritine|albumine|nt-?probnp|troponine|glyc[ée]mie)\b\.?\s*:?\s*\d/i;
 
+/** « PROTHESE TOTALE (AU ROBOT) », « [hb < 13 g/dl …] »: a form's title or bracketed criteria, not about the patient. */
+const isTitle = (t: string) => /^\[.*\]$/.test(t) || (t.length <= 60 && /[A-ZÀ-Ý]{3}/.test(t) && t === t.toUpperCase());
+
+/** Alerts printed by default (the others: « Réglages › Alertes : toutes »). */
+const MAX_ALERTS = 4;
+
 const MODE_TECHNIQUES: Record<SheetMode, Technique[]> = { general: ["general"], neuraxial: ["neuraxial"], regional: ["deep_block"], sedation: ["sedation"] };
 const MODE_LABEL: Record<SheetMode, string> = { general: "AG", neuraxial: "Rachianesthésie", regional: "ALR", sedation: "Sédation" };
 const AGENT_LABEL = { sevoflurane: "Sévoflurane", desflurane: "Desflurane", isoflurane: "Isoflurane", tiva: "AIVOC" } as const;
@@ -320,7 +326,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   // nothing is recognised in goes to the notes as it is: never dropped, never a question;
   // it can be moved from the sheet. Lines added, corrected or moved on the sheet are read
   // again, so an antecedent typed in gets its implications, a treatment its conduct.
-  type Line = { source: string; text: string; kind: LineKind; q: QuickEntryResult; addedId?: string };
+  type Line = { source: string; text: string; kind: LineKind; q: QuickEntryResult; addedId?: string; from?: LineKind };
   const lines: Line[] = [];
   const seen = new Set<string>();
   const addLine = (raw: string, section?: LineKind, addedId?: string) => {
@@ -328,13 +334,13 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     if (!source || seen.has(source)) return;
     seen.add(source);
     // « Conclusion : tabagisme très ancien » (a line that came under a heading this reader keeps): read without the heading's name.
-    const bare = section ? source : source.replace(/^(examen( clinique| physique)?|ecg|biologie|bilan( biologique| sanguin)?|examens complémentaires|conclusion|synthèse|asa) : /i, "");
+    const bare = section ? source : source.replace(/^(examen( clinique| physique)?|ecg|biologie|bilan( biologique| sanguin)?|examens complémentaires|conclusion|synthèse|asa|commentaires?|remarques?) : /i, "");
     const text = cleanLine(choices.edits?.[source] ?? bare);
     const moved = choices.lines?.[source];
     const q = readLine(text, catalogs, moved ?? section);
     // « ECG : rythme sinusal »: the heading says it is a result (the work-up), whatever follows.
-    const kind = moved ?? (section ? sectionKind(section, text, q) : isWorkupLine(source) ? "info" : (autoKind(text, q) ?? "note"));
-    lines.push({ source, text: kind === "note" && !choices.edits?.[source] ? source : text, kind, q, addedId });
+    const kind = moved ?? (section ? sectionKind(section, text, q) : isWorkupLine(source) ? "info" : (autoKind(text, q) ?? (isTitle(text) ? "ignore" : "note")));
+    lines.push({ source, text: kind === "note" && !choices.edits?.[source] ? source : text, kind, q, addedId, from: section });
   };
   for (const [list, kind] of [
     [p.history, "atcd"],
@@ -499,13 +505,16 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     }
     names.forEach((n) => listed.add(n));
     const verdicts = names.map((n) => ({ n, v: conduct(n) })).filter((x) => x.v);
-    const action = !verdicts.length ? "non reconnu : conduite à vérifier" : verdicts.length === 1 ? verdicts[0].v!.action : verdicts.map((x) => `${x.n} : ${x.v!.action}`).join(", ");
+    // The same conduct for each substance (a combination): said once.
+    const same = verdicts.length > 1 && verdicts.every((x) => x.v!.action === verdicts[0].v!.action);
+    const action = !verdicts.length ? "non reconnu : conduite à vérifier" : verdicts.length === 1 || same ? verdicts[0].v!.action : verdicts.map((x) => `${x.n} : ${x.v!.action}`).join(", ");
     const kind = !verdicts.length ? "check" : verdicts.some((x) => x.v!.conduct === "stop") ? "stop" : verdicts.some((x) => x.v!.conduct === "check") ? "check" : "continue";
     names.forEach((n) => conductOf.set(n, kind));
     push({ key: keyOf("ttt", l), section: "ttt", text: l.text, source: l.source, addedId: l.addedId, detail: action, conduct: kind, strong: kind === "stop" });
   }
   // A treatment only mentioned elsewhere (« FA sous Eliquis »), not in the list.
-  for (const l of lines.filter((x) => x.kind !== "ttt" && x.kind !== "ignore"))
+  // (Not a result or a test that was under « Traitement »: « Potassium (sérum) : 4,9 mmol/l », « écho de stress à la dobutamine ».)
+  for (const l of lines.filter((x) => x.kind !== "ttt" && x.kind !== "ignore" && x.kind !== "info" && x.from !== "ttt"))
     for (const t of l.q.treatments) {
       if (listed.has(t.name)) continue;
       listed.add(t.name);
@@ -527,7 +536,15 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   // the antecedents' own are with the antecedents, the allergies with the allergies.
   const own = (pt: AttentionPoint) => pt.id.startsWith("cond-") || (pt.id.startsWith("allergy-") && !pt.id.startsWith("allergy-plan-")) || pt.id.startsWith("penfast-");
   const others = points.filter((pt) => !own(pt) && pt.level !== "info");
-  for (const pt of others.filter((x) => x.level === "high")) alert(alertText(pt));
+  // A short list: the first high-level ones; what the work-up line already says (group, ECG) and the rest
+  // are of the second rank (shown when the settings ask for every alert).
+  let main = 0;
+  for (const pt of others.filter((x) => x.level === "high")) {
+    const text = alertText(pt);
+    const said = /groupe sanguin|agglutinines|\bRAI\b|: ECG$/i.test(text);
+    alert(text, said || main >= MAX_ALERTS);
+    if (!said) main++;
+  }
   for (const pt of others.filter((x) => x.level === "medium")) alert(alertText(pt), true);
   if (!allergyLines.length && !noKnownAllergy) alert("Allergies non renseignées dans la consultation");
   for (const a of choices.added ?? []) if (a.section === "alert") push({ key: `add:${a.id}`, section: "alert", text: a.text, addedId: a.id, strong: true });

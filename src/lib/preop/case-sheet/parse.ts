@@ -48,8 +48,10 @@ export interface PastedConsultation {
   noTreatment?: boolean;
   /** Tobacco, alcohol, drugs, as sentences the dictation reader knows. */
   habits: string[];
-  /** Lines under no heading this reader knows (examination, biology, conclusion…). */
+  /** Lines under no heading this reader knows, or under one kept as it is (conclusion, comments…). */
   other: string[];
+  /** The examination, ECG, biology, complementary tests (« Biologie : Hb 13,2 »): read for the values and the work-up, not printed. */
+  exams: string[];
   /** The text for parseQuickEntry: the sections under the headings it knows. */
   normalized: string;
 }
@@ -108,7 +110,7 @@ const FURNITURE = [
   /^\s*consultation d'anesth[ée]sie\s*$/i,
 ];
 
-type Section = "history" | "surgical" | "anaesthetic" | "allergy" | "treatment" | "habits" | "fasting" | "hemstop" | "airway" | "ignore" | "keep";
+type Section = "history" | "surgical" | "anaesthetic" | "allergy" | "treatment" | "habits" | "fasting" | "hemstop" | "airway" | "ignore" | "exams" | "keep";
 
 const HEADINGS: [Section, RegExp][] = [
   ["surgical", /^(antecedents?|atcd?s?)\s+(chirurgicaux|chir\.?|operatoires)$/],
@@ -121,7 +123,8 @@ const HEADINGS: [Section, RegExp][] = [
   ["hemstop", /^score hemstop/],
   ["airway", /^(evaluation (pour (l'|l’)?intubation|des voies aeriennes)|voies aeriennes( superieures)?|intubation|criteres d'intubation( difficile)?)$/],
   ["ignore", /^(informations? donnees? au patient|techniques d'anesthesie|information du patient|consentement)$/],
-  ["keep", /^(examen( clinique| physique)?|ecg|biologie|bilan( biologique| sanguin)?|examens complementaires|conclusion|synthese|asa)$/],
+  ["exams", /^(examens?( clinique| physique| paracliniques?)?|ecg|biologie|bilan( biologique| sanguin| preoperatoire)?|examens complementaires|imagerie|consultations? specialisees?|avis specialises?)$/],
+  ["keep", /^(conclusion|synthese|asa|commentaires?|remarques?)$/],
 ];
 
 function headingOf(line: string): { section: Section; head: string; rest: string } | null {
@@ -264,9 +267,9 @@ function readHemstop(lines: string[]): number | undefined {
 /** One consultation (see splitConsultations). */
 export function parseConsultation(text: string): PastedConsultation {
   const lines = text.replace(/\r\n?/g, "\n").split("\n").map((l) => l.replace(/\s+$/, ""));
-  const out: PastedConsultation = { raw: text, initials: "", surgery: "", airway: [], history: [], surgical: [], anaesthetic: [], allergies: [], treatments: [], habits: [], other: [], normalized: "" };
-  const bySection: Record<Section, string[]> = { history: [], surgical: [], anaesthetic: [], allergy: [], treatment: [], habits: [], fasting: [], hemstop: [], airway: [], ignore: [], keep: [] };
-  const keepBlocks: { head: string; lines: string[] }[] = [];
+  const out: PastedConsultation = { raw: text, initials: "", surgery: "", airway: [], history: [], surgical: [], anaesthetic: [], allergies: [], treatments: [], habits: [], other: [], exams: [], normalized: "" };
+  const bySection: Record<Section, string[]> = { history: [], surgical: [], anaesthetic: [], allergy: [], treatment: [], habits: [], fasting: [], hemstop: [], airway: [], ignore: [], exams: [], keep: [] };
+  const keepBlocks: { head: string; lines: string[]; exams: boolean }[] = [];
   let section: Section | null = null;
   let header = true;
   const patientName = new Set<string>();
@@ -306,9 +309,9 @@ export function parseConsultation(text: string): PastedConsultation {
     if (heading) {
       header = false;
       section = heading.section;
-      if (section === "keep") keepBlocks.push({ head: heading.head, lines: [] });
+      if (section === "keep" || section === "exams") keepBlocks.push({ head: heading.head, lines: [], exams: section === "exams" });
       if (heading.rest) {
-        if (section === "keep") keepBlocks.at(-1)!.lines.push(heading.rest);
+        if (section === "keep" || section === "exams") keepBlocks.at(-1)!.lines.push(heading.rest);
         else bySection[section].push(heading.rest);
       }
       continue;
@@ -347,7 +350,7 @@ export function parseConsultation(text: string): PastedConsultation {
       // Before any heading: the header (the anaesthetist's name, the note's title) — unless it says something.
       if (header) continue;
       out.other.push(line);
-    } else if (section === "keep") keepBlocks.at(-1)!.lines.push(line);
+    } else if (section === "keep" || section === "exams") keepBlocks.at(-1)!.lines.push(line);
     else bySection[section].push(line);
   }
 
@@ -370,9 +373,9 @@ export function parseConsultation(text: string): PastedConsultation {
     if (mp) out.mallampati = ({ i: 1, ii: 2, iii: 3, iv: 4 } as Record<string, 1 | 2 | 3 | 4>)[mp[1]] ?? (Number(mp[1]) as 1 | 2 | 3 | 4);
     else if (!isEmpty(l)) out.airway.push(l);
   }
-  for (const b of keepBlocks) out.other.push(...b.lines.map((l) => `${b.head} : ${l}`));
+  for (const b of keepBlocks) (b.exams ? out.exams : out.other).push(...b.lines.map((l) => `${b.head} : ${l}`));
   if (out.mallampati === undefined) {
-    const mp = fold(out.other.join(" ")).match(/mallampati(?:\s*(?:score|classe))?\s*:?\s*(iv|i{1,3}|[1-4])\b/);
+    const mp = fold([...out.exams, ...out.other].join(" ")).match(/mallampati(?:\s*(?:score|classe))?\s*:?\s*(iv|i{1,3}|[1-4])\b/);
     if (mp) out.mallampati = ({ i: 1, ii: 2, iii: 3, iv: 4 } as Record<string, 1 | 2 | 3 | 4>)[mp[1]] ?? (Number(mp[1]) as 1 | 2 | 3 | 4);
   }
 
@@ -390,6 +393,7 @@ export function parseConsultation(text: string): PastedConsultation {
   // The examination, biology and conclusion first, one « Titre : ligne » each
   // (values are read anywhere; a line left under « Allergies » would be one).
   out.normalized = [
+    ...out.exams,
     ...out.other,
     ...block("Mode de vie", [...(out.jehovah ? ["Témoin de Jéhovah"] : []), ...out.habits]),
     ...block("Antécédents", out.history),

@@ -200,9 +200,8 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
       return;
     }
     w.document.write(caseSheetDocument(sheets, sheet!.title, { settings, hiddenKinetics: new Set(sheet!.hiddenKinetics ?? []) }));
+    // The page lays the cases out on its A5 pages, then opens the printer's dialog itself.
     w.document.close();
-    w.focus();
-    setTimeout(() => w.print(), 150);
   }
 
   async function keep(e: DayEntry, r: CaseResult) {
@@ -306,7 +305,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
           sheet.entries.length > 0 && (
             <>
               <Button size="sm" onClick={print}>
-                <Printer className="h-3.5 w-3.5" /> Imprimer (A5)
+                <Printer className="h-3.5 w-3.5" /> Imprimer
               </Button>
               <Button
                 size="sm"
@@ -843,6 +842,10 @@ function SettingsPanel({ value, onChange }: { value: SheetSettings; onChange: (s
           { value: "off", label: "Non" },
           { value: "short", label: "Onset, ½-vie contextuelle" },
           { value: "full", label: "+ durée, réveil" },
+        ])}
+        {group("Papier", "paper", [
+          { value: "a4x2", label: "2 A5 sur une A4 (paysage)" },
+          { value: "a5", label: "A5" },
         ])}
         {group("Taille du texte", "size", [
           { value: "compact", label: "Compacte" },

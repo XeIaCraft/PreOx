@@ -90,4 +90,18 @@ describe("printed case sheet", () => {
     expect(caseSheetHtml(sheet, 1, { settings: { ...DEFAULT_SETTINGS, workup: "off" } })).not.toContain("Groupe");
     expect(caseSheetHtml(sheet, 1, { hidden: new Set(["bilan:group"]) })).not.toContain("À prévoir");
   });
+
+  it("prints A5 pages two by two on a landscape A4, or on A5 paper", () => {
+    const html = caseSheetDocument([{ sheet }, { sheet }], "Jour");
+    expect(html).toContain("size:A4 landscape");
+    expect(html).toContain("window.print()");
+    expect(caseSheetDocument([{ sheet }], "Jour", { settings: { ...DEFAULT_SETTINGS, paper: "a5" }, print: false })).toContain("size:A5;");
+    expect(caseSheetDocument([{ sheet }], "Jour", { print: false })).not.toContain("window.print()");
+  });
+
+  it("lists the treatments to act on with their conduct, the others in one line", () => {
+    const html = caseSheetHtml(sheet, 1);
+    expect(html).toMatch(/<span class="act">[^]*lisinopril[^]*?<\/span><span class="keep"><span class="cd">Poursuivre :<\/span> <span[^>]*>ésoméprazole<\/span>/);
+  });
 });
+

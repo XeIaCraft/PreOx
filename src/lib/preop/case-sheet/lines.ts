@@ -56,6 +56,11 @@ const HABIT = /\b(tabac|tabagi\w*|fum(eur|euse|e|ait)|cigarettes?|cig\/j|paquets
 /** A test result or request: « ECG : RS », « Groupe A+, RAI nég. », « TCA 1,1 ». */
 const WORKUP = /^(biologie|bilan|labo)\b|\b(ecg|electrocardiogramme|groupe sanguin|groupe\s*(a|b|ab|o)\s*(\+|-|pos|neg|rh)|groupage|rai|b-?hcg|nfs|hemogramme|ionogramme)\b|\b(tca|aptt|tp|fibrinogene)\s*[:=]?\s*\d/;
 
+/** « … : 4.9 mmol/l », « 224 ng/l », « 16 % »: a measured value. */
+const VALUE = /\d\s*(mmol|µmol|umol|nmol|pmol|mg|µg|ug|ng|g|ui|u|mui|mmhg)\s*\/\s*(l|dl|ml|24 ?h)\b|:\s*[<>]?\s*\d+([.,]\d+)?\s*%/i;
+/** A test or a consultation to do (« échocardiographie de stress », « avis cardio »). */
+const TEST = /^(echo\w*|scintigraph\w*|coronarograph\w*|ett|irm|scanner|holter|doppler|epreuve d'effort|polysomnograph\w*|avis|consultation|rdv)\b/;
+
 /** A test result or request, already read for the work-up. */
 export const isWorkupLine = (text: string) => WORKUP.test(fold(text));
 
@@ -64,6 +69,11 @@ const EMPTY = /^(\/+|-+|r\.?a\.?s\.?|neant|aucun(e)?s?|non|nc|0|sans particulari
 /** Where a line under a heading goes: its heading's place — but tobacco or alcohol listed with the antecedents are habits. */
 export function sectionKind(section: LineKind, text: string, q: QuickEntryResult): LineKind {
   if (section === "atcd" && !q.conditions.length && HABIT.test(text)) return "habit";
+  // Under « Traitement »: a result (« Potassium (sérum) : 4,9 mmol/l ») is the work-up; a test to do, a note.
+  if (section === "ttt") {
+    if (VALUE.test(text) || (!q.treatments.length && isWorkupLine(text))) return "info";
+    if (TEST.test(fold(text))) return "note";
+  }
   return section;
 }
 

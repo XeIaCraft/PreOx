@@ -305,5 +305,29 @@ describe("case sheet", () => {
     expect(renal(atRisk)).toMatchObject({ strength: "recommended" });
     expect(renal(atRisk)?.reason).toMatch(/IEC/);
   });
+
+  it("keeps results, tests and a form's title out of the treatments and the notes", () => {
+    const raw = `Initiales : XY
+Intervention : Prothèse totale de genou
+Age 66 ans Poids 112 kg Taille 170 cm
+Traitement :
+Belsar plus 40/25 1x
+Zanidip 20 1x
+Potassium (Sérum) : 4.9 mmol/l
+Vitamine B12 : 224 ng/l
+échocardiographie de stress à la dobutamine
+Commentaires
+PROTHESE TOTALE (AU ROBOT)
+[hb < 13 g/dl ferritine <100 microg/l]
+Examens complémentaires : Débit filt. glom. (EKFC) : 45 ml/min/1.73m²
+Péricarde virtuel
+ECG : Tachycardie sinusale à 104 bpm. Axe normal.`;
+    const r = buildCaseSheet(parseConsultation(raw), ctx);
+    expect(texts(r, "ttt")).toEqual(["Belsar plus 40/25 1x", "Zanidip 20 1x"]);
+    // One conduct for a combination whose substances are stopped alike.
+    expect(sec(r, "ttt")[0].detail).not.toMatch(/Olmésartan :/);
+    expect(texts(r, "note")).toEqual(["échocardiographie de stress à la dobutamine"]);
+    expect(r.sheet.workup.find((w) => w.code === "ecg")?.value).toBe("ECG : Tachycardie sinusale à 104 bpm");
+  });
 });
 
