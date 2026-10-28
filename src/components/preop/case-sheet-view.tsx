@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Bold, Eye, EyeOff, FilePlus2, FileText, FolderInput, Pencil, Plus, Printer, RotateCcw, SlidersHorizontal, Trash2, UserPlus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bold, Eye, EyeOff, FileText, FolderInput, Pencil, Plus, Printer, RotateCcw, SlidersHorizontal, Trash2, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { Combobox, Disclosure, FieldLabel, MiniNumber, Panel } from "@/components/preop/ui";
@@ -12,7 +12,7 @@ import { SecureStore } from "@/lib/preop/secure-store";
 import { parseConsultation, splitConsultations } from "@/lib/preop/case-sheet/parse";
 import { buildCaseSheet, type CaseChoices, type CaseQuestion, type CaseResult, type ItemSection } from "@/lib/preop/case-sheet/build";
 import { caseSheetCss, caseSheetDocument, caseSheetHtml, dayKinetics, DEFAULT_SETTINGS, kineticsHtml, type SheetSettings } from "@/lib/preop/case-sheet/html";
-import type { LineKind } from "@/lib/preop/case-sheet/lines";
+import { addedSection, splitDictation, type LineKind } from "@/lib/preop/case-sheet/lines";
 import { fold, searchItems, type Catalogs } from "@/lib/preop/catalog";
 import { searchSurgeries } from "@/lib/preop/surgery-search";
 import { emptyDossier, type Dossier } from "@/lib/preop/dossier";
@@ -88,6 +88,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   const [paste, setPaste] = useState("");
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readRef = useRef<(text: string) => void>(() => {});
 
   // The sheet kept on this device, sealed.
   useEffect(() => {
@@ -105,6 +106,20 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     };
   }, [store]);
 
+  // Ctrl+V anywhere on the page (outside a field): the consultations pasted become patients.
+  useEffect(() => {
+    const onPaste = (ev: ClipboardEvent) => {
+      const t = ev.target as HTMLElement | null;
+      if (t?.closest?.("input, textarea, [contenteditable]")) return;
+      const text = ev.clipboardData?.getData("text") ?? "";
+      if (!text.trim()) return;
+      ev.preventDefault();
+      readRef.current(text);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
+
   function update(next: DaySheet) {
     setSheet(next);
     if (timer.current) clearTimeout(timer.current);
@@ -114,14 +129,14 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   }
 
   const ctx = useMemo(() => ({ catalogs, rules, protocols, service }), [catalogs, rules, protocols, service]);
-  const results = useMemo(() => new Map((sheet?.entries ?? []).map((e) => [e.id, buildCaseSheet(parseConsultation(e.raw), ctx, e.choices)])), [sheet?.entries, ctx]);
+  const entries = sheet?.entries;
+  const results = useMemo(() => new Map((entries ?? []).map((e) => [e.id, buildCaseSheet(parseConsultation(e.raw), ctx, e.choices)])), [entries, ctx]);
 
-  if (!sheet) return <p className="text-sm text-foreground-muted">Ouverture de la feuille…</p>;
-  const settings = { ...DEFAULT_SETTINGS, ...sheet.settings };
+  const settings = { ...DEFAULT_SETTINGS, ...sheet?.settings };
 
-  const setEntry = (id: string, patch: Partial<DayEntry>) => update({ ...sheet, entries: sheet.entries.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
+  const setEntry = (id: string, patch: Partial<DayEntry>) => update({ ...sheet!, entries: sheet!.entries.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
   const choose = (id: string, choices: CaseChoices) => {
-    const current = sheet.entries.find((e) => e.id === id)!.choices;
+    const current = sheet!.entries.find((e) => e.id === id)!.choices;
     // Another intervention or technique: the adapted plan was for the previous one.
     if (current.plan && ("surgeryId" in choices || "mode" in choices || "protocolId" in choices)) {
       if (!confirm("Le protocole adapté pour ce patient sera remplacé par celui de ce choix. Continuer ?")) return;
@@ -150,16 +165,21 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     update({ ...sheet!, hiddenKinetics: [...hidden] });
   }
 
-  function addEntries(raws: string[]) {
-    update({ ...sheet!, entries: [...sheet!.entries, ...raws.map((raw) => ({ id: crypto.randomUUID(), raw, choices: {} }))] });
+  /** New patients on the sheet — a consultation already there (pasted twice) is not added again. */
+  function addEntries(raws: string[]): number {
+    const known = new Set(sheet!.entries.map((e) => e.raw.trim()));
+    const fresh = raws.filter((raw) => !known.has(raw.trim()));
+    if (fresh.length) update({ ...sheet!, entries: [...sheet!.entries, ...fresh.map((raw) => ({ id: crypto.randomUUID(), raw, choices: {} }))] });
+    return fresh.length;
   }
 
-  function read() {
-    const pieces = splitConsultations(paste);
+  function read(text: string) {
+    const pieces = splitConsultations(text);
     if (!pieces.length) return;
-    addEntries(pieces);
+    const n = addEntries(pieces);
     setPaste("");
-    toast(`${pieces.length} consultation(s) lue(s).`, { variant: "success" });
+    if (n) toast(`${n} consultation(s) lue(s)${n < pieces.length ? ` — ${pieces.length - n} déjà sur la feuille` : ""}.`, { variant: "success" });
+    else toast("Déjà sur la feuille.");
   }
 
   function move(id: string, by: -1 | 1) {
@@ -249,6 +269,12 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     };
   }
 
+  useEffect(() => {
+    readRef.current = read;
+  });
+
+  if (!sheet) return <p className="text-sm text-foreground-muted">Ouverture de la feuille…</p>;
+
   return (
     <div className="space-y-4">
       <style>{caseSheetCss(SCOPE, settings)}</style>
@@ -283,9 +309,22 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
         </label>
         <label className="block space-y-1">
           <FieldLabel>Consultations à ajouter</FieldLabel>
-          <textarea rows={6} value={paste} onChange={(e) => setPaste(e.target.value)} placeholder="Collez ici une ou plusieurs consultations…" className={cn(areaClass, "font-mono text-xs")} />
+          <textarea
+            rows={4}
+            value={paste}
+            onChange={(e) => setPaste(e.target.value)}
+            onPaste={(e) => {
+              // Pasted in the empty field: read at once, nothing to click.
+              const text = e.clipboardData.getData("text");
+              if (paste.trim() || !text.trim()) return;
+              e.preventDefault();
+              read(text);
+            }}
+            placeholder="Collez ici une ou plusieurs consultations : elles sont lues aussitôt. (Ctrl+V ailleurs sur la page marche aussi.)"
+            className={cn(areaClass, "font-mono text-xs")}
+          />
         </label>
-        <Button size="sm" onClick={read} disabled={!paste.trim()}>
+        <Button size="sm" onClick={() => read(paste)} disabled={!paste.trim()}>
           <FileText className="h-3.5 w-3.5" /> Lire et ajouter
         </Button>
         <QuickPatient
@@ -369,8 +408,6 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                   </div>
                 </div>
               </div>
-
-              <Complement onAdd={(text) => setEntry(e.id, { raw: `${e.raw}\n---\n${text}` })} />
 
               <Disclosure summary="Plus d'options" className="rounded-[var(--radius-md)] border border-border" summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground">
                 <div className="space-y-3 px-3 pb-3">
@@ -464,7 +501,17 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 dangerouslySetInnerHTML={{ __html: caseSheetHtml(r.sheet, i + 1, { hidden: new Set(e.hidden ?? []), editable: true, settings, edits: e.choices.edits }) }}
               />
               {open && <LineMenu key={open.key} at={open} {...lineMenu(e, r, open.key)} />}
-              <AddLine catalogs={catalogs} onAdd={(section, text) => choose(e.id, { added: [...(e.choices.added ?? []), { id: crypto.randomUUID().slice(0, 8), section, text }] })} />
+              <AddLine
+                catalogs={catalogs}
+                onAdd={(lines) => {
+                  choose(e.id, { added: [...(e.choices.added ?? []), ...lines.map((l) => ({ id: crypto.randomUUID().slice(0, 8), ...l }))] });
+                  toast(lines.map((l) => `${l.text} → ${SECTION_NAME[l.section]}`).join(" · "), { variant: "success" });
+                }}
+                onConsultation={(text) => {
+                  setEntry(e.id, { raw: `${e.raw}\n---\n${text}` });
+                  toast(`Consultation ajoutée à ${r.sheet.initials} : antécédents, traitements et allergies repris.`, { variant: "success" });
+                }}
+              />
               <p className="flex flex-wrap items-center gap-2 text-xs text-foreground-subtle">
                 Touchez une ligne pour la corriger, la mettre en gras, la déplacer ou la retirer.
                 {(e.hidden?.length ?? 0) > 0 && (
@@ -590,52 +637,58 @@ function LineMenu({ at, title, text, onText, strong, onBold, section, onMove, of
   );
 }
 
-const ADD_TO: { code: ItemSection; label: string; hint: string }[] = [
-  { code: "atcd", label: "ATCD", hint: "Chercher un antécédent ou le taper…" },
-  { code: "ttt", label: "TTT", hint: "Chercher un traitement (nom ou marque) ou le taper…" },
-  { code: "allergy", label: "Allergie", hint: "Chercher un allergène ou le taper…" },
-  { code: "habit", label: "Habitus", hint: "« Tabagisme sevré il y a 20 ans », « OH 2 verres/j »…" },
-  { code: "alert", label: "Alerte", hint: "« Sang compatible à prévoir »…" },
-  { code: "note", label: "Note", hint: "« Vit seul, retour accompagné à organiser »…" },
-];
+const SECTION_NAME: Record<ItemSection, string> = { atcd: "ATCD", ttt: "TTT", allergy: "Allergie", habit: "Habitus", chir: "Chir.", alert: "Alerte", note: "Note" };
 
-/** « + » a line to one section of the patient, with the catalogue's suggestions. */
-function AddLine({ catalogs, onAdd }: { catalogs: Catalogs; onAdd: (section: ItemSection, text: string) => void }) {
-  const [to, setTo] = useState<ItemSection | null>(null);
-  const target = ADD_TO.find((a) => a.code === to);
+/** A pasted text this long is another consultation of the patient, not a line. */
+const isConsultation = (t: string) => t.split("\n").filter((l) => l.trim()).length >= 4 || t.length > 240;
+
+/**
+ * One field to add to the patient: what is typed goes where it belongs
+ * (« eliquis » → TTT, « allergie latex » → allergies, « ! sang à prévoir »
+ * → alert, the rest → notes), with the catalogue's suggestions; several
+ * lines at once are each sorted; a whole consultation pasted (emergencies,
+ * surgery, a letter) is read with the patient's.
+ */
+function AddLine({ catalogs, onAdd, onConsultation }: { catalogs: Catalogs; onAdd: (lines: { section: ItemSection; text: string }[]) => void; onConsultation: (text: string) => void }) {
   const search = (q: string) => {
-    if (to === "atcd") return searchItems(catalogs.conditions, q, (c) => [c.label, ...(c.keywords ?? [])]).map((c) => ({ key: c.id, label: c.label }));
-    if (to === "ttt") return searchItems(catalogs.medications, q, (m) => [m.name, ...(m.brands ?? [])]).map((m) => ({ key: m.id, label: m.name, hint: m.brands?.slice(0, 2).join(", ") }));
-    if (to === "allergy") return searchItems(catalogs.allergens, q, (a) => [a.label, ...a.keywords]).map((a) => ({ key: a.id, label: a.label }));
-    return [];
+    // A section said first (« ! », « note : »): the text as typed, no suggestion.
+    if (/^\s*(!|[a-zé.]+\s*:)/i.test(q)) return [];
+    return [
+      ...searchItems(catalogs.conditions, q, (c) => [c.label, ...(c.keywords ?? [])], 3).map((c) => ({ key: `atcd:${c.id}`, label: c.label, hint: "ATCD" })),
+      ...searchItems(catalogs.medications, q, (m) => [m.name, ...(m.brands ?? [])], 3).map((m) => ({ key: `ttt:${m.id}`, label: m.name, hint: "TTT" })),
+      ...searchItems(catalogs.allergens, q, (a) => [a.label, ...a.keywords], 2).map((a) => ({ key: `allergy:${a.id}`, label: a.label, hint: "Allergie" })),
+    ];
   };
-  const add = (text: string) => {
-    if (!to || !text.trim()) return;
-    onAdd(to, text.trim());
-    setTo(null);
+  const free = (text: string) => {
+    const lines = splitDictation(text).map((l) => addedSection(l, catalogs));
+    if (lines.length) onAdd(lines);
   };
   return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap items-center gap-1">
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground-subtle">
-          <Plus className="h-3.5 w-3.5" /> Ajouter :
-        </span>
-        {ADD_TO.map((a) => (
-          <Chip key={a.code} on={to === a.code} onClick={() => setTo(to === a.code ? null : a.code)}>
-            {a.label}
-          </Chip>
-        ))}
+    <div className="flex items-start gap-1.5">
+      <Plus className="mt-3 h-4 w-4 shrink-0 text-foreground-subtle" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <Combobox
+          ariaLabel="Ajouter au patient"
+          placeholder="Ajouter : ATCD, traitement, allergie, « ! alerte », « note : … » — ou collez une autre consultation"
+          search={search}
+          onPick={(o) => onAdd([{ section: o.key.slice(0, o.key.indexOf(":")) as ItemSection, text: o.label }])}
+          onFree={free}
+          freeLabel={(q) => {
+            const lines = splitDictation(q).map((l) => addedSection(l, catalogs));
+            return lines.length === 1 ? `Ajouter « ${lines[0].text} » → ${SECTION_NAME[lines[0].section]}` : `Ajouter ${lines.length} lignes (classées)`;
+          }}
+          onPaste={(ev) => {
+            const text = ev.clipboardData.getData("text");
+            if (isConsultation(text)) {
+              ev.preventDefault();
+              onConsultation(text.trim());
+            } else if (/[\n;]/.test(text.trim())) {
+              ev.preventDefault();
+              free(text);
+            }
+          }}
+        />
       </div>
-      {target && (
-        <div className="flex items-start gap-1.5">
-          <div className="min-w-0 flex-1">
-            <Combobox key={target.code} autoFocus ariaLabel={`Ajouter : ${target.label}`} placeholder={target.hint} search={search} onPick={(o) => add(o.label)} onFree={add} freeLabel={(q) => `Ajouter « ${q} »`} />
-          </div>
-          <Button size="icon" variant="ghost" aria-label="Annuler" onClick={() => setTo(null)}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
@@ -852,38 +905,6 @@ function QuickPatient({ catalogs, onAdd }: { catalogs: ReturnType<typeof useCata
         </label>
         <Button size="sm" onClick={add} disabled={!ready}>
           <UserPlus className="h-3.5 w-3.5" /> Ajouter à la feuille
-        </Button>
-      </div>
-    </Disclosure>
-  );
-}
-
-/** Another consultation of the same patient (emergencies, surgery, cardiology…), read with the first. */
-function Complement({ onAdd }: { onAdd: (text: string) => void }) {
-  const [text, setText] = useState("");
-  return (
-    <Disclosure
-      summary={
-        <span className="inline-flex items-center gap-1.5">
-          <FilePlus2 className="h-3.5 w-3.5" /> Compléter avec une autre consultation
-        </span>
-      }
-      className="rounded-[var(--radius-md)] border border-border"
-      summaryClassName="cursor-pointer px-3 py-2 text-sm font-medium text-foreground"
-    >
-      <div className="space-y-2 px-3 pb-3">
-        <p className="text-xs text-foreground-muted">Urgences, chirurgie, lettre de sortie… : ses antécédents, traitements et allergies s&apos;ajoutent à ceux du patient.</p>
-        <textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="Collez la consultation ici…" className={areaClass} />
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={!text.trim()}
-          onClick={() => {
-            onAdd(text.trim());
-            setText("");
-          }}
-        >
-          <FilePlus2 className="h-3.5 w-3.5" /> Lire et ajouter
         </Button>
       </div>
     </Disclosure>

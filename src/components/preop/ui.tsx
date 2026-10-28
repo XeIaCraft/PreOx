@@ -437,6 +437,7 @@ export function Combobox({
   autoFocus,
   onEmpty,
   ariaLabel,
+  onPaste,
 }: {
   placeholder: string;
   search: (q: string) => ComboOption[];
@@ -447,6 +448,7 @@ export function Combobox({
   /** Options shown on focus before anything is typed (suggestions). */
   onEmpty?: () => ComboOption[];
   ariaLabel?: string;
+  onPaste?: React.ClipboardEventHandler<HTMLInputElement>;
 }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -467,6 +469,7 @@ export function Combobox({
         }}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onPaste={onPaste}
         onKeyDown={(e) => {
           if (e.key !== "Enter") return;
           e.preventDefault();

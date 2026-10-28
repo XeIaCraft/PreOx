@@ -21,7 +21,7 @@ import { ventilationSettings } from "../ventilation";
 import { tciSummary, tciDrugOf } from "../tci";
 import { treatmentGuide } from "../treatment-guide";
 import { kineticsFor, type Kinetics } from "../kinetics";
-import { autoKind, cleanLine, readLine, sectionKind, type LineKind } from "./lines";
+import { autoKind, cleanLine, readLine, sectionKind, splitDictation, type LineKind } from "./lines";
 import { propofolInduction, rocuronium, sufentanil } from "../reference-protocol-kit";
 import { DEFAULT_GASES } from "../gases";
 import { postopLines } from "../postop";
@@ -335,7 +335,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   ] as [string[], LineKind][])
     for (const l of list) addLine(l, kind);
   // A dictation is often one long line: each sentence is sorted on its own (« …, sous metformine. Allergie au latex. »).
-  for (const l of p.other) for (const sentence of l.split(/(?<=[a-zà-ÿ)%])\.\s+|\s*;\s*/)) addLine(sentence.replace(/\.$/, ""));
+  for (const l of p.other) for (const sentence of splitDictation(l)) addLine(sentence);
   for (const a of choices.added ?? []) if (a.section !== "alert" && a.section !== "chir") addLine(a.text, a.section === "note" ? "note" : a.section, a.id);
   const of = (k: LineKind) => lines.filter((l) => l.kind === k);
   // What was added, corrected or moved on the sheet counts for the plan and the points of attention too.
@@ -456,9 +456,12 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   };
   const keyOf = (section: ItemSection, l: { source: string; addedId?: string }) => (l.addedId ? `add:${l.addedId}` : `${section}:${l.source}`);
 
+  // The same antecedent in two consultations (« HTA », « HTA traitée depuis 2015 »): both lines kept, what it implies said once.
+  const explained = new Set<string>();
   for (const l of of("atcd")) {
     const notable = l.q.conditions.map((q) => pointOf.get(q.id)).filter((x): x is AttentionPoint => !!x);
-    const pt = notable[0];
+    const pt = notable.some((x) => !explained.has(x.id)) ? notable[0] : undefined;
+    notable.forEach((x) => explained.add(x.id));
     push({ key: keyOf("atcd", l), section: "atcd", text: l.text, source: l.source, addedId: l.addedId, strong: notable.length > 0, detail: pt ? firstSentence(pt.detail, 110) : undefined, detailFull: pt ? notable.map((x) => x.detail.trim().replace(/\.$/, "")).join(" ; ") : undefined });
   }
   for (const l of of("habit")) push({ key: keyOf("habit", l), section: "habit", text: l.text, source: l.source, addedId: l.addedId });
@@ -477,12 +480,19 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     return { action, conduct: (v.kind === "stop" || v.kind === "depends" ? "stop" : v.kind === "continue" ? "continue" : "check") as SheetItem["conduct"] };
   };
   const listed = new Set<string>();
+  const conductOf = new Map<string, SheetItem["conduct"]>();
   for (const l of of("ttt")) {
     const names = [...new Set(l.q.treatments.map((t) => t.name))];
+    // Listed twice (the anaesthesia consultation and the emergencies'): the line kept — the dose may differ —, its conduct said once.
+    if (names.length && names.every((n) => listed.has(n))) {
+      push({ key: keyOf("ttt", l), section: "ttt", text: l.text, source: l.source, addedId: l.addedId, detail: "idem", conduct: conductOf.get(names[0]) ?? "check" });
+      continue;
+    }
     names.forEach((n) => listed.add(n));
     const verdicts = names.map((n) => ({ n, v: conduct(n) })).filter((x) => x.v);
     const action = !verdicts.length ? "non reconnu : conduite à vérifier" : verdicts.length === 1 ? verdicts[0].v!.action : verdicts.map((x) => `${x.n} : ${x.v!.action}`).join(", ");
     const kind = !verdicts.length ? "check" : verdicts.some((x) => x.v!.conduct === "stop") ? "stop" : verdicts.some((x) => x.v!.conduct === "check") ? "check" : "continue";
+    names.forEach((n) => conductOf.set(n, kind));
     push({ key: keyOf("ttt", l), section: "ttt", text: l.text, source: l.source, addedId: l.addedId, detail: action, conduct: kind, strong: kind === "stop" });
   }
   // A treatment only mentioned elsewhere (« FA sous Eliquis »), not in the list.

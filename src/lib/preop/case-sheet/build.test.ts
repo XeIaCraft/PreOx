@@ -217,7 +217,7 @@ describe("case sheet", () => {
     expect(pk).not.toMatch(/Paracétamol/);
   });
 
-  it("sorts every line of another consultation in its own words, and asks about the ones it can't place", () => {
+  it("sorts every line of another consultation in its own words, the ones it can't place in the notes", () => {
     const er = [
       "Motif d'admission : douleur anale",
       "Antécédents personnels :",
@@ -264,5 +264,16 @@ describe("case sheet", () => {
     expect(r.protocol?.id).toBe(other.id);
     expect(r.sheet.rows.find((x) => x.label === "ATB")?.parts[0].text).toMatch(/Céfazoline/);
     expect(buildCaseSheet(p, ctx, { protocolId: null }).protocol?.name).toMatch(/Résection transurétrale/);
+  });
+
+  it("says once what an antecedent or a treatment listed twice implies (two consultations of the patient)", () => {
+    const raw = `${CLINIC}\n---\nAntécédents :\nDiabète de type 2\nDiabète de type 2 sous ADO, HbA1c 7,8 %\nTraitement :\nEliquis 5 mg 1-0-1\nApixaban 5 mg 2x/j`;
+    const r = buildCaseSheet(parseConsultation(raw), ctx);
+    const diabetes = sec(r, "atcd").filter((a) => /Diabète/.test(a.text));
+    expect(diabetes.length).toBeGreaterThanOrEqual(2);
+    expect(diabetes.filter((a) => a.detail)).toHaveLength(1);
+    const apixaban = sec(r, "ttt").filter((t) => /Eliquis|Apixaban/.test(t.text));
+    expect(apixaban.map((t) => t.detail)).toEqual([expect.stringMatching(/^STOP/), "idem"]);
+    expect(apixaban[1].conduct).toBe("stop");
   });
 });

@@ -9,6 +9,7 @@
 
 import type { Catalogs } from "../catalog";
 import { parseQuickEntry, type QuickEntryResult } from "../quick-entry";
+import type { ItemSection } from "./build";
 
 export type LineKind = "atcd" | "ttt" | "allergy" | "habit" | "note" | "info" | "ignore";
 
@@ -72,4 +73,36 @@ export function autoKind(text: string, q: QuickEntryResult): LineKind | null {
   // Measured values, an examination finding, a score: already read, nothing to print.
   if (q.values.length || Object.keys(q.exam).length || q.asa || q.mallampati || q.negated.length) return "info";
   return null;
+}
+
+/** A dictation cut into its sentences: « HTA. Sous metformine ; allergie latex » → three lines. */
+export const splitDictation = (text: string): string[] =>
+  text
+    .split(/\n+|(?<=[a-zà-ÿA-ZÀ-Ý)%])\.\s+|\s*;\s*/)
+    .map((s) => cleanLine(s.replace(/\.$/, "")))
+    .filter(Boolean);
+
+/** « alerte : … », « ! … », « ttt : … »: the section said first, before the line. */
+const PREFIX: [RegExp, ItemSection][] = [
+  [/^(?:(?:alerte|attention)\b|!+)\s*[:\-–]?\s*/i, "alert"],
+  [/^notes?\s*[:\-–]\s*/i, "note"],
+  [/^(?:atcd|ant[ée]c[ée]dents?)\s*[:\-–]\s*/i, "atcd"],
+  [/^(?:ttt|traitements?)\s*[:\-–]\s*/i, "ttt"],
+  [/^allergies?\s*[:\-–]\s*/i, "allergy"],
+  [/^habitus\s*[:\-–]\s*/i, "habit"],
+  [/^chir(?:urgie|\.)?\s*[:\-–]\s*/i, "chir"],
+];
+
+/**
+ * Where a line typed on the sheet goes: the section said before it, else
+ * what is recognised in it (an operation alone: the surgical history), else
+ * a note — typed on purpose, it is never left out.
+ */
+export function addedSection(line: string, catalogs: Parameters<typeof readLine>[1]): { section: ItemSection; text: string } {
+  const text = cleanLine(line);
+  for (const [re, section] of PREFIX) if (re.test(text)) return { section, text: cleanLine(text.replace(re, "")) };
+  const q = readLine(text, catalogs);
+  if (q.surgicalHistory.length && !q.conditions.length && !q.treatments.length && !q.allergies.length) return { section: "chir", text };
+  const kind = autoKind(text, q);
+  return { section: kind && kind !== "info" && kind !== "ignore" ? kind : "note", text };
 }
