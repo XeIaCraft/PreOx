@@ -276,4 +276,24 @@ describe("case sheet", () => {
     expect(apixaban.map((t) => t.detail)).toEqual([expect.stringMatching(/^STOP/), "idem"]);
     expect(apixaban[1].conduct).toBe("stop");
   });
+
+  it("lists the work-up the procedure, the technique and the patient need, and finds what is there", () => {
+    const raw = `${CLINIC}\n---\nTraitement :\nXarelto 20 mg le soir`;
+    const r = buildCaseSheet(parseConsultation(raw), ctx, { mode: "neuraxial" });
+    const w = (x: Result, code: string) => x.sheet.workup.find((y) => y.code === code);
+    // The spinal: platelets — already in the consultation's biology.
+    expect(w(r, "fbc")).toMatchObject({ status: "ok", value: "Hb 13,2, plaq. 245" });
+    // Under a direct oral anticoagulant: haemostasis to plan, the creatinine there.
+    expect(w(r, "haemostasis")).toMatchObject({ status: "todo", strength: "recommended" });
+    expect(w(r, "renal")?.status).toBe("ok");
+    // A biology pasted afterwards fills it; « groupe à faire » is asked for, not done; a result is not a note.
+    const more = buildCaseSheet(parseConsultation(`${raw}\n---\nTP 95 %, TCA 1,1\nECG : rythme sinusal\nGroupe sanguin à faire`), ctx, { mode: "neuraxial" });
+    expect(w(more, "haemostasis")?.status).toBe("ok");
+    expect(texts(more, "note").join(" ")).not.toMatch(/ECG|TCA/);
+    // Ticked on the sheet: done, or not needed (off the sheet).
+    const ticked = buildCaseSheet(parseConsultation(raw), ctx, { mode: "neuraxial", workup: { haemostasis: "done", fbc: "skip" } });
+    expect(w(ticked, "haemostasis")?.status).toBe("ok");
+    expect(w(ticked, "fbc")).toBeUndefined();
+  });
 });
+

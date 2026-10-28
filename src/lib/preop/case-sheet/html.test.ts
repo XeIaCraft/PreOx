@@ -22,6 +22,12 @@ const sheet: CaseSheet = {
     { key: "alert:Ventilation", section: "alert", text: "Ventilation au masque difficile", strong: true, minor: true },
     { key: "note:Vit seul", section: "note", text: "Vit seul" },
   ],
+  workup: [
+    { code: "group", label: "Groupe + RAI", status: "todo", reason: "intervention potentiellement hémorragique", strength: "recommended" },
+    { code: "fbc", label: "Hb, plaquettes", status: "ok", value: "Hb 13,2, plaq. 245", reason: "rachi / péridurale : plaquettes", strength: "recommended" },
+    { code: "ecg", label: "ECG", status: "asked", reason: "65 ans", strength: "recommended" },
+    { code: "pregnancy", label: "β-hCG", status: "todo", reason: "femme en âge de procréer", strength: "consider" },
+  ],
   kinetics: [{ name: "Propofol", onset: "30–45 s", csht: "≈ 10 min (1 h)", duration: "5–10 min", wake: "Ce 1–1,5 µg/mL" }],
 };
 
@@ -73,5 +79,15 @@ describe("printed case sheet", () => {
     expect(html.indexOf("Pharmaco")).toBeGreaterThan(html.lastIndexOf("</article>"));
     expect(html).not.toContain("Ce 1–1,5");
     expect(caseSheetDocument([{ sheet }], "Jour", { settings: { ...DEFAULT_SETTINGS, pharmaco: "full" } })).toContain("Ce 1–1,5");
+  });
+
+  it("prints the work-up there, and what is still to plan in its own line", () => {
+    const html = caseSheetHtml(sheet, 1);
+    expect(html).toMatch(/Bilan<\/span><span class="vl">.*Hb 13,2, plaq\. 245.*ECG <i>demandé<\/i>/);
+    expect(html).toMatch(/class="ln todo"><span class="lb">À prévoir<\/span><span class="vl"><span><b>Groupe \+ RAI<\/b>/);
+    expect(html).not.toContain("β-hCG");
+    expect(caseSheetHtml(sheet, 1, { settings: { ...DEFAULT_SETTINGS, workup: "all" } })).toContain("<b>β-hCG</b> ?");
+    expect(caseSheetHtml(sheet, 1, { settings: { ...DEFAULT_SETTINGS, workup: "off" } })).not.toContain("Groupe");
+    expect(caseSheetHtml(sheet, 1, { hidden: new Set(["bilan:group"]) })).not.toContain("À prévoir");
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Bold, Eye, EyeOff, FileText, FolderInput, Pencil, Plus, Printer, RotateCcw, SlidersHorizontal, Trash2, UserPlus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bold, Check, Eye, EyeOff, FileText, FolderInput, Pencil, Plus, Printer, RotateCcw, SlidersHorizontal, Trash2, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { Combobox, Disclosure, FieldLabel, MiniNumber, Panel } from "@/components/preop/ui";
@@ -13,6 +13,7 @@ import { parseConsultation, splitConsultations } from "@/lib/preop/case-sheet/pa
 import { buildCaseSheet, type CaseChoices, type CaseQuestion, type CaseResult, type ItemSection } from "@/lib/preop/case-sheet/build";
 import { caseSheetCss, caseSheetDocument, caseSheetHtml, dayKinetics, DEFAULT_SETTINGS, kineticsHtml, type SheetSettings } from "@/lib/preop/case-sheet/html";
 import { addedSection, splitDictation, type LineKind } from "@/lib/preop/case-sheet/lines";
+import type { SheetWorkup } from "@/lib/preop/case-sheet/workup";
 import { fold, searchItems, type Catalogs } from "@/lib/preop/catalog";
 import { searchSurgeries } from "@/lib/preop/surgery-search";
 import { emptyDossier, type Dossier } from "@/lib/preop/dossier";
@@ -216,12 +217,16 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     toast(`Dossier ${dossier.initials} gardé sur cet appareil (onglet Dossiers).`, { variant: "success" });
   }
 
+  /** A test of the work-up ticked done, or not needed. */
+  const markWorkup = (e: DayEntry, code: string, mark: "done" | "skip") => choose(e.id, { workup: { ...(e.choices.workup ?? {}), [code]: mark } });
+
   /** What can be done with a line of the sheet: correct it, bold, move, take off. */
   function lineMenu(e: DayEntry, r: CaseResult, key: string): MenuProps {
     const c = e.choices;
     const item = r.sheet.items.find((i) => i.key === key);
     // A product of the plan: « Analgésie:Kétorolac 30 mg ».
-    const product = !item && key.includes(":") && !/^(row|imp):/.test(key);
+    const product = !item && key.includes(":") && !/^(row|imp|bilan):/.test(key);
+    const work = r.sheet.workup.find((w) => `bilan:${w.code}` === key);
     const original = product ? key.slice(key.indexOf(":") + 1) : item?.text;
     const editKey = product ? key : item?.addedId ? undefined : (item?.source ?? (item?.section === "alert" ? item.key : undefined));
     const off = (e.hidden ?? []).includes(key);
@@ -229,7 +234,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     const changed = !!editKey && (c.edits?.[editKey] !== undefined || (item?.source !== undefined && c.lines?.[item.source] !== undefined) || c.strong?.[key] !== undefined);
     const without = <T,>(rec: Record<string, T> | undefined, k?: string) => Object.fromEntries(Object.entries(rec ?? {}).filter(([x]) => x !== k));
     return {
-      title: product ? (c.edits?.[key] ?? original!) : (item?.text ?? (key === "tech" ? "Technique" : key === "planb" ? "Plan B" : key.startsWith("row:") ? `Ligne « ${key.slice(4)} »` : "Ce que ça implique")),
+      title: work ? `${work.label}${work.reason ? ` — ${work.reason}` : ""}` : product ? (c.edits?.[key] ?? original!) : (item?.text ?? (key === "tech" ? "Technique" : key === "planb" ? "Plan B" : key.startsWith("row:") ? `Ligne « ${key.slice(4)} »` : "Ce que ça implique")),
       text: product ? (c.edits?.[key] ?? original) : item && (item.addedId || editKey) ? item.text : undefined,
       onText: (t) => {
         const v = t.trim();
@@ -252,14 +257,31 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
         setEntry(e.id, { hidden: off ? (e.hidden ?? []).filter((k) => k !== key) : [...(e.hidden ?? []), key] });
         close();
       },
+      onDone:
+        work && work.status !== "ok"
+          ? () => {
+              markWorkup(e, work.code, "done");
+              close();
+            }
+          : undefined,
+      onSkip: work
+        ? () => {
+            markWorkup(e, work.code, "skip");
+            close();
+          }
+        : undefined,
       onDelete: item?.addedId
         ? () => {
             choose(e.id, { added: (c.added ?? []).filter((a) => a.id !== item.addedId) });
             close();
           }
         : undefined,
-      onReset:
-        changed && editKey
+      onReset: work?.code && c.workup?.[work.code]
+        ? () => {
+            choose(e.id, { workup: without(c.workup, work.code) });
+            close();
+          }
+        : changed && editKey
           ? () => {
               choose(e.id, { edits: without(c.edits, editKey), lines: without(c.lines, item?.source), strong: without(c.strong, key) });
               close();
@@ -368,6 +390,13 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                   ))}
                 </div>
               )}
+
+              <WorkupCheck
+                workup={r.sheet.workup.filter((w) => w.status !== "ok" && (settings.workup === "all" || (settings.workup === "required" && w.strength === "recommended")))}
+                skipped={Object.entries(e.choices.workup ?? {}).filter(([, m]) => m === "skip").map(([code]) => code)}
+                onMark={(code, mark) => markWorkup(e, code, mark)}
+                onRestore={() => choose(e.id, { workup: Object.fromEntries(Object.entries(e.choices.workup ?? {}).filter(([, m]) => m !== "skip")) })}
+              />
 
               <div className="space-y-1">
                 <FieldLabel>Intervention</FieldLabel>
@@ -509,7 +538,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 }}
                 onConsultation={(text) => {
                   setEntry(e.id, { raw: `${e.raw}\n---\n${text}` });
-                  toast(`Consultation ajoutée à ${r.sheet.initials} : antécédents, traitements et allergies repris.`, { variant: "success" });
+                  toast(`Ajouté au dossier de ${r.sheet.initials} : relu (antécédents, traitements, allergies, bilan).`, { variant: "success" });
                 }}
               />
               <p className="flex flex-wrap items-center gap-2 text-xs text-foreground-subtle">
@@ -559,10 +588,13 @@ interface MenuProps {
   onToggle: () => void;
   onDelete?: () => void;
   onReset?: () => void;
+  /** A test of the work-up: ticked done, or not needed. */
+  onDone?: () => void;
+  onSkip?: () => void;
   onClose: () => void;
 }
 
-function LineMenu({ at, title, text, onText, strong, onBold, section, onMove, off, onToggle, onDelete, onReset, onClose }: MenuProps & { at: MenuAt }) {
+function LineMenu({ at, title, text, onText, strong, onBold, section, onMove, off, onToggle, onDelete, onReset, onDone, onSkip, onClose }: MenuProps & { at: MenuAt }) {
   const [draft, setDraft] = useState(text ?? "");
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -612,6 +644,16 @@ function LineMenu({ at, title, text, onText, strong, onBold, section, onMove, of
         <button type="button" onClick={onToggle} className={small}>
           {off ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />} {off ? "Remettre" : "Retirer"}
         </button>
+        {onDone && (
+          <button type="button" onClick={onDone} className={small}>
+            <Check className="h-3.5 w-3.5" /> Fait / disponible
+          </button>
+        )}
+        {onSkip && (
+          <button type="button" onClick={onSkip} className={small}>
+            <X className="h-3.5 w-3.5" /> Pas nécessaire
+          </button>
+        )}
         {onDelete && (
           <button type="button" onClick={onDelete} className={cn(small, "text-danger")}>
             <Trash2 className="h-3.5 w-3.5" /> Supprimer
@@ -637,7 +679,54 @@ function LineMenu({ at, title, text, onText, strong, onBold, section, onMove, of
   );
 }
 
-const SECTION_NAME: Record<ItemSection, string> = { atcd: "ATCD", ttt: "TTT", allergy: "Allergie", habit: "Habitus", chir: "Chir.", alert: "Alerte", note: "Note" };
+/**
+ * The tests the patient still needs (recommendations for the procedure, the
+ * technique, the patient), each ticked done or set aside in one touch; the
+ * results themselves are pasted in « Ajouter ».
+ */
+function WorkupCheck({ workup, skipped, onMark, onRestore }: { workup: SheetWorkup[]; skipped: string[]; onMark: (code: string, mark: "done" | "skip") => void; onRestore: () => void }) {
+  if (!workup.length && !skipped.length) return null;
+  return (
+    <div className="space-y-1.5 rounded-[var(--radius-md)] border border-danger/30 bg-danger-tint/40 p-2.5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-foreground">Bilan à compléter</p>
+      {workup.length > 0 ? (
+        <ul className="space-y-1">
+          {workup.map((w) => (
+            <li key={w.code} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="min-w-0 flex-1 text-sm text-foreground">
+                <b>{w.label}</b>
+                {w.strength === "consider" && " ?"} {w.status === "asked" ? <i className="text-foreground-muted">demandé</i> : <span className="text-xs text-foreground-muted">— {w.reason}</span>}
+              </span>
+              <span className="flex gap-1">
+                <button type="button" onClick={() => onMark(w.code, "done")} className="inline-flex min-h-7 items-center gap-1 rounded-full border border-border bg-surface px-2 text-[11px] font-medium text-foreground hover:bg-surface-muted">
+                  <Check className="h-3 w-3" /> Fait
+                </button>
+                <button type="button" onClick={() => onMark(w.code, "skip")} className="inline-flex min-h-7 items-center gap-1 rounded-full border border-border bg-surface px-2 text-[11px] font-medium text-foreground-muted hover:bg-surface-muted">
+                  <X className="h-3 w-3" /> Pas nécessaire
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-foreground-muted">Tout est là.</p>
+      )}
+      <p className="text-xs text-foreground-muted">
+        Collez la biologie, l&apos;ECG ou le groupe dans « Ajouter » (sous la feuille) : ils sont reconnus.
+        {skipped.length > 0 && (
+          <>
+            {" "}
+            <button type="button" className="font-medium text-primary-strong underline-offset-2 hover:underline" onClick={onRestore}>
+              Remettre les {skipped.length} écarté(s)
+            </button>
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
+const SECTION_NAME: Record<ItemSection | "bio", string> = { atcd: "ATCD", ttt: "TTT", allergy: "Allergie", habit: "Habitus", chir: "Chir.", alert: "Alerte", note: "Note", bio: "Bilan" };
 
 /** A pasted text this long is another consultation of the patient, not a line. */
 const isConsultation = (t: string) => t.split("\n").filter((l) => l.trim()).length >= 4 || t.length > 240;
@@ -660,7 +749,11 @@ function AddLine({ catalogs, onAdd, onConsultation }: { catalogs: Catalogs; onAd
     ];
   };
   const free = (text: string) => {
-    const lines = splitDictation(text).map((l) => addedSection(l, catalogs));
+    const all = splitDictation(text).map((l) => addedSection(l, catalogs));
+    // Results (« Hb 12,8 plaq 210 », « ECG : RS », « groupe A+ ») are read with the consultation: the work-up.
+    const bio = all.filter((l) => l.section === "bio");
+    if (bio.length) onConsultation(bio.map((l) => l.text).join("\n"));
+    const lines = all.filter((l): l is { section: ItemSection; text: string } => l.section !== "bio");
     if (lines.length) onAdd(lines);
   };
   return (
@@ -669,7 +762,7 @@ function AddLine({ catalogs, onAdd, onConsultation }: { catalogs: Catalogs; onAd
       <div className="min-w-0 flex-1">
         <Combobox
           ariaLabel="Ajouter au patient"
-          placeholder="Ajouter : ATCD, traitement, allergie, « ! alerte », « note : … » — ou collez une autre consultation"
+          placeholder="Ajouter : ATCD, TTT, allergie, Hb, ECG, groupe, « ! alerte »… ou coller"
           search={search}
           onPick={(o) => onAdd([{ section: o.key.slice(0, o.key.indexOf(":")) as ItemSection, text: o.label }])}
           onFree={free}
@@ -740,6 +833,11 @@ function SettingsPanel({ value, onChange }: { value: SheetSettings; onChange: (s
           { value: "main", label: "Principales" },
           { value: "all", label: "Toutes" },
           { value: "none", label: "Aucune" },
+        ])}
+        {group("Bilan", "workup", [
+          { value: "required", label: "Recommandé" },
+          { value: "all", label: "+ à envisager" },
+          { value: "off", label: "Non" },
         ])}
         {group("Pharmaco (fin de feuille)", "pharmaco", [
           { value: "off", label: "Non" },

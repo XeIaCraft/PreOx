@@ -207,7 +207,7 @@ function readValues(text: string): { values: QuickValue[]; asa?: number; mallamp
     const v = num(hb[1]);
     push("hb", hb[2] === "g/l" || v > 25 ? Math.round(v) / 10 : v, `Hb ${hb[1]}${hb[2] ? ` ${hb[2]}` : ""}`);
   }
-  const plt = f.match(/\b(?:plaquettes|plq|plt|thrombocytes)\s*:?\s*(\d{1,3}(?:[ .]?\d{3})?)\s*(?:g\/l|\/mm3|\/µl|\/ul|x ?10)?/);
+  const plt = f.match(/\b(?:plaquettes|plaq|plq|plt|thrombocytes)\.?\s*:?\s*(\d{1,3}(?:[ .]?\d{3})?)\s*(?:g\/l|\/mm3|\/µl|\/ul|x ?10)?/);
   if (plt) {
     const v = num(plt[1].replace(/[ .]/g, ""));
     push("platelets", v > 2000 ? Math.round(v / 1000) : v, `plaquettes ${plt[1]}`);
@@ -391,7 +391,7 @@ export function parseQuickEntry(text: string, catalogs: Cats): QuickEntryResult 
   if (drugs.length) result.substances.drugs = drugs;
   const aboutSubstances = (seg: string) => /fum|tabac|cigarette|paquet|alcool|biere|verre|vin\b|cannabis|joint|cocaine|heroine|drogue|ethyl/.test(fold(seg));
   const aboutValues = (seg: string) =>
-    /\b(pa|ta|fc|spo2|sat|poids|taille|hb|inr|creat|plaquettes|hba1c|asa|mallampati|imc|bmi|kg|cm|mmhg|\/min|k\+?|na\+?|kaliemie|natremie|glycemie|albumine|nt-?probnp|troponine|ferritine)\b|\d+\s*ans\b/.test(fold(seg));
+    /\b(pa|ta|fc|spo2|sat|poids|taille|hb|inr|creat|plaquettes|plaq|hba1c|asa|mallampati|imc|bmi|kg|cm|mmhg|\/min|k\+?|na\+?|kaliemie|natremie|glycemie|albumine|nt-?probnp|troponine|ferritine)\b|\d+\s*ans\b/.test(fold(seg));
 
   // --- Planned intervention ---------------------------------------------------------------
   const surgeries = catalogs.surgeries ?? [];

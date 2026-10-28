@@ -21,7 +21,8 @@ import { ventilationSettings } from "../ventilation";
 import { tciSummary, tciDrugOf } from "../tci";
 import { treatmentGuide } from "../treatment-guide";
 import { kineticsFor, type Kinetics } from "../kinetics";
-import { autoKind, cleanLine, readLine, sectionKind, splitDictation, type LineKind } from "./lines";
+import { caseWorkup, type SheetWorkup } from "./workup";
+import { autoKind, cleanLine, isWorkupLine, readLine, sectionKind, splitDictation, type LineKind } from "./lines";
 import { propofolInduction, rocuronium, sufentanil } from "../reference-protocol-kit";
 import { DEFAULT_GASES } from "../gases";
 import { postopLines } from "../postop";
@@ -60,6 +61,8 @@ export interface CaseChoices {
   strong?: Record<string, boolean>;
   /** Lines added on the sheet. */
   added?: { id: string; section: ItemSection; text: string }[];
+  /** Work-up ticked on the sheet: done, or not needed (« fbc », « group »…). */
+  workup?: Record<string, "done" | "skip">;
 }
 
 /** Where a patient's line is printed. */
@@ -133,6 +136,8 @@ export interface CaseSheet {
   fallback?: SheetFallback;
   /** Onset and half-times of the anaesthesia drugs (plan and plan B) — the « Pharmaco » list. */
   kinetics: SheetKinetics[];
+  /** The tests the patient needs (procedure, technique, patient), there or to plan. */
+  workup: SheetWorkup[];
 }
 
 export interface CaseResult {
@@ -170,6 +175,9 @@ const firstSentence = (t: string, max = 160) => {
   const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf(" ; "));
   return end > 40 ? cut.slice(0, end).trim() : `${cut.trimEnd()}…`;
 };
+
+/** A line with a biology value: « Hb 13,2 », « plaquettes 245 », « créat. 0,9 ». */
+const BIO_VALUE = /\b(hb|hgb|h[ée]moglobine|plaquettes|plaq|plq|plt|inr|cr[ée]at\w*|k\+?|na\+?|kali[ée]mie|natr[ée]mie|hba1c|ferritine|albumine|nt-?probnp|troponine|glyc[ée]mie)\b\.?\s*:?\s*\d/i;
 
 const MODE_TECHNIQUES: Record<SheetMode, Technique[]> = { general: ["general"], neuraxial: ["neuraxial"], regional: ["deep_block"], sedation: ["sedation"] };
 const MODE_LABEL: Record<SheetMode, string> = { general: "AG", neuraxial: "Rachianesthésie", regional: "ALR", sedation: "Sédation" };
@@ -324,7 +332,8 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     const text = cleanLine(choices.edits?.[source] ?? bare);
     const moved = choices.lines?.[source];
     const q = readLine(text, catalogs, moved ?? section);
-    const kind = moved ?? (section ? sectionKind(section, text, q) : (autoKind(text, q) ?? "note"));
+    // « ECG : rythme sinusal »: the heading says it is a result (the work-up), whatever follows.
+    const kind = moved ?? (section ? sectionKind(section, text, q) : isWorkupLine(source) ? "info" : (autoKind(text, q) ?? "note"));
     lines.push({ source, text: kind === "note" && !choices.edits?.[source] ? source : text, kind, q, addedId });
   };
   for (const [list, kind] of [
@@ -533,6 +542,21 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   if (!protocol && item && !choices.plan)
     push({ key: "note:no-protocol", section: "note", text: mode === "general" ? "Pas de protocole pour cette intervention dans la bibliothèque : AG de base, à adapter (ATB, analgésie, NVPO à compléter)." : "Pas de protocole pour cette intervention dans la bibliothèque : doses à compléter." });
 
+  // --- Work-up: what the procedure, the technique and the patient need, and what is there -----
+  const allLines = [...p.raw.split("\n"), ...(choices.notes ?? "").split("\n"), ...(choices.added ?? []).map((a) => a.text)];
+  // Values wherever they are in what was pasted (a biology under a heading the reader skips, one pasted later).
+  const bio = parseQuickEntry(allLines.filter((l) => isWorkupLine(l) || BIO_VALUE.test(l)).join("\n"), catalogs).values;
+  const measured = { ...c.patient };
+  for (const v of bio) if (measured[v.key] === undefined) (measured as Record<string, unknown>)[v.key] = v.value;
+  const workup = caseWorkup({
+    recommendations: scores.exams.recommendations,
+    consultation: { ...c, patient: measured },
+    techniques: plan.techniques,
+    lines: allLines,
+    bleedingHistory: (p.hemstop ?? 0) >= 2 || Object.values(c.hemstop).some((v) => v === true),
+    marks: choices.workup,
+  });
+
   // --- Questions: only what the plan can't do without --------------------------------------
   const questions: CaseQuestion[] = [];
   if (choices.surgeryId === undefined && (!item || !sure))
@@ -587,6 +611,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
       items,
       fallback,
       kinetics,
+      workup,
     },
     questions,
     candidates,

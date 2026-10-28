@@ -21,6 +21,8 @@ export interface SheetSettings {
   postop: boolean;
   planB: boolean;
   notes: boolean;
+  /** The tests needed: the recommended ones, those to consider too, or none. */
+  workup: "required" | "all" | "off";
   /** The « Pharmaco » list at the end: off, onset and half-times, or with the duration and the awakening. */
   pharmaco: "off" | "short" | "full";
   size: "compact" | "normal" | "large";
@@ -35,6 +37,7 @@ export const DEFAULT_SETTINGS: SheetSettings = {
   postop: true,
   planB: true,
   notes: true,
+  workup: "required",
   pharmaco: "off",
   size: "normal",
 };
@@ -118,6 +121,24 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
     if (!edit && list.length && list.every((i) => hidden.has(i.key))) return "";
     return gridLine(`row:${SECTION_LABEL[s]}`, SECTION_LABEL[s], html.length ? html.join(`<span class="sep">${sep}</span>`) : esc(empty!));
   };
+  // The work-up: what is there, what is asked for, what is to plan (in red).
+  const work = st.workup === "off" ? [] : (sheet.workup ?? []).filter((w) => st.workup === "all" || w.strength === "recommended");
+  const workPiece = (w: (typeof work)[number]) =>
+    piece(
+      `bilan:${w.code}`,
+      w.status === "todo"
+        ? `<b>${esc(w.label)}</b>${w.strength === "consider" ? " ?" : ""}${st.detail !== "none" && w.reason ? ` <span class="why">(${esc(w.reason)})</span>` : ""}`
+        : w.status === "asked"
+          ? `${esc(w.label)} <i>demandé</i>`
+          : esc(w.value ?? w.label)
+    );
+  const workLine = (label: string, list: typeof work, cls = "") => {
+    const html = list.map(workPiece).filter(Boolean);
+    if (!html.length) return "";
+    return gridLine(`row:${label}`, label, html.join('<span class="sep"> · </span>'), cls);
+  };
+  const workup = workLine("Bilan", work.filter((w) => w.status !== "todo")) + workLine("À prévoir", work.filter((w) => w.status === "todo"), "todo");
+
   const implications =
     st.detail === "none"
       ? ""
@@ -150,6 +171,7 @@ ${st.habits ? itemLine("habit", " ; ") : ""}
 ${st.surgical ? itemLine("chir", ", ") : ""}
 ${itemLine("ttt", " ; ", "aucun")}
 ${itemLine("allergy", ", ")}
+${workup}
 </section>
 ${alerts.length ? `<ul class="alerts">${alerts.join("")}</ul>` : ""}
 ${notes}
@@ -176,6 +198,9 @@ ${s(".case .lb")}{color:#1f4f53;font-weight:600;font-size:.86em;text-transform:u
 ${s(".case .sep")}{color:#8a979b}
 ${s(".case .planb")}{margin:0.6mm 0 0;padding:0.4mm 0 0.4mm 1.5mm;border-left:0.6mm dashed #8fa9ab}
 ${s(".case .imp")}{margin:0.1mm 0 0.1mm 17.5mm;color:#323b3f;font-size:.94em}
+${s(".case .ln.todo .vl")}{color:#8a1f12}
+${s(".case .ln.todo .lb")}{color:#8a1f12}
+${s(".case .why")}{color:#5b6569;font-weight:400;font-size:.9em}
 ${s(".case .cd")}{color:#3c4549}
 ${s(".case .cd.stop")}{color:#8a1f12;font-weight:600}
 ${s(".case .alerts")}{margin:0.8mm 0 0;padding:0.8mm 1.6mm 0.8mm 5mm;background:#fbeeea;border-left:0.8mm solid #b3432b;border-radius:0.8mm;color:#7a1d10;font-weight:600}

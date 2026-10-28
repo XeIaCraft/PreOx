@@ -9,6 +9,7 @@
 
 import type { Catalogs } from "../catalog";
 import { parseQuickEntry, type QuickEntryResult } from "../quick-entry";
+import { fold } from "../catalog";
 import type { ItemSection } from "./build";
 
 export type LineKind = "atcd" | "ttt" | "allergy" | "habit" | "note" | "info" | "ignore";
@@ -52,6 +53,12 @@ export function readLine(line: string, catalogs: Pick<Catalogs, "conditions" | "
 /** Tobacco, alcohol, drugs — also without an amount (« tabagisme très ancien »). */
 const HABIT = /\b(tabac|tabagi\w*|fum(eur|euse|e|ait)|cigarettes?|cig\/j|paquets?[- ]ann[ée]es?|\d+\s*pa\b|sevr[ée]e?|alcool\w*|[ée]thylisme|oh\b|bi[eè]res?|vin\b|cannabis|joints?|coca[iï]ne|drogues?|toxicomanie|stup[ée]fiants?|vapot\w*|cigarette [ée]lectronique)/i;
 
+/** A test result or request: « ECG : RS », « Groupe A+, RAI nég. », « TCA 1,1 ». */
+const WORKUP = /^(biologie|bilan|labo)\b|\b(ecg|electrocardiogramme|groupe sanguin|groupe\s*(a|b|ab|o)\s*(\+|-|pos|neg|rh)|groupage|rai|b-?hcg|nfs|hemogramme|ionogramme)\b|\b(tca|aptt|tp|fibrinogene)\s*[:=]?\s*\d/;
+
+/** A test result or request, already read for the work-up. */
+export const isWorkupLine = (text: string) => WORKUP.test(fold(text));
+
 const EMPTY = /^(\/+|-+|r\.?a\.?s\.?|neant|aucun(e)?s?|non|nc|0|sans particularit[ée]s?)$/i;
 
 /** Where a line under a heading goes: its heading's place — but tobacco or alcohol listed with the antecedents are habits. */
@@ -70,8 +77,8 @@ export function autoKind(text: string, q: QuickEntryResult): LineKind | null {
   if (q.conditions.length || q.surgicalHistory.length) return "atcd";
   if (q.treatments.length || q.freeTreatments.length) return "ttt";
   if (Object.keys(q.substances).length || HABIT.test(text)) return "habit";
-  // Measured values, an examination finding, a score: already read, nothing to print.
-  if (q.values.length || Object.keys(q.exam).length || q.asa || q.mallampati || q.negated.length) return "info";
+  // Measured values, a test, an examination finding, a score: already read (the work-up), nothing to print.
+  if (WORKUP.test(fold(text)) || q.values.length || Object.keys(q.exam).length || q.asa || q.mallampati || q.negated.length) return "info";
   return null;
 }
 
@@ -95,14 +102,17 @@ const PREFIX: [RegExp, ItemSection][] = [
 
 /**
  * Where a line typed on the sheet goes: the section said before it, else
- * what is recognised in it (an operation alone: the surgical history), else
- * a note — typed on purpose, it is never left out.
+ * what is recognised in it (an operation alone: the surgical history; a
+ * result: « bio », read with the consultation), else a note — typed on
+ * purpose, it is never left out.
  */
-export function addedSection(line: string, catalogs: Parameters<typeof readLine>[1]): { section: ItemSection; text: string } {
+export function addedSection(line: string, catalogs: Parameters<typeof readLine>[1]): { section: ItemSection | "bio"; text: string } {
   const text = cleanLine(line);
   for (const [re, section] of PREFIX) if (re.test(text)) return { section, text: cleanLine(text.replace(re, "")) };
   const q = readLine(text, catalogs);
   if (q.surgicalHistory.length && !q.conditions.length && !q.treatments.length && !q.allergies.length) return { section: "chir", text };
   const kind = autoKind(text, q);
+  // A result (« Hb 12,8 plaq 210 », « ECG : RS ») is read with the consultation: the work-up.
+  if (kind === "info" && (WORKUP.test(fold(text)) || q.values.length)) return { section: "bio", text };
   return { section: kind && kind !== "info" && kind !== "ignore" ? kind : "note", text };
 }
