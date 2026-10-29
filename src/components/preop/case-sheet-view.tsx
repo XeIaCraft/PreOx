@@ -224,15 +224,18 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   /** What can be done with a line of the sheet: correct it, bold, move, take off. */
   function lineMenu(e: DayEntry, r: CaseResult, key: string): MenuProps {
     const c = e.choices;
-    const item = r.sheet.items.find((i) => i.key === key);
+    // A line of the handover's background (« tx:… »): taken off the handover only; corrected, moved or in bold everywhere.
+    const tx = key.startsWith("tx:");
+    const itemKey = tx ? key.slice(3) : key;
+    const item = r.sheet.items.find((i) => i.key === itemKey);
     // A product of the plan: « Analgésie:Kétorolac 30 mg ».
-    const product = !item && key.includes(":") && !/^(row|imp|bilan):/.test(key);
+    const product = !item && !tx && key.includes(":") && !/^(row|imp|bilan):/.test(key);
     const work = r.sheet.workup.find((w) => `bilan:${w.code}` === key);
     const original = product ? key.slice(key.indexOf(":") + 1) : item?.text;
     const editKey = product ? key : item?.addedId ? undefined : (item?.source ?? (item?.section === "alert" ? item.key : undefined));
     const off = (e.hidden ?? []).includes(key);
     const close = () => setMenu(null);
-    const changed = !!editKey && (c.edits?.[editKey] !== undefined || (item?.source !== undefined && c.lines?.[item.source] !== undefined) || c.strong?.[key] !== undefined);
+    const changed = !!editKey && (c.edits?.[editKey] !== undefined || (item?.source !== undefined && c.lines?.[item.source] !== undefined) || c.strong?.[itemKey] !== undefined);
     const without = <T,>(rec: Record<string, T> | undefined, k?: string) => Object.fromEntries(Object.entries(rec ?? {}).filter(([x]) => x !== k));
     return {
       title: work ? `${work.label}${work.reason ? ` — ${work.reason}` : ""}` : product ? (c.edits?.[key] ?? original!) : (item?.text ?? (key === "tech" ? "Technique" : key === "planb" ? "Plan B" : key.startsWith("row:") ? `Ligne « ${key.slice(4)} »` : "Ce que ça implique")),
@@ -245,7 +248,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
         close();
       },
       strong: item && item.section !== "alert" ? !!item.strong : undefined,
-      onBold: () => item && choose(e.id, { strong: { ...(c.strong ?? {}), [key]: !item.strong } }),
+      onBold: () => item && choose(e.id, { strong: { ...(c.strong ?? {}), [itemKey]: !item.strong } }),
       section: item && (item.addedId || item.source) && MOVABLE.some((m) => m.code === item.section) ? (item.section as LineKind) : undefined,
       onMove: (kind) => {
         if (!item) return;
@@ -284,7 +287,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
           }
         : changed && editKey
           ? () => {
-              choose(e.id, { edits: without(c.edits, editKey), lines: without(c.lines, item?.source), strong: without(c.strong, key) });
+              choose(e.id, { edits: without(c.edits, editKey), lines: without(c.lines, item?.source), strong: without(c.strong, itemKey) });
               close();
             }
           : undefined,
@@ -558,8 +561,16 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
               {open && <LineMenu key={open.key} at={open} {...lineMenu(e, r, open.key)} />}
               {r.sheet.transmission && (
                 <div
+                  role="presentation"
                   className="case-preview overflow-x-auto rounded-[var(--radius-md)] border border-border bg-white p-3 text-[#15191c] shadow-sm"
-                  dangerouslySetInnerHTML={{ __html: transmissionHtml(r.sheet, i + 1, { hidden: new Set(e.hidden ?? []), edits: e.choices.edits }) }}
+                  onClick={(ev) => openMenu(e, ev)}
+                  onKeyDown={(ev) => {
+                    if (ev.key === "Escape") return setMenu(null);
+                    if (ev.key !== "Enter" && ev.key !== " ") return;
+                    ev.preventDefault();
+                    openMenu(e, ev);
+                  }}
+                  dangerouslySetInnerHTML={{ __html: transmissionHtml(r.sheet, i + 1, { hidden: new Set(e.hidden ?? []), edits: e.choices.edits, editable: true }) }}
                 />
               )}
               <AddLine

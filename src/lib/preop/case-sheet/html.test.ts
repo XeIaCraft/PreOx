@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { caseSheetDocument, caseSheetHtml, DEFAULT_SETTINGS } from "./html";
+import { caseSheetDocument, caseSheetHtml, DEFAULT_SETTINGS, transmissionHtml } from "./html";
 import type { CaseSheet } from "./build";
 
 const sheet: CaseSheet = {
@@ -118,14 +118,23 @@ describe("printed case sheet", () => {
     expect(caseSheetHtml(sheet, 1, { settings: { ...DEFAULT_SETTINGS, steps: false } })).not.toContain("Déroulé");
   });
 
-  it("adds the intensive care handover on a page of its own, with blanks for the peroperative course", () => {
+  it("adds the intensive care handover on a page of its own: the operation first, the course to write in, then the background", () => {
     expect(caseSheetDocument([{ sheet }], "Jour")).not.toContain("Transmission USI");
     const html = caseSheetDocument([{ sheet: { ...sheet, transmission: true, name: "DUPONT Jean" } }, { sheet }], "Jour");
-    expect(html).toContain('<article class="case tx" data-newpage="1">');
+    expect(html).toContain('<article class="case tx" data-newpage="sheet">');
     expect(html).toContain("Transmission USI — DUPONT Jean");
-    expect(html).toMatch(/Pertes sanguines <span class="bl"><\/span> mL/);
-    expect(html).toMatch(/Reprise TTT.*lisinopril/);
-    expect(html).toContain("PAS &lt; 140 mmHg");
+    const order = ["Chirurgie — Fissure anale", "Acte chir.", "Acte anesth.", "Abords", "ATB", "<th>IN</th>", "Ventilation", "Gazométrie", "Sortie de salle", "Relais antalgie", "Plan postopératoire", "Consignes chirurgicales", "Background"];
+    const at = order.map((x) => html.indexOf(x));
+    expect(at.every((x) => x > 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(html).toMatch(/Background[\s\S]*lisinopril/);
+  });
+
+  it("lets the handover's background be adjusted on its own", () => {
+    const off = transmissionHtml(sheet, 1, { hidden: new Set(["tx:ttt:ésoméprazole"]) });
+    expect(off).not.toContain("ésoméprazole");
+    expect(caseSheetHtml(sheet, 1, { hidden: new Set(["tx:ttt:ésoméprazole"]) })).toContain("ésoméprazole");
+    expect(transmissionHtml(sheet, 1, { editable: true })).toContain('data-k="tx:ttt:ésoméprazole"');
   });
 });
 

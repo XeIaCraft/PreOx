@@ -255,7 +255,15 @@ ${s(".case.tx .bl")}{display:inline-block;min-width:16mm;border-bottom:0.2mm sol
 ${s(".case.tx .bl.w")}{min-width:34mm}
 ${s(".case.tx .wl")}{border-bottom:0.2mm solid #b9c4c7;height:4.6mm}
 ${s(".case.tx .box")}{font-size:1.1em;line-height:1}
-${s(".case.tx .tline")}{margin:0.5mm 0}
+${s(".case.tx .tline")}{margin:0.7mm 0 0}
+${s(".case.tx .tl")}{color:#1f4f53;font-weight:600}
+${s(".case.tx .hint")}{color:#6b777b;font-size:.9em}
+${s(".case.tx .io")}{width:100%;border-collapse:collapse;margin:1mm 0}
+${s(".case.tx .io th")}{text-align:left;color:#1f4f53;font-size:.86em;text-transform:uppercase;border-bottom:0.25mm solid #9fb0b3;padding:0.3mm 1mm}
+${s(".case.tx .io td")}{border-bottom:0.15mm solid #c9d2d4;height:4.6mm;padding:0 1mm}
+${s(".case.tx .io td:nth-child(2), .case.tx .io td:nth-child(4)")}{width:13mm;border-left:0.15mm solid #c9d2d4}
+${s(".case.tx .io td:nth-child(3), .case.tx .io td:nth-child(5)")}{border-left:0.25mm solid #9fb0b3}
+${s(".case.tx .io .tot td")}{font-weight:600;border-top:0.25mm solid #9fb0b3}
 ${s(".case .keep .cd")}{color:#1f4f53;font-weight:600}
 ${s(".case .cd.stop")}{color:#8a1f12;font-weight:600}
 ${s(".case .alerts")}{margin:0.8mm 0 0;padding:0.8mm 1.6mm 0.8mm 5mm;background:#fbeeea;border-left:0.8mm solid #b3432b;border-radius:0.8mm;color:#7a1d10;font-weight:600}
@@ -274,38 +282,65 @@ ${s(".case.pk td:first-child")}{font-weight:600;white-space:nowrap}
 }
 
 /**
- * The intensive care handover, on its own page: who the patient is (history,
- * treatments, allergies, work-up, airway), what was planned, the
- * peroperative course to fill in by hand (« ___ », printed before the case),
- * and the post-operative plan thought out.
+ * The intensive care handover, on two pages of its own (one A4 sheet when
+ * two A5 are printed side by side), in the order it is told:
+ * the operation first (why — what was found, how it was decided — then what
+ * the surgeon and the anaesthetist did), the course of the operation to fill
+ * in by hand (printed the day before, written at the end of the case), the
+ * post-operative plan and the surgeon's instructions, then the patient's
+ * background — each of its lines can be corrected or taken off (« tx:… »).
  */
 export function transmissionHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOptions = {}): string {
   const hidden = opts.hidden ?? new Set<string>();
-  const edits = opts.edits ?? {};
-  const items = (s: ItemSection) => sheet.items.filter((i) => i.section === s && !hidden.has(i.key));
+  const edit = !!opts.editable;
+  const items = (s: ItemSection) => sheet.items.filter((i) => i.section === s && (edit || !hidden.has(`tx:${i.key}`)));
   const bl = (wide = false) => `<span class="bl${wide ? " w" : ""}"></span>`;
   const box = '<span class="box">☐</span>';
-  const line = (label: string, html: string) => (html ? `<div class="ln"><span class="lb">${esc(SHORT_LABEL[label] ?? label)}</span><span class="vl">${html}</span></div>` : "");
-  const cut = (t: string) => (t.length > POSTOP_CHARS ? `${t.slice(0, POSTOP_CHARS - 1).replace(/\s+\S*$/, "")}…` : t);
+  const lines = (n: number) => '<div class="wl"></div>'.repeat(n);
+  const field = (label: string, rest = "", n = 0) => `<div class="tline"><span class="tl">${esc(label)}</span>${rest}</div>${lines(n)}`;
+  const piece = (i: SheetItem, html: string) => {
+    const key = `tx:${i.key}`;
+    const off = hidden.has(key);
+    return edit ? `<span class="${off ? "off" : ""}" data-k="${esc(key)}" data-s="${i.section}" role="button" tabindex="0" aria-pressed="${off}">${html}</span>` : html;
+  };
   const list = (l: SheetItem[], withDetail = false) =>
-    l.map((i) => `${i.strong ? `<b>${esc(i.text)}</b>` : esc(i.text)}${withDetail && i.detail ? ` <span class="cd${i.conduct === "stop" ? " stop" : ""}">→ ${esc(i.detail)}</span>` : ""}`).join('<span class="sep"> ; </span>');
+    l
+      .map((i) => piece(i, `${i.strong ? `<b>${esc(i.text)}</b>` : esc(i.text)}${withDetail && i.detail && i.detail !== "idem" ? ` <span class="cd${i.conduct === "stop" ? " stop" : ""}">→ ${esc(i.detail)}</span>` : ""}`))
+      .join('<span class="sep"> ; </span>');
+  const line = (label: string, html: string) => (html ? `<div class="ln"><span class="lb">${esc(label)}</span><span class="vl">${html}</span></div>` : "");
   const who = sheet.name ?? sheet.initials;
   const work = (sheet.workup ?? []).filter((w) => w.status !== "todo").map((w) => esc(w.value ?? w.label));
-  const todo = (sheet.workup ?? []).filter((w) => w.status === "todo" && w.strength === "recommended").map((w) => esc(w.label));
   const general = /\bAG\b|générale/i.test(sheet.technique) || !!sheet.fallback?.planned;
-  const neuraxial = /rachi|péridurale/i.test(sheet.technique);
-  const plan = sheet.rows
-    .filter((r) => r.label !== "Post-op")
-    .map((r) => line(r.label, r.parts.filter((t) => !hidden.has(`${r.label}:${t.text}`)).map((t) => esc(edits[`${r.label}:${t.text}`] ?? t.text)).join('<span class="sep"> · </span>')))
+  const planned = [sheet.technique, sheet.fallback?.planned ? "AG" : ""].filter(Boolean).join(" puis ");
+  const inOut = ["Cristalloïdes", "Colloïdes", "CGR", "PFC / plaquettes", ""]
+    .map((x, k) => `<tr><td>${esc(x)}</td><td></td><td>${esc(["Pertes sanguines", "Diurèse", "Drains", "", ""][k])}</td><td></td><td></td></tr>`)
     .join("");
-  const postop = sheet.rows.find((r) => r.label === "Post-op")?.parts.filter((t) => !hidden.has(`Post-op:${t.text}`)).map((t) => esc(cut(edits[`Post-op:${t.text}`] ?? t.text))) ?? [];
-  const watch = items("atcd")
-    .filter((i) => i.strong && i.detail)
-    .map((i) => `<b>${esc(i.text)}</b> : ${esc(i.detail!)}`);
-  const resume = items("ttt").filter((i) => i.conduct === "stop");
-  return `<article class="case tx" data-newpage="1">
+  return `<article class="case tx" data-newpage="sheet">
 <header class="hd"><span class="no">${index}</span><span class="who"><b>Transmission USI — ${esc(who)}</b>${sheet.birthDate ? ` <span class="dob">${esc(sheet.birthDate)}</span>` : ""}</span>${sheet.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</header>
-<p class="body">${esc(sheet.body)} — ${esc(sheet.surgery)}</p>
+<p class="body">${esc(sheet.body)}</p>
+<h2>Chirurgie — ${esc(sheet.surgery)}</h2>
+${field("Indication", sheet.indication ? ` ${esc(sheet.indication)}` : "", sheet.indication ? 1 : 2)}
+${field("Acte chir.", "", 2)}
+${field("Acte anesth.", ` <span class="hint">prévu : ${esc(planned)}</span>`, 1)}
+${field("Chrono", " <span class=\"hint\">temps chir., garrot, CEC…</span>", 1)}
+${field("Abords", ` VVP ${bl()} · KTA ${bl()} · VVC ${bl()} · autre ${bl()}`)}
+${field("ATB", ` ${bl(true)} à ${bl()} · réinjection ${bl()}`)}
+${field("Produits, à retenir", "", 3)}
+<table class="io"><thead><tr><th>IN</th><th>mL</th><th>OUT</th><th>mL</th><th>Annotations</th></tr></thead><tbody>${inOut}<tr class="tot"><td>Total</td><td></td><td>Total</td><td></td><td>Balance :</td></tr></tbody></table>
+${field("Hémodynamique", "", 2)}
+${field("Ventilation", ` FiO₂ ${bl()} · Vt ${bl()} · FR ${bl()} · PEP ${bl()}`)}
+${field("Gazométrie", "", 3)}
+${field("T°", ` début ${bl()} · fin ${bl()}`)}
+${field("Événements, complications", "", 2)}
+${field("Sortie de salle", ` ${box} intubé ${box} extubé${general ? ` · Cormack ${bl()} · sonde ${bl()}` : ""}`)}
+${field("Relais antalgie postop", "", 1)}
+</article>
+<article class="case tx" data-newpage="1">
+<header class="hd"><span class="no">${index}</span><span class="who"><b>Transmission USI — ${esc(who)}</b> <span class="dob">(suite)</span></span></header>
+<h2>Plan postopératoire</h2>
+${lines(6)}
+<h2>Consignes chirurgicales</h2>
+${lines(4)}
 <h2>Background</h2>
 ${line("ATCD", list(items("atcd")) || "RAS")}
 ${line("Habitus", list(items("habit")))}
@@ -314,33 +349,8 @@ ${line("TTT", list(items("ttt"), true) || "aucun")}
 ${line("Allergies", list(items("allergy")))}
 ${line("Bilan", work.join('<span class="sep"> · </span>'))}
 ${line("Voies aér.", sheet.airway ? esc(sheet.airway) : "")}
-${line("Alertes", items("alert").filter((i) => !i.minor).map((i) => esc(i.text)).join('<span class="sep"> ; </span>'))}
-${line("Notes", items("note").map((i) => esc(i.text)).join('<span class="sep"> ; </span>'))}
-<h2>Prévu</h2>
-<div class="tech">${esc(sheet.technique)}</div>
-${plan}
-<h2>Peropératoire</h2>
-<div class="tline">Arrivée ${bl()} · Induction ${bl()} · Incision ${bl()} · Fin ${bl()}</div>
-<div class="tline">Technique réalisée : ${bl(true)}${neuraxial ? ` · niveau ${bl()} · ponction ${bl()}` : ""}</div>
-${general ? `<div class="tline">Intubation : Cormack ${bl()} · sonde n° ${bl()} · difficulté ${box} non ${box} oui ${bl()}</div>` : ""}
-<div class="tline">Abords : VVP ${bl()} · KTA ${bl()} · VVC ${bl()} · autre ${bl()}</div>
-<div class="tline">Produits : hypnotique ${bl()} · opioïde total ${bl()} · curare ${bl()} · réversion ${bl()}</div>
-<div class="tline">ATB : ${bl()} à ${bl()} · réinjection ${bl()}</div>
-<div class="tline">Remplissage : cristalloïdes ${bl()} mL · colloïdes ${bl()} mL</div>
-<div class="tline">Transfusion : CGR ${bl()} · PFC ${bl()} · plaquettes ${bl()} · fibrinogène ${bl()} · ac. tranexamique ${bl()}</div>
-<div class="tline">Pertes sanguines ${bl()} mL · diurèse ${bl()} mL · bilan E/S ${bl()}</div>
-<div class="tline">Hémodynamique : amines ${bl(true)} (max ${bl()}) · PAM ${bl()}</div>
-<div class="tline">Ventilation : FiO₂ ${bl()} · PEP ${bl()} · dernière gazo ${bl(true)}</div>
-<div class="tline">T° ${bl()} · glycémie ${bl()} · dernière Hb ${bl()}</div>
-<div class="tline">Événements / complications :</div><div class="wl"></div><div class="wl"></div>
-<div class="tline">Sortie de salle : extubé ${box} oui ${box} non (${bl(true)}) · analgésie en cours ${bl(true)} · dernier opioïde à ${bl()}</div>
-<h2>Plan postopératoire</h2>
-${line("Prévu", postop.join('<span class="sep"> · </span>'))}
-${line("Objectifs", sheet.targets.map(esc).join('<span class="sep"> · </span>'))}
-${line("Surveiller", watch.join('<span class="sep"> ; </span>'))}
-${line("Reprise TTT", resume.map((i) => `${esc(i.text)} ${bl()}`).join('<span class="sep"> · </span>'))}
-${line("Bio de contrôle", `${todo.length ? `${todo.join(", ")} · ` : ""}${bl(true)}`)}
-<div class="tline">Autres consignes :</div><div class="wl"></div><div class="wl"></div>
+${line("Alertes", list(items("alert").filter((i) => !i.minor)))}
+${line("Notes", list(items("note")))}
 </article>`;
 }
 
@@ -437,6 +447,8 @@ ${caseSheetCss("", st)}
     // The handover sheet is a page of its own (it is handed over on its own).
     var alone = el.hasAttribute("data-newpage");
     if ((used + h > room || alone || afterAlone) && pages[pages.length - 1].length) { pages.push([]); used = 0; }
+    // Its first page on the left of a sheet: the two pages of the handover on one A4.
+    if (a4 && el.getAttribute("data-newpage") === "sheet" && (pages.length - 1) % 2 === 1) pages.push([]);
     pages[pages.length - 1].push(el);
     used += h;
     afterAlone = alone;

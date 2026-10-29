@@ -154,6 +154,8 @@ export interface CaseSheet {
   steps: string[];
   /** The plan's targets (« PAM ≥ 65 mmHg »…). */
   targets: string[];
+  /** Why the patient is operated, when the consultation says it. */
+  indication?: string;
   /** Airway: Mallampati and what the consultation says. */
   airway?: string;
   admission?: Admission;
@@ -662,6 +664,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
       steps: plan.steps ?? [],
       targets: plan.targets,
       airway,
+      indication: c.surgery.indication?.trim() || undefined,
       admission,
       // Handed over to the ICU: the patient is admitted there, or the protocol sends the patient there after the operation.
       transmission: choices.transmission ?? (admission === "USI" || plan.postopPlan?.destination === "icu"),
