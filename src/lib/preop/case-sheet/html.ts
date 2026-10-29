@@ -214,6 +214,7 @@ ${st.habits ? itemLine("habit", " ; ") : ""}
 ${st.surgical ? itemLine("chir", ", ") : ""}
 ${tttLine()}
 ${itemLine("allergy", ", ")}
+${sheet.airway ? gridLine("airway", "Voies aér.", esc(edits.airway ?? sheet.airway)) : ""}
 ${workup}
 </section>
 ${alerts.length ? `<ul class="alerts">${alerts.join("")}</ul>` : ""}
@@ -348,7 +349,6 @@ ${line("Chir.", list(items("chir")))}
 ${line("TTT", list(items("ttt"), true) || "aucun")}
 ${line("Allergies", list(items("allergy")))}
 ${line("Bilan", work.join('<span class="sep"> · </span>'))}
-${line("Voies aér.", sheet.airway ? esc(sheet.airway) : "")}
 ${line("Alertes", list(items("alert").filter((i) => !i.minor)))}
 ${line("Notes", list(items("note")))}
 </article>`;

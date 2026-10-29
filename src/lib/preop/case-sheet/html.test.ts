@@ -136,5 +136,11 @@ describe("printed case sheet", () => {
     expect(caseSheetHtml(sheet, 1, { hidden: new Set(["tx:ttt:ésoméprazole"]) })).toContain("ésoméprazole");
     expect(transmissionHtml(sheet, 1, { editable: true })).toContain('data-k="tx:ttt:ésoméprazole"');
   });
+
+  it("prints the airway on the day sheet, not on the handover", () => {
+    const withAirway = { ...sheet, airway: "Mallampati 3 ; ouverture buccale 3 cm", transmission: true };
+    expect(caseSheetHtml(withAirway, 1)).toMatch(/Voies aér\.<\/span><span class="vl">Mallampati 3 ; ouverture buccale 3 cm/);
+    expect(transmissionHtml(withAirway, 1)).not.toContain("Mallampati");
+  });
 });
 

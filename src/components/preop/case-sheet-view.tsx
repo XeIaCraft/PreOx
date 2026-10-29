@@ -231,20 +231,22 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     // A product of the plan: « Analgésie:Kétorolac 30 mg ».
     const product = !item && !tx && key.includes(":") && !/^(row|imp|bilan):/.test(key);
     const work = r.sheet.workup.find((w) => `bilan:${w.code}` === key);
-    const original = product ? key.slice(key.indexOf(":") + 1) : item?.text;
-    const editKey = product ? key : item?.addedId ? undefined : (item?.source ?? (item?.section === "alert" ? item.key : undefined));
+    // The airway line (Mallampati, what the consultation says): corrected like a product.
+    const airway = key === "airway";
+    const original = airway ? r.sheet.airway : product ? key.slice(key.indexOf(":") + 1) : item?.text;
+    const editKey = product || airway ? key : item?.addedId ? undefined : (item?.source ?? (item?.section === "alert" ? item.key : undefined));
     const off = (e.hidden ?? []).includes(key);
     const close = () => setMenu(null);
     const changed = !!editKey && (c.edits?.[editKey] !== undefined || (item?.source !== undefined && c.lines?.[item.source] !== undefined) || c.strong?.[itemKey] !== undefined);
     const without = <T,>(rec: Record<string, T> | undefined, k?: string) => Object.fromEntries(Object.entries(rec ?? {}).filter(([x]) => x !== k));
     return {
-      title: work ? `${work.label}${work.reason ? ` — ${work.reason}` : ""}` : product ? (c.edits?.[key] ?? original!) : (item?.text ?? (key === "tech" ? "Technique" : key === "planb" ? "Plan B" : key.startsWith("row:") ? `Ligne « ${key.slice(4)} »` : "Ce que ça implique")),
-      text: product ? (c.edits?.[key] ?? original) : item && (item.addedId || editKey) ? item.text : undefined,
+      title: work ? `${work.label}${work.reason ? ` — ${work.reason}` : ""}` : airway ? "Voies aériennes" : product ? (c.edits?.[key] ?? original!) : (item?.text ?? (key === "tech" ? "Technique" : key === "planb" ? "Plan B" : key.startsWith("row:") ? `Ligne « ${key.slice(4)} »` : "Ce que ça implique")),
+      text: product || airway ? (c.edits?.[key] ?? original) : item && (item.addedId || editKey) ? item.text : undefined,
       onText: (t) => {
         const v = t.trim();
         if (!v) return;
         if (item?.addedId) choose(e.id, { added: (c.added ?? []).map((a) => (a.id === item.addedId ? { ...a, text: v } : a)) });
-        else if (editKey) choose(e.id, { edits: v === original && product ? without(c.edits, editKey) : { ...(c.edits ?? {}), [editKey]: v } });
+        else if (editKey) choose(e.id, { edits: v === original && (product || airway) ? without(c.edits, editKey) : { ...(c.edits ?? {}), [editKey]: v } });
         close();
       },
       strong: item && item.section !== "alert" ? !!item.strong : undefined,
