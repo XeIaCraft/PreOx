@@ -95,6 +95,10 @@ export interface PayParams {
   specialContributionMode: "auto" | "fixed";
   /** Monthly cap of the special contribution for a single person (60,94 €) or a spouse with income (51,64 €). */
   specialContributionMax: number;
+  /** Home–work travel allowance a month (« Dépl. domicile – lieu de travail »): no social contribution, taxed. */
+  commuteMonthly: number;
+  /** The scale's withholding tax × this, fitted on a payslip (« Caler sur ma fiche de paie »); 1: the scale as it is. */
+  withholdingFactor: number;
 }
 
 /**
@@ -151,6 +155,8 @@ export const DEFAULT_PAY: PayParams = {
   restAfterLongShift: 12,
   inamiSocialAdvantage: 8403.62,
   communalTaxRate: 0.07,
+  commuteMonthly: 0,
+  withholdingFactor: 1,
 };
 
 export const PAY_SOURCES = [
@@ -348,6 +354,8 @@ export interface MonthPay {
   lines: PayLine[];
   gross: number;
   contribution: number;
+  /** Travel allowance (outside the social contribution, taxed). */
+  commute: number;
   taxable: number;
   withholding: number;
   special: number;
@@ -383,7 +391,7 @@ export function estimateWithholding(monthlyTaxable: number, p: PayParams): numbe
   const net = annual - Math.min(annual * p.professionalExpensesRate, p.professionalExpensesMax);
   const tax = progressive(net, p.taxBrackets) - progressive(p.taxFreeAllowance, p.taxBrackets);
   // The key formula uses the federal rates raised by an average communal surcharge (25 % × 1,07 = 26,75 %…).
-  return round2((Math.max(0, tax) * (1 + p.communalTaxRate)) / 12);
+  return round2(((Math.max(0, tax) * (1 + p.communalTaxRate)) / 12) * (p.withholdingFactor || 1));
 }
 
 /**
@@ -399,15 +407,26 @@ export function specialContribution(grossMonthly: number, p: Pick<PayParams, "sp
   return round2(Math.min(p.specialContributionMax, 18.6 + (Math.min(grossMonthly, 6038.82) - 2190.18) * 0.011));
 }
 
-/** Share of the month covered by the contract (base salary prorated by calendar days). */
-function contractShare(month: string, p: PayParams): number {
+/** Weekdays (Monday–Friday, public holidays included) from one date to another, both included. */
+function weekdaysBetween(from: string, to: string): number {
+  let n = 0;
+  for (let d = from; d <= to; d = addDays(d, 1)) if (weekday(d) % 6 !== 0) n++;
+  return n;
+}
+
+/**
+ * Share of the month covered by the contract: the base salary is prorated by
+ * the working days (Monday–Friday) of the month — a start on Monday 5
+ * October 2026 pays 20 of its 22 days (3 813,82 € × 20/22 = 3 467,11 €).
+ */
+export function contractShare(month: string, p: Pick<PayParams, "contractStart" | "contractEnd">): number {
   const first = `${month}-01`;
   const days = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
   const last = `${month}-${String(days).padStart(2, "0")}`;
   const from = p.contractStart && p.contractStart > first ? p.contractStart : first;
   const to = p.contractEnd && p.contractEnd < last ? p.contractEnd : last;
   if (to < from) return 0;
-  return ((toMs(to) - toMs(from)) / DAY + 1) / days;
+  return weekdaysBetween(from, to) / weekdaysBetween(first, last);
 }
 
 interface DayInfo {
@@ -528,7 +547,7 @@ export function monthPay(month: string, allDays: CarnetWorkday[], settings: PayS
   const share = contractShare(month, p);
   const lines: PayLine[] = [];
   const base = round2(p.baseMonthly * share);
-  lines.push({ label: "Rémunération de base", detail: share < 1 ? `${eur(p.baseMonthly)} × ${Math.round(share * 100)} % du mois (convention)` : "temps plein", amount: base });
+  lines.push({ label: "Rémunération de base", detail: share < 1 ? `${eur(p.baseMonthly)} × ${Math.round(share * 100)} % des jours ouvrables du mois (convention)` : "temps plein", amount: base });
   const factor = (rate: number) => (p.uncomfortableMode === "supplement" ? rate - 1 : rate);
   const unc = [
     { label: `Heures de nuit (${p.nightStart}–${p.nightEnd})`, h: hours.night, rate: p.nightRate },
@@ -549,13 +568,16 @@ export function monthPay(month: string, allDays: CarnetWorkday[], settings: PayS
 
   const gross = round2(lines.reduce((s, l) => s + l.amount, 0));
   const contribution = round2(gross * p.personalContributionRate);
-  const taxable = round2(gross - contribution);
+  // The travel allowance: no social contribution, but taxed (it is in the « imposable » of the payslip).
+  const commute = share > 0 ? round2(p.commuteMonthly) : 0;
+  const taxable = round2(gross - contribution + commute);
   const withholding = estimateWithholding(taxable, p);
   const special = p.specialContributionMode === "fixed" ? round2(p.specialContributionMonthly) : specialContribution(gross, p);
   // Not due for a month with fewer than 10 days worked — judged once the month is over; until then, a full-time month is assumed.
   const monthOver = today.slice(0, 7) > month;
   const expensesProvisional = !monthOver && workedDays < p.expenseMinDays;
-  const expenses = share > 0 && (workedDays >= p.expenseMinDays || !monthOver) ? round2(p.expenseAllowance * Math.min(1, share)) : 0;
+  // A lump sum: due in full for a month with enough days worked (not prorated).
+  const expenses = share > 0 && (workedDays >= p.expenseMinDays || !monthOver) ? round2(p.expenseAllowance) : 0;
   const netSalary = round2(taxable - withholding - special);
   const paid = round2(netSalary + expenses);
 
@@ -563,7 +585,7 @@ export function monthPay(month: string, allDays: CarnetWorkday[], settings: PayS
   if (hours.total > p.maxMonthlyHours) alerts.push({ level: "warning", text: `${h1(hours.total)} ce mois : repos compensatoire dû pour ${h1(hours.total - p.maxMonthlyHours)} (au-delà de ${p.maxMonthlyHours} h).` });
   if (share > 0 && monthOver && workedDays < p.expenseMinDays) alerts.push({ level: "info", text: `${workedDays} jour(s) presté(s) : indemnité de frais non due sous ${p.expenseMinDays} jours (sauf maladie ≤ 30 jours ou congés — à vérifier).` });
 
-  return { month, params: p, hours, countedHours: counted, workedDays, onCall, optingOutHours: opting, hourly, lines, gross, contribution, taxable, withholding, special, expenses, expensesProvisional, netSalary, paid, alerts };
+  return { month, params: p, hours, countedHours: counted, workedDays, onCall, optingOutHours: opting, hourly, lines, gross, contribution, commute, taxable, withholding, special, expenses, expensesProvisional, netSalary, paid, alerts };
 }
 
 /** Days of leave, holidays and scientific days used over the contract year (or the calendar year without contract dates). */
@@ -611,3 +633,40 @@ export const WORKDAY_KINDS: { code: WorkdayKind; label: string; timed: boolean }
   { code: "sick", label: "Maladie", timed: false },
   { code: "recovery", label: "Récupération", timed: false },
 ];
+
+/** The totals of a payslip, as printed at its foot. */
+export interface Payslip {
+  /** « Brut » (subject to the social contribution). */
+  gross: number;
+  /** « ONSS ». */
+  contribution: number;
+  /** « Hors ONSS » (travel allowance). */
+  outsideContribution: number;
+  /** « PP » (withholding tax). */
+  withholding: number;
+  /** « Cotisation spéciale de sécurité sociale » (as a positive amount). */
+  special: number;
+  /** « Indemnité frais forfaitaires nets ». */
+  expenses: number;
+}
+
+/**
+ * The settings fitted on a payslip: the travel allowance, the special
+ * contribution and the expense allowance as printed, and the withholding
+ * tax scale scaled so that it gives the payslip's amount (it then follows
+ * the months with more or fewer extra hours, which a flat rate would not).
+ */
+export function fitToPayslip(p: PayParams, slip: Payslip): Partial<PayParams> {
+  const taxable = round2(slip.gross - slip.contribution + slip.outsideContribution);
+  const scale = estimateWithholding(taxable, { ...p, withholdingMode: "scale", withholdingFactor: 1 });
+  return {
+    commuteMonthly: round2(slip.outsideContribution),
+    specialContributionMode: "fixed",
+    specialContributionMonthly: round2(slip.special),
+    expenseAllowance: round2(slip.expenses),
+    withholdingMode: "scale",
+    withholdingFactor: scale > 0 ? Math.round((slip.withholding / scale) * 10000) / 10000 : 1,
+    ...(slip.gross > 0 && Math.abs(slip.contribution / slip.gross - p.personalContributionRate) > 0.001 ? { personalContributionRate: Math.round((slip.contribution / slip.gross) * 10000) / 10000 } : {}),
+  };
+}
+

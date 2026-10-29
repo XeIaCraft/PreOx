@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PAY, belgianHolidays, estimateWithholding, leaveBalance, monthPay, onCallBlocks, paramsOn, paySettingsFrom, splitHours, workedIntervals, type PaySettings } from "./pay";
+import { DEFAULT_PAY, belgianHolidays, estimateWithholding, fitToPayslip, leaveBalance, monthPay, onCallBlocks, paramsOn, paySettingsFrom, splitHours, workedIntervals, type PaySettings } from "./pay";
 import type { CarnetWorkday } from "./types";
 
 let seq = 0;
@@ -65,9 +65,24 @@ describe("rémunération du mois", () => {
     expect(m.paid).toBeCloseTo(m.netSalary + DEFAULT_PAY.expenseAllowance, 2);
   });
 
-  it("proratise la base au début de la convention", () => {
+  it("proratise la base au début de la convention, par jours ouvrables (fiche d'octobre 2026)", () => {
     const m = monthPay("2026-10", fullMonth("2026-10", 5), settings());
-    expect(m.lines[0].amount).toBeCloseTo((DEFAULT_PAY.baseMonthly * 27) / 31, 1);
+    // Début le lundi 5/10 : 20 des 22 jours ouvrables → 3 467,11 € (fiche de paie).
+    expect(m.lines[0].amount).toBe(3467.11);
+    expect(m.contribution).toBe(162.95);
+  });
+
+  it("se cale sur une fiche de paie et la retrouve (octobre 2026)", () => {
+    const base = settings().versions[0];
+    const slip = { gross: 3467.11, contribution: 162.95, outsideContribution: 40, withholding: 743.38, special: 24.38, expenses: 125.45 };
+    const fitted = { ...base, ...fitToPayslip(base, slip) };
+    expect(fitted).toMatchObject({ commuteMonthly: 40, specialContributionMode: "fixed", specialContributionMonthly: 24.38, expenseAllowance: 125.45 });
+    expect(fitted.withholdingFactor).toBeGreaterThan(0.8);
+    expect(fitted.withholdingFactor).toBeLessThan(1.2);
+    const m = monthPay("2026-10", fullMonth("2026-10", 5), { versions: [fitted] }, "2026-11-05");
+    expect(m.taxable).toBe(3344.16);
+    expect(m.withholding).toBeCloseTo(743.38, 1);
+    expect(m.paid).toBeCloseTo(2701.85, 1);
   });
 
   it("pas d'indemnité de frais sous 10 jours prestés", () => {

@@ -16,6 +16,7 @@ import {
   WORKDAY_KINDS,
   belgianHolidays,
   estimateWithholding,
+  fitToPayslip,
   leaveBalance,
   monthPay,
   paramsOn,
@@ -25,6 +26,7 @@ import {
   type Alert,
   type PayParams,
   type PaySettings,
+  type Payslip,
 } from "@/lib/carnet/pay";
 import type { CarnetStage, CarnetWorkday, WorkCallout, WorkdayKind } from "@/lib/carnet/types";
 import { cn } from "@/lib/utils";
@@ -205,6 +207,33 @@ function NumberInput({ label, value, onChange, unit, percent }: { label: string;
   );
 }
 
+/** The totals at the foot of a payslip: the estimate is fitted on them. */
+function FitToPayslip({ onFit }: { onFit: (slip: Payslip) => void }) {
+  const [slip, setSlip] = useState<Payslip>({ gross: 0, contribution: 0, outsideContribution: 0, withholding: 0, special: 0, expenses: 0 });
+  const field = (key: keyof Payslip, label: string) => <NumberInput label={label} value={slip[key]} onChange={(x) => setSlip((s) => ({ ...s, [key]: Math.abs(x) }))} unit="€" />;
+  return (
+    <details className="rounded-[var(--radius-md)] border border-primary/30 bg-primary-tint/30 p-3">
+      <summary className="cursor-pointer text-sm font-medium text-foreground">Caler sur ma fiche de paie</summary>
+      <div className="mt-2 space-y-2">
+        <p className="text-xs text-foreground-subtle">
+          Recopiez les totaux du bas de votre dernière fiche. Le précompte estimé est ajusté pour retomber sur le vôtre (il suit ensuite les mois avec plus ou moins de suppléments) ; frais, déplacement et cotisation spéciale reprennent ceux de la fiche. Rien d&apos;autre de la fiche n&apos;est gardé.
+        </p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {field("gross", "Brut")}
+          {field("contribution", "ONSS")}
+          {field("outsideContribution", "Hors ONSS (déplacement)")}
+          {field("withholding", "PP (précompte)")}
+          {field("special", "Cotisation spéciale séc. soc.")}
+          {field("expenses", "Indemnité frais forfaitaires")}
+        </div>
+        <Button size="sm" variant="secondary" disabled={!slip.gross || !slip.withholding} onClick={() => onFit(slip)}>
+          Caler
+        </Button>
+      </div>
+    </details>
+  );
+}
+
 function PaySettingsEditor({ onClose }: { onClose: () => void }) {
   const { settings, save } = usePaySettings();
   const { toast } = useToast();
@@ -260,6 +289,13 @@ function PaySettingsEditor({ onClose }: { onClose: () => void }) {
         Une version s&apos;applique à partir de sa date : quand l&apos;index, la loi ou votre convention change, créez une version datée du changement — les mois
         passés gardent leurs anciennes valeurs.
       </p>
+      <FitToPayslip
+        onFit={(slip) => {
+          const patch = fitToPayslip(v, slip);
+          set(patch);
+          toast(`Calé sur la fiche : précompte × ${String(patch.withholdingFactor).replace(".", ",")}, frais ${eur(slip.expenses)}, déplacement ${eur(slip.outsideContribution)}, cotisation spéciale ${eur(slip.special)}. Enregistrez pour garder.`, { variant: "success" });
+        }}
+      />
       {group(
         "Convention",
         <>
@@ -279,6 +315,7 @@ function PaySettingsEditor({ onClose }: { onClose: () => void }) {
           <NumberInput label="Heures payées par la base / mois" value={v.monthlyReferenceHours} onChange={(x) => set({ monthlyReferenceHours: x })} unit="h" />
           <NumberInput label="Indemnité de frais / mois" value={v.expenseAllowance} onChange={(x) => set({ expenseAllowance: x })} unit="€" />
           <NumberInput label="Jours prestés minimum pour les frais" value={v.expenseMinDays} onChange={(x) => set({ expenseMinDays: x })} unit="j" />
+          <NumberInput label="Déplacement domicile – travail / mois" value={v.commuteMonthly} onChange={(x) => set({ commuteMonthly: x })} unit="€" />
         </>,
         `Taux horaire de base : ${eur(v.baseMonthly / (v.monthlyReferenceHours || 1))} (base ÷ heures de référence ; 48 h × 52 / 12 = 208 h).`
       )}
@@ -362,6 +399,7 @@ function PaySettingsEditor({ onClose }: { onClose: () => void }) {
               ))}
             </>
           )}
+          {v.withholdingMode === "scale" && <NumberInput label="Ajustement du barème (calé sur la fiche)" value={v.withholdingFactor} onChange={(x) => set({ withholdingFactor: x || 1 })} unit="×" />}
           <NumberInput label="Additionnels communaux dans le précompte" value={v.communalTaxRate} onChange={(x) => set({ communalTaxRate: x })} unit="%" percent />
           <NumberInput label="Épargne INAMI (hors paie, an)" value={v.inamiSocialAdvantage} onChange={(x) => set({ inamiSocialAdvantage: x })} unit="€" />
         </>,
@@ -447,7 +485,7 @@ export function WorkdaysView({ stage }: { stage: CarnetStage | null }) {
   const uncomfortable = pay.hours.night + pay.hours.saturday + pay.hours.sundayHoliday;
   // What an ordinary employee would get for the same gross (13,07 %) — what online brut-net simulators show.
   const employeeTaxable = pay.gross * (1 - 0.1307);
-  const employeeNet = employeeTaxable - estimateWithholding(employeeTaxable, { ...p, withholdingMode: "scale" }) - pay.special;
+  const employeeNet = employeeTaxable - estimateWithholding(employeeTaxable, { ...p, withholdingMode: "scale", withholdingFactor: 1 }) - pay.special;
 
   function save() {
     const crosses = !!draft.start_time && !!draft.end_time && draft.end_time <= draft.start_time;
@@ -608,6 +646,15 @@ export function WorkdaysView({ stage }: { stage: CarnetStage | null }) {
               </td>
               <td className="whitespace-nowrap py-1.5 text-right tabular-nums">− {eur(pay.contribution)}</td>
             </tr>
+            {pay.commute > 0 && (
+              <tr>
+                <td className="py-1.5 pr-2">
+                  Déplacement domicile – travail
+                  <span className="block text-xs text-foreground-subtle">hors cotisation, imposable</span>
+                </td>
+                <td className="whitespace-nowrap py-1.5 text-right tabular-nums">+ {eur(pay.commute)}</td>
+              </tr>
+            )}
             <tr>
               <td className="py-1.5">Imposable</td>
               <td className="whitespace-nowrap py-1.5 text-right tabular-nums">{eur(pay.taxable)}</td>
@@ -615,7 +662,7 @@ export function WorkdaysView({ stage }: { stage: CarnetStage | null }) {
             <tr>
               <td className="py-1.5 pr-2">
                 Précompte professionnel
-                <span className="block text-xs text-foreground-subtle">{p.withholdingMode === "rate" ? `taux de votre fiche (${(p.withholdingRate * 100).toLocaleString("fr-BE")} %)` : "estimé par le barème (isolé, sans charge) — reprenez le taux de votre fiche pour plus de précision"}</span>
+                <span className="block text-xs text-foreground-subtle">{p.withholdingMode === "rate" ? `taux de votre fiche (${(p.withholdingRate * 100).toLocaleString("fr-BE")} %)` : p.withholdingFactor && p.withholdingFactor !== 1 ? "barème calé sur votre fiche de paie" : "estimé par le barème (isolé, sans charge) — calez-le sur votre fiche de paie (Réglages)"}</span>
               </td>
               <td className="whitespace-nowrap py-1.5 text-right tabular-nums">− {eur(pay.withholding)}</td>
             </tr>
