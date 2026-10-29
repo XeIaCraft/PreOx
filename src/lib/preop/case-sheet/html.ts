@@ -21,6 +21,8 @@ export interface SheetSettings {
   postop: boolean;
   planB: boolean;
   notes: boolean;
+  /** The protocol's « Déroulé », numbered under the plan. */
+  steps: boolean;
   /** The tests needed: the recommended ones, those to consider too, or none. */
   workup: "required" | "all" | "off";
   /** The « Pharmaco » list at the end: off, onset and half-times, or with the duration and the awakening. */
@@ -41,6 +43,7 @@ export const DEFAULT_SETTINGS: SheetSettings = {
   postop: true,
   planB: true,
   notes: true,
+  steps: true,
   workup: "required",
   pharmaco: "off",
   size: "normal",
@@ -103,6 +106,16 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
   };
 
   const rows = sheet.rows.filter((r) => st.postop || r.label !== "Post-op");
+  // How the case goes, step by step (numbered: the order is the point).
+  const steps = st.steps
+    ? (sheet.steps ?? [])
+        .map((t) => {
+          const key = `Déroulé:${t}`;
+          return piece(key, esc(edits[key] ?? t), "li");
+        })
+        .filter(Boolean)
+    : [];
+  const stepsHtml = steps.length ? gridLine("row:Déroulé", "Déroulé", `<ol class="steps">${steps.join("")}</ol>`) : "";
   const b = st.planB ? sheet.fallback : undefined;
   const planB = b
     ? piece(
@@ -191,6 +204,7 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
 <section class="blk">
 ${piece("tech", esc(sheet.technique), "div", "tech")}
 ${rows.map((r) => planRow(r)).join("")}
+${stepsHtml}
 ${planB}
 </section>
 <section class="blk pt">
@@ -234,6 +248,14 @@ ${s(".case .ln.todo .lb")}{color:#8a1f12}
 ${s(".case .why")}{color:#5b6569;font-weight:400;font-size:.9em}
 ${s(".case .cd")}{color:#3c4549}
 ${s(".case .act, .case .keep")}{display:block}
+${s(".case .steps")}{margin:0;padding-left:4mm}
+${s(".case .steps li")}{margin:0 0 0.2mm}
+${s(".case.tx h2")}{font-size:1em;margin:1.6mm 0 0.6mm;padding-bottom:0.3mm;border-bottom:0.2mm solid #cfd6d9;color:#1f4f53;text-transform:uppercase;letter-spacing:.03em}
+${s(".case.tx .bl")}{display:inline-block;min-width:16mm;border-bottom:0.2mm solid #7d8a8e;height:1em;vertical-align:baseline}
+${s(".case.tx .bl.w")}{min-width:34mm}
+${s(".case.tx .wl")}{border-bottom:0.2mm solid #b9c4c7;height:4.6mm}
+${s(".case.tx .box")}{font-size:1.1em;line-height:1}
+${s(".case.tx .tline")}{margin:0.5mm 0}
 ${s(".case .keep .cd")}{color:#1f4f53;font-weight:600}
 ${s(".case .cd.stop")}{color:#8a1f12;font-weight:600}
 ${s(".case .alerts")}{margin:0.8mm 0 0;padding:0.8mm 1.6mm 0.8mm 5mm;background:#fbeeea;border-left:0.8mm solid #b3432b;border-radius:0.8mm;color:#7a1d10;font-weight:600}
@@ -249,6 +271,77 @@ ${s(".case.pk th")}{text-align:left;color:#1f4f53;font-size:.86em;text-transform
 ${s(".case.pk td")}{vertical-align:top;padding:0.5mm 1mm;border-bottom:0.15mm solid #e3e8ea}
 ${s(".case.pk td:first-child")}{font-weight:600;white-space:nowrap}
 `;
+}
+
+/**
+ * The intensive care handover, on its own page: who the patient is (history,
+ * treatments, allergies, work-up, airway), what was planned, the
+ * peroperative course to fill in by hand (« ___ », printed before the case),
+ * and the post-operative plan thought out.
+ */
+export function transmissionHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOptions = {}): string {
+  const hidden = opts.hidden ?? new Set<string>();
+  const edits = opts.edits ?? {};
+  const items = (s: ItemSection) => sheet.items.filter((i) => i.section === s && !hidden.has(i.key));
+  const bl = (wide = false) => `<span class="bl${wide ? " w" : ""}"></span>`;
+  const box = '<span class="box">☐</span>';
+  const line = (label: string, html: string) => (html ? `<div class="ln"><span class="lb">${esc(SHORT_LABEL[label] ?? label)}</span><span class="vl">${html}</span></div>` : "");
+  const cut = (t: string) => (t.length > POSTOP_CHARS ? `${t.slice(0, POSTOP_CHARS - 1).replace(/\s+\S*$/, "")}…` : t);
+  const list = (l: SheetItem[], withDetail = false) =>
+    l.map((i) => `${i.strong ? `<b>${esc(i.text)}</b>` : esc(i.text)}${withDetail && i.detail ? ` <span class="cd${i.conduct === "stop" ? " stop" : ""}">→ ${esc(i.detail)}</span>` : ""}`).join('<span class="sep"> ; </span>');
+  const who = sheet.name ?? sheet.initials;
+  const work = (sheet.workup ?? []).filter((w) => w.status !== "todo").map((w) => esc(w.value ?? w.label));
+  const todo = (sheet.workup ?? []).filter((w) => w.status === "todo" && w.strength === "recommended").map((w) => esc(w.label));
+  const general = /\bAG\b|générale/i.test(sheet.technique);
+  const neuraxial = /rachi|péridurale/i.test(sheet.technique);
+  const plan = sheet.rows
+    .filter((r) => r.label !== "Post-op")
+    .map((r) => line(r.label, r.parts.filter((t) => !hidden.has(`${r.label}:${t.text}`)).map((t) => esc(edits[`${r.label}:${t.text}`] ?? t.text)).join('<span class="sep"> · </span>')))
+    .join("");
+  const postop = sheet.rows.find((r) => r.label === "Post-op")?.parts.filter((t) => !hidden.has(`Post-op:${t.text}`)).map((t) => esc(cut(edits[`Post-op:${t.text}`] ?? t.text))) ?? [];
+  const watch = items("atcd")
+    .filter((i) => i.strong && i.detail)
+    .map((i) => `<b>${esc(i.text)}</b> : ${esc(i.detail!)}`);
+  const resume = items("ttt").filter((i) => i.conduct === "stop");
+  return `<article class="case tx" data-newpage="1">
+<header class="hd"><span class="no">${index}</span><span class="who"><b>Transmission USI — ${esc(who)}</b>${sheet.birthDate ? ` <span class="dob">${esc(sheet.birthDate)}</span>` : ""}</span>${sheet.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</header>
+<p class="body">${esc(sheet.body)} — ${esc(sheet.surgery)}</p>
+<h2>Background</h2>
+${line("ATCD", list(items("atcd")) || "RAS")}
+${line("Habitus", list(items("habit")))}
+${line("Chir.", list(items("chir")))}
+${line("TTT", list(items("ttt"), true) || "aucun")}
+${line("Allergies", list(items("allergy")))}
+${line("Bilan", work.join('<span class="sep"> · </span>'))}
+${line("Voies aér.", sheet.airway ? esc(sheet.airway) : "")}
+${line("Alertes", items("alert").filter((i) => !i.minor).map((i) => esc(i.text)).join('<span class="sep"> ; </span>'))}
+${line("Notes", items("note").map((i) => esc(i.text)).join('<span class="sep"> ; </span>'))}
+<h2>Prévu</h2>
+<div class="tech">${esc(sheet.technique)}</div>
+${plan}
+<h2>Peropératoire</h2>
+<div class="tline">Arrivée ${bl()} · Induction ${bl()} · Incision ${bl()} · Fin ${bl()}</div>
+<div class="tline">Technique réalisée : ${bl(true)}${neuraxial ? ` · niveau ${bl()} · ponction ${bl()}` : ""}</div>
+${general ? `<div class="tline">Intubation : Cormack ${bl()} · sonde n° ${bl()} · difficulté ${box} non ${box} oui ${bl()}</div>` : ""}
+<div class="tline">Abords : VVP ${bl()} · KTA ${bl()} · VVC ${bl()} · autre ${bl()}</div>
+<div class="tline">Produits : hypnotique ${bl()} · opioïde total ${bl()} · curare ${bl()} · réversion ${bl()}</div>
+<div class="tline">ATB : ${bl()} à ${bl()} · réinjection ${bl()}</div>
+<div class="tline">Remplissage : cristalloïdes ${bl()} mL · colloïdes ${bl()} mL</div>
+<div class="tline">Transfusion : CGR ${bl()} · PFC ${bl()} · plaquettes ${bl()} · fibrinogène ${bl()} · ac. tranexamique ${bl()}</div>
+<div class="tline">Pertes sanguines ${bl()} mL · diurèse ${bl()} mL · bilan E/S ${bl()}</div>
+<div class="tline">Hémodynamique : amines ${bl(true)} (max ${bl()}) · PAM ${bl()}</div>
+<div class="tline">Ventilation : FiO₂ ${bl()} · PEP ${bl()} · dernière gazo ${bl(true)}</div>
+<div class="tline">T° ${bl()} · glycémie ${bl()} · dernière Hb ${bl()}</div>
+<div class="tline">Événements / complications :</div><div class="wl"></div><div class="wl"></div>
+<div class="tline">Sortie de salle : extubé ${box} oui ${box} non (${bl(true)}) · analgésie en cours ${bl(true)} · dernier opioïde à ${bl()}</div>
+<h2>Plan postopératoire</h2>
+${line("Prévu", postop.join('<span class="sep"> · </span>'))}
+${line("Objectifs", sheet.targets.map(esc).join('<span class="sep"> · </span>'))}
+${line("Surveiller", watch.join('<span class="sep"> ; </span>'))}
+${line("Reprise TTT", resume.map((i) => `${esc(i.text)} ${bl()}`).join('<span class="sep"> · </span>'))}
+${line("Bio de contrôle", `${todo.length ? `${todo.join(", ")} · ` : ""}${bl(true)}`)}
+<div class="tline">Autres consignes :</div><div class="wl"></div><div class="wl"></div>
+</article>`;
 }
 
 /** Every drug of the day's sheets once, in their order (« Pharmaco », at the end of the sheet). */
@@ -293,7 +386,9 @@ export function caseSheetDocument(
 ): string {
   const st = opts.settings ?? DEFAULT_SETTINGS;
   const a4 = st.paper !== "a5";
-  const cases = sheets.map((s, i) => caseSheetHtml(s.sheet, i + 1, { hidden: s.hidden, settings: st, edits: s.edits })).join("");
+  const cases = sheets
+    .map((s, i) => caseSheetHtml(s.sheet, i + 1, { hidden: s.hidden, settings: st, edits: s.edits }) + (s.sheet.transmission ? transmissionHtml(s.sheet, i + 1, { hidden: s.hidden, edits: s.edits }) : ""))
+    .join("");
   const pk = kineticsHtml(dayKinetics(sheets.map((s) => s.sheet)), { hidden: opts.hiddenKinetics, settings: st });
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title>
 <style>
@@ -332,16 +427,19 @@ ${caseSheetCss("", st)}
   var room = 209 * MM - 14 * MM - probe.firstChild.getBoundingClientRect().height - 2.4 * MM - 1;
   var cases = Array.prototype.slice.call(src.children);
   var height = function (el) { return el.getBoundingClientRect().height + 3.2 * MM; };
-  var pages = [[]], used = 0;
+  var pages = [[]], used = 0, afterAlone = false;
   cases.forEach(function (el) {
     probe.appendChild(el);
     // Taller than a page: smaller, down to 6 pt, so that it stays on one.
     var size = parseFloat(getComputedStyle(el).fontSize) * 0.75;
     while (height(el) > room && size > 6) { size -= 0.25; el.style.fontSize = size + "pt"; }
     var h = height(el);
-    if (used + h > room && pages[pages.length - 1].length) { pages.push([]); used = 0; }
+    // The handover sheet is a page of its own (it is handed over on its own).
+    var alone = el.hasAttribute("data-newpage");
+    if ((used + h > room || alone || afterAlone) && pages[pages.length - 1].length) { pages.push([]); used = 0; }
     pages[pages.length - 1].push(el);
     used += h;
+    afterAlone = alone;
   });
   body.removeChild(probe);
   src.parentNode.removeChild(src);

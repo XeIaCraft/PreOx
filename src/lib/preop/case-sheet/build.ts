@@ -63,7 +63,14 @@ export interface CaseChoices {
   added?: { id: string; section: ItemSection; text: string }[];
   /** Work-up ticked on the sheet: done, or not needed (« fbc », « group »…). */
   workup?: Record<string, "done" | "skip">;
+  /** Where the patient goes: day hospital, ward, intensive care (unset: as the consultation says). */
+  admission?: Admission;
+  /** The handover sheet for the intensive care (unset: printed when the patient goes to the ICU). */
+  transmission?: boolean;
 }
+
+export type Admission = "HDJ" | "Hospit." | "USI";
+export const ADMISSIONS: Admission[] = ["HDJ", "Hospit.", "USI"];
 
 /** Where a patient's line is printed. */
 export type ItemSection = "atcd" | "habit" | "chir" | "ttt" | "allergy" | "alert" | "note";
@@ -141,6 +148,15 @@ export interface CaseSheet {
   kinetics: SheetKinetics[];
   /** The tests the patient needs (procedure, technique, patient), there or to plan. */
   workup: SheetWorkup[];
+  /** How the case goes, step by step (the protocol's « Déroulé », adapted for the patient). */
+  steps: string[];
+  /** The plan's targets (« PAM ≥ 65 mmHg »…). */
+  targets: string[];
+  /** Airway: Mallampati and what the consultation says. */
+  airway?: string;
+  admission?: Admission;
+  /** Print the intensive care handover sheet after the case. */
+  transmission: boolean;
 }
 
 export interface CaseResult {
@@ -593,7 +609,11 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   if (!weightKg) questions.push({ id: "weightKg", text: "Poids (kg) ?" });
   if (!heightCm) questions.push({ id: "heightCm", text: "Taille (cm) ?" });
 
-  const tags = [p.admission, p.plannedDate].filter((x): x is string => !!x);
+  // Where the patient goes: chosen on the sheet, else as the consultation says.
+  const parsedAdmission = ADMISSIONS.find((a) => a === p.admission);
+  const admission: Admission | undefined = choices.admission ?? parsedAdmission;
+  const tags = [admission ?? p.admission, p.plannedDate].filter((x): x is string => !!x);
+  const airway = [p.mallampati ? `Mallampati ${p.mallampati}` : "", ...p.airway].filter(Boolean).join(" ; ") || undefined;
 
   // --- How fast, how long: the anaesthesia drugs of the plan (and the volatile or TCI agents) ----
   const PK_GROUPS = new Set<Kinetics["group"]>(["hypnotic", "opioid", "nmb", "inhaled", "local", "reversal"]);
@@ -636,6 +656,11 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
       fallback,
       kinetics,
       workup,
+      steps: plan.steps ?? [],
+      targets: plan.targets,
+      airway,
+      admission,
+      transmission: choices.transmission ?? admission === "USI",
     },
     questions,
     candidates,

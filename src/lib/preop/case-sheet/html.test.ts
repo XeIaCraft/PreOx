@@ -28,6 +28,9 @@ const sheet: CaseSheet = {
     { code: "ecg", label: "ECG", status: "asked", reason: "65 ans", strength: "recommended" },
     { code: "pregnancy", label: "β-hCG", status: "todo", reason: "femme en âge de procréer", strength: "consider" },
   ],
+  steps: ["Installation, cadre sous AL", "Repérage : patient réveillé"],
+  targets: ["PAS < 140 mmHg"],
+  transmission: false,
   kinetics: [{ name: "Propofol", onset: "30–45 s", csht: "≈ 10 min (1 h)", duration: "5–10 min", wake: "Ce 1–1,5 µg/mL" }],
 };
 
@@ -108,6 +111,21 @@ describe("printed case sheet", () => {
     const named = { ...sheet, name: "DUPONT Jean", birthDate: "12/03/1958" };
     expect(caseSheetHtml(named, 1)).toContain('<b>DUPONT Jean</b> <span class="dob">12/03/1958</span>');
     expect(caseSheetHtml(named, 1, { settings: { ...DEFAULT_SETTINGS, identity: "initials" } })).not.toContain("DUPONT");
+  });
+
+  it("numbers the protocol's steps under the plan", () => {
+    expect(caseSheetHtml(sheet, 1)).toMatch(/Déroulé<\/span><span class="vl"><ol class="steps"><li>Installation, cadre sous AL<\/li><li>Repérage : patient réveillé<\/li><\/ol>/);
+    expect(caseSheetHtml(sheet, 1, { settings: { ...DEFAULT_SETTINGS, steps: false } })).not.toContain("Déroulé");
+  });
+
+  it("adds the intensive care handover on a page of its own, with blanks for the peroperative course", () => {
+    expect(caseSheetDocument([{ sheet }], "Jour")).not.toContain("Transmission USI");
+    const html = caseSheetDocument([{ sheet: { ...sheet, transmission: true, name: "DUPONT Jean" } }, { sheet }], "Jour");
+    expect(html).toContain('<article class="case tx" data-newpage="1">');
+    expect(html).toContain("Transmission USI — DUPONT Jean");
+    expect(html).toMatch(/Pertes sanguines <span class="bl"><\/span> mL/);
+    expect(html).toMatch(/Reprise TTT.*lisinopril/);
+    expect(html).toContain("PAS &lt; 140 mmHg");
   });
 });
 

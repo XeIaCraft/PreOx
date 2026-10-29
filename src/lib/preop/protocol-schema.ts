@@ -41,6 +41,7 @@ export const protocolContentSchema = z.object({
   material: z.array(text(200)).max(60),
   risks: z.array(z.object({ title: text(200), conduct: text(2000), why: text(1000).optional(), prevention: text(1000).optional(), source: text(300).optional(), crisis: text(40).optional() })).max(40),
   postop: z.array(text(400)).max(40),
+  steps: z.array(text(400)).max(40).optional(),
   postopPlan: z
     .object({
       destination: z.enum(["ambulatory", "ward", "hdu", "icu"]).optional(),

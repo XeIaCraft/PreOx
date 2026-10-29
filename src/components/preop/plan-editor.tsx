@@ -327,6 +327,25 @@ export function PlanEditor({
       </Panel>
   );
 
+  const stepsPanel = (
+    <Panel title="Déroulé">
+      <TextArea
+        label="Étapes, une par ligne (imprimées numérotées sur la feuille de jour)"
+        rows={5}
+        value={(c.steps ?? []).join("\n")}
+        onChange={(t) => {
+          // « 1. … », « - … »: the number is the sheet's.
+          const steps = t
+            .split("\n")
+            .map((x) => x.replace(/^\s*(\d+\s*[.)-]|[-•])\s*/, "").trim())
+            .filter(Boolean);
+          set({ steps: steps.length ? steps : undefined });
+        }}
+        placeholder={"Installation, cadre / tête…\nInduction ou sédation…\nTemps clé (patient réveillé, tests…)\nFermeture, réveil, transfert"}
+      />
+    </Panel>
+  );
+
   if (compact)
     return (
       <div key={formKey} className="space-y-4">
@@ -337,6 +356,7 @@ export function PlanEditor({
           </Panel>
         )}
         <PostopEditor plan={c.postopPlan} onChange={(postopPlan) => set({ postopPlan })} lines={c.postop} onLines={(postop) => set({ postop })} patient={patient} />
+        {stepsPanel}
       </div>
     );
 
@@ -382,6 +402,7 @@ export function PlanEditor({
       <RisksEditor risks={c.risks} onChange={(risks) => set({ risks })} context={[riskContext ?? "", c.techniques.join(" "), c.drugs.map((d) => d.name).join(" ")].join(" ")} />
 
       <PostopEditor plan={c.postopPlan} onChange={(postopPlan) => set({ postopPlan })} lines={c.postop} onLines={(postop) => set({ postop })} patient={patient} />
+      {stepsPanel}
       <Panel title="Notes">
         <TextArea label="Notes du plan" value={c.notes} onChange={(notes) => set({ notes })} />
       </Panel>

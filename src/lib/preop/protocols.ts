@@ -75,6 +75,8 @@ export interface ProtocolContent {
   material: string[];
   risks: ProtocolRisk[];
   postop: string[];
+  /** How the case goes, step by step (« Cadre stéréotaxique sous AL, sédation légère », « Repérage MER : patient réveillé, testing »…), printed on the day sheet. */
+  steps?: string[];
   /** Post-operative orders to tick (analgesia, PCA/PCEA, thromboprophylaxis…), computed for the patient. */
   postopPlan?: PostopPlan;
   /** Tourniquet alert threshold, minutes (0 = no tourniquet). */

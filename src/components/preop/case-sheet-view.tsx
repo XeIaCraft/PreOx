@@ -10,8 +10,8 @@ import { PlanEditor } from "@/components/preop/plan-editor";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { SecureStore } from "@/lib/preop/secure-store";
 import { parseConsultation, splitConsultations } from "@/lib/preop/case-sheet/parse";
-import { buildCaseSheet, type CaseChoices, type CaseQuestion, type CaseResult, type ItemSection } from "@/lib/preop/case-sheet/build";
-import { caseSheetCss, caseSheetDocument, caseSheetHtml, dayKinetics, DEFAULT_SETTINGS, kineticsHtml, type SheetSettings } from "@/lib/preop/case-sheet/html";
+import { ADMISSIONS, buildCaseSheet, type CaseChoices, type CaseQuestion, type CaseResult, type ItemSection } from "@/lib/preop/case-sheet/build";
+import { caseSheetCss, caseSheetDocument, caseSheetHtml, dayKinetics, DEFAULT_SETTINGS, kineticsHtml, transmissionHtml, type SheetSettings } from "@/lib/preop/case-sheet/html";
 import { addedSection, splitDictation, type LineKind } from "@/lib/preop/case-sheet/lines";
 import type { SheetWorkup } from "@/lib/preop/case-sheet/workup";
 import { fold, searchItems, type Catalogs } from "@/lib/preop/catalog";
@@ -438,6 +438,23 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 )}
               </div>
 
+              {/* Where the patient goes; the ICU gets a handover sheet of its own. */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {ADMISSIONS.map((a) => (
+                  <Chip key={a} on={r.sheet.admission === a} onClick={() => choose(e.id, { admission: a, transmission: undefined })}>
+                    {a}
+                  </Chip>
+                ))}
+                <Chip on={r.sheet.transmission} onClick={() => choose(e.id, { transmission: !r.sheet.transmission })}>
+                  Fiche de transmission USI
+                </Chip>
+              </div>
+
+              <label className="block space-y-1">
+                <FieldLabel>Notes (imprimées sous le patient)</FieldLabel>
+                <textarea rows={2} defaultValue={e.choices.notes ?? ""} onChange={(ev) => choose(e.id, { notes: ev.target.value })} placeholder="Cardio, transfert USI, famille, matériel…" className={areaClass} />
+              </label>
+
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <MiniNumber key={`a-${e.id}`} label="Âge" value={r.consultation.patient.age} onChange={(v) => choose(e.id, { age: v })} unit="ans" />
                 <MiniNumber key={`w-${e.id}`} label="Poids" value={r.consultation.patient.weightKg} onChange={(v) => choose(e.id, { weightKg: v })} unit="kg" />
@@ -516,10 +533,6 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                     )}
                   </div>
 
-                  <label className="block space-y-1">
-                    <FieldLabel>Texte libre sous le patient (cardio, transfert USI…)</FieldLabel>
-                    <textarea rows={3} defaultValue={e.choices.notes ?? ""} onChange={(ev) => choose(e.id, { notes: ev.target.value })} placeholder="Imprimé tel quel sous le patient." className={areaClass} />
-                  </label>
 
                   <Button size="sm" variant="secondary" disabled={!!e.dossierId} onClick={() => void keep(e, r)}>
                     <FolderInput className="h-3.5 w-3.5" /> {e.dossierId ? "Gardé comme dossier" : "Garder comme dossier"}
@@ -543,6 +556,12 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 dangerouslySetInnerHTML={{ __html: caseSheetHtml(r.sheet, i + 1, { hidden: new Set(e.hidden ?? []), editable: true, settings, edits: e.choices.edits }) }}
               />
               {open && <LineMenu key={open.key} at={open} {...lineMenu(e, r, open.key)} />}
+              {r.sheet.transmission && (
+                <div
+                  className="case-preview overflow-x-auto rounded-[var(--radius-md)] border border-border bg-white p-3 text-[#15191c] shadow-sm"
+                  dangerouslySetInnerHTML={{ __html: transmissionHtml(r.sheet, i + 1, { hidden: new Set(e.hidden ?? []), edits: e.choices.edits }) }}
+                />
+              )}
               <AddLine
                 catalogs={catalogs}
                 onAdd={(lines) => {
@@ -833,7 +852,8 @@ function SettingsPanel({ value, onChange }: { value: SheetSettings; onChange: (s
       ))}
     </div>
   );
-  const sections: { key: "habits" | "surgical" | "postop" | "planB" | "notes"; label: string }[] = [
+  const sections: { key: "habits" | "surgical" | "postop" | "planB" | "notes" | "steps"; label: string }[] = [
+    { key: "steps", label: "Déroulé" },
     { key: "habits", label: "Habitus" },
     { key: "surgical", label: "ATCD chirurgicaux" },
     { key: "postop", label: "Post-op" },
