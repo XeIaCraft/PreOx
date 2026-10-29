@@ -124,6 +124,8 @@ export interface SheetRow {
 /** Plan B: the other technique, ready (« Si refus / échec → AG… »). */
 export interface SheetFallback {
   mode: SheetMode;
+  /** Part of the plan, not a fallback: the protocol's steps include it (DBS: sedation, then an AG for the generator). */
+  planned?: boolean;
   technique: string;
   rows: SheetRow[];
 }
@@ -638,7 +640,8 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     const OWN = new Set(["Induction", "Entretien", "Entretien (TIVA)", "Rachi", "ALR", "Sédation / entretien", "Analgésie", "NVPO"]);
     const textOf = (r: SheetRow) => r.parts.map((x) => x.text).join(" · ");
     const mine = new Map(rows.map((r) => [r.label, textOf(r)]));
-    fallback = { mode: fallbackMode, technique: b.sheet.technique, rows: b.sheet.rows.filter((r) => OWN.has(r.label) && mine.get(r.label) !== textOf(r)) };
+    const planned = fallbackMode === "general" && (plan.steps ?? []).some((x) => /\bAG\b|anesthésie générale/i.test(x));
+    fallback = { mode: fallbackMode, ...(planned ? { planned } : {}), technique: b.sheet.technique, rows: b.sheet.rows.filter((r) => OWN.has(r.label) && mine.get(r.label) !== textOf(r)) };
     for (const k of b.sheet.kinetics) if (!kinetics.some((x) => x.name === k.name)) kinetics.push(k);
   }
 
@@ -660,7 +663,8 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
       targets: plan.targets,
       airway,
       admission,
-      transmission: choices.transmission ?? admission === "USI",
+      // Handed over to the ICU: the patient is admitted there, or the protocol sends the patient there after the operation.
+      transmission: choices.transmission ?? (admission === "USI" || plan.postopPlan?.destination === "icu"),
     },
     questions,
     candidates,

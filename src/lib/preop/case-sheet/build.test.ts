@@ -329,5 +329,20 @@ ECG : Tachycardie sinusale à 104 bpm. Axe normal.`;
     expect(texts(r, "note")).toEqual(["échocardiographie de stress à la dobutamine"]);
     expect(r.sheet.workup.find((w) => w.code === "ecg")?.value).toBe("ECG : Tachycardie sinusale à 104 bpm");
   });
+
+  it("prepares a deep brain stimulation as at CHU Tivoli: steps, sedation, the AG of the generator, the ICU handover", () => {
+    const raw = `Initiales : XY\nSexe : M\nIntervention : Stimulation cérébrale profonde\nAge 62 ans Poids 80 kg Taille 175 cm\nAntécédents :\nMaladie de Parkinson\nTraitement :\nProlopa 125 mg 4x/j`;
+    const r = buildCaseSheet(parseConsultation(raw), ctx);
+    expect(r.protocol?.name).toMatch(/DBS.*Tivoli/);
+    expect(r.mode).toBe("sedation");
+    expect(r.sheet.steps).toHaveLength(11);
+    expect(r.sheet.steps[5]).toMatch(/MER.*couper toute sédation/);
+    const texts = r.sheet.rows.flatMap((x) => x.parts.map((t) => t.text));
+    expect(texts).toEqual(expect.arrayContaining([expect.stringMatching(/^Propofol \(sédation, AIVOC Ce ≈ 1–2 µg\/mL\)$/), expect.stringMatching(/^Céfazoline 2 g/)]));
+    // The AG of the generator: planned, not a fallback.
+    expect(r.sheet.fallback).toMatchObject({ mode: "general", planned: true });
+    expect(r.sheet.transmission).toBe(true);
+    expect(r.sheet.workup.find((w) => w.code === "group")?.status).toBe("todo");
+  });
 });
 

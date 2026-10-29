@@ -27,6 +27,11 @@ import {
   type ReferenceProtocol,
 } from "./reference-protocol-kit";
 import { DEFAULT_PCEA } from "./postop";
+import { TIVA_GASES } from "./gases";
+import type { ProtocolDrug } from "./protocols";
+
+/** A target-controlled sedation: no dose to compute, its low target is in the name (not the anaesthesia targets of the TCI models). */
+const tciSedation = (name: string, note: string): ProtocolDrug => ({ ...drug(name, "maintenance", "pse", { fixed: 0 }, "mg", note), amount: null });
 
 const remifentanil = () => drug("Rémifentanil", "maintenance", "pse", { perKg: 0.5, basis: "lean" }, "µg", "Bolus 0,2–1 µg/kg ; entretien 0,05–0,25 µg/kg/min : réveil rapide, hypotension contrôlée possible (manuel, chap. 7).");
 
@@ -261,6 +266,73 @@ export const EXTRA_REFERENCE_PROTOCOLS: ReferenceProtocol[] = [
       postopPlan: postop({ destination: "ward", analgesia: ["paracetamol", "nsaid"], thrombo: "mechanical", watch: ["pain", "bleeding"] }),
       postop: ["Surveillance du site (hématome) selon le chirurgien"],
       notes: "Lambeau libre ou microchirurgie : protocole « Lambeau libre et microchirurgie ».",
+    }),
+  },
+  {
+    id: pid(122),
+    name: "Stimulation cérébrale profonde (DBS) — CHU Tivoli",
+    surgery: "Stimulation cérébrale profonde",
+    operation_category: "D",
+    hospital: "CHU Tivoli",
+    source: "« Procedure DBS — Deep Brain Stimulation : considérations pratiques sur la prise en charge anesthésique au CHU Tivoli », Dr H. V. Ha et Dr L. Miglionico (protocole du service).",
+    content: content({
+      techniques: ["sedation", "general"],
+      drugs: [
+        cefazolin("Réinjection de 1 g toutes les 4 h ; à poursuivre toutes les 6 h en postopératoire pendant 24 h."),
+        tciSedation("Propofol (sédation, AIVOC Ce ≈ 1–2 µg/mL)", "Progressif, faibles doses ; couper toute sédation environ 10 min avant chaque MER. Pour le cadre : courte durée d'action (le patient quitte le bloc pour le CT)."),
+        tciSedation("Rémifentanil (sédation, AIVOC Ce ≈ 1–2 ng/mL)", "Faibles doses, ventilation spontanée : éviter hypoventilation et apnée (capnographie). Peut rester à faible dose pendant le MER controlatéral (fatigue, lombalgies)."),
+        drug("Paracétamol", "analgesia", "perfusion", { fixed: 1 }, "g", "Phase controlatérale : fatigue et lombalgies fréquentes."),
+        { ...propofolInduction(), note: "Phase 5, boîtier : AG avec IOT ou masque laryngé (IOT si sonde gastrique nécessaire)." },
+        { ...rocuronium(), note: "Si IOT. Phase OFF : risque d'inhalation et de troubles de déglutition — vérifier la décurarisation." },
+        drug("Sugammadex", "other", "bolus_iv", { perKg: 2, basis: "total" }, "mg", "Si curarisation résiduelle (phase OFF : déglutition, inhalation)."),
+      ],
+      gases: TIVA_GASES,
+      targets: [
+        "Sédation en ventilation spontanée : pas d'hypoventilation ni d'apnée (capnographie nasobuccale et clinique)",
+        "MER (enregistrement des microélectrodes) : aucune sédation pendant environ 10 min avant (mesures et examen clinique)",
+        "Pas de mannitol ni de corticoïdes d'emblée",
+        "Perfusion d'entretien : cristalloïdes (Ionolyte ou NaCl 0,9 %)",
+        "Confort sur la durée : appuis protégés (matelas O-arm), dos légèrement relevé, épaules soutenues, Bair Hugger adapté",
+      ],
+      material: [
+        "ECG",
+        "PNI",
+        "SpO₂",
+        "Lunettes O₂ avec capnographie nasobuccale (boîte sur l'étagère du bureau d'anesthésie)",
+        "Bonne voie veineuse périphérique",
+        "Cathéter artériel selon les antécédents (pas systématique)",
+        "Sonde urinaire : quasi systématique chez la femme ; au cas par cas chez l'homme (sinon urinal à la demande)",
+        "Bair Hugger",
+        "Matelas O-arm",
+        "Sonde gastrique si reprise du Prolopa ou phase OFF importante attendue (avis du neurologue)",
+      ],
+      risks: [
+        { title: "Hypoventilation, apnée sous sédation", why: "Propofol et rémifentanil en ventilation spontanée, tête dans le cadre (accès aux voies aériennes limité).", prevention: "AIVOC progressive à faibles doses, capnographie nasobuccale.", conduct: "Diminuer ou arrêter l'AIVOC, stimuler, O₂ ; ventilation au masque ou masque laryngé si besoin (le cadre limite l'accès)." },
+        { title: "Phase OFF (antiparkinsoniens arrêtés)", why: "Test d'arrêt du traitement avant l'intervention : rigidité, troubles de déglutition.", prevention: "Avis du neurologue avant l'induction de l'AG : sonde gastrique (donc IOT) pour reprendre le Prolopa si nécessaire.", conduct: "Risque d'inhalation au réveil : décurarisation complète (sugammadex), extubation prudente ; protocole antiparkinsonien du neurologue à l'USI." },
+        { title: "Fatigue, lombalgies, agitation en fin d'intervention", why: "Durée, patient réveillé, phase controlatérale.", prevention: "Installation confortable, points d'appui.", conduct: "Paracétamol 1 g IV, rémifentanil à faible dose même pendant le MER, repositionnement." },
+      ],
+      postopPlan: postop({ destination: "icu", analgesia: ["paracetamol"], thrombo: "mechanical", watch: ["neuro", "pain"] }),
+      postop: [
+        "Transfert USI après extubation",
+        "Céfazoline 1 g toutes les 6 h pendant 24 h",
+        "Antiparkinsoniens : protocole du neurologue à débuter à l'USI (il ne reste pas pour la phase 5 ; ses références sont disponibles à l'USI)",
+        "Surveillance : déglutition et inhalation (phase OFF), état neurologique",
+        "Testing du stimulateur à J3 par le neurologue",
+      ],
+      steps: [
+        "Préop : bilan de neurochirurgie majeure (biologie complète, groupe + RAI, ECG) ; traitement poursuivi y compris le matin, sauf anticoagulants et antiagrégants (guidelines neurochirurgie) ; antiparkinsoniens gérés par les neurologues (hospitalisation une semaine avant pour le test d'arrêt)",
+        "Cadre stéréotaxique (≈ 30 min) : pas de prémédication ; décubitus dorsal, monitoring standard, bonne VVP ; AL par le chirurgien aux 4 points de fixation (pression initiale qui s'amende) ; sédation légère possible, de courte durée d'action",
+        "CT cérébral avec le cadre (30–45 min) : descente sans monitoring avec le chirurgien, l'infirmière et l'anesthésiste ; attente en salle de réveil pendant le calcul des trajectoires",
+        "Feu vert du chirurgien : réinstallation en salle (dos légèrement relevé, appuis, lunettes O₂ + capnographie, Bair Hugger), sonde urinaire, céfazoline 2 g",
+        "Phase 1 (installation, craniotomie) : propofol + rémifentanil AIVOC progressifs à faibles doses (≈ 1–2 µg/mL et ng/mL) ; éviter l'apnée",
+        "Phase 2 (MER, confirmation des électrodes) : couper toute sédation environ 10 min avant",
+        "Phases 1 bis et 2 bis (côté controlatéral) : fatigue et lombalgies fréquentes → paracétamol 1 g IV, rémifentanil faible dose possible même pendant le MER",
+        "Retrait du cadre après fermeture du cuir chevelu (sédation possible)",
+        "Phase 5, boîtier (pectoral droit) : AG avec IOT ou masque laryngé, tunnelisation et raccordement ; sonde gastrique (donc IOT) si reprise du Prolopa ou phase OFF à craindre — avis du neurologue avant l'induction",
+        "Réveil : phase OFF → inhalation, troubles de déglutition ; décurarisation complète (sugammadex si besoin) ; transfert USI après extubation",
+        "USI : protocole antiparkinsonien du neurologue ; testing du stimulateur à J3",
+      ],
+      notes: "Le neurologue ne reste pas pour la phase 5 : s'informer avant l'induction de l'AG du protocole antiparkinsonien à débuter à l'USI et de la nécessité d'une sonde gastrique.",
     }),
   },
 ];

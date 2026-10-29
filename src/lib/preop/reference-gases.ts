@@ -66,6 +66,8 @@ const GASES: Record<number, GasPlan> = {
 /** The gas plan of a reference protocol: none without a general anaesthesia. */
 export function referenceGases(n: number, c: ProtocolContent): GasPlan | undefined {
   if (!c.techniques.includes("general")) return undefined;
+  // Written in the protocol itself (CHU Tivoli DBS: the sedation's TCI goes on under the AG).
+  if (c.gases) return c.gases;
   if (GASES[n]) return GASES[n];
   // A protocol whose maintenance is TIVA (AIVOC in its targets).
   if (/AIVOC|TIVA/i.test(c.targets.join(" ") + c.notes)) return tiva("AIVOC propofol-rémifentanil (voir les cibles du protocole).");

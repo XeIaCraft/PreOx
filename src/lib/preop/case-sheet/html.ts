@@ -120,7 +120,7 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
   const planB = b
     ? piece(
         "planb",
-        `<div class="ln"><span class="lb">Plan B</span><span class="vl"><b>${esc({ general: "AG", neuraxial: "Rachi", regional: "ALR", sedation: "Sédation" }[b.mode])}</b> si refus / échec${b.technique.includes(",") ? ` — ${esc(b.technique.replace(/^[^,]+,\s*/, ""))}` : ""}</span></div>${b.rows.map((r) => planRow(r, "B ")).join("")}`,
+        `<div class="ln"><span class="lb">${b.planned ? "Temps AG" : "Plan B"}</span><span class="vl"><b>${esc({ general: "AG", neuraxial: "Rachi", regional: "ALR", sedation: "Sédation" }[b.mode])}</b> ${b.planned ? "prévue au déroulé (et si échec)" : "si refus / échec"}${b.technique.includes(",") ? ` — ${esc(b.technique.replace(/^[^,]+,\s*/, ""))}` : ""}</span></div>${b.rows.map((r) => planRow(r, "B ")).join("")}`,
         "div",
         "planb"
       )
@@ -292,7 +292,7 @@ export function transmissionHtml(sheet: CaseSheet, index: number, opts: SheetHtm
   const who = sheet.name ?? sheet.initials;
   const work = (sheet.workup ?? []).filter((w) => w.status !== "todo").map((w) => esc(w.value ?? w.label));
   const todo = (sheet.workup ?? []).filter((w) => w.status === "todo" && w.strength === "recommended").map((w) => esc(w.label));
-  const general = /\bAG\b|générale/i.test(sheet.technique);
+  const general = /\bAG\b|générale/i.test(sheet.technique) || !!sheet.fallback?.planned;
   const neuraxial = /rachi|péridurale/i.test(sheet.technique);
   const plan = sheet.rows
     .filter((r) => r.label !== "Post-op")
