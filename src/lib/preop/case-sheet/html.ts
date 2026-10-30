@@ -194,7 +194,8 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
         .join("")
     : "";
 
-  const tags = sheet.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("");
+  // The header's labels: each can be corrected or taken off (« tag:… »), and one added (« tag:+ »).
+  const tags = sheet.tags.map((t) => piece(`tag:${t}`, esc(edits[`tag:${t}`] ?? t), "span", "tag")).join("") + (edit ? `<span class="tag add" data-k="tag:+" role="button" tabindex="0" aria-label="Ajouter une étiquette">+</span>` : "");
   const named = st.identity === "name" && !!sheet.name;
   const who = named ? sheet.name! : sheet.initials;
   const born = named && sheet.birthDate ? ` <span class="dob">${esc(sheet.birthDate)}</span>` : "";
@@ -234,6 +235,7 @@ ${s(".case .no")}{display:inline-flex;align-items:center;justify-content:center;
 ${s(".case .who")}{flex:1;min-width:0;text-transform:uppercase;letter-spacing:.01em}
 ${s(".case .who b")}{text-transform:none}
 ${s(".case .dob")}{font-size:.85em;color:#3c4549;text-transform:none}
+${s(".case .tag.add")}{border-style:dashed;color:#5b6a6e;font-weight:500}
 ${s(".case .tag")}{border:0.25mm solid #1f4f53;color:#1f4f53;border-radius:5mm;padding:0 1.4mm;font-size:.82em;font-weight:600;white-space:nowrap}
 ${s(".case .body")}{margin:0 0 1mm;color:#3c4549}
 ${s(".case .blk")}{margin:0 0 1mm}
@@ -316,7 +318,7 @@ export function transmissionHtml(sheet: CaseSheet, index: number, opts: SheetHtm
     .map((x, k) => `<tr><td>${esc(x)}</td><td></td><td>${esc(["Pertes sanguines", "Diurèse", "Drains", "", ""][k])}</td><td></td><td></td></tr>`)
     .join("");
   return `<article class="case tx" data-newpage="sheet">
-<header class="hd"><span class="no">${index}</span><span class="who"><b>Transmission USI — ${esc(who)}</b>${sheet.birthDate ? ` <span class="dob">${esc(sheet.birthDate)}</span>` : ""}</span>${sheet.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</header>
+<header class="hd"><span class="no">${index}</span><span class="who"><b>Transmission USI — ${esc(who)}</b>${sheet.birthDate ? ` <span class="dob">${esc(sheet.birthDate)}</span>` : ""}</span>${sheet.tags.filter((t) => !hidden.has(`tag:${t}`)).map((t) => `<span class="tag">${esc(opts.edits?.[`tag:${t}`] ?? t)}</span>`).join("")}</header>
 <p class="body">${esc(sheet.body)}</p>
 <h2>Chirurgie — ${esc(sheet.surgery)}</h2>
 ${field("Indication", sheet.indication ? ` ${esc(sheet.indication)}` : "", sheet.indication ? 1 : 2)}

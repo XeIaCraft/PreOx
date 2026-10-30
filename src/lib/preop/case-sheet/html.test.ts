@@ -150,5 +150,12 @@ describe("printed case sheet", () => {
     expect(html).not.toMatch(/prévu :|temps chir\.|à retenir/);
     expect(html).toMatch(/TTT<\/span><span class="vl"><b>lisinopril<\/b><span class="sep"> ; <\/span>ésoméprazole<\/span>/);
   });
+
+  it("lets the header's labels be corrected, taken off or added to", () => {
+    expect(caseSheetHtml(sheet, 1, { edits: { "tag:HDJ": "HDJ — 1er" } })).toContain('<span class="tag">HDJ — 1er</span>');
+    expect(caseSheetHtml(sheet, 1, { hidden: new Set(["tag:HDJ"]) })).not.toContain(">HDJ<");
+    expect(caseSheetHtml(sheet, 1, { editable: true })).toContain('data-k="tag:+"');
+    expect(caseSheetHtml(sheet, 1)).not.toContain("tag:+");
+  });
 });
 

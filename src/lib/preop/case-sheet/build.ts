@@ -65,6 +65,8 @@ export interface CaseChoices {
   workup?: Record<string, "done" | "skip">;
   /** Where the patient goes: day hospital, ward, intensive care (unset: as the consultation says). */
   admission?: Admission;
+  /** Labels added to the sheet's header (« Bloc 3 », « 1er patient »…). */
+  tags?: string[];
   /** Why the patient is operated, as written for the handover (unset: as found in the consultation). */
   indication?: string;
   /** The handover sheet for the intensive care (unset: printed when the patient goes to the ICU). */
@@ -618,7 +620,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   // Where the patient goes: chosen on the sheet, else as the consultation says.
   const parsedAdmission = ADMISSIONS.find((a) => a === p.admission);
   const admission: Admission | undefined = choices.admission ?? parsedAdmission;
-  const tags = [admission ?? p.admission, p.plannedDate].filter((x): x is string => !!x);
+  const tags = [admission ?? p.admission, p.plannedDate, ...(choices.tags ?? [])].filter((x): x is string => !!x);
   const airway = [p.mallampati ? `Mallampati ${p.mallampati}` : "", ...p.airway].filter(Boolean).join(" ; ") || undefined;
 
   // --- How fast, how long: the anaesthesia drugs of the plan (and the volatile or TCI agents) ----

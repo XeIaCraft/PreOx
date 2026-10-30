@@ -224,19 +224,56 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   /** What can be done with a line of the sheet: correct it, bold, move, take off. */
   function lineMenu(e: DayEntry, r: CaseResult, key: string): MenuProps {
     const c = e.choices;
+    const close = () => setMenu(null);
+    // A label of the header (« Hospit. », the date, one added): corrected, taken off, or a new one.
+    if (key.startsWith("tag:")) {
+      const tag = key.slice(4);
+      const added = (c.tags ?? []).includes(tag);
+      const off = (e.hidden ?? []).includes(key);
+      const edits = Object.fromEntries(Object.entries(c.edits ?? {}).filter(([k]) => k !== key));
+      return {
+        title: tag === "+" ? "Nouvelle étiquette" : `Étiquette « ${c.edits?.[key] ?? tag} »`,
+        text: tag === "+" ? "" : (c.edits?.[key] ?? tag),
+        onText: (t) => {
+          const v = t.trim();
+          if (!v) return;
+          if (tag === "+") choose(e.id, { tags: [...(c.tags ?? []), v] });
+          else if (added) choose(e.id, { tags: (c.tags ?? []).map((x) => (x === tag ? v : x)) });
+          else choose(e.id, { edits: v === tag ? edits : { ...edits, [key]: v } });
+          close();
+        },
+        onBold: () => {},
+        onMove: () => {},
+        off,
+        onToggle:
+          tag === "+" || added
+            ? undefined
+            : () => {
+                setEntry(e.id, { hidden: off ? (e.hidden ?? []).filter((k) => k !== key) : [...(e.hidden ?? []), key] });
+                close();
+              },
+        onDelete: added
+          ? () => {
+              choose(e.id, { tags: (c.tags ?? []).filter((x) => x !== tag) });
+              close();
+            }
+          : undefined,
+        onReset: c.edits?.[key] !== undefined ? () => (choose(e.id, { edits }), close()) : undefined,
+        onClose: close,
+      };
+    }
     // A line of the handover's background (« tx:… »): taken off the handover only; corrected, moved or in bold everywhere.
     const tx = key.startsWith("tx:");
     const itemKey = tx ? key.slice(3) : key;
     const item = r.sheet.items.find((i) => i.key === itemKey);
     // A product of the plan: « Analgésie:Kétorolac 30 mg ».
-    const product = !item && !tx && key.includes(":") && !/^(row|imp|bilan):/.test(key);
+    const product = !item && !tx && key.includes(":") && !/^(row|imp|bilan|tag):/.test(key);
     const work = r.sheet.workup.find((w) => `bilan:${w.code}` === key);
     // The airway line (Mallampati, what the consultation says): corrected like a product.
     const airway = key === "airway";
     const original = airway ? r.sheet.airway : product ? key.slice(key.indexOf(":") + 1) : item?.text;
     const editKey = product || airway ? key : item?.addedId ? undefined : (item?.source ?? (item?.section === "alert" ? item.key : undefined));
     const off = (e.hidden ?? []).includes(key);
-    const close = () => setMenu(null);
     const changed = !!editKey && (c.edits?.[editKey] !== undefined || (item?.source !== undefined && c.lines?.[item.source] !== undefined) || c.strong?.[itemKey] !== undefined);
     const without = <T,>(rec: Record<string, T> | undefined, k?: string) => Object.fromEntries(Object.entries(rec ?? {}).filter(([x]) => x !== k));
     return {
@@ -643,7 +680,8 @@ interface MenuProps {
   section?: LineKind;
   onMove: (k: LineKind) => void;
   off: boolean;
-  onToggle: () => void;
+  /** Take off the sheet, or put back; undefined: a line that can only be deleted (added) or a new one. */
+  onToggle?: () => void;
   onDelete?: () => void;
   onReset?: () => void;
   /** A test of the work-up: ticked done, or not needed. */
@@ -699,9 +737,11 @@ function LineMenu({ at, title, text, onText, strong, onBold, section, onMove, of
             <Bold className="h-3.5 w-3.5" /> Gras
           </button>
         )}
-        <button type="button" onClick={onToggle} className={small}>
-          {off ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />} {off ? "Remettre" : "Retirer"}
-        </button>
+        {onToggle && (
+          <button type="button" onClick={onToggle} className={small}>
+            {off ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />} {off ? "Remettre" : "Retirer"}
+          </button>
+        )}
         {onDone && (
           <button type="button" onClick={onDone} className={small}>
             <Check className="h-3.5 w-3.5" /> Fait / disponible
