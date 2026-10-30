@@ -235,7 +235,9 @@ describe("case sheet", () => {
     expect(ttt(r)).toEqual([expect.stringMatching(/^Eliquis 5 mg 1-0-1 → (STOP|arrêt)/)]);
     expect(texts(r, "allergy")).toEqual(["iode (éruption cutanée)"]);
     // Nothing recognised: in the notes as written, no question.
-    expect(texts(r, "note")).toEqual(["Motif d'admission : douleur anale", "Vit seul, autonome"]);
+    expect(texts(r, "note")).toEqual(["Vit seul, autonome"]);
+    // « Motif d'admission : … »: the indication (handover), not a note.
+    expect(r.sheet.indication).toBe("douleur anale");
     expect(r.questions).toEqual([]);
     // Moved, corrected, added, in bold on the sheet: read again.
     const changed = buildCaseSheet(parseConsultation(raw), ctx, {

@@ -65,6 +65,8 @@ export interface CaseChoices {
   workup?: Record<string, "done" | "skip">;
   /** Where the patient goes: day hospital, ward, intensive care (unset: as the consultation says). */
   admission?: Admission;
+  /** Why the patient is operated, as written for the handover (unset: as found in the consultation). */
+  indication?: string;
   /** The handover sheet for the intensive care (unset: printed when the patient goes to the ICU). */
   transmission?: boolean;
 }
@@ -664,7 +666,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
       steps: plan.steps ?? [],
       targets: plan.targets,
       airway,
-      indication: c.surgery.indication?.trim() || undefined,
+      indication: (choices.indication ?? p.indication ?? c.surgery.indication)?.trim() || undefined,
       admission,
       // Handed over to the ICU: the patient is admitted there, or the protocol sends the patient there after the operation.
       transmission: choices.transmission ?? (admission === "USI" || plan.postopPlan?.destination === "icu"),

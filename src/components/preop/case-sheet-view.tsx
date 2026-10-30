@@ -455,6 +455,19 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 </Chip>
               </div>
 
+              {r.sheet.transmission && (
+                <label className="block space-y-1">
+                  <FieldLabel>Indication (transmission USI)</FieldLabel>
+                  <textarea
+                    rows={2}
+                    defaultValue={r.sheet.indication ?? ""}
+                    onChange={(ev) => choose(e.id, { indication: ev.target.value })}
+                    placeholder="Pourquoi on opère : ce qu'on a trouvé, comment la chirurgie s'est décidée. Laissé vide : lignes à remplir à la main."
+                    className={areaClass}
+                  />
+                </label>
+              )}
+
               <label className="block space-y-1">
                 <FieldLabel>Notes (imprimées sous le patient)</FieldLabel>
                 <textarea rows={2} defaultValue={e.choices.notes ?? ""} onChange={(ev) => choose(e.id, { notes: ev.target.value })} placeholder="Cardio, transfert USI, famille, matériel…" className={areaClass} />

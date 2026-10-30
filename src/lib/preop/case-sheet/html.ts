@@ -312,7 +312,6 @@ export function transmissionHtml(sheet: CaseSheet, index: number, opts: SheetHtm
   const who = sheet.name ?? sheet.initials;
   const work = (sheet.workup ?? []).filter((w) => w.status !== "todo").map((w) => esc(w.value ?? w.label));
   const general = /\bAG\b|générale/i.test(sheet.technique) || !!sheet.fallback?.planned;
-  const planned = [sheet.technique, sheet.fallback?.planned ? "AG" : ""].filter(Boolean).join(" puis ");
   const inOut = ["Cristalloïdes", "Colloïdes", "CGR", "PFC / plaquettes", ""]
     .map((x, k) => `<tr><td>${esc(x)}</td><td></td><td>${esc(["Pertes sanguines", "Diurèse", "Drains", "", ""][k])}</td><td></td><td></td></tr>`)
     .join("");
@@ -322,11 +321,12 @@ export function transmissionHtml(sheet: CaseSheet, index: number, opts: SheetHtm
 <h2>Chirurgie — ${esc(sheet.surgery)}</h2>
 ${field("Indication", sheet.indication ? ` ${esc(sheet.indication)}` : "", sheet.indication ? 1 : 2)}
 ${field("Acte chir.", "", 2)}
-${field("Acte anesth.", ` <span class="hint">prévu : ${esc(planned)}</span>`, 1)}
-${field("Chrono", " <span class=\"hint\">temps chir., garrot, CEC…</span>", 1)}
+${field("Drains, lames, redons (où)", "", 1)}
+${field("Acte anesth.", "", 1)}
+${field("Chrono", "", 1)}
 ${field("Abords", ` VVP ${bl()} · KTA ${bl()} · VVC ${bl()} · autre ${bl()}`)}
 ${field("ATB", ` ${bl(true)} à ${bl()} · réinjection ${bl()}`)}
-${field("Produits, à retenir", "", 3)}
+${field("Produits", "", 3)}
 <table class="io"><thead><tr><th>IN</th><th>mL</th><th>OUT</th><th>mL</th><th>Annotations</th></tr></thead><tbody>${inOut}<tr class="tot"><td>Total</td><td></td><td>Total</td><td></td><td>Balance :</td></tr></tbody></table>
 ${field("Hémodynamique", "", 2)}
 ${field("Ventilation", ` FiO₂ ${bl()} · Vt ${bl()} · FR ${bl()} · PEP ${bl()}`)}
@@ -334,7 +334,7 @@ ${field("Gazométrie", "", 3)}
 ${field("T°", ` début ${bl()} · fin ${bl()}`)}
 ${field("Événements, complications", "", 2)}
 ${field("Sortie de salle", ` ${box} intubé ${box} extubé${general ? ` · Cormack ${bl()} · sonde ${bl()}` : ""}`)}
-${field("Relais antalgie postop", "", 1)}
+${field("Relais antalgie postop", "", 3)}
 </article>
 <article class="case tx" data-newpage="1">
 <header class="hd"><span class="no">${index}</span><span class="who"><b>Transmission USI — ${esc(who)}</b> <span class="dob">(suite)</span></span></header>
@@ -346,7 +346,7 @@ ${lines(4)}
 ${line("ATCD", list(items("atcd")) || "RAS")}
 ${line("Habitus", list(items("habit")))}
 ${line("Chir.", list(items("chir")))}
-${line("TTT", list(items("ttt"), true) || "aucun")}
+${line("TTT", list(items("ttt").map((i) => ({ ...i, text: i.text.replace(/\s*\(cité : .*\)$/, "") }))) || "aucun")}
 ${line("Allergies", list(items("allergy")))}
 ${line("Bilan", work.join('<span class="sep"> · </span>'))}
 ${line("Alertes", list(items("alert").filter((i) => !i.minor)))}

@@ -142,5 +142,13 @@ describe("printed case sheet", () => {
     expect(caseSheetHtml(withAirway, 1)).toMatch(/Voies aér\.<\/span><span class="vl">Mallampati 3 ; ouverture buccale 3 cm/);
     expect(transmissionHtml(withAirway, 1)).not.toContain("Mallampati");
   });
+
+  it("keeps the handover's treatments to the drug, dose and posology, with the drains to write and no hint", () => {
+    const html = transmissionHtml({ ...sheet, indication: "Parkinson résistant au traitement" }, 1);
+    expect(html).toContain("Parkinson résistant au traitement");
+    expect(html).toContain("Drains, lames, redons (où)");
+    expect(html).not.toMatch(/prévu :|temps chir\.|à retenir/);
+    expect(html).toMatch(/TTT<\/span><span class="vl"><b>lisinopril<\/b><span class="sep"> ; <\/span>ésoméprazole<\/span>/);
+  });
 });
 

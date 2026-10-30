@@ -27,6 +27,8 @@ export interface PastedConsultation {
   surgeon?: string;
   /** dd/mm/yyyy, as written. */
   plannedDate?: string;
+  /** Why the patient is operated (« Indication : … », « Motif de l'intervention : … »). */
+  indication?: string;
   /** « HDJ », « Hospitalisation », « USI »… */
   admission?: string;
   /** The anaesthesia asked for, as written (« AG », « Rachi », « AG + bloc »). */
@@ -140,6 +142,7 @@ function headingOf(line: string): { section: Section; head: string; rest: string
 
 /** The labels of one-line fields; a line may hold several. */
 const FIELDS: [key: string, re: RegExp][] = [
+  ["indication", /\bindication( operatoire| chirurgicale| de l'intervention)?\b|\bmotif( de l'intervention| de l'hospitalisation| d'hospitalisation| d'admission| de la chirurgie)?\b/g],
   ["surgery", /intitule (de l'|d'|de )?intervention|intervention (prevue|programmee)|acte (prevu|operatoire|chirurgical)|procedure( chirurgicale)?|chirurgie (prevue|programmee)|^intervention\b/g],
   ["surgeon", /(nom du )?chirurgien( referent)?|\boperateur\b/g],
   ["date", /date (operatoire|de l'intervention|d'intervention|prevue|de l'operation|de chirurgie)/g],
@@ -339,6 +342,7 @@ export function parseConsultation(text: string): PastedConsultation {
       header = false;
       const v = (k: string) => fields.get(k);
       if (v("surgery")) out.surgery = v("surgery")!;
+      if (v("indication")) out.indication = v("indication")!;
       if (v("surgeon")) out.surgeon = v("surgeon")!.split(/\s{2,}/)[0];
       if (v("date")) out.plannedDate = v("date")!.match(/\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}/)?.[0] ?? v("date");
       if (v("admission")) {
