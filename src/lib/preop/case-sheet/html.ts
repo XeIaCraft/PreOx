@@ -323,7 +323,7 @@ export function transmissionHtml(sheet: CaseSheet, index: number, opts: SheetHtm
 <h2>Chirurgie — ${esc(sheet.surgery)}</h2>
 ${field("Indication", sheet.indication ? ` ${esc(sheet.indication)}` : "", sheet.indication ? 1 : 2)}
 ${field("Acte chir.", "", 2)}
-${field("Drains, lames, redons (où)", "", 1)}
+${field("Drains", "", 1)}
 ${field("Acte anesth.", "", 1)}
 ${field("Chrono", "", 1)}
 ${field("Abords", ` VVP ${bl()} · KTA ${bl()} · VVC ${bl()} · autre ${bl()}`)}
