@@ -10,8 +10,8 @@ import { PlanEditor } from "@/components/preop/plan-editor";
 import { useCatalogs } from "@/components/preop/use-catalogs";
 import { SecureStore } from "@/lib/preop/secure-store";
 import { parseConsultation, splitConsultations } from "@/lib/preop/case-sheet/parse";
-import { ADMISSIONS, buildCaseSheet, type CaseChoices, type CaseQuestion, type CaseResult, type ItemSection } from "@/lib/preop/case-sheet/build";
-import { caseSheetCss, caseSheetDocument, caseSheetHtml, dayKinetics, DEFAULT_SETTINGS, kineticsHtml, transmissionHtml, type SheetSettings } from "@/lib/preop/case-sheet/html";
+import { ADMISSIONS, buildCaseSheet, type CaseChoices, type CaseContext, type CaseQuestion, type CaseResult, type ItemSection } from "@/lib/preop/case-sheet/build";
+import { caseSheetCss, caseSheetDocument, caseSheetHtml, dayKinetics, DEFAULT_SETTINGS, kineticsHtml, planBTechnique, transmissionHtml, TX_FIELDS, type SheetSettings } from "@/lib/preop/case-sheet/html";
 import { addedSection, splitDictation, type LineKind } from "@/lib/preop/case-sheet/lines";
 import type { SheetWorkup } from "@/lib/preop/case-sheet/workup";
 import { fold, searchItems, type Catalogs } from "@/lib/preop/catalog";
@@ -48,6 +48,9 @@ interface DaySheet {
 
 const RECORD = "day-sheet";
 const SAVE_DELAY_MS = 400;
+const TYPING_PAUSE_MS = 350;
+/** Pending commits of what is being typed, by field. */
+const TYPING = new Map<string, ReturnType<typeof setTimeout>>();
 const MODE_LABEL: Record<SheetMode, string> = { general: "AG", neuraxial: "Rachi", regional: "ALR", sedation: "Sédation" };
 
 function tomorrowTitle(): string {
@@ -62,6 +65,16 @@ function plannedAtOf(date: string | undefined): string {
 }
 
 const SCOPE = ".case-preview";
+
+/** Sheets already built, by context (catalogues, rules, protocols) and patient entry. */
+const BUILT = new WeakMap<object, WeakMap<DayEntry, CaseResult>>();
+function sheetOf(e: DayEntry, ctx: CaseContext): CaseResult {
+  let byEntry = BUILT.get(ctx);
+  if (!byEntry) BUILT.set(ctx, (byEntry = new WeakMap()));
+  let r = byEntry.get(e);
+  if (!r) byEntry.set(e, (r = buildCaseSheet(parseConsultation(e.raw), ctx, e.choices)));
+  return r;
+}
 
 /** A line of the preview touched: its menu, under it. */
 interface MenuAt {
@@ -92,6 +105,11 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   const [rawOpen, setRawOpen] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readRef = useRef<(text: string) => void>(() => {});
+  // What is typed (notes, indication, age, weight…) reaches the sheet once typing pauses: one rebuild, not one per letter.
+  const later = (key: string, fn: () => void) => {
+    clearTimeout(TYPING.get(key));
+    TYPING.set(key, setTimeout(fn, TYPING_PAUSE_MS));
+  };
 
   // The sheet kept on this device, sealed.
   useEffect(() => {
@@ -132,8 +150,10 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   }
 
   const ctx = useMemo(() => ({ catalogs, rules, protocols, service }), [catalogs, rules, protocols, service]);
+  // One sheet per patient, computed again only for the patient that changed: an entry left as it was keeps
+  // its object, and so its sheet (typing in one patient no longer rebuilds all the others).
   const entries = sheet?.entries;
-  const results = useMemo(() => new Map((entries ?? []).map((e) => [e.id, buildCaseSheet(parseConsultation(e.raw), ctx, e.choices)])), [entries, ctx]);
+  const results = useMemo(() => new Map((entries ?? []).map((e) => [e.id, sheetOf(e, ctx)])), [entries, ctx]);
 
   const settings = { ...DEFAULT_SETTINGS, ...sheet?.settings };
 
@@ -219,7 +239,11 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
   }
 
   /** A test of the work-up ticked done, or not needed. */
-  const markWorkup = (e: DayEntry, code: string, mark: "done" | "skip") => choose(e.id, { workup: { ...(e.choices.workup ?? {}), [code]: mark } });
+  const markWorkup = (e: DayEntry, code: string, mark: "done" | "skip") =>
+    code.startsWith("x-")
+      ? // Written on the sheet: done → there; not needed → deleted.
+        choose(e.id, { workupExtra: (e.choices.workupExtra ?? []).flatMap((x) => (`x-${x.id}` !== code ? [x] : mark === "done" ? [{ ...x, todo: false }] : [])) })
+      : choose(e.id, { workup: { ...(e.choices.workup ?? {}), [code]: mark } });
 
   /** What can be done with a line of the sheet: correct it, bold, move, take off. */
   function lineMenu(e: DayEntry, r: CaseResult, key: string): MenuProps {
@@ -262,6 +286,112 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
         onClose: close,
       };
     }
+    const isOff = (e.hidden ?? []).includes(key);
+    const base: MenuProps = {
+      title: "",
+      onText: () => {},
+      onBold: () => {},
+      onMove: () => {},
+      off: isOff,
+      onToggle: () => {
+        setEntry(e.id, { hidden: isOff ? (e.hidden ?? []).filter((k) => k !== key) : [...(e.hidden ?? []), key] });
+        close();
+      },
+      onClose: close,
+    };
+    // A section of the handover (« txf:… »): renamed or taken off; one added (« txf:x0 »): renamed or deleted; a new one (« txf:+ »).
+    if (key.startsWith("txf:")) {
+      const id = key.slice(4);
+      const extra = (c.txFields ?? []).length;
+      if (id === "+")
+        return {
+          ...base,
+          title: "Nouvelle rubrique",
+          text: "",
+          onToggle: undefined,
+          onText: (t) => {
+            if (t.trim()) choose(e.id, { txFields: [...(c.txFields ?? []), t.trim()] });
+            close();
+          },
+        };
+      const added = /^x\d+$/.test(id) ? Number(id.slice(1)) : -1;
+      if (added >= 0 && added < extra)
+        return {
+          ...base,
+          title: `Rubrique « ${c.txFields![added]} »`,
+          text: c.txFields![added],
+          onToggle: undefined,
+          onText: (t) => {
+            if (t.trim()) choose(e.id, { txFields: c.txFields!.map((x, k) => (k === added ? t.trim() : x)) });
+            close();
+          },
+          onDelete: () => {
+            choose(e.id, { txFields: c.txFields!.filter((_, k) => k !== added) });
+            close();
+          },
+        };
+      const label = TX_FIELDS.find((f) => f.id === id)?.label ?? id;
+      const others = Object.fromEntries(Object.entries(c.edits ?? {}).filter(([k]) => k !== key));
+      return {
+        ...base,
+        title: `Rubrique « ${c.edits?.[key] ?? label} »`,
+        text: c.edits?.[key] ?? label,
+        onText: (t) => {
+          const v = t.trim();
+          if (v) choose(e.id, { edits: v === label ? others : { ...others, [key]: v } });
+          close();
+        },
+        onReset: c.edits?.[key] !== undefined ? () => (choose(e.id, { edits: others }), close()) : undefined,
+      };
+    }
+    // The work-up: one added (« bilan:+ »), or one written on the sheet (« bilan:x-<id> »): corrected, done, deleted.
+    if (key === "bilan:+")
+      return {
+        ...base,
+        title: "Ajouter au bilan (« à prévoir : … » pour un examen à faire)",
+        text: "",
+        onToggle: undefined,
+        onText: (t) => {
+          const v = t.trim();
+          const todo = /^(?:à|a)\s+(?:prévoir|prevoir|faire|demander)\s*[:\-–]\s*/i;
+          if (v) choose(e.id, { workupExtra: [...(c.workupExtra ?? []), { id: crypto.randomUUID().slice(0, 8), text: v.replace(todo, ""), todo: todo.test(v) }] });
+          close();
+        },
+      };
+    const extraWork = key.startsWith("bilan:x-") ? (c.workupExtra ?? []).find((x) => `bilan:x-${x.id}` === key) : undefined;
+    if (extraWork)
+      return {
+        ...base,
+        title: extraWork.todo ? `À prévoir : ${extraWork.text}` : extraWork.text,
+        text: extraWork.text,
+        onToggle: undefined,
+        onText: (t) => {
+          if (t.trim()) choose(e.id, { workupExtra: (c.workupExtra ?? []).map((x) => (x.id === extraWork.id ? { ...x, text: t.trim() } : x)) });
+          close();
+        },
+        onDone: extraWork.todo
+          ? () => {
+              choose(e.id, { workupExtra: (c.workupExtra ?? []).map((x) => (x.id === extraWork.id ? { ...x, todo: false } : x)) });
+              close();
+            }
+          : undefined,
+        onDelete: () => {
+          choose(e.id, { workupExtra: (c.workupExtra ?? []).filter((x) => x.id !== extraWork.id) });
+          close();
+        },
+      };
+    if (key.startsWith("txrow:")) return { ...base, title: `Ligne « ${key.slice(6)} » de la transmission` };
+    if (key === "txind")
+      return {
+        ...base,
+        title: "Indication",
+        text: r.sheet.indication ?? "",
+        onText: (t) => {
+          choose(e.id, { indication: t.trim() });
+          close();
+        },
+      };
+    if (key.startsWith("tx:bilan:")) return { ...base, title: r.sheet.workup.find((w) => `tx:bilan:${w.code}` === key)?.value ?? "Bilan" };
     // A line of the handover's background (« tx:… »): taken off the handover only; corrected, moved or in bold everywhere.
     const tx = key.startsWith("tx:");
     const itemKey = tx ? key.slice(3) : key;
@@ -269,15 +399,20 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     // A product of the plan: « Analgésie:Kétorolac 30 mg ».
     const product = !item && !tx && key.includes(":") && !/^(row|imp|bilan|tag):/.test(key);
     const work = r.sheet.workup.find((w) => `bilan:${w.code}` === key);
-    // The airway line (Mallampati, what the consultation says): corrected like a product.
-    const airway = key === "airway";
-    const original = airway ? r.sheet.airway : product ? key.slice(key.indexOf(":") + 1) : item?.text;
+    // Lines written whole and corrected whole: the airway, the technique (« AG, IOT sonde 7,5–8, Vt …, PEP 5 »), plan B's.
+    const FREE: Record<string, [string, string | undefined]> = {
+      airway: ["Voies aériennes", r.sheet.airway],
+      tech: ["Technique", r.sheet.technique],
+      planbtech: [r.sheet.fallback?.planned ? "Temps AG : technique" : "Plan B : technique", r.sheet.fallback ? planBTechnique(r.sheet.fallback) : undefined],
+    };
+    const airway = key in FREE;
+    const original = airway ? FREE[key][1] : product ? key.slice(key.indexOf(":") + 1) : item?.text;
     const editKey = product || airway ? key : item?.addedId ? undefined : (item?.source ?? (item?.section === "alert" ? item.key : undefined));
     const off = (e.hidden ?? []).includes(key);
     const changed = !!editKey && (c.edits?.[editKey] !== undefined || (item?.source !== undefined && c.lines?.[item.source] !== undefined) || c.strong?.[itemKey] !== undefined);
     const without = <T,>(rec: Record<string, T> | undefined, k?: string) => Object.fromEntries(Object.entries(rec ?? {}).filter(([x]) => x !== k));
     return {
-      title: work ? `${work.label}${work.reason ? ` — ${work.reason}` : ""}` : airway ? "Voies aériennes" : product ? (c.edits?.[key] ?? original!) : (item?.text ?? (key === "tech" ? "Technique" : key === "planb" ? "Plan B" : key.startsWith("row:") ? `Ligne « ${key.slice(4)} »` : "Ce que ça implique")),
+      title: work ? `${work.label}${work.reason ? ` — ${work.reason}` : ""}` : airway ? FREE[key][0] : product ? (c.edits?.[key] ?? original!) : (item?.text ?? (key === "tech" ? "Technique" : key === "planb" ? "Plan B" : key.startsWith("row:") ? `Ligne « ${key.slice(4)} »` : "Ce que ça implique")),
       text: product || airway ? (c.edits?.[key] ?? original) : item && (item.addedId || editKey) ? item.text : undefined,
       onText: (t) => {
         const v = t.trim();
@@ -498,7 +633,10 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                   <textarea
                     rows={2}
                     defaultValue={r.sheet.indication ?? ""}
-                    onChange={(ev) => choose(e.id, { indication: ev.target.value })}
+                    onChange={(ev) => {
+                      const indication = ev.target.value;
+                      later(`ind-${e.id}`, () => choose(e.id, { indication }));
+                    }}
                     placeholder="Pourquoi on opère : ce qu'on a trouvé, comment la chirurgie s'est décidée. Laissé vide : lignes à remplir à la main."
                     className={areaClass}
                   />
@@ -507,13 +645,16 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
 
               <label className="block space-y-1">
                 <FieldLabel>Notes (imprimées sous le patient)</FieldLabel>
-                <textarea rows={2} defaultValue={e.choices.notes ?? ""} onChange={(ev) => choose(e.id, { notes: ev.target.value })} placeholder="Cardio, transfert USI, famille, matériel…" className={areaClass} />
+                <textarea rows={2} defaultValue={e.choices.notes ?? ""} onChange={(ev) => {
+                  const notes = ev.target.value;
+                  later(`notes-${e.id}`, () => choose(e.id, { notes }));
+                }} placeholder="Cardio, transfert USI, famille, matériel…" className={areaClass} />
               </label>
 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <MiniNumber key={`a-${e.id}`} label="Âge" value={r.consultation.patient.age} onChange={(v) => choose(e.id, { age: v })} unit="ans" />
-                <MiniNumber key={`w-${e.id}`} label="Poids" value={r.consultation.patient.weightKg} onChange={(v) => choose(e.id, { weightKg: v })} unit="kg" />
-                <MiniNumber key={`h-${e.id}`} label="Taille" value={r.consultation.patient.heightCm} onChange={(v) => choose(e.id, { heightCm: v })} unit="cm" />
+                <MiniNumber key={`a-${e.id}`} label="Âge" value={r.consultation.patient.age} onChange={(v) => later(`a-${e.id}`, () => choose(e.id, { age: v }))} unit="ans" />
+                <MiniNumber key={`w-${e.id}`} label="Poids" value={r.consultation.patient.weightKg} onChange={(v) => later(`w-${e.id}`, () => choose(e.id, { weightKg: v }))} unit="kg" />
+                <MiniNumber key={`h-${e.id}`} label="Taille" value={r.consultation.patient.heightCm} onChange={(v) => later(`h-${e.id}`, () => choose(e.id, { heightCm: v }))} unit="cm" />
                 <div className="min-w-0">
                   <span className="block text-[11px] font-medium text-foreground-subtle">Sexe</span>
                   <div className="mt-0.5 flex gap-1">
@@ -630,6 +771,10 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                 onAdd={(lines) => {
                   choose(e.id, { added: [...(e.choices.added ?? []), ...lines.map((l) => ({ id: crypto.randomUUID().slice(0, 8), ...l }))] });
                   toast(lines.map((l) => `${l.text} → ${SECTION_NAME[l.section]}`).join(" · "), { variant: "success" });
+                }}
+                onWorkup={(lines) => {
+                  choose(e.id, { workupExtra: [...(e.choices.workupExtra ?? []), ...lines.map((l) => ({ id: crypto.randomUUID().slice(0, 8), ...l }))] });
+                  toast(lines.map((l) => `${l.text} → ${l.todo ? "À prévoir" : "Bilan"}`).join(" · "), { variant: "success" });
                 }}
                 onConsultation={(text) => {
                   setEntry(e.id, { raw: `${e.raw}\n---\n${text}` });
@@ -843,7 +988,7 @@ function WorkupCheck({ workup, skipped, onMark, onRestore }: { workup: SheetWork
   );
 }
 
-const SECTION_NAME: Record<ItemSection | "bio", string> = { atcd: "ATCD", ttt: "TTT", allergy: "Allergie", habit: "Habitus", chir: "Chir.", alert: "Alerte", note: "Note", bio: "Bilan" };
+const SECTION_NAME: Record<ItemSection | "bio" | "workup" | "todo", string> = { atcd: "ATCD", ttt: "TTT", allergy: "Allergie", habit: "Habitus", chir: "Chir.", alert: "Alerte", note: "Note", bio: "Bilan", workup: "Bilan", todo: "À prévoir" };
 
 /** A pasted text this long is another consultation of the patient, not a line. */
 const isConsultation = (t: string) => t.split("\n").filter((l) => l.trim()).length >= 4 || t.length > 240;
@@ -855,7 +1000,17 @@ const isConsultation = (t: string) => t.split("\n").filter((l) => l.trim()).leng
  * lines at once are each sorted; a whole consultation pasted (emergencies,
  * surgery, a letter) is read with the patient's.
  */
-function AddLine({ catalogs, onAdd, onConsultation }: { catalogs: Catalogs; onAdd: (lines: { section: ItemSection; text: string }[]) => void; onConsultation: (text: string) => void }) {
+function AddLine({
+  catalogs,
+  onAdd,
+  onConsultation,
+  onWorkup,
+}: {
+  catalogs: Catalogs;
+  onAdd: (lines: { section: ItemSection; text: string }[]) => void;
+  onConsultation: (text: string) => void;
+  onWorkup: (lines: { text: string; todo: boolean }[]) => void;
+}) {
   const search = (q: string) => {
     // A section said first (« ! », « note : »): the text as typed, no suggestion.
     if (/^\s*(!|[a-zé.]+\s*:)/i.test(q)) return [];
@@ -870,7 +1025,10 @@ function AddLine({ catalogs, onAdd, onConsultation }: { catalogs: Catalogs; onAd
     // Results (« Hb 12,8 plaq 210 », « ECG : RS », « groupe A+ ») are read with the consultation: the work-up.
     const bio = all.filter((l) => l.section === "bio");
     if (bio.length) onConsultation(bio.map((l) => l.text).join("\n"));
-    const lines = all.filter((l): l is { section: ItemSection; text: string } => l.section !== "bio");
+    // « bilan : TSH 2,1 », « à prévoir : avis cardio »: in the work-up, as written.
+    const work = all.filter((l) => l.section === "workup" || l.section === "todo");
+    if (work.length) onWorkup(work.map((l) => ({ text: l.text, todo: l.section === "todo" })));
+    const lines = all.filter((l): l is { section: ItemSection; text: string } => l.section !== "bio" && l.section !== "workup" && l.section !== "todo");
     if (lines.length) onAdd(lines);
   };
   return (
@@ -879,7 +1037,7 @@ function AddLine({ catalogs, onAdd, onConsultation }: { catalogs: Catalogs; onAd
       <div className="min-w-0 flex-1">
         <Combobox
           ariaLabel="Ajouter au patient"
-          placeholder="Ajouter : ATCD, TTT, allergie, Hb, ECG, groupe, « ! alerte »… ou coller"
+          placeholder="Ajouter : ATCD, TTT, allergie, Hb, ECG, « bilan : … », « à prévoir : … », « ! alerte »… ou coller"
           search={search}
           onPick={(o) => onAdd([{ section: o.key.slice(0, o.key.indexOf(":")) as ItemSection, text: o.label }])}
           onFree={free}

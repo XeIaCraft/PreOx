@@ -100,7 +100,9 @@ export const splitDictation = (text: string): string[] =>
     .filter(Boolean);
 
 /** « alerte : … », « ! … », « ttt : … »: the section said first, before the line. */
-const PREFIX: [RegExp, ItemSection][] = [
+const PREFIX: [RegExp, ItemSection | "workup" | "todo"][] = [
+  [/^(?:à|a)\s+(?:prévoir|prevoir|faire|demander)\s*[:\-–]\s*/i, "todo"],
+  [/^(?:bilan|bio|biologie)\s*[:\-–]\s*/i, "workup"],
   [/^(?:(?:alerte|attention)\b|!+)\s*[:\-–]?\s*/i, "alert"],
   [/^notes?\s*[:\-–]\s*/i, "note"],
   [/^(?:atcd|ant[ée]c[ée]dents?)\s*[:\-–]\s*/i, "atcd"],
@@ -116,7 +118,7 @@ const PREFIX: [RegExp, ItemSection][] = [
  * result: « bio », read with the consultation), else a note — typed on
  * purpose, it is never left out.
  */
-export function addedSection(line: string, catalogs: Parameters<typeof readLine>[1]): { section: ItemSection | "bio"; text: string } {
+export function addedSection(line: string, catalogs: Parameters<typeof readLine>[1]): { section: ItemSection | "bio" | "workup" | "todo"; text: string } {
   const text = cleanLine(line);
   for (const [re, section] of PREFIX) if (re.test(text)) return { section, text: cleanLine(text.replace(re, "")) };
   const q = readLine(text, catalogs);

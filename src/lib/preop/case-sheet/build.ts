@@ -65,6 +65,10 @@ export interface CaseChoices {
   workup?: Record<string, "done" | "skip">;
   /** Where the patient goes: day hospital, ward, intensive care (unset: as the consultation says). */
   admission?: Admission;
+  /** Tests written on the sheet (« TSH 2,1 », « à prévoir : avis cardio »): there, or to plan. */
+  workupExtra?: { id: string; text: string; todo?: boolean }[];
+  /** Sections added to the intensive care handover (« Drains thoraciques », « Neuro »…). */
+  txFields?: string[];
   /** Labels added to the sheet's header (« Bloc 3 », « 1er patient »…). */
   tags?: string[];
   /** Why the patient is operated, as written for the handover (unset: as found in the consultation). */
@@ -163,6 +167,8 @@ export interface CaseSheet {
   /** Airway: Mallampati and what the consultation says. */
   airway?: string;
   admission?: Admission;
+  /** Sections added to the handover. */
+  txFields?: string[];
   /** Print the intensive care handover sheet after the case. */
   transmission: boolean;
 }
@@ -588,7 +594,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     push({ key: "note:no-protocol", section: "note", text: mode === "general" ? "Pas de protocole pour cette intervention dans la bibliothèque : AG de base, à adapter (ATB, analgésie, NVPO à compléter)." : "Pas de protocole pour cette intervention dans la bibliothèque : doses à compléter." });
 
   // --- Work-up: what the procedure, the technique and the patient need, and what is there -----
-  const allLines = [...p.raw.split("\n"), ...(choices.notes ?? "").split("\n"), ...(choices.added ?? []).map((a) => a.text)];
+  const allLines = [...p.raw.split("\n"), ...(choices.notes ?? "").split("\n"), ...(choices.added ?? []).map((a) => a.text), ...(choices.workupExtra ?? []).filter((x) => !x.todo).map((x) => x.text)];
   // Values wherever they are in what was pasted (a biology under a heading the reader skips, one pasted later).
   const bio = parseQuickEntry(allLines.filter((l) => isWorkupLine(l) || BIO_VALUE.test(l)).join("\n"), catalogs).values;
   const measured = { ...c.patient };
@@ -602,6 +608,9 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     bleedingHistory: (p.hemstop ?? 0) >= 2 || Object.values(c.hemstop).some((v) => v === true),
     marks: choices.workup,
   });
+  // What was written in the work-up on the sheet, as it was written.
+  // (A result the reader knows — « Hb 13,2 », « ECG : RS » — is already in the work-up through its test.)
+  for (const x of choices.workupExtra ?? []) if (x.todo || !(isWorkupLine(x.text) || BIO_VALUE.test(x.text))) workup.push({ code: `x-${x.id}`, label: x.text, status: x.todo ? "todo" : "ok", value: x.text, reason: "", strength: "recommended" });
 
   // --- Questions: only what the plan can't do without --------------------------------------
   const questions: CaseQuestion[] = [];
@@ -668,6 +677,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
       steps: plan.steps ?? [],
       targets: plan.targets,
       airway,
+      txFields: choices.txFields,
       indication: (choices.indication ?? p.indication ?? c.surgery.indication)?.trim() || undefined,
       admission,
       // Handed over to the ICU: the patient is admitted there, or the protocol sends the patient there after the operation.

@@ -16,7 +16,8 @@ import { fold } from "../catalog";
 import { anyOf, has } from "../history";
 
 export interface SheetWorkup {
-  code: ExamCode;
+  /** A test of the recommendations (ExamCode), or « x-<id> »: one written on the sheet. */
+  code: ExamCode | `x-${string}`;
   /** Short, as printed: « Groupe + RAI ». */
   label: string;
   /** There (a value, a line of the consultation, ticked), asked for but not back, or to plan. */
@@ -60,6 +61,9 @@ const FOUND: Partial<Record<ExamCode, RegExp>> = {
 };
 /** Said but not back: « groupe à faire », « ECG demandé ». */
 const ASKED = /\b(a faire|a prevoir|a demander|a realiser|demande|prevu|en attente|en cours|manquant|non fait|pas fait|a refaire)\b/;
+
+/** Tests shown whenever their result is in what was pasted, whatever the recommendations. */
+const SHOWN_WHEN_THERE: ExamCode[] = ["fbc", "renal", "haemostasis", "group", "ecg", "echo", "hba1c", "pregnancy", "bnp", "troponin", "iron", "albumin"];
 
 const n1 = (v: number) => String(v).replace(".", ",");
 
@@ -158,6 +162,12 @@ export function caseWorkup({ recommendations, consultation: c, techniques, drugs
     if (marks[code] === "skip") continue;
     const f = marks[code] === "done" ? { status: "ok" as const, value: `${workupLabel(code)} fait` } : found(code);
     out.push({ code, label: workupLabel(code), status: f?.status ?? "todo", value: f?.value, reason: x.reasons[0], strength: x.strength });
+  }
+  // A result that is there is shown, needed for this operation or not (an ECG, a group, a biology pasted).
+  for (const code of SHOWN_WHEN_THERE) {
+    if (needs.has(code) || marks[code] === "skip") continue;
+    const f = found(code);
+    if (f) out.push({ code, label: workupLabel(code), status: f.status, value: f.value, reason: "", strength: "recommended" });
   }
   // What must be planned first, then what is asked for, then what is there.
   const rank = { todo: 0, asked: 1, ok: 2 };

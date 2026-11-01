@@ -67,6 +67,17 @@ export interface SheetHtmlOptions {
   edits?: Record<string, string>;
 }
 
+/** Plan B's airway and ventilation (« IOT sonde 7,5–8, Vt … ») — its technique without the technique's name. */
+export const planBTechnique = (b: { technique: string }) => (b.technique.includes(",") ? b.technique.replace(/^[^,]+,\s*/, "") : "");
+
+/**
+ * The printed page, inside the paper with a margin every browser keeps
+ * (Safari on a Mac prints its own margins): a page as tall as the paper
+ * overflowed onto a blank one and its half went missing.
+ */
+const PAGE_H_MM = 196;
+const PAD_MM = 5;
+
 /** Labels kept to the grid's column. */
 const SHORT_LABEL: Record<string, string> = { Hémodynamique: "Hémodyn.", Prémédication: "Prémédic.", "Entretien (TIVA)": "Entretien", "Sédation / entretien": "Sédation", Antibioprophylaxie: "ATB" };
 /** A post-op instruction longer than this is cut (the whole one in the plan). */
@@ -120,7 +131,7 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
   const planB = b
     ? piece(
         "planb",
-        `<div class="ln"><span class="lb">${b.planned ? "Temps AG" : "Plan B"}</span><span class="vl"><b>${esc({ general: "AG", neuraxial: "Rachi", regional: "ALR", sedation: "Sédation" }[b.mode])}</b> ${b.planned ? "prévue au déroulé (et si échec)" : "si refus / échec"}${b.technique.includes(",") ? ` — ${esc(b.technique.replace(/^[^,]+,\s*/, ""))}` : ""}</span></div>${b.rows.map((r) => planRow(r, "B ")).join("")}`,
+        `<div class="ln"><span class="lb">${b.planned ? "Temps AG" : "Plan B"}</span><span class="vl"><b>${esc({ general: "AG", neuraxial: "Rachi", regional: "ALR", sedation: "Sédation" }[b.mode])}</b> ${b.planned ? "prévue au déroulé (et si échec)" : "si refus / échec"}${planBTechnique(b) ? ` — ${piece("planbtech", esc(edits.planbtech ?? planBTechnique(b)))}` : ""}</span></div>${b.rows.map((r) => planRow(r, "B ")).join("")}`,
         "div",
         "planb"
       )
@@ -176,7 +187,13 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
     if (!html.length) return "";
     return gridLine(`row:${label}`, label, html.join('<span class="sep"> · </span>'), cls);
   };
-  const workup = workLine("Bilan", work.filter((w) => w.status !== "todo")) + workLine("À prévoir", work.filter((w) => w.status === "todo"), "todo");
+  // The « Bilan » line is always there (most patients get something written in it): on the preview with its « + »,
+  // printed with a line to write on when nothing is known yet.
+  const there = work.filter((w) => w.status !== "todo").map(workPiece).filter(Boolean);
+  const addWork = edit ? `<span class="tag add" data-k="bilan:+" role="button" tabindex="0" aria-label="Ajouter au bilan">+</span>` : "";
+  const workup =
+    (st.workup === "off" ? "" : gridLine("row:Bilan", "Bilan", there.length ? there.join('<span class="sep"> · </span>') + (addWork ? ` ${addWork}` : "") : addWork || '<span class="bl w"></span>')) +
+    workLine("À prévoir", work.filter((w) => w.status === "todo"), "todo");
 
   const implications =
     st.detail === "none"
@@ -203,7 +220,7 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
 <header class="hd"><span class="no">${index}</span><span class="who"><b>${esc(who)}</b>${born} — ${esc(sheet.surgery)}</span>${tags}</header>
 <p class="body">${esc(sheet.body)}</p>
 <section class="blk">
-${piece("tech", esc(sheet.technique), "div", "tech")}
+${piece("tech", esc(edits.tech ?? sheet.technique), "div", "tech")}
 ${rows.map((r) => planRow(r)).join("")}
 ${stepsHtml}
 ${planB}
@@ -254,16 +271,18 @@ ${s(".case .act, .case .keep")}{display:block}
 ${s(".case .steps")}{margin:0;padding-left:4mm}
 ${s(".case .steps li")}{margin:0 0 0.2mm}
 ${s(".case.tx h2")}{font-size:1em;margin:1.6mm 0 0.6mm;padding-bottom:0.3mm;border-bottom:0.2mm solid #cfd6d9;color:#1f4f53;text-transform:uppercase;letter-spacing:.03em}
+${s(".case .bl")}{display:inline-block;min-width:40mm;border-bottom:0.2mm solid #7d8a8e;height:1em;vertical-align:baseline}
 ${s(".case.tx .bl")}{display:inline-block;min-width:16mm;border-bottom:0.2mm solid #7d8a8e;height:1em;vertical-align:baseline}
 ${s(".case.tx .bl.w")}{min-width:34mm}
-${s(".case.tx .wl")}{border-bottom:0.2mm solid #b9c4c7;height:4.6mm}
+${s(".case.tx .wl")}{border-bottom:0.2mm solid #b9c4c7;height:1.5em}
+${s(".case.tx .tf")}{margin:0.6mm 0 0}
 ${s(".case.tx .box")}{font-size:1.1em;line-height:1}
 ${s(".case.tx .tline")}{margin:0.7mm 0 0}
 ${s(".case.tx .tl")}{color:#1f4f53;font-weight:600}
 ${s(".case.tx .hint")}{color:#6b777b;font-size:.9em}
 ${s(".case.tx .io")}{width:100%;border-collapse:collapse;margin:1mm 0}
 ${s(".case.tx .io th")}{text-align:left;color:#1f4f53;font-size:.86em;text-transform:uppercase;border-bottom:0.25mm solid #9fb0b3;padding:0.3mm 1mm}
-${s(".case.tx .io td")}{border-bottom:0.15mm solid #c9d2d4;height:4.6mm;padding:0 1mm}
+${s(".case.tx .io td")}{border-bottom:0.15mm solid #c9d2d4;height:1.5em;padding:0 1mm}
 ${s(".case.tx .io td:nth-child(2), .case.tx .io td:nth-child(4)")}{width:13mm;border-left:0.15mm solid #c9d2d4}
 ${s(".case.tx .io td:nth-child(3), .case.tx .io td:nth-child(5)")}{border-left:0.25mm solid #9fb0b3}
 ${s(".case.tx .io .tot td")}{font-weight:600;border-top:0.25mm solid #9fb0b3}
@@ -293,66 +312,126 @@ ${s(".case.pk td:first-child")}{font-weight:600;white-space:nowrap}
  * post-operative plan and the surgeon's instructions, then the patient's
  * background — each of its lines can be corrected or taken off (« tx:… »).
  */
+/** The handover's sections to fill in, in their order: page 1 after the background, then page 2 (« txf:<id> » keys). */
+export const TX_FIELDS: { id: string; label: string; page: 1 | 2 }[] = [
+  { id: "indication", label: "Indication", page: 1 },
+  { id: "acte-chir", label: "Acte chir.", page: 1 },
+  { id: "drains", label: "Drains", page: 1 },
+  { id: "acte-anesth", label: "Acte anesth.", page: 1 },
+  { id: "chrono", label: "Chrono", page: 1 },
+  { id: "abords", label: "Abords", page: 1 },
+  { id: "atb", label: "ATB", page: 1 },
+  { id: "produits", label: "Produits", page: 1 },
+  { id: "io", label: "IN / OUT", page: 2 },
+  { id: "hemo", label: "Hémodynamique", page: 2 },
+  { id: "ventilation", label: "Ventilation", page: 2 },
+  { id: "gazo", label: "Gazométrie", page: 2 },
+  { id: "temp", label: "T°", page: 2 },
+  { id: "events", label: "Événements, complications", page: 2 },
+  { id: "sortie", label: "Sortie de salle", page: 2 },
+  { id: "antalgie", label: "Relais antalgie postop", page: 2 },
+  { id: "plan", label: "Plan postopératoire", page: 2 },
+  { id: "consignes", label: "Consignes chirurgicales", page: 2 },
+];
+
+/**
+ * The intensive care handover, on two A5 pages of its own (one A4 sheet when
+ * two A5 are printed side by side): the patient's background first, then the
+ * operation (why, what the surgeon and the anaesthetist did) and its course
+ * to fill in by hand, the post-operative plan and the surgeon's
+ * instructions. Everything can be adjusted on the preview: a background line
+ * corrected or taken off the handover (« tx:… », « txrow:… »), a section
+ * renamed or taken off (« txf:… »), sections added (« txf:+ »).
+ */
 export function transmissionHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOptions = {}): string {
   const hidden = opts.hidden ?? new Set<string>();
+  const edits = opts.edits ?? {};
   const edit = !!opts.editable;
+  /** A piece that can be touched: left out of the print when taken off, struck through in the preview. */
+  const piece = (key: string, html: string, tag = "span", cls = "", data = "") => {
+    const off = hidden.has(key);
+    if (off && !edit) return "";
+    const classes = [cls, off ? "off" : ""].filter(Boolean).join(" ");
+    return `<${tag}${classes ? ` class="${classes}"` : ""}${edit ? ` data-k="${esc(key)}"${data} role="button" tabindex="0" aria-pressed="${off}"` : ""}>${html}</${tag}>`;
+  };
   const items = (s: ItemSection) => sheet.items.filter((i) => i.section === s && (edit || !hidden.has(`tx:${i.key}`)));
   const bl = (wide = false) => `<span class="bl${wide ? " w" : ""}"></span>`;
   const box = '<span class="box">☐</span>';
   const lines = (n: number) => '<div class="wl"></div>'.repeat(n);
-  const field = (label: string, rest = "", n = 0) => `<div class="tline"><span class="tl">${esc(label)}</span>${rest}</div>${lines(n)}`;
-  const piece = (i: SheetItem, html: string) => {
-    const key = `tx:${i.key}`;
-    const off = hidden.has(key);
-    return edit ? `<span class="${off ? "off" : ""}" data-k="${esc(key)}" data-s="${i.section}" role="button" tabindex="0" aria-pressed="${off}">${html}</span>` : html;
-  };
-  const list = (l: SheetItem[], withDetail = false) =>
+  const list = (l: SheetItem[]) =>
     l
-      .map((i) => piece(i, `${i.strong ? `<b>${esc(i.text)}</b>` : esc(i.text)}${withDetail && i.detail && i.detail !== "idem" ? ` <span class="cd${i.conduct === "stop" ? " stop" : ""}">→ ${esc(i.detail)}</span>` : ""}`))
+      .map((i) => piece(`tx:${i.key}`, i.strong ? `<b>${esc(i.text.replace(/\s*\(cité : .*\)$/, ""))}</b>` : esc(i.text.replace(/\s*\(cité : .*\)$/, "")), "span", "", ` data-s="${i.section}"`))
+      .filter(Boolean)
       .join('<span class="sep"> ; </span>');
-  const line = (label: string, html: string) => (html ? `<div class="ln"><span class="lb">${esc(label)}</span><span class="vl">${html}</span></div>` : "");
+  const row = (label: string, html: string) => (html ? piece(`txrow:${label}`, `<span class="lb">${esc(label)}</span><span class="vl">${html}</span>`, "div", "ln") : "");
   const who = sheet.name ?? sheet.initials;
-  const work = (sheet.workup ?? []).filter((w) => w.status !== "todo").map((w) => esc(w.value ?? w.label));
+  const work = (sheet.workup ?? [])
+    .filter((w) => w.status !== "todo")
+    .map((w) => piece(`tx:bilan:${w.code}`, esc(w.value ?? w.label)))
+    .filter(Boolean)
+    .join('<span class="sep"> · </span>');
   const general = /\bAG\b|générale/i.test(sheet.technique) || !!sheet.fallback?.planned;
   const inOut = ["Cristalloïdes", "Colloïdes", "CGR", "PFC / plaquettes", ""]
     .map((x, k) => `<tr><td>${esc(x)}</td><td></td><td>${esc(["Pertes sanguines", "Diurèse", "Drains", "", ""][k])}</td><td></td><td></td></tr>`)
     .join("");
+  const body: Record<string, string> = {
+    indication: sheet.indication ? ` ${piece("txind", esc(sheet.indication))}${lines(1)}` : lines(2),
+    "acte-chir": lines(2),
+    drains: lines(1),
+    "acte-anesth": lines(1),
+    chrono: lines(1),
+    abords: ` VVP ${bl()} · KTA ${bl()} · VVC ${bl()} · autre ${bl()}`,
+    atb: ` ${bl(true)} à ${bl()} · réinjection ${bl()}`,
+    produits: lines(3),
+    io: `<table class="io"><thead><tr><th>IN</th><th>mL</th><th>OUT</th><th>mL</th><th>Annotations</th></tr></thead><tbody>${inOut}<tr class="tot"><td>Total</td><td></td><td>Total</td><td></td><td>Balance :</td></tr></tbody></table>`,
+    hemo: lines(2),
+    ventilation: ` FiO₂ ${bl()} · Vt ${bl()} · FR ${bl()} · PEP ${bl()}`,
+    gazo: lines(3),
+    temp: ` début ${bl()} · fin ${bl()}`,
+    events: lines(2),
+    sortie: ` ${box} intubé ${box} extubé${general ? ` · Cormack ${bl()} · sonde ${bl()}` : ""}`,
+    antalgie: lines(3),
+    plan: lines(6),
+    consignes: lines(4),
+  };
+  const field = (id: string, label: string, html: string, removable = false) => {
+    const key = `txf:${id}`;
+    const title = esc(edits[key] ?? label);
+    const head = id === "plan" || id === "consignes" ? `<h2>${title}</h2>` : `<span class="tl">${title}</span>`;
+    // The label is what is touched; the lines to write stay with it.
+    if (hidden.has(key) && !edit) return "";
+    return `<div class="tf${hidden.has(key) ? " off" : ""}">${edit ? `<span data-k="${esc(key)}"${removable ? ' data-added="1"' : ""} role="button" tabindex="0">${head}</span>` : head}${html}</div>`;
+  };
+  const fields = (page: 1 | 2) =>
+    TX_FIELDS.filter((f) => f.page === page)
+      .flatMap((f) => [
+        // Sections added on the sheet go before the post-operative plan.
+        ...(f.id === "plan" ? (sheet.txFields ?? []).map((label, k) => field(`x${k}`, label, lines(2), true)) : []),
+        field(f.id, f.label, f.id === "io" ? body.io : body[f.id]),
+      ])
+      .join("");
+  const add = edit ? `<div class="tf"><span class="tag add" data-k="txf:+" role="button" tabindex="0">+ rubrique</span></div>` : "";
+  const header = (suite: boolean) =>
+    `<header class="hd"><span class="no">${index}</span><span class="who"><b>Transmission USI — ${esc(who)}</b>${suite ? ' <span class="dob">(suite)</span>' : sheet.birthDate ? ` <span class="dob">${esc(sheet.birthDate)}</span>` : ""}</span>${suite ? "" : sheet.tags.filter((t) => !hidden.has(`tag:${t}`)).map((t) => `<span class="tag">${esc(edits[`tag:${t}`] ?? t)}</span>`).join("")}</header>`;
   return `<article class="case tx" data-newpage="sheet">
-<header class="hd"><span class="no">${index}</span><span class="who"><b>Transmission USI — ${esc(who)}</b>${sheet.birthDate ? ` <span class="dob">${esc(sheet.birthDate)}</span>` : ""}</span>${sheet.tags.filter((t) => !hidden.has(`tag:${t}`)).map((t) => `<span class="tag">${esc(opts.edits?.[`tag:${t}`] ?? t)}</span>`).join("")}</header>
+${header(false)}
 <p class="body">${esc(sheet.body)}</p>
+<h2>Background</h2>
+${row("ATCD", list(items("atcd")) || "RAS")}
+${row("Habitus", list(items("habit")))}
+${row("Chir.", list(items("chir")))}
+${row("TTT", list(items("ttt")) || "aucun")}
+${row("Allergies", list(items("allergy")))}
+${row("Bilan", work)}
+${row("Alertes", list(items("alert").filter((i) => !i.minor)))}
+${row("Notes", list(items("note")))}
 <h2>Chirurgie — ${esc(sheet.surgery)}</h2>
-${field("Indication", sheet.indication ? ` ${esc(sheet.indication)}` : "", sheet.indication ? 1 : 2)}
-${field("Acte chir.", "", 2)}
-${field("Drains", "", 1)}
-${field("Acte anesth.", "", 1)}
-${field("Chrono", "", 1)}
-${field("Abords", ` VVP ${bl()} · KTA ${bl()} · VVC ${bl()} · autre ${bl()}`)}
-${field("ATB", ` ${bl(true)} à ${bl()} · réinjection ${bl()}`)}
-${field("Produits", "", 3)}
-<table class="io"><thead><tr><th>IN</th><th>mL</th><th>OUT</th><th>mL</th><th>Annotations</th></tr></thead><tbody>${inOut}<tr class="tot"><td>Total</td><td></td><td>Total</td><td></td><td>Balance :</td></tr></tbody></table>
-${field("Hémodynamique", "", 2)}
-${field("Ventilation", ` FiO₂ ${bl()} · Vt ${bl()} · FR ${bl()} · PEP ${bl()}`)}
-${field("Gazométrie", "", 3)}
-${field("T°", ` début ${bl()} · fin ${bl()}`)}
-${field("Événements, complications", "", 2)}
-${field("Sortie de salle", ` ${box} intubé ${box} extubé${general ? ` · Cormack ${bl()} · sonde ${bl()}` : ""}`)}
-${field("Relais antalgie postop", "", 3)}
+${fields(1)}
 </article>
 <article class="case tx" data-newpage="1">
-<header class="hd"><span class="no">${index}</span><span class="who"><b>Transmission USI — ${esc(who)}</b> <span class="dob">(suite)</span></span></header>
-<h2>Plan postopératoire</h2>
-${lines(6)}
-<h2>Consignes chirurgicales</h2>
-${lines(4)}
-<h2>Background</h2>
-${line("ATCD", list(items("atcd")) || "RAS")}
-${line("Habitus", list(items("habit")))}
-${line("Chir.", list(items("chir")))}
-${line("TTT", list(items("ttt").map((i) => ({ ...i, text: i.text.replace(/\s*\(cité : .*\)$/, "") }))) || "aucun")}
-${line("Allergies", list(items("allergy")))}
-${line("Bilan", work.join('<span class="sep"> · </span>'))}
-${line("Alertes", list(items("alert").filter((i) => !i.minor)))}
-${line("Notes", list(items("note")))}
+${header(true)}
+${fields(2)}
+${add}
 </article>`;
 }
 
@@ -404,15 +483,15 @@ export function caseSheetDocument(
   const pk = kineticsHtml(dayKinetics(sheets.map((s) => s.sheet)), { hidden: opts.hiddenKinetics, settings: st });
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title>
 <style>
-@page{size:${a4 ? "A4 landscape" : "A5"};margin:0}
+@page{size:${a4 ? "A4 landscape" : "A5"};margin:5mm}
 html,body{margin:0;background:#fff}
-.sheet{display:flex;width:${a4 ? "297mm" : "148mm"};height:209mm;overflow:hidden;break-after:page;page-break-after:always}
+.sheet{display:flex;width:${a4 ? "284mm" : "136mm"};height:${PAGE_H_MM}mm;margin:0 auto;overflow:hidden;break-after:page;page-break-after:always;break-inside:avoid;page-break-inside:avoid}
 .sheet:last-child{break-after:auto;page-break-after:auto}
-.pg{box-sizing:border-box;width:148mm;height:209mm;padding:7mm 7.5mm;overflow:hidden}
+.pg{box-sizing:border-box;width:${a4 ? 142 : 136}mm;height:${PAGE_H_MM}mm;padding:${PAD_MM}mm 6mm;overflow:hidden}
 .sheet .pg+.pg{border-left:0.2mm dashed #c3ccce}
 .ph{display:flex;justify-content:space-between;gap:3mm;margin:0 0 2.4mm;padding-bottom:1mm;border-bottom:0.45mm solid #1f4f53;color:#1f4f53;font:700 8.4pt "Helvetica Neue",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
 .ph span:last-child{font-weight:500;white-space:nowrap}
-#src{width:133mm}
+#src{width:${a4 ? 130 : 124}mm}
 @media screen{body{background:#e9edee}.sheet{margin:6mm auto;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2)}}
 ${caseSheetCss("", st)}
 </style>
@@ -436,7 +515,7 @@ ${caseSheetCss("", st)}
   };
   probe.appendChild(header("1/1"));
   body.appendChild(probe);
-  var room = 209 * MM - 14 * MM - probe.firstChild.getBoundingClientRect().height - 2.4 * MM - 1;
+  var room = ${PAGE_H_MM} * MM - ${2 * PAD_MM} * MM - probe.firstChild.getBoundingClientRect().height - 2.4 * MM - 1;
   var cases = Array.prototype.slice.call(src.children);
   var height = function (el) { return el.getBoundingClientRect().height + 3.2 * MM; };
   var pages = [[]], used = 0, afterAlone = false;

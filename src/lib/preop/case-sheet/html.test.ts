@@ -118,16 +118,15 @@ describe("printed case sheet", () => {
     expect(caseSheetHtml(sheet, 1, { settings: { ...DEFAULT_SETTINGS, steps: false } })).not.toContain("Déroulé");
   });
 
-  it("adds the intensive care handover on a page of its own: the operation first, the course to write in, then the background", () => {
+  it("adds the intensive care handover on a page of its own: the background first, the operation, its course to write in", () => {
     expect(caseSheetDocument([{ sheet }], "Jour")).not.toContain("Transmission USI");
     const html = caseSheetDocument([{ sheet: { ...sheet, transmission: true, name: "DUPONT Jean" } }, { sheet }], "Jour");
     expect(html).toContain('<article class="case tx" data-newpage="sheet">');
     expect(html).toContain("Transmission USI — DUPONT Jean");
-    const order = ["Chirurgie — Fissure anale", "Acte chir.", "Acte anesth.", "Abords", "ATB", "<th>IN</th>", "Ventilation", "Gazométrie", "Sortie de salle", "Relais antalgie", "Plan postopératoire", "Consignes chirurgicales", "Background"];
-    const at = order.map((x) => html.indexOf(x));
+    const order = ["Background", "lisinopril", "Chirurgie — Fissure anale", "Acte chir.", "Acte anesth.", "Abords", "ATB", "<th>IN</th>", "Ventilation", "Gazométrie", "Sortie de salle", "Relais antalgie", "Plan postopératoire", "Consignes chirurgicales"];
+    const at = order.map((x) => html.indexOf(x, html.indexOf("Transmission USI")));
     expect(at.every((x) => x > 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
-    expect(html).toMatch(/Background[\s\S]*lisinopril/);
   });
 
   it("lets the handover's background be adjusted on its own", () => {
@@ -147,8 +146,18 @@ describe("printed case sheet", () => {
     const html = transmissionHtml({ ...sheet, indication: "Parkinson résistant au traitement" }, 1);
     expect(html).toContain("Parkinson résistant au traitement");
     expect(html).toMatch(/<span class="tl">Drains<\/span>/);
-    expect(html).not.toMatch(/prévu :|temps chir\.|à retenir/);
-    expect(html).toMatch(/TTT<\/span><span class="vl"><b>lisinopril<\/b><span class="sep"> ; <\/span>ésoméprazole<\/span>/);
+    expect(html).not.toMatch(/prévu :|temps chir\.|à retenir|arrêt 1 j/);
+    expect(html).toMatch(/TTT<\/span><span class="vl"><span><b>lisinopril<\/b><\/span><span class="sep"> ; <\/span><span>ésoméprazole<\/span>/);
+  });
+
+  it("lets every part of the handover be renamed, taken off or added to", () => {
+    const html = transmissionHtml({ ...sheet, txFields: ["Neuro"] }, 1, { edits: { "txf:chrono": "Temps opératoires" }, hidden: new Set(["txf:gazo", "txrow:Allergies"]) });
+    expect(html).toContain("Temps opératoires");
+    expect(html).not.toContain("Gazométrie");
+    expect(html).not.toMatch(/>Allergies</);
+    expect(html.indexOf("Neuro")).toBeLessThan(html.indexOf("Plan postopératoire"));
+    const preview = transmissionHtml(sheet, 1, { editable: true });
+    for (const k of ["txf:+", "txf:produits", "txrow:ATCD", "tx:ttt:lisinopril"]) expect(preview).toContain(`data-k="${k}"`);
   });
 
   it("lets the header's labels be corrected, taken off or added to", () => {
