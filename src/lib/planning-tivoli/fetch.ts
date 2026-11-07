@@ -20,16 +20,36 @@ export const DEFAULT_SOURCE_URL =
 
 const UA = "Mozilla/5.0 (compatible; PreOx planning reader)";
 
-/** Image addresses in the page's HTML and script data, unescaped, without duplicates. */
-export function imageUrlsIn(html: string): string[] {
-  const text = html
-    .replace(/\\u003d/gi, "=")
-    .replace(/\\u0026/gi, "&")
-    .replace(/\\u002f/gi, "/")
+/** JavaScript and HTML escapes undone (« \u003d », « \x3d », « \/ », « &amp; »): addresses read as written. */
+export function unescapePage(html: string): string {
+  return html
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/\\x([0-9a-fA-F]{2})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)))
     .replace(/\\\//g, "/")
     .replace(/&amp;/g, "&");
-  const found = text.match(/https:\/\/lh\d(?:-rt)?\.googleusercontent\.com\/[^"'\s\\)<>]+/g) ?? [];
+}
+
+/**
+ * Image addresses in the page's HTML and script data, unescaped, without
+ * duplicates: any googleusercontent.com host (« lh3 », « lh7-rt »,
+ * « lh7-us »…), and the presentation's own image or thumbnail addresses on
+ * docs.google.com.
+ */
+export function imageUrlsIn(html: string): string[] {
+  const text = unescapePage(html);
+  const found = [
+    ...(text.match(/https:\/\/[a-z0-9-]+\.googleusercontent\.com\/[^"'\s\\)<>]+/g) ?? []),
+    ...(text.match(/https:\/\/docs\.google\.com\/[^"'\s\\)<>]*(?:image|thumbnail|export\/png)[^"'\s\\)<>]*/gi) ?? []),
+  ];
   return [...new Set(found)];
+}
+
+/** What a page holds, when no image was found in it: its hosts and its addresses that look like images. */
+export function pageSummary(html: string): string {
+  const text = unescapePage(html);
+  const hosts = [...new Set(text.match(/https?:\/\/[a-z0-9.-]+/gi) ?? [])].map((h) => h.replace(/^https?:\/\//, "")).slice(0, 12);
+  const imagey = [...new Set(text.match(/[^"'\s<>]*(?:\.png|\.jpe?g|image|slidesz|img)[^"'\s<>]*/gi) ?? [])].slice(0, 3).map((u) => u.slice(0, 90));
+  return `hôtes : ${hosts.join(", ") || "aucun"}${imagey.length ? ` ; adresses d'aspect image : ${imagey.join(" | ")}` : ""}`;
 }
 
 export const sha256 = (b: Buffer) => createHash("sha256").update(b).digest("hex");
@@ -52,7 +72,7 @@ async function get(url: string): Promise<Response> {
 export async function fetchPlanningImage(sourceUrl = DEFAULT_SOURCE_URL): Promise<FetchedImage> {
   const html = await (await get(sourceUrl)).text();
   const urls = imageUrlsIn(html).slice(0, 12);
-  if (!urls.length) throw new Error(`Aucune image trouvée dans la page publiée (${html.length} caractères lus) : importez l'image à la main.`);
+  if (!urls.length) throw new Error(`Aucune image trouvée dans la page publiée (${html.length} caractères lus ; ${pageSummary(html)}) : importez l'image à la main.`);
   let best: FetchedImage | null = null;
   for (const url of urls) {
     try {

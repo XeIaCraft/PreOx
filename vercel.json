@@ -27,10 +27,6 @@
     {
       "path": "/api/cron/el-profesor-merge",
       "schedule": "45 6 * * *"
-    },
-    {
-      "path": "/api/cron/planning-tivoli",
-      "schedule": "20 5 * * *"
     }
   ]
 }
