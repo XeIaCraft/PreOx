@@ -36,7 +36,7 @@ const nextConfig: NextConfig = {
     // case as pdfjs-dist above. The model ships with the app (npm
     // @tesseract.js-data/eng): nothing is downloaded when the function runs.
     ...Object.fromEntries(
-      ["/api/cron/planning-tivoli", "/apps/planning-tivoli"].map((route) => [
+      ["/apps/planning-tivoli"].map((route) => [
         route,
         [
           "node_modules/tesseract.js/**",

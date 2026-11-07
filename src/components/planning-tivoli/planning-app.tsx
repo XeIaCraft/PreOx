@@ -110,11 +110,11 @@ function Weeks({ data }: { data: PlanningData }) {
         />
       </div>
       <p className="text-xs text-foreground-subtle">
-        Vérifié chaque matin automatiquement.
-        {data.settings.lastCheckedAt && ` Dernière vérification : ${new Date(data.settings.lastCheckedAt).toLocaleString("fr-BE")}.`}
+        Mise à jour à la demande, quand le planning de la semaine est publié.
+        {data.settings.lastCheckedAt && ` Dernière mise à jour : ${new Date(data.settings.lastCheckedAt).toLocaleString("fr-BE")}.`}
         {pending && " Lecture en cours (quelques secondes)…"}
       </p>
-      {data.settings.lastError && <p className="rounded-[var(--radius-md)] border border-danger/40 bg-danger-tint px-3 py-2 text-sm text-danger">Dernière vérification : {data.settings.lastError}</p>}
+      {data.settings.lastError && <p className="rounded-[var(--radius-md)] border border-danger/40 bg-danger-tint px-3 py-2 text-sm text-danger">Dernière mise à jour : {data.settings.lastError}</p>}
 
       {data.weeks.length === 0 ? (
         <p className="rounded-[var(--radius-lg)] border border-dashed border-border p-6 text-center text-sm text-foreground-muted">Aucune semaine lue. Mettez à jour depuis le planning, ou importez l&apos;image (capture de la page publiée).</p>
