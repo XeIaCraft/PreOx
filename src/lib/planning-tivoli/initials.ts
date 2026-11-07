@@ -1,29 +1,33 @@
 // Reading the « Anesth » cells of the theatre planning: « Ze-He » is a
-// resident (PG, « Ze ») with a senior (« He »), « Sad » a senior alone, an
-// empty cell nobody. Anything else (« Ze/Fr », « Ch+Fr », « ? ») is kept as
-// written and flagged: never guessed into something it may not be.
+// resident (PG, « Ze ») with a senior (« He ») — the planning writes the
+// separator « - », « + » or « / » alike —, « Sad » someone alone, an empty
+// cell nobody. Anything else (« ? », three people, unreadable initials) is
+// kept as written and flagged: never guessed into something it may not be.
 
 export type Assignment =
   | { kind: "empty" }
-  | { kind: "ok"; senior: string; pg?: string }
+  /** `people`: as written, left to right (the END column gives one room to each). */
+  | { kind: "ok"; senior: string; pg?: string; people: string[] }
   | { kind: "invalid"; text: string; reason: string };
 
 /** Initials as compared: no accents, no spaces, lower case. */
 export const normInitials = (s: string): string =>
   s
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, "")
     .toLowerCase();
 
 /** One person's initials: letters only, 1 to 5. */
 const TOKEN = /^[A-Za-zÀ-ÿ]{1,5}$/;
+/** Between two people: « - », « + » or « / ». */
+const SEPARATOR = /[-+/]/;
 
-/** A cell's text as written, cleaned: dashes unified, spaces around them dropped. */
+/** A cell's text as written, cleaned: dashes unified, spaces around the separators dropped. */
 export function cleanCell(raw: string): string {
   return raw
     .replace(/[‐-―−]/g, "-")
-    .replace(/\s*-\s*/g, "-")
+    .replace(/\s*([-+/])\s*/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -31,12 +35,11 @@ export function cleanCell(raw: string): string {
 export function parseAssignment(raw: string): Assignment {
   const text = cleanCell(raw);
   if (!text) return { kind: "empty" };
-  if (/[/+]/.test(text)) return { kind: "invalid", text, reason: "plusieurs personnes sans rôle (« / » ou « + »)" };
   if (text.includes("?")) return { kind: "invalid", text, reason: "point d'interrogation dans la case" };
-  const parts = text.split("-");
+  const parts = text.split(SEPARATOR);
   if (parts.some((p) => !TOKEN.test(p))) return { kind: "invalid", text, reason: "initiales illisibles" };
-  if (parts.length === 1) return { kind: "ok", senior: parts[0] };
-  if (parts.length === 2) return { kind: "ok", pg: parts[0], senior: parts[1] };
+  if (parts.length === 1) return { kind: "ok", senior: parts[0], people: parts };
+  if (parts.length === 2) return { kind: "ok", pg: parts[0], senior: parts[1], people: parts };
   return { kind: "invalid", text, reason: "plus de deux personnes" };
 }
 
@@ -101,7 +104,7 @@ export function matchCell(read: string, known: string[], learned: Record<string,
     if (m.kind === "unknown") unknown.push(t);
     return m.value;
   };
-  // « ZelFr »: a « / » read as « l » (or « I », « | », « 1 ») between two known initials — proposed as « Ze/Fr », said so.
+  // « ZelFr »: a « / » read as « l » (or « I », « | », « 1 ») between two known initials — proposed as « Ze-Fr », said so.
   if (first.pg === undefined && !known.some((k) => normInitials(k) === normInitials(first.senior))) {
     const t = first.senior;
     for (let i = 1; i < t.length - 1; i++) {
@@ -109,7 +112,7 @@ export function matchCell(read: string, known: string[], learned: Record<string,
       const a = matchToken(t.slice(0, i), known, learned);
       const b = matchToken(t.slice(i + 1), known, learned);
       if (a.kind === "exact" && b.kind === "exact") {
-        const text = `${a.value}/${b.value}`;
+        const text = `${a.value}-${b.value}`;
         return { text, assignment: parseAssignment(text), changes: [{ read: t, value: text, kind: "near" }], unknown: [] };
       }
     }
@@ -117,7 +120,7 @@ export function matchCell(read: string, known: string[], learned: Record<string,
   const senior = one(first.senior);
   const pg = first.pg !== undefined ? one(first.pg) : undefined;
   const text = pg !== undefined ? `${pg}-${senior}` : senior;
-  return { text, assignment: { kind: "ok", senior, ...(pg !== undefined ? { pg } : {}) }, changes, unknown };
+  return { text, assignment: { kind: "ok", senior, ...(pg !== undefined ? { pg } : {}), people: pg !== undefined ? [pg, senior] : [senior] }, changes, unknown };
 }
 
 /** What a correction teaches: each initial read that became another one (« Hc » → « He »). */
@@ -141,16 +144,21 @@ export interface Roles {
 }
 
 /**
- * Who is senior and who is resident in a cell. Two people: « PG-Sénior ».
- * Alone: the senior — except in a room where either can be alone (« CON »),
- * where the person's role in the initials table decides (unknown: undecided,
- * never guessed).
+ * Who is senior and who is resident in a cell, for one room. Two people:
+ * « PG-Sénior ». Alone: the senior — except in a room where either can be
+ * alone (« CON »), where the person's role in the initials table decides
+ * (unknown: undecided, never guessed). A room that takes one person of the
+ * cell (`part`: END, the first for Endo C24, the second for Endo 3) has that
+ * person alone in it.
  */
-export function rolesOf(a: Assignment, solo: "senior" | "either" = "senior", roleOf: (initials: string) => Role | null = () => null): Roles {
+export function rolesOf(a: Assignment, solo: "senior" | "either" = "senior", roleOf: (initials: string) => Role | null = () => null, part?: 1 | 2 | null): Roles {
   if (a.kind !== "ok") return {};
+  if (part) {
+    const who = a.people[part - 1];
+    return who ? rolesOf({ kind: "ok", senior: who, people: [who] }, solo, roleOf) : {};
+  }
   if (a.pg !== undefined) return { senior: a.senior, pg: a.pg };
   if (solo === "senior") return { senior: a.senior };
   const role = roleOf(a.senior);
   return role === "pg" ? { pg: a.senior } : role === "senior" ? { senior: a.senior } : { undecided: a.senior };
 }
-

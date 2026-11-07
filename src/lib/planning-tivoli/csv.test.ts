@@ -22,8 +22,21 @@ describe("CSV for =IMPORTDATA in the Planning tab", () => {
   });
 
   it("writes unknown initials as they are, and what cannot be read as written", () => {
-    const csv = planningCsv([{ date: "2026-11-09", cells: { "SALLE 1": "Xy-He", "SALLE 2": "Ze/Fr" } }], rooms, resolve);
-    expect(csv).toBe("09/11/2026,Ze/Fr,,Dr Hennaut,Xy\r\n");
+    const csv = planningCsv([{ date: "2026-11-09", cells: { "SALLE 1": "Xy-He", "SALLE 2": "Ze-?" } }], rooms, resolve);
+    expect(csv).toBe("09/11/2026,Ze-?,,Dr Hennaut,Xy\r\n");
+  });
+
+  it("reads « + » and « / » as « - »", () => {
+    expect(planningCsv([{ date: "2026-11-09", cells: { "SALLE 1": "Ze+He" } }], [{ label: "SALLE 1" }], resolve)).toBe("09/11/2026,Dr Hennaut,Zelie\r\n");
+    expect(planningCsv([{ date: "2026-11-09", cells: { "SALLE 1": "Ze/He" } }], [{ label: "SALLE 1" }], resolve)).toBe("09/11/2026,Dr Hennaut,Zelie\r\n");
+  });
+
+  it("splits END: one name for Endo C24, a second for Endo 3", () => {
+    const end = [{ label: "END", part: 1 as const }, { label: "END", part: 2 as const }];
+    const csv = (cell: string) => planningCsv([{ date: "2026-11-09", cells: { END: cell } }], end, resolve);
+    expect(csv("Sad")).toBe("09/11/2026,Dr Sadeghi,,,\r\n");
+    expect(csv("Sad-He")).toBe("09/11/2026,Dr Sadeghi,,Dr Hennaut,\r\n");
+    expect(csv("?")).toBe("09/11/2026,?,,,\r\n");
   });
 
   it("quotes a field with a comma, and gives nothing for no day", () => {

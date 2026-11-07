@@ -29,13 +29,13 @@ export async function GET(request: Request) {
   const to = addDays(today, DAYS_AFTER);
   const [weeks, rooms, people] = await Promise.all([
     admin.from("planning_tivoli_weeks").select("cells").eq("status", "validated").gte("week_start", addDays(from, -6)).lte("week_start", to),
-    admin.from("planning_tivoli_rooms").select("image_label, solo").eq("active", true).order("sort_order"),
+    admin.from("planning_tivoli_rooms").select("image_label, solo, part").eq("active", true).order("sort_order"),
     admin.from("planning_tivoli_people").select("initials, name, role"),
   ]);
   const days: ExportDay[] = (weeks.data ?? []).flatMap((w) => Object.entries(w.cells ?? {}).map(([date, cells]) => ({ date, cells }))).filter((d) => d.date >= from && d.date <= to);
   const csv = planningCsv(
     days,
-    (rooms.data ?? []).map((r) => ({ label: r.image_label, solo: r.solo })),
+    (rooms.data ?? []).map((r) => ({ label: r.image_label, solo: r.solo, part: r.part })),
     nameResolver(people.data ?? []),
     roleResolver(people.data ?? [])
   );

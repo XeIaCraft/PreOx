@@ -93,11 +93,11 @@ function Weeks({ data }: { data: PlanningData }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Button disabled={pending} onClick={() => start(async () => done(await refreshFromWeb()))}>
-          <RefreshCw className={cn("h-4 w-4", pending && "animate-spin")} /> Mettre à jour depuis le planning
+        <Button disabled={pending} onClick={() => file.current?.click()}>
+          <ImageUp className="h-4 w-4" /> Importer une capture
         </Button>
-        <Button variant="secondary" disabled={pending} onClick={() => file.current?.click()}>
-          <ImageUp className="h-4 w-4" /> Importer une image
+        <Button variant="secondary" disabled={pending} onClick={() => start(async () => done(await refreshFromWeb()))}>
+          <RefreshCw className={cn("h-4 w-4", pending && "animate-spin")} /> Lire la page publiée
         </Button>
         <input
           ref={file}
@@ -112,7 +112,7 @@ function Weeks({ data }: { data: PlanningData }) {
         />
       </div>
       <p className="text-xs text-foreground-subtle">
-        Mise à jour à la demande, quand le planning de la semaine est publié.
+        Le plus fiable : une capture d&apos;écran du planning publié, importée ici. Mise à jour à la demande, quand le planning de la semaine est publié.
         {data.settings.lastCheckedAt && ` Dernière mise à jour : ${new Date(data.settings.lastCheckedAt).toLocaleString("fr-BE")}.`}
         {pending && " Lecture en cours (quelques secondes)…"}
       </p>
@@ -235,7 +235,7 @@ function People({ data }: { data: PlanningData }) {
   );
 }
 
-type RoomDraft = Pick<PlanningRoomRow, "name" | "image_label" | "sort_order" | "active" | "solo"> & { id?: string; key: string };
+type RoomDraft = Pick<PlanningRoomRow, "name" | "image_label" | "sort_order" | "active" | "solo" | "part"> & { id?: string; key: string };
 
 function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
   const router = useRouter();
@@ -256,7 +256,7 @@ function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-foreground-muted">
-        L&apos;ordre est celui des colonnes du Sheet (deux colonnes par salle : sénior, PG). « Colonne de l&apos;image » : le titre de la colonne dans le planning (SALLE 1, END, H.B.…) ; vide, la salle est exportée vide. Inactive : pas exportée. « Seul » : la personne seule dans la salle est le sénior, ou bien un PG ou un sénior (CON) — son rôle dans « Initiales » décide alors.
+        L&apos;ordre est celui des colonnes du Sheet (deux colonnes par salle : sénior, PG). « Colonne de l&apos;image » : le titre de la colonne dans le planning (SALLE 1, END, H.B.…) ; vide, la salle est exportée vide. Inactive : pas exportée. « Seul » : la personne seule dans la salle est le sénior, ou bien un PG ou un sénior (CON) — son rôle dans « Initiales » décide alors. « Prend » : la case entière, ou une seule de ses personnes (END : la 1re pour Endo C24, la 2e pour Endo 3).
       </p>
       <ul className="space-y-2">
         {list.map((r, i) => (
@@ -264,6 +264,19 @@ function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
             <span className="w-6 text-center text-xs tabular-nums text-foreground-subtle">{i + 1}</span>
             <Input value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} aria-label="Nom de la salle" className="h-9 min-w-0 flex-1" />
             <Input value={r.image_label} onChange={(e) => set(r.key, { image_label: e.target.value })} aria-label="Colonne de l'image" placeholder="Colonne de l'image" className="h-9 w-32 font-mono" />
+            <label className="flex items-center gap-1.5 text-xs text-foreground-muted">
+              Prend :
+              <select
+                value={r.part ?? ""}
+                onChange={(e) => set(r.key, { part: e.target.value ? (Number(e.target.value) as 1 | 2) : null })}
+                aria-label="Quelle personne de la case"
+                className="h-9 rounded-[var(--radius-sm)] border border-border bg-surface px-2 text-xs text-foreground"
+              >
+                <option value="">la case</option>
+                <option value="1">1re personne</option>
+                <option value="2">2e personne</option>
+              </select>
+            </label>
             <label className="flex items-center gap-1.5 text-xs text-foreground-muted">
               Seul :
               <select
@@ -300,7 +313,7 @@ function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
         ))}
       </ul>
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" onClick={() => setList((l) => [...l, { key: crypto.randomUUID(), name: "Nouvelle salle", image_label: "", sort_order: l.length + 1, active: true, solo: "senior" }])}>
+        <Button variant="secondary" onClick={() => setList((l) => [...l, { key: crypto.randomUUID(), name: "Nouvelle salle", image_label: "", sort_order: l.length + 1, active: true, solo: "senior", part: null }])}>
           <Plus className="h-4 w-4" /> Ajouter une salle
         </Button>
         <Button
@@ -308,7 +321,7 @@ function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
           onClick={() =>
             start(async () => {
               const r = await saveRooms(
-                list.map(({ id, name, image_label, active, solo }, i) => ({ ...(id ? { id } : {}), name, image_label, active, solo, sort_order: i + 1 })),
+                list.map(({ id, name, image_label, active, solo, part }, i) => ({ ...(id ? { id } : {}), name, image_label, active, solo, part, sort_order: i + 1 })),
                 removed
               );
               if (!r.ok) return toast(r.error, { variant: "error" });

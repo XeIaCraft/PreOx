@@ -11,6 +11,8 @@ export interface ExportRoom {
   label: string;
   /** Who is alone in the room: the senior, or either (« CON »: the initials' role decides). */
   solo?: "senior" | "either";
+  /** One person of the cell (END: 1 → Endo C24, 2 → Endo 3), alone in this room. */
+  part?: 1 | 2 | null;
 }
 
 export interface ExportDay {
@@ -45,12 +47,13 @@ export function planningCsv(days: ExportDay[], rooms: ExportRoom[], resolve: (in
       for (const room of rooms) {
         const a = parseAssignment(d.cells[room.label] ?? "");
         if (a.kind === "ok") {
-          const r = rolesOf(a, room.solo, roleOf);
+          const r = rolesOf(a, room.solo, roleOf, room.part);
           // Alone, role unknown (« CON »): in the senior's column, as initials, so it is seen and settled.
           fields.push(r.senior ? resolve(r.senior) : r.undecided ? `${r.undecided} (PG ou sénior ?)` : "", r.pg ? resolve(r.pg) : "");
         }
         // « Ze/Fr », « ? »: as written in the senior's column, so it is seen and settled in the Sheet.
-        else if (a.kind === "invalid") fields.push(a.text, "");
+        // (A room taking one person of the cell: the text once, in the first one.)
+        else if (a.kind === "invalid") fields.push(room.part === 2 ? "" : a.text, "");
         else fields.push("", "");
       }
       return fields.map(csvField).join(",");
