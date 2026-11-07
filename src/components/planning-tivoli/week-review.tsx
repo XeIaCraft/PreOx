@@ -70,7 +70,17 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
     const m = new Map(data.people.map((p) => [normInitials(p.initials), p.role]));
     return (i: string): Role | null => m.get(normInitials(i)) ?? null;
   }, [data.people]);
-  const roomOrder = useMemo(() => new Map(data.rooms.filter((r) => r.image_label).map((r, i) => [r.image_label, { i, active: r.active, name: r.name, solo: r.solo }])), [data.rooms]);
+  // The rooms each column of the image feeds (END: Endo C24 and Endo 3), in the export order.
+  const roomOrder = useMemo(() => {
+    const m = new Map<string, { i: number; active: boolean; name: string; rooms: PlanningData["rooms"] }>();
+    data.rooms.forEach((r, i) => {
+      if (!r.image_label) return;
+      const x = m.get(r.image_label);
+      if (x) Object.assign(x, { active: x.active || r.active, name: `${x.name}, ${r.name}`, rooms: [...x.rooms, r] });
+      else m.set(r.image_label, { i, active: r.active, name: r.name, rooms: [r] });
+    });
+    return m;
+  }, [data.rooms]);
 
   // What the OCR read, by date and room label.
   const read = useMemo(() => {
@@ -95,12 +105,17 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
     const a = parseAssignment(value);
     const proposed = ocr && !ocr.empty ? matchCell(ocr.text, known, data.learned) : null;
     const unknown = a.kind === "ok" ? [a.pg, a.senior].filter((x): x is string => !!x && !nameOf.has(normInitials(x))) : [];
-    const roles = rolesOf(a, roomOrder.get(label)?.solo, roleOf);
+    const rooms = roomOrder.get(label)?.rooms ?? [];
+    // One room per person of the cell (END): each gets its own reading.
+    const split = rooms.filter((r) => r.part);
+    const roles = rolesOf(a, rooms[0]?.solo, roleOf);
+    const perRoom = split.length ? split.map((r) => ({ room: r.name, roles: rolesOf(a, r.solo, roleOf, r.part) })) : null;
     return {
       value,
       ocr,
       a,
-      roles,
+      roles: perRoom ? { ...roles, undecided: perRoom.find((x) => x.roles.undecided)?.roles.undecided } : roles,
+      perRoom,
       low: !!ocr && !ocr.empty && ocr.confidence < LOW_CONFIDENCE,
       matched: proposed && cleanCell(value) === proposed.text ? proposed.changes : [],
       edited: !!proposed && cleanCell(value) !== proposed.text,
@@ -218,6 +233,10 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
                     <span className="text-foreground-subtle">Personne</span>
                   ) : f.a.kind === "invalid" ? (
                     <span className="text-accent">Non interprétable : {f.a.reason}</span>
+                  ) : f.perRoom ? (
+                    f.perRoom
+                      .map((x) => `${x.room} : ${[x.roles.pg && `PG ${nameOf.get(normInitials(x.roles.pg)) ?? `${x.roles.pg} (?)`}`, x.roles.senior && (nameOf.get(normInitials(x.roles.senior)) ?? `${x.roles.senior} (?)`), x.roles.undecided && `${x.roles.undecided} (PG ou sénior ?)`].filter(Boolean).join(" ") || "personne"}`)
+                      .join(" · ")
                   ) : f.roles.undecided ? (
                     <span className="text-accent">Seul : {nameOf.get(normInitials(f.roles.undecided)) ?? f.roles.undecided} — PG ou sénior ? (rôle à préciser dans « Initiales »)</span>
                   ) : (

@@ -181,6 +181,7 @@ const roomSchema = z.object({
   sort_order: z.number().int().min(0).max(999),
   active: z.boolean(),
   solo: z.enum(["senior", "either"]),
+  part: z.union([z.literal(1), z.literal(2)]).nullable(),
 });
 
 /** The whole list as edited (names, image columns, export order, active), and the rooms removed. */

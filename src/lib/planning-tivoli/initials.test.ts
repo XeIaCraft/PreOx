@@ -3,17 +3,21 @@ import { learnedFrom, matchCell, matchToken, parseAssignment, rolesOf } from "./
 
 describe("a cell of the « Anesth » line", () => {
   it("reads a resident with a senior, a senior alone, nobody", () => {
-    expect(parseAssignment("Ze-He")).toEqual({ kind: "ok", pg: "Ze", senior: "He" });
-    expect(parseAssignment("  Ze - He ")).toEqual({ kind: "ok", pg: "Ze", senior: "He" });
-    expect(parseAssignment("LM–To")).toEqual({ kind: "ok", pg: "LM", senior: "To" });
-    expect(parseAssignment("Sad")).toEqual({ kind: "ok", senior: "Sad" });
+    expect(parseAssignment("Ze-He")).toEqual({ kind: "ok", pg: "Ze", senior: "He", people: ["Ze", "He"] });
+    expect(parseAssignment("  Ze - He ")).toEqual({ kind: "ok", pg: "Ze", senior: "He", people: ["Ze", "He"] });
+    expect(parseAssignment("LM–To")).toEqual({ kind: "ok", pg: "LM", senior: "To", people: ["LM", "To"] });
+    expect(parseAssignment("Sad")).toEqual({ kind: "ok", senior: "Sad", people: ["Sad"] });
     expect(parseAssignment("")).toEqual({ kind: "empty" });
     expect(parseAssignment("   ")).toEqual({ kind: "empty" });
   });
 
+  it("reads « - », « + » and « / » alike between the resident and the senior", () => {
+    for (const t of ["Ze/Fr", "Ze+Fr", "Ze - Fr", "Ze / Fr"]) expect(parseAssignment(t)).toMatchObject({ kind: "ok", pg: "Ze", senior: "Fr" });
+  });
+
   it("keeps as written, flagged, what it cannot read for sure", () => {
-    for (const t of ["Ze/Fr", "Ch+Fr", "?", "Is/Sad", "A-B-C", "Ze-H3"]) expect(parseAssignment(t).kind).toBe("invalid");
-    expect(parseAssignment("Ze/Fr")).toMatchObject({ text: "Ze/Fr" });
+    for (const t of ["?", "Ze-?", "A-B-C", "Ze/Fr+He", "Ze-H3"]) expect(parseAssignment(t).kind).toBe("invalid");
+    expect(parseAssignment("Ze-?")).toMatchObject({ text: "Ze-?" });
   });
 });
 
@@ -43,12 +47,13 @@ describe("initials matched to the known ones", () => {
     expect(m.text).toBe("Ze-He");
     expect(m.changes).toEqual([{ read: "Hc", value: "He", kind: "learned" }]);
     expect(matchCell("Xy-He", known).unknown).toEqual(["Xy"]);
-    expect(matchCell("Ze/Fr", known)).toMatchObject({ text: "Ze/Fr", assignment: { kind: "invalid" } });
+    expect(matchCell("Ze/He", known)).toMatchObject({ text: "Ze-He", assignment: { kind: "ok" } });
+    expect(matchCell("Ze-?", known)).toMatchObject({ assignment: { kind: "invalid" } });
   });
 
-  it("proposes « Ze/Fr » for « ZelFr » (a « / » read as « l ») — still to be settled", () => {
+  it("reads « ZelFr » as « Ze-Fr » (a « / » read as « l »), and says so", () => {
     const m = matchCell("ZelFr", [...known, "Fr"]);
-    expect(m).toMatchObject({ text: "Ze/Fr", assignment: { kind: "invalid" }, changes: [{ read: "ZelFr", value: "Ze/Fr", kind: "near" }] });
+    expect(m).toMatchObject({ text: "Ze-Fr", assignment: { kind: "ok" }, changes: [{ read: "ZelFr", value: "Ze-Fr", kind: "near" }] });
   });
 
   it("learns from a correction which initials were misread", () => {
@@ -65,6 +70,13 @@ describe("initials matched to the known ones", () => {
     expect(rolesOf(parseAssignment("Xy"), "either", role)).toEqual({ undecided: "Xy" });
     expect(rolesOf(parseAssignment("Ze-He"), "either", role)).toEqual({ pg: "Ze", senior: "He" });
     expect(rolesOf(parseAssignment(""), "either", role)).toEqual({});
+  });
+
+  it("gives one person of the cell to a room that takes one (END: the 1st to Endo C24, the 2nd to Endo 3)", () => {
+    expect(rolesOf(parseAssignment("Ze"), "senior", undefined, 1)).toEqual({ senior: "Ze" });
+    expect(rolesOf(parseAssignment("Ze"), "senior", undefined, 2)).toEqual({});
+    expect(rolesOf(parseAssignment("Ze+He"), "senior", undefined, 1)).toEqual({ senior: "Ze" });
+    expect(rolesOf(parseAssignment("Ze+He"), "senior", undefined, 2)).toEqual({ senior: "He" });
   });
 });
 

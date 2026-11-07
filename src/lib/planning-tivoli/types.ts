@@ -11,6 +11,8 @@ export type PlanningRoomRow = {
   active: boolean;
   /** Who is alone in the room: always the senior, or a resident or a senior (« CON »), as the initials' role says. */
   solo: "senior" | "either";
+  /** One person of the cell instead of the whole cell: END → Endo C24 (1st), Endo 3 (2nd). */
+  part: 1 | 2 | null;
   created_at: string;
   updated_at: string;
 };
