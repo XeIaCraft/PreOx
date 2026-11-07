@@ -1,3 +1,4 @@
+import type { PlanningOcrFixRow, PlanningPersonRow, PlanningRoomRow, PlanningSettingsRow, PlanningWeekRow } from "@/lib/planning-tivoli/types";
 export type UserRole = "admin" | "user";
 export type AppStatus = "available" | "coming_soon";
 
@@ -1289,6 +1290,36 @@ export type Database = {
         Row: CarnetYearRow;
         Insert: Partial<CarnetYearRow> & { user_id: string };
         Update: Partial<CarnetYearRow>;
+        Relationships: [];
+      };
+      planning_tivoli_rooms: {
+        Row: PlanningRoomRow;
+        Insert: Partial<PlanningRoomRow> & { name: string };
+        Update: Partial<PlanningRoomRow>;
+        Relationships: [];
+      };
+      planning_tivoli_people: {
+        Row: PlanningPersonRow;
+        Insert: Partial<PlanningPersonRow> & { initials: string; name: string };
+        Update: Partial<PlanningPersonRow>;
+        Relationships: [];
+      };
+      planning_tivoli_ocr_fixes: {
+        Row: PlanningOcrFixRow;
+        Insert: Partial<PlanningOcrFixRow> & { read: string; fixed: string };
+        Update: Partial<PlanningOcrFixRow>;
+        Relationships: [];
+      };
+      planning_tivoli_weeks: {
+        Row: PlanningWeekRow;
+        Insert: Partial<PlanningWeekRow> & { image_hash: string; image_base64: string };
+        Update: Partial<PlanningWeekRow>;
+        Relationships: [];
+      };
+      planning_tivoli_settings: {
+        Row: PlanningSettingsRow;
+        Insert: Partial<PlanningSettingsRow>;
+        Update: Partial<PlanningSettingsRow>;
         Relationships: [];
       };
       preop_rules: {

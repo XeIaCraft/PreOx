@@ -1,0 +1,47 @@
+// The validated weeks as the « Planning » tab of the Google Sheet reads
+// them, through =IMPORTDATA(…) in A3: one line per day, no header — the
+// date (JJ/MM/AAAA), then for each room in the export order its senior
+// and its resident (PG). Names come from the initials table; initials not
+// in it are written as they are, so nothing is lost.
+
+import { normInitials, parseAssignment } from "./initials";
+
+export interface ExportRoom {
+  /** The room's column label in the planning image (« SALLE 1 », « END »…), the key of a day's cells. */
+  label: string;
+}
+
+export interface ExportDay {
+  /** ISO date (YYYY-MM-DD). */
+  date: string;
+  /** Validated cell text by room label (« Ze-He », « Sad »…). */
+  cells: Record<string, string>;
+}
+
+/** « 2026-11-09 » → « 09/11/2026 ». */
+export const frDate = (iso: string) => iso.split("-").reverse().join("/");
+
+const csvField = (v: string) => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+
+/** Initials → name, by the initials as compared (case, spaces, accents aside). */
+export function nameResolver(people: { initials: string; name: string }[]): (initials: string) => string {
+  const byInitials = new Map(people.map((p) => [normInitials(p.initials), p.name]));
+  return (initials) => byInitials.get(normInitials(initials)) ?? initials;
+}
+
+export function planningCsv(days: ExportDay[], rooms: ExportRoom[], resolve: (initials: string) => string): string {
+  const lines = [...days]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((d) => {
+      const fields = [frDate(d.date)];
+      for (const r of rooms) {
+        const a = parseAssignment(d.cells[r.label] ?? "");
+        if (a.kind === "ok") fields.push(resolve(a.senior), a.pg ? resolve(a.pg) : "");
+        // « Ze/Fr », « ? »: as written in the senior's column, so it is seen and settled in the Sheet.
+        else if (a.kind === "invalid") fields.push(a.text, "");
+        else fields.push("", "");
+      }
+      return fields.map(csvField).join(",");
+    });
+  return lines.length ? `${lines.join("\r\n")}\r\n` : "";
+}

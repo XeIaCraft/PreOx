@@ -15,6 +15,7 @@
     "@pdf-lib/fontkit": "^1.1.1",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",
+    "@tesseract.js-data/eng": "^1.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "docx": "9.6.1",
@@ -28,6 +29,7 @@
     "resend": "^6.21.0",
     "sharp": "0.35.3",
     "tailwind-merge": "^3.6.0",
+    "tesseract.js": "^6.0.1",
     "ts-fsrs": "^4.6.1",
     "web-push": "^3.6.7",
     "zod": "^4.4.3"
