@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { tokenMatches } from "@/lib/planning-tivoli/token";
-import { nameResolver, planningCsv, type ExportDay } from "@/lib/planning-tivoli/csv";
+import { nameResolver, planningCsv, roleResolver, type ExportDay } from "@/lib/planning-tivoli/csv";
 import { addDays } from "@/lib/planning-tivoli/import";
 
 export const dynamic = "force-dynamic";
@@ -29,10 +29,15 @@ export async function GET(request: Request) {
   const to = addDays(today, DAYS_AFTER);
   const [weeks, rooms, people] = await Promise.all([
     admin.from("planning_tivoli_weeks").select("cells").eq("status", "validated").gte("week_start", addDays(from, -6)).lte("week_start", to),
-    admin.from("planning_tivoli_rooms").select("image_label").eq("active", true).order("sort_order"),
-    admin.from("planning_tivoli_people").select("initials, name"),
+    admin.from("planning_tivoli_rooms").select("image_label, solo").eq("active", true).order("sort_order"),
+    admin.from("planning_tivoli_people").select("initials, name, role"),
   ]);
   const days: ExportDay[] = (weeks.data ?? []).flatMap((w) => Object.entries(w.cells ?? {}).map(([date, cells]) => ({ date, cells }))).filter((d) => d.date >= from && d.date <= to);
-  const csv = planningCsv(days, (rooms.data ?? []).map((r) => ({ label: r.image_label })), nameResolver(people.data ?? []));
+  const csv = planningCsv(
+    days,
+    (rooms.data ?? []).map((r) => ({ label: r.image_label, solo: r.solo })),
+    nameResolver(people.data ?? []),
+    roleResolver(people.data ?? [])
+  );
   return new Response(csv, { headers: { "content-type": "text/csv; charset=utf-8", "cache-control": "no-store" } });
 }

@@ -14,6 +14,8 @@ import type { ImportResult } from "@/lib/planning-tivoli/import";
 import type { PlanningRoomRow } from "@/lib/planning-tivoli/types";
 import { deleteOcrFix, deletePerson, generateToken, importImage, refreshFromWeb, revokeToken, savePerson, saveRooms } from "@/app/apps/planning-tivoli/actions";
 import { frDate, WeekReview } from "./week-review";
+import { RoleSelect } from "./role-select";
+import type { Role } from "@/lib/planning-tivoli/initials";
 
 type Tab = "weeks" | "people" | "rooms" | "export";
 const TABS: { id: Tab; label: string }[] = [
@@ -142,12 +144,14 @@ function Weeks({ data }: { data: PlanningData }) {
   );
 }
 
+type PersonDraft = { initials: string; name: string; role: Role | null };
+
 function People({ data }: { data: PlanningData }) {
   const router = useRouter();
   const { toast } = useToast();
   const [pending, start] = useTransition();
-  const [draft, setDraft] = useState({ initials: "", name: "" });
-  const [editing, setEditing] = useState<{ id: string; initials: string; name: string } | null>(null);
+  const [draft, setDraft] = useState<PersonDraft>({ initials: "", name: "", role: null });
+  const [editing, setEditing] = useState<(PersonDraft & { id: string }) | null>(null);
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string, after?: () => void) =>
     start(async () => {
       const r = await fn();
@@ -165,7 +169,7 @@ function People({ data }: { data: PlanningData }) {
         className="flex flex-wrap items-end gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          run(() => savePerson(draft), `« ${draft.initials} » ajouté.`, () => setDraft({ initials: "", name: "" }));
+          run(() => savePerson(draft), `« ${draft.initials} » ajouté.`, () => setDraft({ initials: "", name: "", role: null }));
         }}
       >
         <label className="space-y-1">
@@ -176,6 +180,7 @@ function People({ data }: { data: PlanningData }) {
           <span className="block text-xs font-medium text-foreground-muted">Nom</span>
           <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="h-9" />
         </label>
+        <RoleSelect value={draft.role} onChange={(role) => setDraft({ ...draft, role })} />
         <Button size="sm" type="submit" disabled={!draft.initials.trim() || !draft.name.trim() || pending}>
           <Plus className="h-4 w-4" /> Ajouter
         </Button>
@@ -187,6 +192,7 @@ function People({ data }: { data: PlanningData }) {
             <li key={p.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
               <Input value={editing.initials} onChange={(e) => setEditing({ ...editing, initials: e.target.value })} className="h-9 w-24" aria-label="Initiales" />
               <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} className="h-9 min-w-0 flex-1" aria-label="Nom" />
+              <RoleSelect value={editing.role} onChange={(role) => setEditing({ ...editing, role })} />
               <Button size="sm" disabled={pending} onClick={() => run(() => savePerson(editing), "Modifié.", () => setEditing(null))}>
                 Enregistrer
               </Button>
@@ -198,7 +204,8 @@ function People({ data }: { data: PlanningData }) {
             <li key={p.id} className="flex items-center gap-2 px-3 py-2">
               <span className="w-16 font-mono text-sm font-semibold">{p.initials}</span>
               <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
-              <Button size="sm" variant="ghost" onClick={() => setEditing({ id: p.id, initials: p.initials, name: p.name })}>
+              {p.role && <Badge variant="neutral">{p.role === "pg" ? "PG" : "Sénior"}</Badge>}
+              <Button size="sm" variant="ghost" onClick={() => setEditing({ id: p.id, initials: p.initials, name: p.name, role: p.role })}>
                 Modifier
               </Button>
               <Button size="icon" variant="ghost" aria-label={`Supprimer ${p.initials}`} disabled={pending} onClick={() => confirm(`Supprimer « ${p.initials} » ?`) && run(() => deletePerson(p.id), "Supprimé.")}>
@@ -228,7 +235,7 @@ function People({ data }: { data: PlanningData }) {
   );
 }
 
-type RoomDraft = Pick<PlanningRoomRow, "name" | "image_label" | "sort_order" | "active"> & { id?: string; key: string };
+type RoomDraft = Pick<PlanningRoomRow, "name" | "image_label" | "sort_order" | "active" | "solo"> & { id?: string; key: string };
 
 function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
   const router = useRouter();
@@ -249,7 +256,7 @@ function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-foreground-muted">
-        L&apos;ordre est celui des colonnes du Sheet (deux colonnes par salle : sénior, PG). « Colonne de l&apos;image » : le titre de la colonne dans le planning (SALLE 1, END, H.B.…) ; vide, la salle est exportée vide. Inactive : pas exportée.
+        L&apos;ordre est celui des colonnes du Sheet (deux colonnes par salle : sénior, PG). « Colonne de l&apos;image » : le titre de la colonne dans le planning (SALLE 1, END, H.B.…) ; vide, la salle est exportée vide. Inactive : pas exportée. « Seul » : la personne seule dans la salle est le sénior, ou bien un PG ou un sénior (CON) — son rôle dans « Initiales » décide alors.
       </p>
       <ul className="space-y-2">
         {list.map((r, i) => (
@@ -257,6 +264,18 @@ function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
             <span className="w-6 text-center text-xs tabular-nums text-foreground-subtle">{i + 1}</span>
             <Input value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} aria-label="Nom de la salle" className="h-9 min-w-0 flex-1" />
             <Input value={r.image_label} onChange={(e) => set(r.key, { image_label: e.target.value })} aria-label="Colonne de l'image" placeholder="Colonne de l'image" className="h-9 w-32 font-mono" />
+            <label className="flex items-center gap-1.5 text-xs text-foreground-muted">
+              Seul :
+              <select
+                value={r.solo}
+                onChange={(e) => set(r.key, { solo: e.target.value as RoomDraft["solo"] })}
+                aria-label="Qui est la personne seule"
+                className="h-9 rounded-[var(--radius-sm)] border border-border bg-surface px-2 text-xs text-foreground"
+              >
+                <option value="senior">sénior</option>
+                <option value="either">PG ou sénior</option>
+              </select>
+            </label>
             <label className="flex items-center gap-1.5 text-xs text-foreground-muted">
               <Switch checked={r.active} onCheckedChange={(active) => set(r.key, { active })} aria-label="Exportée" /> Exportée
             </label>
@@ -281,7 +300,7 @@ function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
         ))}
       </ul>
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" onClick={() => setList((l) => [...l, { key: crypto.randomUUID(), name: "Nouvelle salle", image_label: "", sort_order: l.length + 1, active: true }])}>
+        <Button variant="secondary" onClick={() => setList((l) => [...l, { key: crypto.randomUUID(), name: "Nouvelle salle", image_label: "", sort_order: l.length + 1, active: true, solo: "senior" }])}>
           <Plus className="h-4 w-4" /> Ajouter une salle
         </Button>
         <Button
@@ -289,7 +308,7 @@ function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
           onClick={() =>
             start(async () => {
               const r = await saveRooms(
-                list.map(({ id, name, image_label, active }, i) => ({ ...(id ? { id } : {}), name, image_label, active, sort_order: i + 1 })),
+                list.map(({ id, name, image_label, active, solo }, i) => ({ ...(id ? { id } : {}), name, image_label, active, solo, sort_order: i + 1 })),
                 removed
               );
               if (!r.ok) return toast(r.error, { variant: "error" });

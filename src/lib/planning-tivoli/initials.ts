@@ -130,3 +130,27 @@ export function learnedFrom(read: string, kept: string): Record<string, string> 
   if (a.pg !== undefined && b.pg !== undefined && normInitials(a.pg) !== normInitials(b.pg)) out[normInitials(a.pg)] = b.pg;
   return out;
 }
+
+export type Role = "pg" | "senior";
+
+export interface Roles {
+  senior?: string;
+  pg?: string;
+  /** Alone in a room where a resident or a senior can be, and the role is not known: to settle. */
+  undecided?: string;
+}
+
+/**
+ * Who is senior and who is resident in a cell. Two people: « PG-Sénior ».
+ * Alone: the senior — except in a room where either can be alone (« CON »),
+ * where the person's role in the initials table decides (unknown: undecided,
+ * never guessed).
+ */
+export function rolesOf(a: Assignment, solo: "senior" | "either" = "senior", roleOf: (initials: string) => Role | null = () => null): Roles {
+  if (a.kind !== "ok") return {};
+  if (a.pg !== undefined) return { senior: a.senior, pg: a.pg };
+  if (solo === "senior") return { senior: a.senior };
+  const role = roleOf(a.senior);
+  return role === "pg" ? { pg: a.senior } : role === "senior" ? { senior: a.senior } : { undecided: a.senior };
+}
+

@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
-import { cleanCell, matchCell, normInitials, parseAssignment } from "@/lib/planning-tivoli/initials";
+import { cleanCell, matchCell, normInitials, parseAssignment, rolesOf, type Role } from "@/lib/planning-tivoli/initials";
 import { addDays, roomLabelOf } from "@/lib/planning-tivoli/match";
 import type { OcrCell } from "@/lib/planning-tivoli/ocr";
 import type { PlanningCells } from "@/lib/planning-tivoli/types";
 import type { PlanningData, PlanningWeekSummary } from "@/lib/planning-tivoli/dal";
+import { RoleSelect } from "./role-select";
 import { deleteWeek, getWeekImage, reopenWeek, saveWeekCells, savePerson, setWeekStart, validateWeek } from "@/app/apps/planning-tivoli/actions";
 
 const DAY_LABELS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
@@ -49,7 +50,7 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
   const [dirty, setDirty] = useState(false);
   const [day, setDay] = useState(0);
   const [image, setImage] = useState<string | null>(initialImage);
-  const [adding, setAdding] = useState<{ initials: string; name: string } | null>(null);
+  const [adding, setAdding] = useState<{ initials: string; name: string; role: Role | null } | null>(null);
   const [startDate, setStartDate] = useState("");
 
   useEffect(() => {
@@ -65,7 +66,11 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
 
   const known = useMemo(() => data.people.map((p) => p.initials), [data.people]);
   const nameOf = useMemo(() => new Map(data.people.map((p) => [normInitials(p.initials), p.name])), [data.people]);
-  const roomOrder = useMemo(() => new Map(data.rooms.filter((r) => r.image_label).map((r, i) => [r.image_label, { i, active: r.active, name: r.name }])), [data.rooms]);
+  const roleOf = useMemo(() => {
+    const m = new Map(data.people.map((p) => [normInitials(p.initials), p.role]));
+    return (i: string): Role | null => m.get(normInitials(i)) ?? null;
+  }, [data.people]);
+  const roomOrder = useMemo(() => new Map(data.rooms.filter((r) => r.image_label).map((r, i) => [r.image_label, { i, active: r.active, name: r.name, solo: r.solo }])), [data.rooms]);
 
   // What the OCR read, by date and room label.
   const read = useMemo(() => {
@@ -90,10 +95,12 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
     const a = parseAssignment(value);
     const proposed = ocr && !ocr.empty ? matchCell(ocr.text, known, data.learned) : null;
     const unknown = a.kind === "ok" ? [a.pg, a.senior].filter((x): x is string => !!x && !nameOf.has(normInitials(x))) : [];
+    const roles = rolesOf(a, roomOrder.get(label)?.solo, roleOf);
     return {
       value,
       ocr,
       a,
+      roles,
       low: !!ocr && !ocr.empty && ocr.confidence < LOW_CONFIDENCE,
       matched: proposed && cleanCell(value) === proposed.text ? proposed.changes : [],
       edited: !!proposed && cleanCell(value) !== proposed.text,
@@ -104,7 +111,7 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
   const toCheck = (d: string) =>
     [...new Set([...Object.keys(cells[d] ?? {}), ...(read.get(d)?.keys() ?? [])])].filter((l) => {
       const f = flagsOf(d, l);
-      return f.low || f.matched.length > 0 || f.unknown.length > 0 || f.a.kind === "invalid" || !!f.reread;
+      return f.low || f.matched.length > 0 || f.unknown.length > 0 || f.a.kind === "invalid" || !!f.reread || !!f.roles.undecided;
     }).length;
 
   const set = (d: string, label: string, v: string) => {
@@ -211,11 +218,10 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
                     <span className="text-foreground-subtle">Personne</span>
                   ) : f.a.kind === "invalid" ? (
                     <span className="text-accent">Non interprétable : {f.a.reason}</span>
+                  ) : f.roles.undecided ? (
+                    <span className="text-accent">Seul : {nameOf.get(normInitials(f.roles.undecided)) ?? f.roles.undecided} — PG ou sénior ? (rôle à préciser dans « Initiales »)</span>
                   ) : (
-                    <>
-                      {f.a.pg && <>PG : {nameOf.get(normInitials(f.a.pg)) ?? `${f.a.pg} (?)`} · </>}
-                      Sénior : {nameOf.get(normInitials(f.a.senior)) ?? `${f.a.senior} (?)`}
-                    </>
+                    [f.roles.pg && `PG : ${nameOf.get(normInitials(f.roles.pg)) ?? `${f.roles.pg} (?)`}`, f.roles.senior && `Sénior : ${nameOf.get(normInitials(f.roles.senior)) ?? `${f.roles.senior} (?)`}`].filter(Boolean).join(" · ")
                   )}
                 </span>
                 {f.low && <Badge variant="accent">Lecture peu sûre</Badge>}
@@ -234,7 +240,7 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
                   <button
                     key={u}
                     type="button"
-                    onClick={() => setAdding({ initials: u, name: "" })}
+                    onClick={() => setAdding({ initials: u, name: "", role: null })}
                     className="inline-flex items-center gap-1 rounded-full bg-accent-tint px-2 py-0.5 text-xs font-medium text-accent"
                   >
                     <UserPlus className="h-3 w-3" /> « {u} » inconnu : ajouter
@@ -251,7 +257,7 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
           className="flex flex-wrap items-end gap-2 rounded-[var(--radius-md)] border border-primary/30 bg-primary-tint/40 p-3"
           onSubmit={(e) => {
             e.preventDefault();
-            run(() => savePerson({ initials: adding.initials, name: adding.name }), `« ${adding.initials} » ajouté.`);
+            run(() => savePerson(adding), `« ${adding.initials} » ajouté.`);
             setAdding(null);
           }}
         >
@@ -263,6 +269,7 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
             <span className="block text-xs font-medium text-foreground-muted">Nom (tel qu&apos;écrit dans le Sheet)</span>
             <Input autoFocus value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} className="h-9" />
           </label>
+          <RoleSelect value={adding.role} onChange={(role) => setAdding({ ...adding, role })} />
           <Button size="sm" type="submit" disabled={!adding.initials.trim() || !adding.name.trim() || pending}>
             Ajouter
           </Button>

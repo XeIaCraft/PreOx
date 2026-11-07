@@ -9,6 +9,8 @@ export type PlanningRoomRow = {
   image_label: string;
   sort_order: number;
   active: boolean;
+  /** Who is alone in the room: always the senior, or a resident or a senior (« CON »), as the initials' role says. */
+  solo: "senior" | "either";
   created_at: string;
   updated_at: string;
 };
@@ -17,6 +19,8 @@ export type PlanningPersonRow = {
   id: string;
   initials: string;
   name: string;
+  /** Resident (PG) or senior: decides the column of someone alone in a room where either can be. */
+  role: "pg" | "senior" | null;
   created_at: string;
   updated_at: string;
 };

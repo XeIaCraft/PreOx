@@ -142,14 +142,14 @@ export async function deleteWeek(weekId: string): Promise<Result> {
 
 // --- Initials → names ----------------------------------------------------------------
 
-const personSchema = z.object({ id: z.uuid().optional(), initials: z.string().trim().min(1).max(8), name: z.string().trim().min(1).max(120) });
+const personSchema = z.object({ id: z.uuid().optional(), initials: z.string().trim().min(1).max(8), name: z.string().trim().min(1).max(120), role: z.enum(["pg", "senior"]).nullable().optional() });
 
-export async function savePerson(input: { id?: string; initials: string; name: string }): Promise<Result<{ id: string }>> {
+export async function savePerson(input: { id?: string; initials: string; name: string; role?: "pg" | "senior" | null }): Promise<Result<{ id: string }>> {
   await requirePlanningAccess();
   const parsed = personSchema.safeParse(input);
   if (!parsed.success) return fail("Initiales (8 caractères au plus) et nom requis.");
   const db = await createClient();
-  const row = { initials: parsed.data.initials.replace(/\s+/g, ""), name: parsed.data.name };
+  const row = { initials: parsed.data.initials.replace(/\s+/g, ""), name: parsed.data.name, role: parsed.data.role ?? null };
   const res = parsed.data.id ? await db.from("planning_tivoli_people").update(row).eq("id", parsed.data.id).select("id").single() : await db.from("planning_tivoli_people").insert(row).select("id").single();
   if (res.error || !res.data) return fail(res.error?.code === "23505" ? `Les initiales « ${row.initials} » existent déjà.` : (res.error?.message ?? "Enregistrement impossible."));
   revalidatePath(PATH);
@@ -180,6 +180,7 @@ const roomSchema = z.object({
   image_label: z.string().trim().max(30),
   sort_order: z.number().int().min(0).max(999),
   active: z.boolean(),
+  solo: z.enum(["senior", "either"]),
 });
 
 /** The whole list as edited (names, image columns, export order, active), and the rooms removed. */

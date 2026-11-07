@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { learnedFrom, matchCell, matchToken, parseAssignment } from "./initials";
+import { learnedFrom, matchCell, matchToken, parseAssignment, rolesOf } from "./initials";
 
 describe("a cell of the « Anesth » line", () => {
   it("reads a resident with a senior, a senior alone, nobody", () => {
@@ -56,4 +56,15 @@ describe("initials matched to the known ones", () => {
     expect(learnedFrom("Sad", "Sad")).toEqual({});
     expect(learnedFrom("Ze/Fr", "Ze-Fr")).toEqual({});
   });
+
+  it("puts someone alone in the senior's place — or, where either can be alone (CON), where the role says", () => {
+    const role = (i: string) => ({ ze: "pg", he: "senior" })[i.toLowerCase()] as "pg" | "senior" | undefined ?? null;
+    expect(rolesOf(parseAssignment("Ze"))).toEqual({ senior: "Ze" });
+    expect(rolesOf(parseAssignment("Ze"), "either", role)).toEqual({ pg: "Ze" });
+    expect(rolesOf(parseAssignment("He"), "either", role)).toEqual({ senior: "He" });
+    expect(rolesOf(parseAssignment("Xy"), "either", role)).toEqual({ undecided: "Xy" });
+    expect(rolesOf(parseAssignment("Ze-He"), "either", role)).toEqual({ pg: "Ze", senior: "He" });
+    expect(rolesOf(parseAssignment(""), "either", role)).toEqual({});
+  });
 });
+
