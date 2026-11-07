@@ -15,7 +15,7 @@ const nextConfig: NextConfig = {
   // keeps it (and its worker file) served straight from node_modules at
   // runtime instead of being bundled, which is Next's own documented fix
   // for this exact class of library.
-  serverExternalPackages: ["pdfjs-dist"],
+  serverExternalPackages: ["pdfjs-dist", "tesseract.js"],
   // serverExternalPackages alone got the worker's expected path from
   // .next/server/chunks/ssr/pdf.worker.mjs (never existed) to
   // node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs (the right path,
@@ -30,6 +30,22 @@ const nextConfig: NextConfig = {
     // The book export (src/lib/el-profesor/export/run.ts) reads its fonts
     // from disk at runtime: nothing imports them, so tracing can't see them.
     "/api/el-profesor/export": ["src/lib/el-profesor/export/fonts/*.ttf"],
+    // Planning Tivoli's OCR (src/lib/planning-tivoli/ocr.ts): tesseract.js
+    // starts its worker and loads its WebAssembly core and the English model
+    // from paths built at runtime, which tracing cannot follow — the same
+    // case as pdfjs-dist above. The model ships with the app (npm
+    // @tesseract.js-data/eng): nothing is downloaded when the function runs.
+    ...Object.fromEntries(
+      ["/api/cron/planning-tivoli", "/apps/planning-tivoli"].map((route) => [
+        route,
+        [
+          "node_modules/tesseract.js/**",
+          "node_modules/tesseract.js-core/**",
+          "node_modules/@tesseract.js-data/eng/4.0.0_best_int/**",
+          "node_modules/{bmp-js,is-url,node-fetch,regenerator-runtime,wasm-feature-detect,zlibjs,whatwg-url,tr46,webidl-conversions}/**",
+        ],
+      ])
+    ),
   },
   experimental: {
     // Default is 1MB — raised to 8MB for importChapterContent's hand-pasted
