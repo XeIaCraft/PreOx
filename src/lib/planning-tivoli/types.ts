@@ -66,3 +66,13 @@ export type PlanningSettingsRow = {
   last_error: string | null;
   updated_at: string;
 };
+
+export type PlanningCellEditRow = {
+  id: string;
+  week_id: string | null;
+  day: string;
+  label: string;
+  old_value: string;
+  new_value: string;
+  created_at: string;
+};
