@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requirePlanningAccess } from "@/lib/planning-tivoli/dal";
 import { fetchPlanningImage } from "@/lib/planning-tivoli/fetch";
 import { importPlanningImage, matchingData, mondayOf, proposedCells, type ImportResult } from "@/lib/planning-tivoli/import";
@@ -243,4 +244,15 @@ export async function revokeShareLink(): Promise<Result> {
   const { error } = await db.from("planning_tivoli_settings").update({ share_token: null }).eq("id", true);
   revalidatePath(PATH);
   return error ? fail(error.message) : { ok: true, data: undefined };
+}
+
+/** A change made from the public link, undone: the cell gets its previous text back (and the undoing is logged too). */
+export async function undoPublicEdit(editId: string): Promise<Result> {
+  await requirePlanningAccess();
+  const db = await createClient();
+  const { data: edit } = await db.from("planning_tivoli_cell_edits").select("day, label, old_value").eq("id", editId).single();
+  if (!edit) return fail("Modification introuvable.");
+  const { data, error } = await createAdminClient().rpc("planning_tivoli_set_cell", { p_day: edit.day, p_label: edit.label, p_value: edit.old_value });
+  revalidatePath(PATH);
+  return error || !data ? fail(error?.message ?? "Ce jour n'est plus dans une semaine validée.") : { ok: true, data: undefined };
 }

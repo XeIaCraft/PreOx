@@ -19,7 +19,7 @@ export async function requirePlanningAccess(): Promise<Profile> {
 /** The weeks (without their images), rooms, initials, learned misreadings and settings. */
 export async function getPlanningData() {
   const db = await createClient();
-  const [weeks, settings, matching] = await Promise.all([
+  const [weeks, settings, matching, edits] = await Promise.all([
     db
       .from("planning_tivoli_weeks")
       .select("id, week_start, status, source, image_hash, image_width, image_height, ocr, cells, changed_since_validation, validated_at, created_at, updated_at")
@@ -27,6 +27,7 @@ export async function getPlanningData() {
       .limit(12),
     db.from("planning_tivoli_settings").select("source_url, export_token_hash, share_token, last_checked_at, last_error").maybeSingle(),
     matchingData(db),
+    db.from("planning_tivoli_cell_edits").select("id, day, label, old_value, new_value, created_at").order("created_at", { ascending: false }).limit(30),
   ]);
   return {
     weeks: weeks.data ?? [],
@@ -37,6 +38,7 @@ export async function getPlanningData() {
       lastCheckedAt: settings.data?.last_checked_at ?? null,
       lastError: settings.data?.last_error ?? null,
     },
+    edits: edits.data ?? [],
     ...matching,
   };
 }

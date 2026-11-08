@@ -1,4 +1,4 @@
-import type { PlanningOcrFixRow, PlanningPersonRow, PlanningRoomRow, PlanningSettingsRow, PlanningWeekRow } from "@/lib/planning-tivoli/types";
+import type { PlanningCellEditRow, PlanningOcrFixRow, PlanningPersonRow, PlanningRoomRow, PlanningSettingsRow, PlanningWeekRow } from "@/lib/planning-tivoli/types";
 export type UserRole = "admin" | "user";
 export type AppStatus = "available" | "coming_soon";
 
@@ -1316,6 +1316,12 @@ export type Database = {
         Update: Partial<PlanningWeekRow>;
         Relationships: [];
       };
+      planning_tivoli_cell_edits: {
+        Row: PlanningCellEditRow;
+        Insert: Partial<PlanningCellEditRow>;
+        Update: Partial<PlanningCellEditRow>;
+        Relationships: [];
+      };
       planning_tivoli_settings: {
         Row: PlanningSettingsRow;
         Insert: Partial<PlanningSettingsRow>;
@@ -1349,6 +1355,10 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      planning_tivoli_set_cell: {
+        Args: { p_day: string; p_label: string; p_value: string };
+        Returns: boolean;
+      };
       list_my_sessions: {
         Args: Record<string, never>;
         Returns: { id: string; created_at: string; updated_at: string; user_agent: string | null; ip: string | null; is_current: boolean }[];

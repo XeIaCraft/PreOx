@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import type { PlanningData, PlanningWeekSummary } from "@/lib/planning-tivoli/dal";
 import type { ImportResult } from "@/lib/planning-tivoli/import";
 import type { PlanningRoomRow } from "@/lib/planning-tivoli/types";
-import { deleteOcrFix, deletePerson, generateShareLink, generateToken, importImage, refreshFromWeb, revokeShareLink, revokeToken, savePerson, saveRooms } from "@/app/apps/planning-tivoli/actions";
+import { deleteOcrFix, deletePerson, generateShareLink, generateToken, importImage, refreshFromWeb, revokeShareLink, revokeToken, savePerson, saveRooms, undoPublicEdit } from "@/app/apps/planning-tivoli/actions";
 import { frDate, WeekReview } from "./week-review";
 import { RoleSelect } from "./role-select";
 import type { Role } from "@/lib/planning-tivoli/initials";
@@ -60,7 +60,7 @@ export function PlanningApp({ data }: { data: PlanningData }) {
       {tab === "weeks" && <Weeks data={data} />}
       {tab === "people" && <People data={data} />}
       {tab === "rooms" && <Rooms rooms={data.rooms} />}
-      {tab === "export" && <Export hasToken={data.settings.hasToken} shareToken={data.settings.shareToken} />}
+      {tab === "export" && <Export hasToken={data.settings.hasToken} shareToken={data.settings.shareToken} edits={data.edits} />}
     </div>
   );
 }
@@ -338,7 +338,7 @@ function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
   );
 }
 
-function Export({ hasToken, shareToken }: { hasToken: boolean; shareToken: string | null }) {
+function Export({ hasToken, shareToken, edits }: { hasToken: boolean; shareToken: string | null; edits: PlanningData["edits"] }) {
   const router = useRouter();
   const { toast } = useToast();
   const [pending, start] = useTransition();
@@ -405,12 +405,12 @@ function Export({ hasToken, shareToken }: { hasToken: boolean; shareToken: strin
           </Button>
         )}
       </div>
-      <ShareLink shareToken={shareToken} />
+      <ShareLink shareToken={shareToken} edits={edits} />
     </div>
   );
 }
 
-function ShareLink({ shareToken }: { shareToken: string | null }) {
+function ShareLink({ shareToken, edits }: { shareToken: string | null; edits: PlanningData["edits"] }) {
   const router = useRouter();
   const { toast } = useToast();
   const [pending, start] = useTransition();
@@ -419,8 +419,8 @@ function ShareLink({ shareToken }: { shareToken: string | null }) {
 
   return (
     <div className="space-y-3 border-t border-border pt-4">
-      <h2 className="text-sm font-semibold text-foreground">Lien public (lecture seule)</h2>
-      <p className="text-sm text-foreground-muted">Toute personne qui a ce lien voit le planning validé (J-7 à J+28), sans compte ni connexion. Elle ne peut rien modifier. Les noms de soignants uniquement, aucune donnée patient.</p>
+      <h2 className="text-sm font-semibold text-foreground">Lien public (modifiable par tous)</h2>
+      <p className="text-sm text-foreground-muted">Toute personne qui a ce lien voit le planning validé (J-7 à J+28) et peut corriger une case, sans compte ni connexion. Chaque modification est notée ci-dessous et peut être annulée. Si le lien circule trop, désactivez-le ou régénérez-le. Noms de soignants uniquement, aucune donnée patient.</p>
       {link && (
         <div className="flex items-start gap-2 rounded-[var(--radius-md)] border border-border bg-surface-muted p-3">
           <code className="min-w-0 flex-1 break-all text-xs">{link}</code>
@@ -469,6 +469,35 @@ function ShareLink({ shareToken }: { shareToken: string | null }) {
           </Button>
         )}
       </div>
+      {edits.length > 0 && (
+        <div className="space-y-1">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">Dernières modifications depuis le lien</h3>
+          <ul className="divide-y divide-border rounded-[var(--radius-md)] border border-border text-sm">
+            {edits.map((e) => (
+              <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                <span className="min-w-0">
+                  <span className="text-foreground-muted">{new Date(e.created_at).toLocaleString("fr-BE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} · {frDate(e.day)} · {e.label} :</span> <s className="text-foreground-muted">{e.old_value || "vide"}</s> → <b>{e.new_value || "vide"}</b>
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={pending}
+                  onClick={() =>
+                    start(async () => {
+                      const r = await undoPublicEdit(e.id);
+                      if (!r.ok) return toast(r.error, { variant: "error" });
+                      toast("Modification annulée.", { variant: "success" });
+                      router.refresh();
+                    })
+                  }
+                >
+                  Annuler
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
