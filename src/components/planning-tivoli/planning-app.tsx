@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, Copy, ImageUp, KeyRound, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -17,8 +17,9 @@ import { frDate, WeekReview } from "./week-review";
 import { RoleSelect } from "./role-select";
 import type { Role } from "@/lib/planning-tivoli/initials";
 
-type Tab = "weeks" | "people" | "rooms" | "export";
+type Tab = "help" | "weeks" | "people" | "rooms" | "export";
 const TABS: { id: Tab; label: string }[] = [
+  { id: "help", label: "Mode d'emploi" },
   { id: "weeks", label: "Semaines" },
   { id: "people", label: "Initiales" },
   { id: "rooms", label: "Salles" },
@@ -57,6 +58,7 @@ export function PlanningApp({ data }: { data: PlanningData }) {
           </button>
         ))}
       </nav>
+      {tab === "help" && <Help />}
       {tab === "weeks" && <Weeks data={data} />}
       {tab === "people" && <People data={data} />}
       {tab === "rooms" && <Rooms rooms={data.rooms} />}
@@ -90,8 +92,29 @@ function Weeks({ data }: { data: PlanningData }) {
     start(async () => done(await importImage(base64)));
   }
 
+  // Ctrl+V (⌘V) anywhere on the page imports a capture copied to the clipboard.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const img = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
+      if (!img) return;
+      e.preventDefault();
+      void upload(img);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  });
+
   return (
-    <div className="space-y-4">
+    <div
+      className="space-y-4"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        const img = [...e.dataTransfer.files].find((f) => f.type.startsWith("image/"));
+        if (!img) return;
+        e.preventDefault();
+        void upload(img);
+      }}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <Button disabled={pending} onClick={() => file.current?.click()}>
           <ImageUp className="h-4 w-4" /> Importer une capture
@@ -112,7 +135,7 @@ function Weeks({ data }: { data: PlanningData }) {
         />
       </div>
       <p className="text-xs text-foreground-subtle">
-        Le plus fiable : une capture d&apos;écran du planning publié, importée ici. Mise à jour à la demande, quand le planning de la semaine est publié.
+        Le plus fiable : une capture d&apos;écran du planning publié, importée ici (bouton, glisser-déposer, ou Ctrl+V / ⌘V pour coller la capture copiée). Mise à jour à la demande, quand le planning de la semaine est publié.
         {data.settings.lastCheckedAt && ` Dernière mise à jour : ${new Date(data.settings.lastCheckedAt).toLocaleString("fr-BE")}.`}
         {pending && " Lecture en cours (quelques secondes)…"}
       </p>
@@ -498,6 +521,77 @@ function ShareLink({ shareToken, edits }: { shareToken: string | null; edits: Pl
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+const STEPS: { title: string; body: React.ReactNode }[] = [
+  {
+    title: "1. Régler une fois pour toutes",
+    body: (
+      <>
+        <b>Initiales</b> : pour chaque personne, ses initiales, son nom et son rôle (PG ou sénior). Le rôle sert surtout en salle « CON », où une personne seule peut être l&apos;un ou l&apos;autre. Une initiale inconnue peut aussi être ajoutée au moment de la vérification. <b>Salles</b> : l&apos;ordre des colonnes exportées vers le Sheet, les salles actives, et pour END : « Endo C24 » prend la 1re personne, « Endo 3 » la 2e.
+      </>
+    ),
+  },
+  {
+    title: "2. Quand le planning de la semaine est publié",
+    body: (
+      <>
+        Fais une capture d&apos;écran de la page publiée (tout le tableau, titre avec les dates compris). Dans l&apos;onglet <b>Semaines</b>, importe-la : bouton « Importer une capture », glisser-déposer, ou <b>Ctrl+V / ⌘V</b> pour coller. Le texte est lu par OCR (pas d&apos;IA) en quelques secondes. Le bouton « Lire la page publiée » tente la même chose directement depuis la page, mais la capture reste le plus fiable.
+      </>
+    ),
+  },
+  {
+    title: "3. Vérifier",
+    body: (
+      <>
+        Chaque jour a son onglet avec le nombre de cases à revoir. Une case montre le texte lu à côté du morceau d&apos;image. Les badges disent ce qui a été touché : <i>Lecture peu sûre</i>, <i>rapproché</i> (une lettre corrigée vers des initiales connues), <i>appris</i> (une erreur déjà corrigée une fois), <i>inconnu</i> (initiales à ajouter). Corrige ce qui est faux : « Ze-He », « Ze+He » et « Ze/He » veulent tous dire PG puis sénior.
+      </>
+    ),
+  },
+  {
+    title: "4. Valider",
+    body: <>« Valider » rend la semaine visible dans l&apos;export et sur le lien public. Tes corrections sont retenues pour les prochaines lectures. Si la même image est importée de nouveau, rien ne change.</>,
+  },
+  {
+    title: "5. Le Google Sheet",
+    body: (
+      <>
+        Onglet <b>Export</b> : génère le jeton et recopie la formule en <b>A3</b> de l&apos;onglet « Planning ». Pour forcer une actualisation, ajoute <code>&amp;v=&quot;&amp;B1</code> à la fin de l&apos;adresse (avant la parenthèse) et change le chiffre en B1.
+      </>
+    ),
+  },
+  {
+    title: "6. Le lien public",
+    body: (
+      <>
+        Toujours dans <b>Export</b> : « Créer le lien public ». Toute personne qui a le lien voit le planning validé et peut corriger une case, sans compte. Chaque modification est notée dans l&apos;historique (« Annuler » pour la défaire). Lien qui circule trop : régénère-le ou désactive-le.
+      </>
+    ),
+  },
+  {
+    title: "Si le planning change en cours de semaine",
+    body: (
+      <>
+        Soit on corrige la case sur le lien public, soit tu réimportes la nouvelle capture : la semaine passe en « modifiée », l&apos;export garde la version validée jusqu&apos;à ce que tu aies relu et revalidé. Pour corriger toi-même une semaine validée, « Rouvrir » puis « Valider ».
+      </>
+    ),
+  },
+];
+
+function Help() {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-foreground-muted">Le planning du bloc, de l&apos;image publiée jusqu&apos;au Sheet et au lien partagé.</p>
+      <ol className="space-y-3">
+        {STEPS.map((st) => (
+          <li key={st.title} className="rounded-[var(--radius-lg)] border border-border p-4">
+            <h2 className="mb-1 text-sm font-semibold text-foreground">{st.title}</h2>
+            <p className="text-sm text-foreground-muted">{st.body}</p>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
