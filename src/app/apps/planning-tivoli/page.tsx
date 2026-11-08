@@ -12,7 +12,7 @@ export default async function PlanningTivoliPage() {
   const [data] = await Promise.all([getPlanningData(), recordAppVisit(profile.id, "planning-tivoli")]);
   return (
     <ToastProvider>
-      <PlanningApp data={data} />
+      <PlanningApp data={data} today={new Date().toISOString().slice(0, 10)} />
     </ToastProvider>
   );
 }

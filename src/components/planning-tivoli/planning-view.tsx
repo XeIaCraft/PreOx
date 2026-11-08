@@ -3,25 +3,32 @@
 import { useState } from "react";
 import { nameResolver, roleResolver } from "@/lib/planning-tivoli/csv";
 import { publicDays } from "@/lib/planning-tivoli/public-view";
-import { savePublicCell } from "./actions";
-
-export interface PublicRoom {
-  name: string;
-  label: string;
-  solo: "senior" | "either";
-  part: 1 | 2 | null;
-}
-export interface PublicPerson {
-  initials: string;
-  name: string;
-  role: "pg" | "senior" | null;
-}
+import type { PlanningData } from "@/lib/planning-tivoli/dal";
+import { addDays } from "@/lib/planning-tivoli/match";
+import { usePlanningApi } from "./api";
 
 const dayLabel = (iso: string) => new Intl.DateTimeFormat("fr-BE", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${iso}T00:00:00Z`));
 
 type Status = "saving" | "saved" | string;
 
-export function PublicPlanning({ token, today, initialDays, rooms, people }: { token: string; today: string; initialDays: { date: string; cells: Record<string, string> }[]; rooms: PublicRoom[]; people: PublicPerson[] }) {
+const DAYS_BEFORE = 7;
+const DAYS_AFTER = 28;
+
+/** The validated weeks day by day, room by room — corrected in place, for everyone. */
+export function PlanningView({ data, today }: { data: PlanningData; today: string }) {
+  const api = usePlanningApi();
+  const from = addDays(today, -DAYS_BEFORE);
+  const to = addDays(today, DAYS_AFTER);
+  const byDate = new Map<string, Record<string, string>>();
+  for (const w of data.weeks) if (w.status === "validated") for (const [date, cells] of Object.entries(w.cells ?? {})) if (date >= from && date <= to) byDate.set(date, { ...(byDate.get(date) ?? {}), ...cells });
+  const initialDays = [...byDate].sort(([x], [y]) => x.localeCompare(y)).map(([date, cells]) => ({ date, cells }));
+  const rooms = data.rooms.filter((r) => r.active && r.image_label).map((r) => ({ name: r.name, label: r.image_label, solo: r.solo, part: r.part }));
+  const people = data.people.map((p) => ({ initials: p.initials, name: p.name, role: p.role ?? null }));
+  const savedKey = initialDays.map((d) => `${d.date}:${JSON.stringify(d.cells)}`).join("|");
+  return <PlanningDays key={savedKey} initialDays={initialDays} today={today} rooms={rooms} people={people} save={api.setCell} />;
+}
+
+function PlanningDays({ initialDays, today, rooms, people, save: saveCell }: { initialDays: { date: string; cells: Record<string, string> }[]; today: string; rooms: { name: string; label: string; solo: "senior" | "either"; part: 1 | 2 | null }[]; people: { initials: string; name: string; role: "pg" | "senior" | null }[]; save: (day: string, label: string, value: string) => Promise<{ ok: true; data: { value: string } } | { ok: false; error: string }> }) {
   const [days, setDays] = useState(initialDays);
   const [status, setStatus] = useState<Record<string, Status>>({});
   const resolve = nameResolver(people);
@@ -40,18 +47,15 @@ export function PublicPlanning({ token, today, initialDays, rooms, people }: { t
     if (value.trim() === before.trim()) return;
     const key = `${date}|${label}`;
     setStatus((s) => ({ ...s, [key]: "saving" }));
-    const r = await savePublicCell(token, date, label, value);
-    if (r.ok) edit(date, label, r.value);
+    const r = await saveCell(date, label, value);
+    if (r.ok) edit(date, label, r.data.value);
     setStatus((s) => ({ ...s, [key]: r.ok ? "saved" : r.error }));
   }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-5 px-4 py-6">
-      <header className="space-y-1">
-        <h1 className="text-xl font-semibold text-foreground">Planning Tivoli</h1>
-        <p className="text-sm text-foreground-muted">Anesthésie au bloc. Une case se corrige en écrivant les initiales (« Ze-He » : PG puis sénior ; « Sad » : une seule personne), puis en quittant la case : c&apos;est enregistré pour tout le monde.</p>
-      </header>
-      {days.length === 0 && <p className="text-sm text-foreground-muted">Aucun planning validé pour le moment.</p>}
+    <div className="space-y-5">
+      <p className="text-sm text-foreground-muted">Une case se corrige en écrivant les initiales (« Ze-He » : PG puis sénior ; « Sad » : une seule personne), puis en quittant la case : c&apos;est enregistré pour tout le monde.</p>
+      {days.length === 0 && <p className="text-sm text-foreground-muted">Aucun planning validé pour le moment : importez et validez une semaine dans l&apos;onglet Semaines.</p>}
       {days.map((d) => {
         const entries = resolved.find((x) => x.date === d.date)?.entries ?? [];
         return (
@@ -92,6 +96,6 @@ export function PublicPlanning({ token, today, initialDays, rooms, people }: { t
           </section>
         );
       })}
-    </main>
+    </div>
   );
 }

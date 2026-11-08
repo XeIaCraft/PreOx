@@ -12,18 +12,21 @@ import { cn } from "@/lib/utils";
 import type { PlanningData, PlanningWeekSummary } from "@/lib/planning-tivoli/dal";
 import type { ImportResult } from "@/lib/planning-tivoli/import";
 import type { PlanningRoomRow } from "@/lib/planning-tivoli/types";
-import { deleteOcrFix, deletePerson, generateShareLink, generateToken, importImage, refreshFromWeb, revokeShareLink, revokeToken, savePerson, saveRooms, undoPublicEdit } from "@/app/apps/planning-tivoli/actions";
+import { generateShareLink, generateToken, revokeShareLink, revokeToken, undoPublicEdit } from "@/app/apps/planning-tivoli/actions";
+import { PlanningApiProvider, usePlanningApi } from "./api";
+import { PlanningView } from "./planning-view";
 import { frDate, WeekReview } from "./week-review";
 import { RoleSelect } from "./role-select";
 import type { Role } from "@/lib/planning-tivoli/initials";
 
-type Tab = "help" | "weeks" | "people" | "rooms" | "export";
-const TABS: { id: Tab; label: string }[] = [
+type Tab = "planning" | "help" | "weeks" | "people" | "rooms" | "export";
+const TABS: { id: Tab; label: string; owner?: boolean }[] = [
+  { id: "planning", label: "Planning" },
   { id: "help", label: "Mode d'emploi" },
   { id: "weeks", label: "Semaines" },
   { id: "people", label: "Initiales" },
   { id: "rooms", label: "Salles" },
-  { id: "export", label: "Export" },
+  { id: "export", label: "Export", owner: true },
 ];
 
 const OUTCOME: Record<ImportResult["outcome"], string> = {
@@ -37,16 +40,23 @@ function weekLabel(w: PlanningWeekSummary) {
   return w.week_start ? `Semaine du ${frDate(w.week_start)}` : "Semaine à dater";
 }
 
-export function PlanningApp({ data }: { data: PlanningData }) {
-  const [tab, setTab] = useState<Tab>("weeks");
+/**
+ * The whole module. Opened from the dashboard (signed in) or from the public
+ * link (`token`): the same screens and actions, except the export to the Sheet
+ * and the link itself, which stay in the dashboard.
+ */
+export function PlanningApp({ data, today, token }: { data: PlanningData; today: string; token?: string }) {
+  const [tab, setTab] = useState<Tab>(token ? "planning" : "weeks");
+  const tabs = TABS.filter((t) => !t.owner || !token);
   return (
+    <PlanningApiProvider token={token}>
     <div className="mx-auto max-w-4xl space-y-4 px-4 py-6">
       <header className="space-y-1">
         <h1 className="text-xl font-semibold text-foreground">Planning Tivoli</h1>
-        <p className="text-sm text-foreground-muted">Le planning du bloc lu dans l&apos;image publiée (OCR, sans IA), vérifié ici, puis exporté vers l&apos;onglet « Planning » du Sheet.</p>
+        <p className="text-sm text-foreground-muted">{token ? "Le planning du bloc, partagé : tout le monde y voit et y met à jour les mêmes données." : "Le planning du bloc lu dans l'image publiée (OCR, sans IA), vérifié ici, puis exporté vers l'onglet « Planning » du Sheet."}</p>
       </header>
       <nav className="flex gap-1 overflow-x-auto border-b border-border" aria-label="Sections">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -58,16 +68,19 @@ export function PlanningApp({ data }: { data: PlanningData }) {
           </button>
         ))}
       </nav>
+      {tab === "planning" && <PlanningView data={data} today={today} />}
       {tab === "help" && <Help />}
       {tab === "weeks" && <Weeks data={data} />}
       {tab === "people" && <People data={data} />}
       {tab === "rooms" && <Rooms rooms={data.rooms} />}
-      {tab === "export" && <Export hasToken={data.settings.hasToken} shareToken={data.settings.shareToken} edits={data.edits} />}
+      {tab === "export" && !token && <Export hasToken={data.settings.hasToken} shareToken={data.settings.shareToken} edits={data.edits} />}
     </div>
+    </PlanningApiProvider>
   );
 }
 
 function Weeks({ data }: { data: PlanningData }) {
+  const api = usePlanningApi();
   const router = useRouter();
   const { toast } = useToast();
   const [pending, start] = useTransition();
@@ -89,7 +102,7 @@ function Weeks({ data }: { data: PlanningData }) {
       reader.onerror = () => reject(reader.error);
       reader.readAsDataURL(f);
     });
-    start(async () => done(await importImage(base64)));
+    start(async () => done(await api.importImage(base64)));
   }
 
   // Ctrl+V (⌘V) anywhere on the page imports a capture copied to the clipboard.
@@ -119,7 +132,7 @@ function Weeks({ data }: { data: PlanningData }) {
         <Button disabled={pending} onClick={() => file.current?.click()}>
           <ImageUp className="h-4 w-4" /> Importer une capture
         </Button>
-        <Button variant="secondary" disabled={pending} onClick={() => start(async () => done(await refreshFromWeb()))}>
+        <Button variant="secondary" disabled={pending} onClick={() => start(async () => done(await api.refreshFromWeb()))}>
           <RefreshCw className={cn("h-4 w-4", pending && "animate-spin")} /> Lire la page publiée
         </Button>
         <input
@@ -170,6 +183,7 @@ function Weeks({ data }: { data: PlanningData }) {
 type PersonDraft = { initials: string; name: string; role: Role | null };
 
 function People({ data }: { data: PlanningData }) {
+  const api = usePlanningApi();
   const router = useRouter();
   const { toast } = useToast();
   const [pending, start] = useTransition();
@@ -192,7 +206,7 @@ function People({ data }: { data: PlanningData }) {
         className="flex flex-wrap items-end gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          run(() => savePerson(draft), `« ${draft.initials} » ajouté.`, () => setDraft({ initials: "", name: "", role: null }));
+          run(() => api.savePerson(draft), `« ${draft.initials} » ajouté.`, () => setDraft({ initials: "", name: "", role: null }));
         }}
       >
         <label className="space-y-1">
@@ -216,7 +230,7 @@ function People({ data }: { data: PlanningData }) {
               <Input value={editing.initials} onChange={(e) => setEditing({ ...editing, initials: e.target.value })} className="h-9 w-24" aria-label="Initiales" />
               <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} className="h-9 min-w-0 flex-1" aria-label="Nom" />
               <RoleSelect value={editing.role} onChange={(role) => setEditing({ ...editing, role })} />
-              <Button size="sm" disabled={pending} onClick={() => run(() => savePerson(editing), "Modifié.", () => setEditing(null))}>
+              <Button size="sm" disabled={pending} onClick={() => run(() => api.savePerson(editing), "Modifié.", () => setEditing(null))}>
                 Enregistrer
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
@@ -231,7 +245,7 @@ function People({ data }: { data: PlanningData }) {
               <Button size="sm" variant="ghost" onClick={() => setEditing({ id: p.id, initials: p.initials, name: p.name, role: p.role })}>
                 Modifier
               </Button>
-              <Button size="icon" variant="ghost" aria-label={`Supprimer ${p.initials}`} disabled={pending} onClick={() => confirm(`Supprimer « ${p.initials} » ?`) && run(() => deletePerson(p.id), "Supprimé.")}>
+              <Button size="icon" variant="ghost" aria-label={`Supprimer ${p.initials}`} disabled={pending} onClick={() => confirm(`Supprimer « ${p.initials} » ?`) && run(() => api.deletePerson(p.id), "Supprimé.")}>
                 <Trash2 className="h-4 w-4" />
               </Button>
             </li>
@@ -246,7 +260,7 @@ function People({ data }: { data: PlanningData }) {
             {fixes.map(([read, fixed]) => (
               <li key={read} className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs">
                 « {read} » → « {fixed} »
-                <button type="button" aria-label={`Oublier ${read}`} onClick={() => run(() => deleteOcrFix(read), "Oublié.")} className="text-foreground-subtle hover:text-danger">
+                <button type="button" aria-label={`Oublier ${read}`} onClick={() => run(() => api.deleteOcrFix(read), "Oublié.")} className="text-foreground-subtle hover:text-danger">
                   <Trash2 className="h-3 w-3" />
                 </button>
               </li>
@@ -261,6 +275,7 @@ function People({ data }: { data: PlanningData }) {
 type RoomDraft = Pick<PlanningRoomRow, "name" | "image_label" | "sort_order" | "active" | "solo" | "part"> & { id?: string; key: string };
 
 function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
+  const api = usePlanningApi();
   const router = useRouter();
   const { toast } = useToast();
   const [pending, start] = useTransition();
@@ -343,7 +358,7 @@ function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
           disabled={pending}
           onClick={() =>
             start(async () => {
-              const r = await saveRooms(
+              const r = await api.saveRooms(
                 list.map(({ id, name, image_label, active, solo, part }, i) => ({ ...(id ? { id } : {}), name, image_label, active, solo, part, sort_order: i + 1 })),
                 removed
               );
@@ -443,7 +458,7 @@ function ShareLink({ shareToken, edits }: { shareToken: string | null; edits: Pl
   return (
     <div className="space-y-3 border-t border-border pt-4">
       <h2 className="text-sm font-semibold text-foreground">Lien public (modifiable par tous)</h2>
-      <p className="text-sm text-foreground-muted">Toute personne qui a ce lien voit le planning validé (J-7 à J+28) et peut corriger une case, sans compte ni connexion. Chaque modification est notée ci-dessous et peut être annulée. Si le lien circule trop, désactivez-le ou régénérez-le. Noms de soignants uniquement, aucune donnée patient.</p>
+      <p className="text-sm text-foreground-muted">Toute personne qui a ce lien ouvre le même module que vous, sans compte ni connexion : planning, import de l'image, vérification, validation, initiales et salles. Seuls l'export vers le Sheet et ce lien restent ici. Les corrections de cases faites depuis le planning sont notées ci-dessous et peuvent être annulées. Si le lien circule trop, désactivez-le ou régénérez-le. Noms de soignants uniquement, aucune donnée patient.</p>
       {link && (
         <div className="flex items-start gap-2 rounded-[var(--radius-md)] border border-border bg-surface-muted p-3">
           <code className="min-w-0 flex-1 break-all text-xs">{link}</code>
@@ -566,7 +581,7 @@ const STEPS: { title: string; body: React.ReactNode }[] = [
     title: "6. Le lien public",
     body: (
       <>
-        Toujours dans <b>Export</b> : « Créer le lien public ». Toute personne qui a le lien voit le planning validé et peut corriger une case, sans compte. Chaque modification est notée dans l&apos;historique (« Annuler » pour la défaire). Lien qui circule trop : régénère-le ou désactive-le.
+        Toujours dans <b>Export</b> : « Créer le lien public ». Toute personne qui a le lien ouvre le même module que toi (planning, import, vérification, validation, initiales, salles), sans compte, sauf l&apos;export et le lien lui-même. Les corrections de cases faites sur le planning sont notées dans l&apos;historique (« Annuler » pour les défaire). Lien qui circule trop : régénère-le ou désactive-le.
       </>
     ),
   },
