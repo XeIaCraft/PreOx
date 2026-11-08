@@ -7,7 +7,7 @@ import { requirePlanningAccess } from "@/lib/planning-tivoli/dal";
 import { fetchPlanningImage } from "@/lib/planning-tivoli/fetch";
 import { importPlanningImage, matchingData, mondayOf, proposedCells, type ImportResult } from "@/lib/planning-tivoli/import";
 import { cleanCell, learnedFrom, normInitials } from "@/lib/planning-tivoli/initials";
-import { generateExportToken } from "@/lib/planning-tivoli/token";
+import { generateExportToken, generateShareToken } from "@/lib/planning-tivoli/token";
 import type { PlanningCells } from "@/lib/planning-tivoli/types";
 
 const PATH = "/apps/planning-tivoli";
@@ -221,6 +221,26 @@ export async function revokeToken(): Promise<Result> {
   await requirePlanningAccess();
   const db = await createClient();
   const { error } = await db.from("planning_tivoli_settings").update({ export_token_hash: null }).eq("id", true);
+  revalidatePath(PATH);
+  return error ? fail(error.message) : { ok: true, data: undefined };
+}
+
+// --- Public link (read only) ------------------------------------------------------------
+
+/** A new public link (the previous one stops working). */
+export async function generateShareLink(): Promise<Result<{ token: string }>> {
+  await requirePlanningAccess();
+  const token = generateShareToken();
+  const db = await createClient();
+  const { error } = await db.from("planning_tivoli_settings").update({ share_token: token }).eq("id", true);
+  revalidatePath(PATH);
+  return error ? fail(error.message) : { ok: true, data: { token } };
+}
+
+export async function revokeShareLink(): Promise<Result> {
+  await requirePlanningAccess();
+  const db = await createClient();
+  const { error } = await db.from("planning_tivoli_settings").update({ share_token: null }).eq("id", true);
   revalidatePath(PATH);
   return error ? fail(error.message) : { ok: true, data: undefined };
 }

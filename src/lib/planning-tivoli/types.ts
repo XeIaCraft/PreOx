@@ -60,6 +60,7 @@ export type PlanningSettingsRow = {
   id: boolean;
   source_url: string;
   export_token_hash: string | null;
+  share_token: string | null;
   last_checked_at: string | null;
   last_image_hash: string | null;
   last_error: string | null;

@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import type { PlanningData, PlanningWeekSummary } from "@/lib/planning-tivoli/dal";
 import type { ImportResult } from "@/lib/planning-tivoli/import";
 import type { PlanningRoomRow } from "@/lib/planning-tivoli/types";
-import { deleteOcrFix, deletePerson, generateToken, importImage, refreshFromWeb, revokeToken, savePerson, saveRooms } from "@/app/apps/planning-tivoli/actions";
+import { deleteOcrFix, deletePerson, generateShareLink, generateToken, importImage, refreshFromWeb, revokeShareLink, revokeToken, savePerson, saveRooms } from "@/app/apps/planning-tivoli/actions";
 import { frDate, WeekReview } from "./week-review";
 import { RoleSelect } from "./role-select";
 import type { Role } from "@/lib/planning-tivoli/initials";
@@ -60,7 +60,7 @@ export function PlanningApp({ data }: { data: PlanningData }) {
       {tab === "weeks" && <Weeks data={data} />}
       {tab === "people" && <People data={data} />}
       {tab === "rooms" && <Rooms rooms={data.rooms} />}
-      {tab === "export" && <Export hasToken={data.settings.hasToken} />}
+      {tab === "export" && <Export hasToken={data.settings.hasToken} shareToken={data.settings.shareToken} />}
     </div>
   );
 }
@@ -338,7 +338,7 @@ function Rooms({ rooms }: { rooms: PlanningRoomRow[] }) {
   );
 }
 
-function Export({ hasToken }: { hasToken: boolean }) {
+function Export({ hasToken, shareToken }: { hasToken: boolean; shareToken: string | null }) {
   const router = useRouter();
   const { toast } = useToast();
   const [pending, start] = useTransition();
@@ -402,6 +402,70 @@ function Export({ hasToken }: { hasToken: boolean }) {
             }
           >
             Révoquer
+          </Button>
+        )}
+      </div>
+      <ShareLink shareToken={shareToken} />
+    </div>
+  );
+}
+
+function ShareLink({ shareToken }: { shareToken: string | null }) {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [pending, start] = useTransition();
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  const link = shareToken ? `${origin}/share/planning-tivoli/${shareToken}` : "";
+
+  return (
+    <div className="space-y-3 border-t border-border pt-4">
+      <h2 className="text-sm font-semibold text-foreground">Lien public (lecture seule)</h2>
+      <p className="text-sm text-foreground-muted">Toute personne qui a ce lien voit le planning validé (J-7 à J+28), sans compte ni connexion. Elle ne peut rien modifier. Les noms de soignants uniquement, aucune donnée patient.</p>
+      {link && (
+        <div className="flex items-start gap-2 rounded-[var(--radius-md)] border border-border bg-surface-muted p-3">
+          <code className="min-w-0 flex-1 break-all text-xs">{link}</code>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="Copier le lien"
+            onClick={() => {
+              void navigator.clipboard.writeText(link);
+              toast("Lien copié.", { variant: "success" });
+            }}
+          >
+            <Copy className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          disabled={pending}
+          onClick={() =>
+            (!shareToken || confirm("Remplacer le lien ? L'ancien cessera de fonctionner.")) &&
+            start(async () => {
+              const r = await generateShareLink();
+              if (!r.ok) return toast(r.error, { variant: "error" });
+              router.refresh();
+            })
+          }
+        >
+          <KeyRound className="h-4 w-4" /> {shareToken ? "Régénérer le lien" : "Créer le lien public"}
+        </Button>
+        {shareToken && (
+          <Button
+            variant="ghost"
+            disabled={pending}
+            onClick={() =>
+              confirm("Désactiver le lien public ?") &&
+              start(async () => {
+                const r = await revokeShareLink();
+                if (!r.ok) return toast(r.error, { variant: "error" });
+                toast("Lien désactivé.", { variant: "success" });
+                router.refresh();
+              })
+            }
+          >
+            Désactiver
           </Button>
         )}
       </div>

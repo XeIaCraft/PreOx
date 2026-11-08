@@ -25,7 +25,7 @@ export async function getPlanningData() {
       .select("id, week_start, status, source, image_hash, image_width, image_height, ocr, cells, changed_since_validation, validated_at, created_at, updated_at")
       .order("week_start", { ascending: false, nullsFirst: true })
       .limit(12),
-    db.from("planning_tivoli_settings").select("source_url, export_token_hash, last_checked_at, last_error").maybeSingle(),
+    db.from("planning_tivoli_settings").select("source_url, export_token_hash, share_token, last_checked_at, last_error").maybeSingle(),
     matchingData(db),
   ]);
   return {
@@ -33,6 +33,7 @@ export async function getPlanningData() {
     settings: {
       sourceUrl: settings.data?.source_url ?? "",
       hasToken: !!settings.data?.export_token_hash,
+      shareToken: settings.data?.share_token ?? null,
       lastCheckedAt: settings.data?.last_checked_at ?? null,
       lastError: settings.data?.last_error ?? null,
     },
