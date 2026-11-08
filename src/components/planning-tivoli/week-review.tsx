@@ -14,7 +14,7 @@ import type { OcrCell } from "@/lib/planning-tivoli/ocr";
 import type { PlanningCells } from "@/lib/planning-tivoli/types";
 import type { PlanningData, PlanningWeekSummary } from "@/lib/planning-tivoli/dal";
 import { RoleSelect } from "./role-select";
-import { deleteWeek, getWeekImage, reopenWeek, saveWeekCells, savePerson, setWeekStart, validateWeek } from "@/app/apps/planning-tivoli/actions";
+import { usePlanningApi } from "./api";
 
 const DAY_LABELS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
 /** Below this, a reading is flagged « peu sûr ». */
@@ -43,6 +43,7 @@ function Crop({ src, cell, size }: { src: string | null; cell: OcrCell | undefin
 }
 
 export function WeekReview({ week, data, initialImage = null }: { week: PlanningWeekSummary; data: PlanningData; initialImage?: string | null }) {
+  const api = usePlanningApi();
   const router = useRouter();
   const { toast } = useToast();
   const [pending, start] = useTransition();
@@ -56,13 +57,13 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
   useEffect(() => {
     if (initialImage) return;
     let cancelled = false;
-    getWeekImage(week.id).then((r) => {
+    api.getWeekImage(week.id).then((r) => {
       if (!cancelled && r.ok) setImage(`data:${r.data.type};base64,${r.data.base64}`);
     });
     return () => {
       cancelled = true;
     };
-  }, [week.id, initialImage]);
+  }, [week.id, initialImage, api]);
 
   const known = useMemo(() => data.people.map((p) => p.initials), [data.people]);
   const nameOf = useMemo(() => new Map(data.people.map((p) => [normInitials(p.initials), p.name])), [data.people]);
@@ -159,7 +160,7 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
             <span className="block text-xs font-medium text-foreground-muted">Un jour de la semaine</span>
             <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-9 w-auto" />
           </label>
-          <Button size="sm" disabled={!startDate || pending} onClick={() => run(() => setWeekStart(week.id, startDate), "Semaine enregistrée.")}>
+          <Button size="sm" disabled={!startDate || pending} onClick={() => run(() => api.setWeekStart(week.id, startDate), "Semaine enregistrée.")}>
             Dater la semaine
           </Button>
         </div>
@@ -276,7 +277,7 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
           className="flex flex-wrap items-end gap-2 rounded-[var(--radius-md)] border border-primary/30 bg-primary-tint/40 p-3"
           onSubmit={(e) => {
             e.preventDefault();
-            run(() => savePerson(adding), `« ${adding.initials} » ajouté.`);
+            run(() => api.savePerson(adding), `« ${adding.initials} » ajouté.`);
             setAdding(null);
           }}
         >
@@ -299,18 +300,18 @@ export function WeekReview({ week, data, initialImage = null }: { week: Planning
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button disabled={pending} onClick={() => run(() => validateWeek(week.id, cells, corrections()), "Semaine validée : elle part vers le Sheet.")}>
+        <Button disabled={pending} onClick={() => run(() => api.validateWeek(week.id, cells, corrections()), "Semaine validée : elle part vers le Sheet.")}>
           <Check className="h-4 w-4" /> {week.status === "validated" ? "Valider à nouveau" : "Valider la semaine"}
         </Button>
-        <Button variant="secondary" disabled={!dirty || pending} onClick={() => run(() => saveWeekCells(week.id, cells), "Enregistré (à valider).")}>
+        <Button variant="secondary" disabled={!dirty || pending} onClick={() => run(() => api.saveWeekCells(week.id, cells), "Enregistré (à valider).")}>
           <Save className="h-4 w-4" /> Enregistrer sans valider
         </Button>
         {week.status === "validated" && (
-          <Button variant="ghost" disabled={pending} onClick={() => run(() => reopenWeek(week.id), "Semaine rouverte : elle n'est plus exportée.")}>
+          <Button variant="ghost" disabled={pending} onClick={() => run(() => api.reopenWeek(week.id), "Semaine rouverte : elle n'est plus exportée.")}>
             <RotateCcw className="h-4 w-4" /> Rouvrir
           </Button>
         )}
-        <Button variant="ghost" disabled={pending} onClick={() => confirm("Supprimer cette semaine ?") && run(() => deleteWeek(week.id), "Semaine supprimée.")}>
+        <Button variant="ghost" disabled={pending} onClick={() => confirm("Supprimer cette semaine ?") && run(() => api.deleteWeek(week.id), "Semaine supprimée.")}>
           <Trash2 className="h-4 w-4" /> Supprimer
         </Button>
       </div>

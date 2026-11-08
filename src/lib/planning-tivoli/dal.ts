@@ -3,7 +3,9 @@ import "server-only";
 import { notFound } from "next/navigation";
 import { requireProfile } from "@/lib/auth/dal";
 import { getAppBySlugForProfile } from "@/lib/apps";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/types";
 import type { Profile } from "@/lib/supabase/types";
 import { matchingData } from "./import";
 
@@ -17,8 +19,8 @@ export async function requirePlanningAccess(): Promise<Profile> {
 }
 
 /** The weeks (without their images), rooms, initials, learned misreadings and settings. */
-export async function getPlanningData() {
-  const db = await createClient();
+export async function getPlanningData(client?: SupabaseClient<Database>) {
+  const db = client ?? (await createClient());
   const [weeks, settings, matching, edits] = await Promise.all([
     db
       .from("planning_tivoli_weeks")
