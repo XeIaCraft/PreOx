@@ -23,3 +23,8 @@ export function tokenMatches(token: string, storedHash: string | null): boolean 
   const b = Buffer.from(storedHash, "hex");
   return a.length === b.length && timingSafeEqual(a, b);
 }
+
+/** The token of the public read-only link: kept as is, to show the link again. */
+export function generateShareToken(): string {
+  return `pls_${randomBytes(16).toString("hex")}`;
+}
