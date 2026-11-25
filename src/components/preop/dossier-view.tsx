@@ -36,6 +36,8 @@ export function DossierView({
   onSaveProtocol,
   onAskQuestion,
   carnetEnabled,
+  dossiers = [],
+  canEditProtocols = false,
 }: {
   d: Dossier;
   tab: DossierTab;
@@ -48,6 +50,9 @@ export function DossierView({
   onSaveProtocol: (p: ProtocolInput) => Promise<Protocol>;
   onAskQuestion: (q: QuestionInput) => void;
   carnetEnabled: boolean;
+  /** Every dossier on this device — the habits of a protocol are read across them. */
+  dossiers?: Dossier[];
+  canEditProtocols?: boolean;
 }) {
   const when = d.consultation.plannedAt ? new Date(d.consultation.plannedAt).toLocaleString("fr-BE", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : "date à fixer";
 
@@ -102,7 +107,7 @@ export function DossierView({
       {tab === "consultation" && (
         <ConsultationForm value={d.consultation} onChange={(consultation) => onChange({ ...d, consultation })} rules={rules} onAskQuestion={onAskQuestion} formKey={d.id} plan={d.plan} protocols={protocols} initials={d.initials} />
       )}
-      {tab === "preparation" && <PreparationView d={d} onChange={onChange} rules={rules} protocols={protocols} onSaveProtocol={onSaveProtocol} carnetEnabled={carnetEnabled} />}
+      {tab === "preparation" && <PreparationView d={d} onChange={onChange} rules={rules} protocols={protocols} onSaveProtocol={onSaveProtocol} carnetEnabled={carnetEnabled} dossiers={dossiers} canEditProtocols={canEditProtocols} />}
       {tab === "bloc" && <TheatreView d={d} onChange={onChange} carnetEnabled={carnetEnabled} />}
       {tab === "transmission" && <HandoverView d={d} onChange={onChange} rules={rules} />}
     </div>

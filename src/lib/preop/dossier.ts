@@ -522,6 +522,12 @@ export interface Dossier {
   transmission: Transmission;
   /** Planned case created in the carnet, if any. */
   carnetCaseId: string | null;
+  /** The protocol's plan as it was applied (before any change): what plan-habits.ts compares with. */
+  planBase?: ProtocolContent;
+  /** CARE consultation this dossier was filled from (EasyPM extension, care-import.ts). */
+  careKey?: string;
+  /** Senior of the room that day, from EasyPM: suggested as the carnet's supervisor. */
+  supervisorHint?: string;
   createdAt: string;
   updatedAt: string;
 }

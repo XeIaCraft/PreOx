@@ -237,7 +237,7 @@ export function CaseSheetView({ rules, protocols, onKeep, onSaveProtocol }: { ru
       plannedAt: plannedAtOf(parseConsultation(e.raw).plannedDate),
       notes: [r.consultation.notes, e.choices.notes].filter(Boolean).join("\n\n"),
     });
-    const dossier: Dossier = { ...d, status: "prepared", plan: r.plan, protocolId: r.protocol?.id ?? null, protocolName: r.protocol?.name ?? "" };
+    const dossier: Dossier = { ...d, status: "prepared", plan: r.plan, planBase: structuredClone(r.plan), protocolId: r.protocol?.id ?? null, protocolName: r.protocol?.name ?? "" };
     await onKeep(dossier);
     setEntry(e.id, { dossierId: dossier.id });
     toast(`Dossier ${dossier.initials} gardé sur cet appareil (onglet Dossiers).`, { variant: "success" });
