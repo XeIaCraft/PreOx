@@ -16,7 +16,8 @@ import { useDossiers } from "@/components/preop/use-dossiers";
 import { useProtocols } from "@/components/preop/use-protocols";
 import { useRules } from "@/components/preop/use-rules";
 import { useToast } from "@/components/ui/toast";
-import { CatalogsProvider } from "@/components/preop/use-catalogs";
+import { CatalogsProvider, useCatalogs } from "@/components/preop/use-catalogs";
+import { useCareBridge } from "@/components/preop/care-bridge";
 import { SettingsView } from "@/components/preop/settings";
 import { ServicePrefsPanel } from "@/components/preop/service-prefs-panel";
 import { PlanListsSettings } from "@/components/preop/plan-lists-settings";
@@ -58,15 +59,16 @@ const USER_VIEWS: View[] = ["fiches", "traitements"];
  * The current screen lives in the URL (?v=, &id=, &t=) so the browser's
  * back button works; switching never reloads.
  */
-export function PreopApp() {
+export function PreopApp({ embedded = false }: { embedded?: boolean }) {
   return (
     <CatalogsProvider>
-      <PreopScreens />
+      <PreopScreens embedded={embedded} />
     </CatalogsProvider>
   );
 }
 
-function PreopScreens() {
+/** `embedded`: shown in EasyPM's side panel next to CARE (app/embed/preop), which hands the CARE consultation over. */
+function PreopScreens({ embedded }: { embedded: boolean }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { userId, carnetEnabled, isAdmin, realIsAdmin } = usePreopSession();
@@ -91,6 +93,11 @@ function PreopScreens() {
     if (updated || added) toast([updated ? `${updated} règle(s) mise(s) à jour` : "", added ? `${added} nouvelle(s) règle(s) ajoutée(s)` : ""].filter(Boolean).join(", ") + " automatiquement.", { variant: "success" });
   }, [rulesUpdated, toast]);
   const dossierStore = useDossiers(userId);
+  const { catalogs } = useCatalogs();
+  useCareBridge(embedded, dossierStore, catalogs, (d, created) => {
+    toast(created ? `Dossier ${d.initials} créé depuis CARE.` : `Dossier ${d.initials} complété depuis CARE.`, { variant: "success" });
+    go("dossier", { id: d.id });
+  });
   const [pendingQuestion, setPendingQuestion] = useState<QuestionInput | null>(null);
   const [wizardKey, setWizardKey] = useState(0);
 
@@ -127,7 +134,7 @@ function PreopScreens() {
     <div className="min-w-0 space-y-5 [&_.grid>*]:min-w-0">
       <header className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="font-serif-display text-3xl font-medium text-foreground">Préop</h1>
+          <h1 className={cn("font-serif-display font-medium text-foreground", embedded ? "text-xl" : "text-3xl")}>Préop{embedded ? " · CARE" : ""}</h1>
           <span className="flex items-center gap-3 text-xs text-foreground-subtle">
             <span className="flex items-center gap-1.5">
               {(loading || protocolLib.loading) && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -219,6 +226,8 @@ function PreopScreens() {
               window.history.replaceState(null, "", `${pathname}?${q}`);
             }}
             onBack={() => go("dossiers")}
+            dossiers={dossierStore.dossiers}
+            canEditProtocols={realIsAdmin}
             onChange={(d) => void dossierStore.put(withAutoStatus(d, dossier))}
             onRemove={async () => {
               await dossierStore.remove(dossier.id);

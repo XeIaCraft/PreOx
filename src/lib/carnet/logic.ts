@@ -5,7 +5,7 @@
 // the official activity report.
 import { OPERATION_CATEGORIES, REGIONAL_TYPES, ACTIVITY_COUNTERS } from "./referentiel";
 import { upgradePatch, upgradeProfile, upgradeRow } from "./compat";
-import type { CarnetCase, CarnetCollection, CarnetData, CarnetDuty, CarnetMutation, CarnetStage } from "./types";
+import type { CarnetCase, CarnetCollection, CarnetData, CarnetDuty, CarnetMutation, CarnetStage, CarnetSupervisor } from "./types";
 
 // ---------------------------------------------------------------------------
 // Dates (always local calendar dates, "YYYY-MM-DD")
@@ -158,6 +158,17 @@ export function caseNumbers(cases: CarnetCase[], stages: CarnetStage[]): Map<str
 export function defaultTutorId(cases: CarnetCase[], stageId: string, date: string): string | null {
   const sameDay = cases.filter((c) => c.stage_id === stageId && c.case_date === date).sort((a, b) => b.created_at.localeCompare(a.created_at));
   return sameDay[0]?.tutor_id ?? null;
+}
+
+/** The supervisor named by a free text (« Dr Hecquet », « Hecquet M. » from the EasyPM planning): last name, then first name if several match. */
+export function supervisorFromHint(supervisors: CarnetSupervisor[], hint: string | null | undefined): string | null {
+  const fold = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const words = fold(hint ?? "").split(/[^a-z]+/).filter((w) => w.length >= 2);
+  if (!words.length) return null;
+  const byLast = supervisors.filter((s) => !s.archived && fold(s.last_name).split(/[^a-z]+/).filter(Boolean).every((w) => words.includes(w)));
+  if (byLast.length <= 1) return byLast[0]?.id ?? null;
+  const both = byLast.filter((s) => words.some((w) => fold(s.first_name).startsWith(w)));
+  return both.length === 1 ? both[0].id : null;
 }
 
 /** Same idea for the degree of participation: the last one used on this stage (it rarely changes within a stage), else "supervised". */

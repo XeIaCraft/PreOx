@@ -15,6 +15,7 @@ import {
   defaultStageSupervisorId,
   shiftDateIso,
   formatDateFr,
+  supervisorFromHint,
 } from "./logic";
 import { caseCode } from "./referentiel";
 import { personFor, signingSettingsFrom } from "./signing";
@@ -278,5 +279,18 @@ describe("cas hors carnet", () => {
     expect(counted.map((c) => c.id)).toEqual([a.id, b.id]);
     const n = caseNumbers(counted, stages);
     expect([n.get(a.id), n.get(b.id), n.get(off.id)]).toEqual([1, 2, undefined]);
+  });
+});
+
+describe("supervisorFromHint", () => {
+  const sup = (id: string, first_name: string, last_name: string) => ({ id, first_name, last_name, role: "", usual_hospital: "", archived: false, created_at: "" });
+  const list = [sup("a", "Marc", "Hecquet"), sup("b", "Anne", "Martin"), sup("c", "Paul", "Martin"), sup("d", "Luc", "Van den Berg")];
+  it("finds the supervisor named in the EasyPM planning", () => {
+    expect(supervisorFromHint(list, "Dr Hecquet")).toBe("a");
+    expect(supervisorFromHint(list, "HECQUET M.")).toBe("a");
+    expect(supervisorFromHint(list, "Van den Berg")).toBe("d");
+    expect(supervisorFromHint(list, "Martin Anne")).toBe("b");
+    expect(supervisorFromHint(list, "Martin")).toBeNull();
+    expect(supervisorFromHint(list, "")).toBeNull();
   });
 });

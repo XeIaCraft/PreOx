@@ -14,7 +14,9 @@ import { SurgeryPanel } from "@/components/preop/surgery-panel";
 import { evaluateConsultation } from "@/components/preop/consultation";
 import type { ProtocolInput } from "@/components/preop/use-protocols";
 import { REGIONAL_TYPES, TECHNICAL_ACTS } from "@/lib/carnet/referentiel";
-import { defaultParticipation, defaultTutorId, formatDateFr, stageForDate, stageLabel } from "@/lib/carnet/logic";
+import { defaultParticipation, defaultTutorId, formatDateFr, stageForDate, stageLabel, supervisorFromHint } from "@/lib/carnet/logic";
+import { SupervisorPicker } from "@/components/carnet/supervisor-picker";
+import { HabitSuggestions } from "@/components/preop/habit-suggestions";
 import { deleteRow, patchRow, putRow } from "@/lib/carnet/mutations";
 import { plannedCaseFromDossier, suggestedRegionalTypes } from "@/lib/preop/carnet-link";
 import { dossierDate, type Dossier } from "@/lib/preop/dossier";
@@ -98,6 +100,8 @@ function CarnetPlanner({ d, onChange }: { d: Dossier; onChange: (d: Dossier) => 
   const [ga, setGa] = useState(techniques.includes("general"));
   const [regional, setRegional] = useState<string[]>(() => suggestedRegionalTypes(d));
   const [acts, setActs] = useState<string[]>(() => (techniques.some((t) => t === "deep_block" || t === "superficial_block") ? ["echo_alr"] : []));
+  // Supervisor of the day: the room's senior read by EasyPM (planning), else the last one used that day.
+  const [tutorId, setTutorId] = useState<string | null>(() => supervisorFromHint(data.supervisors, d.supervisorHint) ?? (stage && date ? defaultTutorId(data.cases, stage.id, date) : null));
 
   if (!status.ready) return null;
 
@@ -164,13 +168,18 @@ function CarnetPlanner({ d, onChange }: { d: Dossier; onChange: (d: Dossier) => 
             <FieldLabel>Actes techniques</FieldLabel>
             <MultiChipGroup options={TECHNICAL_ACTS.map((r) => ({ code: r.code, label: r.short ?? r.label }))} value={acts} onChange={setActs} />
           </div>
+          <div className="space-y-1.5">
+            <FieldLabel>Superviseur du jour</FieldLabel>
+            <SupervisorPicker value={tutorId} onChange={setTutorId} hospital={stage.hospital} />
+            {d.supervisorHint && !tutorId && <p className="text-xs text-foreground-muted">Sénior de la salle (EasyPM) : {d.supervisorHint} — choisissez-le ou ajoutez-le.</p>}
+          </div>
           <Button
             size="sm"
             disabled={!ga && regional.length === 0 && acts.length === 0}
             onClick={() => {
               const row = plannedCaseFromDossier(
                 d,
-                { stageId: stage.id, generalAnesthesia: ga, regionalTypes: regional, technicalActs: acts, participation: defaultParticipation(data.cases, stage.id), tutorId: defaultTutorId(data.cases, stage.id, date) },
+                { stageId: stage.id, generalAnesthesia: ga, regionalTypes: regional, technicalActs: acts, participation: defaultParticipation(data.cases, stage.id), tutorId },
                 date
               );
               commit([putRow("cases", row)]);
@@ -193,6 +202,8 @@ export function PreparationView({
   protocols,
   onSaveProtocol,
   carnetEnabled,
+  dossiers = [],
+  canEditProtocols = false,
 }: {
   d: Dossier;
   onChange: (d: Dossier) => void;
@@ -200,6 +211,8 @@ export function PreparationView({
   protocols: Protocol[];
   onSaveProtocol: (p: ProtocolInput) => Promise<Protocol>;
   carnetEnabled: boolean;
+  dossiers?: Dossier[];
+  canEditProtocols?: boolean;
 }) {
   const { toast } = useToast();
   const [planKey, setPlanKey] = useState(0);
@@ -241,11 +254,13 @@ export function PreparationView({
 
   function applyProtocol(p: Protocol, auto = false) {
     if (!auto && !planEmpty && !confirm(`Remplacer le plan actuel par le protocole « ${p.name} » ?`)) return;
+    const base = planFrom(p);
     onChange({
       ...d,
       protocolId: p.id,
       protocolName: p.name,
-      plan: planFrom(p),
+      plan: base,
+      planBase: structuredClone(base),
       consultation: { ...d.consultation, surgery: { ...d.consultation.surgery, name: d.consultation.surgery.name || p.surgery, category: d.consultation.surgery.category || p.operation_category } },
     });
     setPlanKey((k) => k + 1);
@@ -344,6 +359,13 @@ export function PreparationView({
           />
         )}
         {eras.length > 0 && <ErasPanel guidelines={eras} />}
+        <HabitSuggestions
+          protocol={protocols.find((p) => p.id === d.protocolId)}
+          dossiers={dossiers}
+          canEdit={canEditProtocols}
+          onSaveProtocol={onSaveProtocol}
+          onUseVariant={(p) => applyProtocol(p)}
+        />
         <PlanEditor
           value={d.plan}
           onChange={(plan) => onChange({ ...d, plan })}

@@ -84,15 +84,26 @@ const nextConfig: NextConfig = {
       {
         source: "/:path*",
         headers: [
-          // PreOx is a private hub behind auth — never let it render inside
-          // someone else's frame (clickjacking) and never leak the referrer
-          // path to third-party links.
-          { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
           { key: "X-Robots-Tag", value: "noindex, nofollow" },
         ],
+      },
+      {
+        // PreOx is a private hub behind auth — never let it render inside
+        // someone else's frame (clickjacking)…
+        source: "/((?!embed/).*)",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        ],
+      },
+      {
+        // …except Préop's embedded view, framed only by a browser extension's
+        // own page (EasyPM's side panel next to CARE): no website can frame it.
+        source: "/embed/:path*",
+        headers: [{ key: "Content-Security-Policy", value: "frame-ancestors chrome-extension: extension:" }],
       },
     ];
   },

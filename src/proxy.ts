@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const PROTECTED_PREFIXES = ["/apps", "/admin"];
+const PROTECTED_PREFIXES = ["/apps", "/admin", "/embed"];
 const AUTH_PREFIXES = ["/login", "/forgot-password"];
 
 /**
