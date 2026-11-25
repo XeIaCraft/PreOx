@@ -37,7 +37,7 @@ const sheet: CaseSheet = {
 describe("printed case sheet", () => {
   it("prints the plan with the doses in bold, the patient, the alerts and the notes", () => {
     const html = caseSheetHtml(sheet, 1);
-    expect(html).toContain("<b>AB</b> — Fissure anale");
+    expect(html).toContain("<b>AB</b> — <span>Fissure anale</span>");
     expect(html).toContain("Kétorolac <b>30 mg</b>");
     expect(html).toContain("<b>Diabète</b> → glycémies");
     expect(html).toContain("lisinopril</b> <span class=\"cd stop\">→ arrêt 1 j avant</span>");

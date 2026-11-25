@@ -243,6 +243,7 @@ function PreopScreens() {
           onKeep={async (d) => {
             await dossierStore.put(d, true);
           }}
+          onSaveProtocol={protocolLib.save}
         />
       )}
       {view === "fiches" && <SurgerySheetView protocols={protocolLib.protocols} />}

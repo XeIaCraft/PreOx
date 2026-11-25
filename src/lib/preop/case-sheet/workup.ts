@@ -14,10 +14,11 @@ import type { Technique } from "../rules/types";
 import { treatmentMatches } from "../medications";
 import { fold } from "../catalog";
 import { anyOf, has } from "../history";
+import { extractBio, formatGroup, GROUP_EXAM, GROUP_LABEL, resultsByGroup, type BioGroup, type BioResult } from "./bio";
 
 export interface SheetWorkup {
   /** A test of the recommendations (ExamCode), or « x-<id> »: one written on the sheet. */
-  code: ExamCode | `x-${string}`;
+  code: ExamCode | `x-${string}` | `res-${string}`;
   /** Short, as printed: « Groupe + RAI ». */
   label: string;
   /** There (a value, a line of the consultation, ticked), asked for but not back, or to plan. */
@@ -63,7 +64,7 @@ const FOUND: Partial<Record<ExamCode, RegExp>> = {
 const ASKED = /\b(a faire|a prevoir|a demander|a realiser|demande|prevu|en attente|en cours|manquant|non fait|pas fait|a refaire)\b/;
 
 /** Tests shown whenever their result is in what was pasted, whatever the recommendations. */
-const SHOWN_WHEN_THERE: ExamCode[] = ["fbc", "renal", "haemostasis", "group", "ecg", "echo", "hba1c", "pregnancy", "bnp", "troponin", "iron", "albumin"];
+const SHOWN_WHEN_THERE: ExamCode[] = ["fbc", "renal", "haemostasis", "group", "ecg", "echo", "hba1c", "pregnancy", "bnp", "troponin", "iron", "albumin", "abg"];
 
 const n1 = (v: number) => String(v).replace(".", ",");
 
@@ -85,9 +86,18 @@ export interface WorkupInput {
   bleedingHistory?: boolean;
   /** Ticked on the sheet: done, or not needed. */
   marks?: Record<string, "done" | "skip">;
+  /** Every biology value read in the lines (read from `lines` when not given). */
+  results?: BioResult[];
 }
 
-export function caseWorkup({ recommendations, consultation: c, techniques, drugs = [], lines, bleedingHistory, marks = {} }: WorkupInput): SheetWorkup[] {
+/** Whether a line the work-up already shows through a test (a value it knows, an ECG, a group…): not written a second time. */
+export function workupCovers(text: string): boolean {
+  const f = fold(text);
+  return extractBio([text]).length > 0 || Object.values(FOUND).some((re) => re.test(f));
+}
+
+export function caseWorkup({ recommendations, consultation: c, techniques, drugs = [], lines, bleedingHistory, marks = {}, results: given }: WorkupInput): SheetWorkup[] {
+  const byGroup = resultsByGroup(given ?? extractBio(lines));
   const needs = new Map<ExamCode, { strength: ExamStrength; reasons: string[] }>();
   const need = (code: ExamCode, strength: ExamStrength, reason: string) => {
     const x = needs.get(code);
@@ -142,6 +152,9 @@ export function caseWorkup({ recommendations, consultation: c, techniques, drugs
   const folded = lines.map((l) => ({ l: l.trim(), f: fold(l) })).filter((x) => x.l);
   const p = c.patient;
   const found = (code: ExamCode): { status: "ok" | "asked"; value: string } | null => {
+    // Every value of the panel that was pasted, as written (« Hb 13,2 g/dL, Plaq. 245 G/L, GB 7,1 G/L »).
+    const panel = ([...byGroup].find(([g]) => GROUP_EXAM[g] === code) ?? [])[1];
+    if (panel?.length) return { status: "ok", value: formatGroup(panel) };
     if (code === "fbc" && (p.hb !== undefined || p.platelets !== undefined))
       return { status: "ok", value: [p.hb !== undefined ? `Hb ${n1(p.hb)}` : "", p.platelets !== undefined ? `plaq. ${n1(p.platelets)}` : ""].filter(Boolean).join(", ") };
     const auto = autoExamState(code, p);
@@ -153,7 +166,7 @@ export function caseWorkup({ recommendations, consultation: c, techniques, drugs
     const said = hit.l.replace(/^(examens?( clinique| complémentaires| paracliniques)?|biologie|bilan[^:]*|imagerie)\s*:\s*/i, "").split(/(?<=[a-zà-ÿ)%])\.\s/)[0].replace(/\s*:\s*(\S[^:]*)\s*:\s*\1/i, " : $1");
     // « Groupe sanguin : Groupe sanguin A + » → « Groupe sanguin A + ».
     const once = said.replace(/^([^:]{3,30}?)\s*:\s*(?=\1)/i, "");
-    const value = once.length > 42 ? `${once.slice(0, 41).replace(/\s+\S*$/, "")}…` : once;
+    const value = once.length > 200 ? `${once.slice(0, 199).replace(/\s+\S*$/, "")}…` : once;
     return { status: ASKED.test(hit.f) ? "asked" : "ok", value };
   };
 
@@ -169,6 +182,12 @@ export function caseWorkup({ recommendations, consultation: c, techniques, drugs
     const f = found(code);
     if (f) out.push({ code, label: workupLabel(code), status: f.status, value: f.value, reason: "", strength: "recommended" });
   }
+  // The other results pasted (liver, inflammation, thyroid, a test of its own…): shown as they were written, never dropped.
+  for (const [group, list] of byGroup) {
+    const code = `res-${group}` as const;
+    if (GROUP_EXAM[group as BioGroup] || marks[code] === "skip") continue;
+    out.push({ code, label: GROUP_LABEL[group], status: "ok", value: formatGroup(list), reason: "", strength: "recommended" });
+  }
   // What must be planned first, then what is asked for, then what is there.
   const rank = { todo: 0, asked: 1, ok: 2 };
   return out.sort((a, b) => rank[a.status] - rank[b.status] || (a.strength === b.strength ? 0 : a.strength === "recommended" ? -1 : 1));
@@ -177,5 +196,5 @@ export function caseWorkup({ recommendations, consultation: c, techniques, drugs
 /** « Chirurgie intermédiaire, ASA 3, facteur(s) de risque : … » → its first clause. */
 function shortReason(text: string): string {
   const s = text.replace(/\s*\(.*?\)\s*/g, " ").split(/\s*[;:]\s*|,\s+(?=si |sans )/)[0].trim();
-  return s.length > 70 ? `${s.slice(0, 69).replace(/\s+\S*$/, "")}…` : s;
+  return s.length > 110 ? `${s.slice(0, 109).replace(/\s+\S*$/, "")}…` : s;
 }

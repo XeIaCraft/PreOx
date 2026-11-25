@@ -21,7 +21,8 @@ import { ventilationSettings } from "../ventilation";
 import { tciSummary, tciDrugOf } from "../tci";
 import { treatmentGuide } from "../treatment-guide";
 import { kineticsFor, type Kinetics } from "../kinetics";
-import { caseWorkup, type SheetWorkup } from "./workup";
+import { caseWorkup, workupCovers, type SheetWorkup } from "./workup";
+import { extractBio } from "./bio";
 import { autoKind, cleanLine, isWorkupLine, readLine, sectionKind, splitDictation, type LineKind } from "./lines";
 import { propofolInduction, rocuronium, sufentanil } from "../reference-protocol-kit";
 import { DEFAULT_GASES } from "../gases";
@@ -34,6 +35,10 @@ import type { PastedConsultation } from "./parse";
 export interface CaseChoices {
   /** Catalogue intervention chosen; null: none fits, keep the pasted wording. */
   surgeryId?: string | null;
+  /** The intervention as written on the sheet, whatever the protocol (unset: the catalogue's name, or the pasted wording). The protocol and the plan do not change. */
+  surgeryLabel?: string;
+  /** A product of the plan struck out (true) or not (false), by « Label:text », against what its contraindications say. */
+  struck?: Record<string, boolean>;
   mode?: SheetMode;
   /** Maintenance by TCI (propofol, remifentanil) instead of a volatile agent. */
   tiva?: boolean;
@@ -122,6 +127,8 @@ export interface CaseQuestion {
 export interface SheetText {
   text: string;
   strong?: boolean;
+  /** Contraindicated for this patient (or struck by hand): struck out on the sheet, with why. */
+  struck?: string;
 }
 
 export interface SheetRow {
@@ -189,6 +196,8 @@ export interface CaseResult {
   /** For keeping the patient as a Préop dossier. */
   consultation: ConsultationState;
   plan: ProtocolContent;
+  /** What this patient's antecedents added to the plan (equipment, precautions): not the protocol's. */
+  autoAdditions: { material: string[]; risks: string[] };
   quick: QuickEntryResult;
 }
 
@@ -241,7 +250,7 @@ function airwayDevice(device: ReturnType<typeof airwayChoice>, body: BodyData & 
 const shortTci = (line: string) => line.replace(/ ≈ (.*? à 1 h).*$/, " (≈ $1)");
 
 /** « Propofol 200 mg » (or the per-kg dose when the weight isn't known); alternatives « ou ». */
-function drugTexts(drugs: ProtocolDrug[], body: BodyData & { age?: number }, opts: { tci?: boolean } = {}): string[] {
+function drugTexts(drugs: ProtocolDrug[], body: BodyData & { age?: number }, opts: { tci?: boolean; contra?: Map<string, string>; struck?: Map<string, string> } = {}): string[] {
   const one = (d: ProtocolDrug) => {
     const tci = opts.tci || d.route === "aivoc" ? tciDrugOf(d.name) : null;
     if (tci) {
@@ -255,20 +264,30 @@ function drugTexts(drugs: ProtocolDrug[], body: BodyData & { age?: number }, opt
   };
   const out: string[] = [];
   const seen = new Set<string>();
+  // A text is struck when every product it offers is contraindicated for the patient (one of two alternatives left: not).
+  const note = (text: string, group: ProtocolDrug[]) => {
+    const why = group.map((x) => opts.contra?.get(x.id));
+    if (why.length && why.every(Boolean)) opts.struck?.set(text, [...new Set(why)].join(" ; "));
+  };
   for (const d of drugs) {
     if (d.choice) {
       if (seen.has(d.choice)) continue;
       seen.add(d.choice);
-      out.push(
-        drugs
-          .filter((x) => x.choice === d.choice)
-          .map(one)
-          .join(" ou ")
-      );
-    } else out.push(one(d));
+      const group = drugs.filter((x) => x.choice === d.choice);
+      const text = group.map(one).join(" ou ");
+      out.push(text);
+      note(text, group);
+    } else {
+      const text = one(d);
+      out.push(text);
+      note(text, [d]);
+    }
   }
   return out;
 }
+
+/** NSAIDs, in a drug's name or a post-op order. */
+const NSAID_TEXT = /ketorolac|ibuprofen|diclofenac|ketoprofen|parecoxib|celecoxib|etoricoxib|naproxen|\bains\b/;
 
 const STOP_WORDS = new Set(["de", "du", "des", "la", "le", "les", "l", "d", "par", "avec", "sous", "pour", "sur", "en", "a", "au", "aux", "et", "droite", "droit", "gauche", "bilaterale", "bilateral", "programme", "programmee"]);
 
@@ -331,7 +350,7 @@ const kineticsOf = (k: Kinetics): SheetKinetics => ({ name: k.name.replace(/\s*\
 
 /** « Ventilation au masque difficile prévisible : préoxygénation optimisée » — one printed line. */
 function alertText(pt: AttentionPoint): string {
-  const room = 95 - pt.title.length;
+  const room = 140 - pt.title.length;
   if (!pt.detail || room < 25) return pt.title;
   const clause = pt.detail.split(/\s*[;.]\s+|,\s+/)[0].replace(/[.;]$/, "");
   const head = clause.length <= room ? clause : `${clause.slice(0, room - 1).replace(/\s+\S*$/, "")}…`;
@@ -423,6 +442,17 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   const scores = consultationScores(c, { plan, catalogs });
   const points = attentionPoints(c, scores, plan);
   const tiva = choices.tiva ?? plan.gases?.agent === "tiva";
+  // Products of the plan this patient must not have (an allergy, a condition, the kidney): struck out, with why.
+  const contra = new Map<string, string>();
+  for (const pt of points) for (const id of pt.contra?.drugIds ?? []) if (!contra.has(id)) contra.set(id, pt.contra!.reason);
+  const struck = new Map<string, string>();
+  const dt = (list: ProtocolDrug[], _body: unknown, o: { tci?: boolean } = {}) => drugTexts(list, body, { ...o, contra, struck });
+  const nsaidWhy = plan.drugs.filter((d) => NSAID_TEXT.test(fold(d.name))).map((d) => contra.get(d.id)).find(Boolean);
+  const partOf = (label: string, text: string): SheetText => {
+    const forced = choices.struck?.[`${label}:${text}`];
+    const why = forced === false ? undefined : (struck.get(text) ?? (forced ? "barré" : undefined));
+    return why ? { text, struck: why } : { text };
+  };
 
   // --- Who --------------------------------------------------------------------------
   const ibw = sex && heightCm ? idealBodyWeight(sex, heightCm) : undefined;
@@ -460,42 +490,46 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
   const rows: SheetRow[] = [];
   const row = (label: string, texts: string[]) => {
     // One part per product: each can be taken off the sheet on its own.
-    if (texts.length) rows.push({ label, parts: texts.map((text) => ({ text })) });
+    if (texts.length) rows.push({ label, parts: texts.map((text) => partOf(label, text)) });
   };
-  row("ATB", drugTexts(phase("antibio"), body));
-  row("Prémédication", drugTexts(phase("premed"), body));
-  if (mode === "neuraxial" || mode === "regional") row(mode === "neuraxial" ? "Rachi" : "ALR", drugTexts(phase("alr"), body));
-  row("Induction", drugTexts(phase("induction"), body));
+  row("ATB", dt(phase("antibio"), body));
+  row("Prémédication", dt(phase("premed"), body));
+  if (mode === "neuraxial" || mode === "regional") row(mode === "neuraxial" ? "Rachi" : "ALR", dt(phase("alr"), body));
+  row("Induction", dt(phase("induction"), body));
   // Maintenance: the TCI rates of a TIVA, or the volatile agent.
   const maintenance = phase("maintenance");
   if (mode === "general") {
     if (tiva) {
       const tciDrugs = maintenance.filter((d) => tciDrugOf(d.name));
-      const lines = tciDrugs.length ? drugTexts(tciDrugs, body, { tci: true }) : [];
+      const lines = tciDrugs.length ? dt(tciDrugs, body, { tci: true }) : [];
       for (const drug of ["propofol", "remifentanil"] as const)
         if (!tciDrugs.some((d) => tciDrugOf(d.name) === drug)) {
           const line = tciSummary(drug, body);
           if (line) lines.push(`${drug === "propofol" ? "Propofol" : "Rémifentanil"} ${shortTci(line)}`);
         }
-      row("Entretien (TIVA)", [...lines, ...drugTexts(maintenance.filter((d) => !tciDrugOf(d.name)), body)]);
+      row("Entretien (TIVA)", [...lines, ...dt(maintenance.filter((d) => !tciDrugOf(d.name)), body)]);
     } else {
       const g = plan.gases;
       const gas = g && g.agent !== "tiva" ? `${AGENT_LABEL[g.agent]}${g.mac ? ` ${n1(g.mac[0])}–${n1(g.mac[1])} MAC` : ""}${g.freshGasLMin ? `, DGF ${n1(g.freshGasLMin)} L/min` : ""}${g.carrier === "n2o" ? ", N₂O" : ""}` : "";
-      row("Entretien", [...(gas ? [gas] : []), ...drugTexts(maintenance, body)]);
+      row("Entretien", [...(gas ? [gas] : []), ...dt(maintenance, body)]);
     }
-  } else row("Sédation / entretien", drugTexts(maintenance, body));
-  row("Analgésie", drugTexts(phase("analgesia"), body));
-  if (mode !== "neuraxial" && mode !== "regional") row("ALR", drugTexts(phase("alr"), body));
-  row("NVPO", drugTexts(phase("ponv"), body));
-  row("Hémodynamique", drugTexts(phase("haemodynamic"), body));
-  row("Autres", drugTexts(phase("other"), body));
+  } else row("Sédation / entretien", dt(maintenance, body));
+  row("Analgésie", dt(phase("analgesia"), body));
+  if (mode !== "neuraxial" && mode !== "regional") row("ALR", dt(phase("alr"), body));
+  row("NVPO", dt(phase("ponv"), body));
+  row("Hémodynamique", dt(phase("haemodynamic"), body));
+  row("Autres", dt(phase("other"), body));
   // Post-op: the orders ticked (computed for the patient), the protocol's own lines, its post-op drugs.
   // A5: the destination in a word, no monitoring lines (the recovery room's).
   const orders = postopLines(plan.postopPlan, { age, weightKg, crcl: scores.derived.crcl })
     .map((l) => l.text.replace(/^Destination : (.)/, (_, x: string) => x.toUpperCase()))
     .filter((t) => !/^Surveillance\b/.test(t));
-  const postop = [...orders, ...plan.postop, ...drugTexts(phase("postop"), body)];
-  if (postop.length) rows.push({ label: "Post-op", parts: postop.slice(0, 8).map((text) => ({ text })) });
+  const postop = [...orders, ...plan.postop, ...dt(phase("postop"), body)];
+  if (postop.length) rows.push({ label: "Post-op", parts: postop.slice(0, 12).map((text) => {
+        // An NSAID of the plan contraindicated: the post-op orders for NSAIDs are struck too.
+        if (nsaidWhy && NSAID_TEXT.test(fold(text)) && choices.struck?.[`Post-op:${text}`] === undefined) return { text, struck: nsaidWhy };
+        return partOf("Post-op", text);
+      }) });
 
   const pointOf = new Map<string, AttentionPoint>(points.filter((x) => x.id.startsWith("cond-")).map((x) => [x.id.slice(5), x]));
   const items: SheetItem[] = [];
@@ -511,7 +545,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     const notable = l.q.conditions.map((q) => pointOf.get(q.id)).filter((x): x is AttentionPoint => !!x);
     const pt = notable.some((x) => !explained.has(x.id)) ? notable[0] : undefined;
     notable.forEach((x) => explained.add(x.id));
-    push({ key: keyOf("atcd", l), section: "atcd", text: l.text, source: l.source, addedId: l.addedId, strong: notable.length > 0, detail: pt ? firstSentence(pt.detail, 110) : undefined, detailFull: pt ? notable.map((x) => x.detail.trim().replace(/\.$/, "")).join(" ; ") : undefined });
+    push({ key: keyOf("atcd", l), section: "atcd", text: l.text, source: l.source, addedId: l.addedId, strong: notable.length > 0, detail: pt ? firstSentence(pt.detail, 150) : undefined, detailFull: pt ? notable.map((x) => x.detail.trim().replace(/\.$/, "")).join(" ; ") : undefined });
   }
   for (const l of of("habit")) push({ key: keyOf("habit", l), section: "habit", text: l.text, source: l.source, addedId: l.addedId });
   for (const x of [...p.surgical, ...p.anaesthetic.map((a) => `anesth. : ${a}`)]) push({ key: `chir:${x}`, section: "chir", text: choices.edits?.[x] ?? x, source: x });
@@ -607,10 +641,11 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     lines: allLines,
     bleedingHistory: (p.hemstop ?? 0) >= 2 || Object.values(c.hemstop).some((v) => v === true),
     marks: choices.workup,
+    results: extractBio(allLines),
   });
   // What was written in the work-up on the sheet, as it was written.
   // (A result the reader knows — « Hb 13,2 », « ECG : RS » — is already in the work-up through its test.)
-  for (const x of choices.workupExtra ?? []) if (x.todo || !(isWorkupLine(x.text) || BIO_VALUE.test(x.text))) workup.push({ code: `x-${x.id}`, label: x.text, status: x.todo ? "todo" : "ok", value: x.text, reason: "", strength: "recommended" });
+  for (const x of choices.workupExtra ?? []) if (x.todo || !workupCovers(x.text)) workup.push({ code: `x-${x.id}`, label: x.text, status: x.todo ? "todo" : "ok", value: x.text, reason: "", strength: "recommended" });
 
   // --- Questions: only what the plan can't do without --------------------------------------
   const questions: CaseQuestion[] = [];
@@ -665,7 +700,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
       initials: p.initials || "?",
       name: p.name,
       birthDate: p.birthDate,
-      surgery: item && choices.surgeryId !== null ? item.name : p.surgery || "Intervention ?",
+      surgery: choices.surgeryLabel?.trim() || (item && choices.surgeryId !== null ? item.name : p.surgery || "Intervention ?"),
       tags,
       body: bodyText,
       technique: technique.join(", "),
@@ -694,6 +729,7 @@ export function buildCaseSheet(p: PastedConsultation, ctx: CaseContext, choices:
     fallbackModes,
     consultation: c,
     plan,
+    autoAdditions: { material: [...new Set(points.flatMap((x) => x.material ?? []))], risks: points.flatMap((x) => (x.risk ? [x.risk.title] : [])) },
     quick,
   };
 }

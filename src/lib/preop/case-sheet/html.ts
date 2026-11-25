@@ -81,7 +81,6 @@ const PAD_MM = 5;
 /** Labels kept to the grid's column. */
 const SHORT_LABEL: Record<string, string> = { Hémodynamique: "Hémodyn.", Prémédication: "Prémédic.", "Entretien (TIVA)": "Entretien", "Sédation / entretien": "Sédation", Antibioprophylaxie: "ATB" };
 /** A post-op instruction longer than this is cut (the whole one in the plan). */
-const POSTOP_CHARS = 90;
 
 const SECTION_LABEL: Record<ItemSection, string> = { atcd: "ATCD", habit: "Habitus", chir: "Chir.", ttt: "TTT", allergy: "Allergies", alert: "", note: "" };
 
@@ -108,7 +107,9 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
       .map((t) => {
         const key = `${prefix}${r.label}:${t.text}`;
         const text = edits[key] ?? t.text;
-        return piece(key, withDose(r.label === "Post-op" && text.length > POSTOP_CHARS ? `${text.slice(0, POSTOP_CHARS - 1).replace(/\s+\S*$/, "")}…` : text));
+        // Contraindicated for this patient: struck out, with why.
+        const why = t.struck && st.detail !== "none" && t.struck !== "barré" ? ` <span class="why">(CI : ${esc(t.struck)})</span>` : "";
+        return piece(key, t.struck ? `<s class="ci">${withDose(text)}</s>${why}` : withDose(text));
       })
       .filter(Boolean);
     if (!parts.length) return "";
@@ -217,7 +218,7 @@ export function caseSheetHtml(sheet: CaseSheet, index: number, opts: SheetHtmlOp
   const who = named ? sheet.name! : sheet.initials;
   const born = named && sheet.birthDate ? ` <span class="dob">${esc(sheet.birthDate)}</span>` : "";
   return `<article class="case">
-<header class="hd"><span class="no">${index}</span><span class="who"><b>${esc(who)}</b>${born} — ${esc(sheet.surgery)}</span>${tags}</header>
+<header class="hd"><span class="no">${index}</span><span class="who"><b>${esc(who)}</b>${born} — ${piece("surgery", esc(sheet.surgery))}</span>${tags}</header>
 <p class="body">${esc(sheet.body)}</p>
 <section class="blk">
 ${piece("tech", esc(edits.tech ?? sheet.technique), "div", "tech")}
@@ -295,6 +296,7 @@ ${s(".case [data-k]")}{cursor:pointer;border-radius:0.8mm}
 ${s(".case [data-k]:hover")}{background:#e8f0f0}
 ${s(".case [data-k]:focus-visible")}{outline:2px solid #2f5d54;outline-offset:1px}
 ${s(".case .off")}{opacity:.35;text-decoration:line-through}
+${s(".case .ci")}{text-decoration:line-through;text-decoration-thickness:.25mm;color:#5b6569}
 ${s(".case.pk")}{font-size:${size - 0.6}pt}
 ${s(".case.pk table")}{width:100%;border-collapse:collapse}
 ${s(".case.pk th")}{text-align:left;color:#1f4f53;font-size:.86em;text-transform:uppercase;letter-spacing:.03em;border-bottom:0.25mm solid #cfd6d9;padding:0.4mm 1mm}

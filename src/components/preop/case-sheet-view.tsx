@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Bold, Check, Eye, EyeOff, FileText, FolderInput, Pencil, Plus, Printer, RotateCcw, SlidersHorizontal, Trash2, UserPlus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bold, Check, Eye, EyeOff, FileText, FolderInput, Pencil, Plus, Printer, RotateCcw, Save, SlidersHorizontal, Strikethrough, Trash2, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { Combobox, Disclosure, FieldLabel, MiniNumber, Panel } from "@/components/preop/ui";
@@ -18,8 +18,11 @@ import { fold, searchItems, type Catalogs } from "@/lib/preop/catalog";
 import { searchSurgeries } from "@/lib/preop/surgery-search";
 import { emptyDossier, type Dossier } from "@/lib/preop/dossier";
 import type { Protocol } from "@/lib/preop/protocols";
+import type { ProtocolInput } from "@/components/preop/use-protocols";
+import { keepMarker, sourceWithoutMarker } from "@/lib/preop/reference-sync";
+import { planForLibrary } from "@/lib/preop/case-sheet/save-protocol";
 import type { Rule } from "@/lib/preop/rules/types";
-import type { SheetMode } from "@/lib/preop/anaesthesia-sheet";
+import { forMode, type SheetMode } from "@/lib/preop/anaesthesia-sheet";
 import { cn } from "@/lib/utils";
 
 // « Feuille de jour » (admins): the next day's anaesthesia consultations,
@@ -52,6 +55,8 @@ const TYPING_PAUSE_MS = 350;
 /** Pending commits of what is being typed, by field. */
 const TYPING = new Map<string, ReturnType<typeof setTimeout>>();
 const MODE_LABEL: Record<SheetMode, string> = { general: "AG", neuraxial: "Rachi", regional: "ALR", sedation: "Sédation" };
+/** What a variant saved from the sheet says of where it comes from (so the library can tell it from a protocol). */
+const VARIANT_PREFIX = "Variante de « ";
 
 function tomorrowTitle(): string {
   const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -93,7 +98,7 @@ const MOVABLE: { code: LineKind & ItemSection; label: string }[] = [
   { code: "note", label: "Note" },
 ];
 
-export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; protocols: Protocol[]; onKeep: (d: Dossier) => Promise<void> }) {
+export function CaseSheetView({ rules, protocols, onKeep, onSaveProtocol }: { rules: Rule[]; protocols: Protocol[]; onKeep: (d: Dossier) => Promise<void>; onSaveProtocol?: (p: ProtocolInput) => Promise<Protocol> }) {
   const { userId } = usePreopSession();
   const { catalogs, service } = useCatalogs();
   const { toast } = useToast();
@@ -238,6 +243,44 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     toast(`Dossier ${dossier.initials} gardé sur cet appareil (onglet Dossiers).`, { variant: "success" });
   }
 
+  /**
+   * The plan adapted for this patient, kept in the library: as the protocol itself (everyone's next patients use it),
+   * or as a variant next to it (the protocol is not touched) that can be picked in a click for the next patient.
+   */
+  async function saveAdaptedPlan(e: DayEntry, r: CaseResult, as: "protocol" | "variant") {
+    const adapted = e.choices.plan;
+    if (!adapted || !onSaveProtocol) return;
+    const reduced = r.item && r.protocol ? forMode(r.item, r.protocol, r.mode).protocol?.content : null;
+    const content = planForLibrary(adapted, r.protocol, reduced ?? null, r.autoAdditions);
+    try {
+      if (as === "protocol" && r.protocol) {
+        if (!confirm(`Remplacer le protocole « ${r.protocol.name} » de la bibliothèque par cette version ? Les prochains patients l'utiliseront.`)) return;
+        const { id, name, surgery, operation_category, hospital, source } = r.protocol;
+        await onSaveProtocol({ id, name, surgery, operation_category, hospital, content, source: keepMarker(source, sourceWithoutMarker(source)) });
+        setEntry(e.id, { choices: { ...e.choices, plan: undefined } });
+        toast(`Protocole « ${r.protocol.name} » enregistré.`, { variant: "success" });
+        return;
+      }
+      const base = r.protocol;
+      const name = prompt("Nom de la variante :", `${base?.name ?? r.sheet.surgery} — variante`)?.trim();
+      if (!name) return;
+      const saved = await onSaveProtocol({
+        id: crypto.randomUUID(),
+        name,
+        surgery: base?.surgery ?? r.item?.name ?? r.sheet.surgery,
+        operation_category: base?.operation_category ?? r.item?.category ?? "",
+        hospital: base?.hospital ?? "",
+        content,
+        source: `${VARIANT_PREFIX}${base?.name ?? "—"} »`,
+      });
+      // This patient now uses the variant itself, no longer an adapted copy.
+      setEntry(e.id, { choices: { ...e.choices, plan: undefined, protocolId: saved.id } });
+      toast(`Variante « ${saved.name} » enregistrée : à choisir dans « Plus d'options › Protocole ».`, { variant: "success" });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Enregistrement du protocole impossible.", { variant: "error" });
+    }
+  }
+
   /** A test of the work-up ticked done, or not needed. */
   const markWorkup = (e: DayEntry, code: string, mark: "done" | "skip") =>
     code.startsWith("x-")
@@ -299,6 +342,25 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
       },
       onClose: close,
     };
+    // The intervention as written on the sheet: corrected here only — the protocol and the plan stay as they are.
+    if (key === "surgery")
+      return {
+        ...base,
+        title: "Intervention (libellé de la feuille)",
+        text: r.sheet.surgery,
+        onToggle: undefined,
+        onText: (t) => {
+          const v = t.trim();
+          if (v) choose(e.id, { surgeryLabel: v === (r.item?.name ?? "") ? undefined : v });
+          close();
+        },
+        onReset: c.surgeryLabel !== undefined
+          ? () => {
+              choose(e.id, { surgeryLabel: undefined });
+              close();
+            }
+          : undefined,
+      };
     // A section of the handover (« txf:… »): renamed or taken off; one added (« txf:x0 »): renamed or deleted; a new one (« txf:+ »).
     if (key.startsWith("txf:")) {
       const id = key.slice(4);
@@ -399,6 +461,10 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
     // A product of the plan: « Analgésie:Kétorolac 30 mg ».
     const product = !item && !tx && key.includes(":") && !/^(row|imp|bilan|tag):/.test(key);
     const work = r.sheet.workup.find((w) => `bilan:${w.code}` === key);
+    // A product of the plan (or of plan B): contraindicated for this patient it is struck out by itself; this puts it back or strikes it.
+    const planB = key.startsWith("B ");
+    const partKey = product ? (planB ? key.slice(2) : key) : undefined;
+    const part = partKey ? (planB ? r.sheet.fallback?.rows : r.sheet.rows)?.find((x) => x.label === partKey.slice(0, partKey.indexOf(":")))?.parts.find((t) => t.text === partKey.slice(partKey.indexOf(":") + 1)) : undefined;
     // Lines written whole and corrected whole: the airway, the technique (« AG, IOT sonde 7,5–8, Vt …, PEP 5 »), plan B's.
     const FREE: Record<string, [string, string | undefined]> = {
       airway: ["Voies aériennes", r.sheet.airway],
@@ -421,6 +487,13 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
         else if (editKey) choose(e.id, { edits: v === original && (product || airway) ? without(c.edits, editKey) : { ...(c.edits ?? {}), [editKey]: v } });
         close();
       },
+      struck: part ? !!part.struck : undefined,
+      onStrike: part
+        ? () => {
+            choose(e.id, { struck: { ...(c.struck ?? {}), [partKey!]: !part.struck } });
+            close();
+          }
+        : undefined,
       strong: item && item.section !== "alert" ? !!item.strong : undefined,
       onBold: () => item && choose(e.id, { strong: { ...(c.strong ?? {}), [itemKey]: !item.strong } }),
       section: item && (item.addedId || item.source) && MOVABLE.some((m) => m.code === item.section) ? (item.section as LineKind) : undefined,
@@ -678,6 +751,18 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                       search={(q) => searchProtocols(protocols, q).map((x) => ({ key: x.id, label: x.name, hint: x.surgery }))}
                       onPick={(o) => choose(e.id, { protocolId: o.key })}
                     />
+                    {r.protocol && protocols.filter((x) => x.id !== r.protocol!.id && x.surgery === r.protocol!.surgery).length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs font-medium text-foreground-subtle">Même intervention :</span>
+                        {protocols
+                          .filter((x) => x.surgery === r.protocol!.surgery)
+                          .map((x) => (
+                            <Chip key={x.id} on={x.id === r.protocol!.id} onClick={() => x.id !== r.protocol!.id && choose(e.id, { protocolId: x.id })}>
+                              {x.name}
+                            </Chip>
+                          ))}
+                      </div>
+                    )}
                     {e.choices.protocolId && (
                       <button type="button" className="text-xs font-medium text-primary-strong underline-offset-2 hover:underline" onClick={() => choose(e.id, { protocolId: null })}>
                         Revenir au protocole de l&apos;intervention
@@ -704,7 +789,7 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                     </p>
                     {e.choices.plan ? (
                       <>
-                        <p className="text-xs text-foreground-muted">Touchez un produit pour changer sa dose, sa voie ou son moment ; la feuille se met à jour. Le protocole de la bibliothèque, lui, ne change pas.</p>
+                        <p className="text-xs text-foreground-muted">Touchez un produit pour changer sa dose, sa voie ou son moment ; la feuille se met à jour. Le protocole de la bibliothèque ne change pas, sauf si vous l&apos;enregistrez ci-dessous.</p>
                         <PlanEditor
                           compact
                           formKey={e.id}
@@ -713,6 +798,21 @@ export function CaseSheetView({ rules, protocols, onKeep }: { rules: Rule[]; pro
                           body={{ sex: r.consultation.patient.sex, weightKg: r.consultation.patient.weightKg, heightCm: r.consultation.patient.heightCm }}
                           patient={{ age: r.consultation.patient.age, weightKg: r.consultation.patient.weightKg }}
                         />
+                        {onSaveProtocol && (
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <Button size="sm" variant="secondary" onClick={() => void saveAdaptedPlan(e, r, "variant")}>
+                                <Save className="h-3.5 w-3.5" /> Enregistrer comme variante
+                              </Button>
+                              {r.protocol && (
+                                <Button size="sm" variant="ghost" onClick={() => void saveAdaptedPlan(e, r, "protocol")}>
+                                  Remplacer le protocole « {r.protocol.name} »
+                                </Button>
+                              )}
+                            </div>
+                            <p className="text-xs text-foreground-subtle">Une variante s&apos;ajoute à la bibliothèque sans toucher au protocole de base ; vous la choisissez ensuite en un clic. Le matériel et les précautions propres à ce patient ne sont pas enregistrés.</p>
+                          </div>
+                        )}
                         <Button size="sm" variant="ghost" onClick={() => confirm("Revenir au protocole de la bibliothèque (vos modifications pour ce patient sont perdues) ?") && choose(e.id, { plan: undefined })}>
                           <RotateCcw className="h-3.5 w-3.5" /> Revenir au protocole
                         </Button>
@@ -829,13 +929,16 @@ interface MenuProps {
   onToggle?: () => void;
   onDelete?: () => void;
   onReset?: () => void;
+  /** A product of the plan: struck out (contraindicated, or by hand) or not. */
+  struck?: boolean;
+  onStrike?: () => void;
   /** A test of the work-up: ticked done, or not needed. */
   onDone?: () => void;
   onSkip?: () => void;
   onClose: () => void;
 }
 
-function LineMenu({ at, title, text, onText, strong, onBold, section, onMove, off, onToggle, onDelete, onReset, onDone, onSkip, onClose }: MenuProps & { at: MenuAt }) {
+function LineMenu({ at, title, text, onText, strong, onBold, section, onMove, off, onToggle, onDelete, onReset, struck, onStrike, onDone, onSkip, onClose }: MenuProps & { at: MenuAt }) {
   const [draft, setDraft] = useState(text ?? "");
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -880,6 +983,11 @@ function LineMenu({ at, title, text, onText, strong, onBold, section, onMove, of
         {strong !== undefined && (
           <button type="button" aria-pressed={strong} onClick={onBold} className={cn(small, strong && "border-primary bg-primary-tint text-primary-strong")}>
             <Bold className="h-3.5 w-3.5" /> Gras
+          </button>
+        )}
+        {onStrike && (
+          <button type="button" aria-pressed={!!struck} onClick={onStrike} className={cn(small, struck && "border-primary bg-primary-tint text-primary-strong")}>
+            <Strikethrough className="h-3.5 w-3.5" /> {struck ? "Ne plus barrer" : "Barrer (contre-indiqué)"}
           </button>
         )}
         {onToggle && (

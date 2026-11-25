@@ -283,6 +283,8 @@ export function matchProtocol(protocols: Protocol[], surgery: { name: string; ca
     if (item && forChild) score += 0.5;
     else if (child && !forChild) score -= 0.6;
     score += (p.hospital && h ? 0.5 : 0) + (p.operation_category && p.operation_category === surgery.category ? 0.1 : 0);
+    // A variant saved from a case sheet is picked by hand; it never takes the place of the protocol it comes from.
+    if (/^Variante de « /.test(p.source)) score -= 0.01;
     if (!best || score > best.score) best = { p, score };
   }
   return best?.p ?? null;
