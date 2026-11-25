@@ -37,6 +37,8 @@ export interface AttentionPoint {
   /** Equipment / monitoring to add to the plan. */
   material?: string[];
   risk?: ProtocolRisk;
+  /** Products of the plan this patient must not have (their ids): struck out on the case sheet, with the reason. */
+  contra?: { drugIds: string[]; reason: string };
 }
 
 const fromSpec = (id: string, title: string, spec: AttentionSpec, why: string, source?: string, risk?: ProtocolRisk): AttentionPoint => ({ id, level: spec.level, title, detail: spec.text, material: spec.material, risk, why, source });
@@ -123,7 +125,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         add(
           unlikely
             ? { id: `allergy-plan-${allergen.id}-${d.id}`, level: "medium", title: `${d.name} au plan, allergie déclarée : ${allergen.label}`, detail: `PEN-FAST ${pf!.value}/5 : allergie vraie peu probable ; vérifier la conduite dans vos règles.`, why: `${d.name} figure dans le plan d'anesthésie` }
-            : { id: `allergy-plan-${allergen.id}-${d.id}`, level: "high", title: `${d.name} au plan malgré l'allergie : ${allergen.label}`, detail: "Revoir ce produit (réactivité croisée possible) ou confirmer qu'il est toléré.", why: `${d.name} figure dans le plan d'anesthésie` }
+            : { id: `allergy-plan-${allergen.id}-${d.id}`, level: "high", title: `${d.name} au plan malgré l'allergie : ${allergen.label}`, detail: "Revoir ce produit (réactivité croisée possible) ou confirmer qu'il est toléré.", why: `${d.name} figure dans le plan d'anesthésie`, contra: { drugIds: [d.id], reason: `allergie : ${allergen.label}` } }
         );
     }
   }
@@ -372,6 +374,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         detail: `${f.caution.text.charAt(0).toUpperCase()}${f.caution.text.slice(1)}.`,
         why: `${f.because.join(", ")} ; ${f.drug.name} dans le plan d'anesthésie`,
         source: `${DRUG_REFERENCE_SOURCE}, ${f.drug.chapter}`,
+        ...(f.caution.level === "contraindicated" ? { contra: { drugIds: planDrugs.filter((d) => drugReferenceFor(d.name)?.name === f.drug.name).map((d) => d.id), reason: f.because.join(", ") } } : {}),
       });
     const rest = found.filter((f) => !inPlan.includes(f));
     const line = (f: (typeof found)[number]) => `${f.drug.name} — ${f.caution.text} (${f.because.join(", ")})`;
@@ -431,6 +434,11 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
         plan.drugs.map((x) => x.name),
         { crcl, dialysis: has(cond, "dialysis"), liver }
       );
+      // A product the rule says is contraindicated at this level of kidney or liver function (« contre-indiqué », not « à adapter »).
+      const contraOf = (kind: "renal" | "hepatic") => {
+        const ids = plan.drugs.filter((d) => organAdjustments([d.name], { crcl, dialysis: has(cond, "dialysis"), liver }).some((o) => o.organ === kind && /contre-indiqué/.test(o.text))).map((d) => d.id);
+        return ids.length ? { drugIds: ids, reason: kind === "renal" ? (has(cond, "dialysis") ? "dialyse" : `clairance ${Math.round(crcl ?? 0)} mL/min`) : "atteinte hépatique" } : undefined;
+      };
       const renal = organ.filter((o) => o.organ === "renal");
       const hepatic = organ.filter((o) => o.organ === "hepatic");
       if (renal.length)
@@ -441,6 +449,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
           detail: renal.map((o) => `${o.drug} : ${o.text}`).join(" ; ") + ".",
           why: has(cond, "dialysis") ? "dialyse" : `clairance de la créatinine ${Math.round(crcl ?? 0)} mL/min (Cockcroft-Gault)`,
           source: ORGAN_SOURCE,
+          ...(contraOf("renal") ? { contra: contraOf("renal") } : {}),
         });
       if (hepatic.length)
         add({
@@ -450,6 +459,7 @@ export function attentionPoints(c: ConsultationState, scores: ConsultationScores
           detail: hepatic.map((o) => `${o.drug} : ${o.text}`).join(" ; ") + ".",
           why: `${labelOf("cirrhosis")}${child ? `, Child ${child.toUpperCase()}` : ""}`,
           source: ORGAN_SOURCE,
+          ...(contraOf("hepatic") ? { contra: contraOf("hepatic") } : {}),
         });
     }
     const meq = morphineEquivalents(c.treatments);

@@ -1,4 +1,3 @@
-import type { PlanningCellEditRow, PlanningOcrFixRow, PlanningPersonRow, PlanningRoomRow, PlanningSettingsRow, PlanningWeekRow } from "@/lib/planning-tivoli/types";
 export type UserRole = "admin" | "user";
 export type AppStatus = "available" | "coming_soon";
 
@@ -1292,42 +1291,6 @@ export type Database = {
         Update: Partial<CarnetYearRow>;
         Relationships: [];
       };
-      planning_tivoli_rooms: {
-        Row: PlanningRoomRow;
-        Insert: Partial<PlanningRoomRow> & { name: string };
-        Update: Partial<PlanningRoomRow>;
-        Relationships: [];
-      };
-      planning_tivoli_people: {
-        Row: PlanningPersonRow;
-        Insert: Partial<PlanningPersonRow> & { initials: string; name: string };
-        Update: Partial<PlanningPersonRow>;
-        Relationships: [];
-      };
-      planning_tivoli_ocr_fixes: {
-        Row: PlanningOcrFixRow;
-        Insert: Partial<PlanningOcrFixRow> & { read: string; fixed: string };
-        Update: Partial<PlanningOcrFixRow>;
-        Relationships: [];
-      };
-      planning_tivoli_weeks: {
-        Row: PlanningWeekRow;
-        Insert: Partial<PlanningWeekRow> & { image_hash: string; image_base64: string };
-        Update: Partial<PlanningWeekRow>;
-        Relationships: [];
-      };
-      planning_tivoli_cell_edits: {
-        Row: PlanningCellEditRow;
-        Insert: Partial<PlanningCellEditRow>;
-        Update: Partial<PlanningCellEditRow>;
-        Relationships: [];
-      };
-      planning_tivoli_settings: {
-        Row: PlanningSettingsRow;
-        Insert: Partial<PlanningSettingsRow>;
-        Update: Partial<PlanningSettingsRow>;
-        Relationships: [];
-      };
       preop_rules: {
         Row: PreopRuleRow;
         Insert: Partial<PreopRuleRow> & { id: string; user_id: string; statement: string };
@@ -1355,10 +1318,6 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
-      planning_tivoli_set_cell: {
-        Args: { p_day: string; p_label: string; p_value: string };
-        Returns: boolean;
-      };
       list_my_sessions: {
         Args: Record<string, never>;
         Returns: { id: string; created_at: string; updated_at: string; user_agent: string | null; ip: string | null; is_current: boolean }[];

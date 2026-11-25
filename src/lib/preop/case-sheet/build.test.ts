@@ -284,7 +284,7 @@ describe("case sheet", () => {
     const r = buildCaseSheet(parseConsultation(raw), ctx, { mode: "neuraxial" });
     const w = (x: Result, code: string) => x.sheet.workup.find((y) => y.code === code);
     // The spinal: platelets — already in the consultation's biology.
-    expect(w(r, "fbc")).toMatchObject({ status: "ok", value: "Hb 13,2, plaq. 245" });
+    expect(w(r, "fbc")).toMatchObject({ status: "ok", value: "Hb 13,2 g/dL, Plaq. 245 G/L" });
     // Under a direct oral anticoagulant: haemostasis to plan, the creatinine there.
     expect(w(r, "haemostasis")).toMatchObject({ status: "todo", strength: "recommended" });
     expect(w(r, "renal")?.status).toBe("ok");
@@ -346,5 +346,51 @@ ECG : Tachycardie sinusale à 104 bpm. Axe normal.`;
     expect(r.sheet.transmission).toBe(true);
     expect(r.sheet.workup.find((w) => w.code === "group")?.status).toBe("todo");
   });
-});
 
+  it("changes the intervention's wording without touching the protocol or the plan", () => {
+    const p = parseConsultation(HOSPITAL);
+    const id = buildCaseSheet(p, ctx).candidates[0].id;
+    const plain = buildCaseSheet(p, ctx, { surgeryId: id });
+    const named = buildCaseSheet(p, ctx, { surgeryId: id, surgeryLabel: "Salpingectomie G + retrait DIU (Dr Martin)" });
+    expect(named.sheet.surgery).toBe("Salpingectomie G + retrait DIU (Dr Martin)");
+    expect(named.protocol?.id).toBe(plain.protocol?.id);
+    expect(named.sheet.rows).toEqual(plain.sheet.rows);
+    expect(named.sheet.technique).toBe(plain.sheet.technique);
+  });
+
+  it("shows every value of a pasted biology, not only the ones a test asks for", () => {
+    const raw = `${CLINIC}\n---\nBiologie : Hb 12,8 g/dL, GB 7,1 G/L, Plaq 210 G/L, Na 139 mmol/L, K 4,2 mmol/L, CRP 12 mg/L, TSH 2,1 mUI/L, ASAT 25 UI/L, ALAT 30 UI/L, Lipase : 40 U/L`;
+    const r = buildCaseSheet(parseConsultation(raw), ctx, { mode: "neuraxial" });
+    const value = (code: string) => r.sheet.workup.find((w) => w.code === code)?.value ?? "";
+    expect(value("fbc")).toContain("GB 7,1 G/L");
+    expect(value("renal")).toMatch(/Na 139.*K 4,2/);
+    expect(value("res-inflammation")).toBe("CRP 12 mg/L");
+    expect(value("res-metabolic")).toBe("TSH 2,1 mUI/L");
+    expect(value("res-hepatic")).toBe("ASAT 25 UI/L, ALAT 30 UI/L");
+    expect(value("res-other")).toBe("Lipase 40 U/L");
+    // Not needed: off the work-up.
+    const skipped = buildCaseSheet(parseConsultation(raw), ctx, { mode: "neuraxial", workup: { "res-hepatic": "skip" } });
+    expect(skipped.sheet.workup.find((w) => w.code === "res-hepatic")).toBeUndefined();
+  });
+
+  it("does not cut what the biology says", () => {
+    const long = "ETT : FEVG 55 % préservée, pas de valvulopathie significative, HTAP absente, VD de taille normale, péricarde sec";
+    const r = buildCaseSheet(parseConsultation(`${CLINIC}\n---\n${long}`), ctx, { mode: "neuraxial" });
+    expect(r.sheet.workup.find((w) => w.code === "echo")?.value).toContain("péricarde sec");
+  });
+
+  it("strikes out a product of the plan that is contraindicated for the patient, unless told otherwise", () => {
+    const raw = HOSPITAL.replace("Psoriasis", "Insuffisance rénale chronique stade 4 (DFG 20)");
+    const p = parseConsultation(raw);
+    const id = buildCaseSheet(p, ctx).candidates[0].id;
+    const r = buildCaseSheet(p, ctx, { surgeryId: id });
+    const parts = r.sheet.rows.flatMap((x) => x.parts.map((t) => ({ label: x.label, ...t })));
+    const nsaid = parts.find((t) => /Kétorolac|Ibuprofène|Diclofénac|Kétoprofène|Paracétamol.*Ibuprofène/.test(t.text));
+    expect(nsaid?.struck).toBeTruthy();
+    // Propofol is not.
+    expect(parts.find((t) => /Propofol/.test(t.text))?.struck).toBeUndefined();
+    // Put back by hand.
+    const back = buildCaseSheet(p, ctx, { surgeryId: id, struck: { [`${nsaid!.label}:${nsaid!.text}`]: false } });
+    expect(back.sheet.rows.flatMap((x) => x.parts).find((t) => t.text === nsaid!.text)?.struck).toBeUndefined();
+  });
+});
