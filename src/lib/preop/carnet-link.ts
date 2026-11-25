@@ -3,7 +3,8 @@
 // fait » removes it. Only what the carnet already records goes there:
 // initials, intervention, category, techniques, drugs of the plan.
 
-import type { CarnetCase, CaseDrug } from "@/lib/carnet/types";
+import type { CarnetCase, CarnetData, CaseDrug } from "@/lib/carnet/types";
+import { defaultParticipation, defaultTutorId, stageForDate, supervisorFromHint } from "@/lib/carnet/logic";
 import { computeDose, formatDose } from "./protocols";
 import type { Dossier } from "./dossier";
 
@@ -58,5 +59,28 @@ export function plannedCaseFromDossier(d: Dossier, choices: PlanChoices, date: s
     signature_id: null,
     notes: "",
     created_at: now,
+  };
+}
+
+/**
+ * Choices for planning a dossier in the carnet without asking (a consultation brought from CARE): the stage of
+ * that day, the techniques of the plan (else the consultation's; general anaesthesia when nothing says), the
+ * supervisor named by EasyPM (else the last one that day). Null when no stage covers the day.
+ * A planned case counts nowhere until confirmed « Fait ».
+ */
+export function autoPlanChoices(d: Dossier, data: Pick<CarnetData, "stages" | "cases" | "supervisors">, date: string): PlanChoices | null {
+  const stage = stageForDate(data.stages, date);
+  if (!stage) return null;
+  const t = d.plan.techniques.length ? d.plan.techniques : d.consultation.techniques;
+  const regionalTypes = suggestedRegionalTypes(d);
+  const technicalActs = t.some((x) => x === "deep_block" || x === "superficial_block") ? ["echo_alr"] : [];
+  const generalAnesthesia = t.includes("general") || (!regionalTypes.length && !technicalActs.length && !t.includes("sedation") && !t.includes("neuraxial"));
+  return {
+    stageId: stage.id,
+    generalAnesthesia,
+    regionalTypes,
+    technicalActs,
+    participation: defaultParticipation(data.cases, stage.id),
+    tutorId: supervisorFromHint(data.supervisors, d.supervisorHint) ?? defaultTutorId(data.cases, stage.id, date),
   };
 }

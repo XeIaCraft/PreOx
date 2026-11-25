@@ -21,6 +21,8 @@ const payload = (extra: Partial<CarePayload> = {}): CarePayload => ({
     { group: "Score HEMSTOP adulte", question: "3. Avez-vous reconsulté votre dentiste pour saignement après une extraction dentaire ?", answer: "Non" },
     { group: "Stop-Bang", question: "Ronflements", answer: "Oui" },
     { group: "Stop-Bang", question: "Sexe masculin", answer: "Non" },
+    { group: "Score de Lee", question: "Cardiopathie ischémique", answer: "Oui" },
+    { group: "CHA2DS2-VASc", question: "Hypertension artérielle", answer: "Oui" },
   ],
   supervisor: "Dr Hecquet",
   ...extra,
@@ -51,6 +53,8 @@ describe("CARE consultation → dossier", () => {
     expect(c.techniques).toEqual(["general"]);
     expect(c.hemstop).toEqual({ surgery: true, tooth: false });
     expect(c.stopBang).toEqual({ snoring: true, male: false });
+    expect(c.rcri).toEqual({ ischemicHeartDisease: true });
+    expect(c.cha).toEqual({ hypertension: true });
     expect(c.notes).toBe("Patiente anxieuse");
   });
 
@@ -76,5 +80,24 @@ describe("CARE consultation → dossier", () => {
     expect(findCareDossier([sameDay, made], payload())?.id).toBe(made.id);
     expect(findCareDossier([otherDay, sameDay], payload({ key: "k2" }))?.id).toBe(sameDay.id);
     expect(findCareDossier([otherDay], payload({ key: "k2" }))).toBeUndefined();
+  });
+});
+
+import { autoPlanChoices } from "./carnet-link";
+
+describe("CARE → carnet de stage", () => {
+  const stage = { id: "s1", hospital: "Tivoli", sector: "Bloc", training_year: 2, start_date: "2026-01-01", end_date: "2026-12-31" };
+  const sup = (id: string, first_name: string, last_name: string) => ({ id, first_name, last_name, role: "", usual_hospital: "", archived: false, created_at: "" });
+  const data = { stages: [stage], cases: [], supervisors: [sup("a", "Marc", "Hecquet"), sup("b", "Anne", "Martin")] } as unknown as Parameters<typeof autoPlanChoices>[1];
+
+  it("plans with the stage of the day, the techniques and the supervisor named by EasyPM", () => {
+    const d = dossierFromCare(payload(), DEFAULT_CATALOGS);
+    expect(autoPlanChoices(d, data, "2026-03-20")).toMatchObject({ stageId: "s1", generalAnesthesia: true, regionalTypes: [], technicalActs: [], tutorId: "a" });
+  });
+
+  it("a block brings the ultrasound act; no stage in the carnet: not planned", () => {
+    const d = dossierFromCare(payload({ techniques: ["deep_block"], supervisor: "" }), DEFAULT_CATALOGS);
+    expect(autoPlanChoices(d, data, "2026-03-20")).toMatchObject({ generalAnesthesia: false, technicalActs: ["echo_alr"], tutorId: null });
+    expect(autoPlanChoices(d, { ...data, stages: [] }, "2026-03-20")).toBeNull();
   });
 });

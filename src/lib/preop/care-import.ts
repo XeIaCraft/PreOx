@@ -15,7 +15,7 @@ import { fold, type Catalogs } from "./catalog";
 import { emptyConsultation, emptyDossier, type ConsultationState, type Dossier } from "./dossier";
 import { applyQuickEntry, parseQuickEntry } from "./quick-entry";
 import type { Technique } from "./rules/types";
-import type { HEMSTOP_ITEMS, STOP_BANG_ITEMS } from "./scores";
+import type { HEMSTOP_ITEMS, RCRI_ITEMS, STOP_BANG_ITEMS } from "./scores";
 
 export const CARE_MESSAGE = "easypm:care-consultation";
 export const CARE_READY = "preop:care-ready";
@@ -104,6 +104,23 @@ const STOP_BANG_WORDS: [keyof typeof STOP_BANG_ITEMS, RegExp][] = [
   ["male", /sexe masculin|masculin/],
 ];
 
+const RCRI_WORDS: [keyof typeof RCRI_ITEMS, RegExp][] = [
+  ["highRiskSurgery", /chirurgie a risque/],
+  ["ischemicHeartDisease", /ischemi/],
+  ["heartFailure", /insuffisance cardiaque/],
+  ["cerebrovascularDisease", /cerebro|avc/],
+  ["insulin", /insulin/],
+  ["creatinineOver2", /renale/],
+];
+type ChaKey = "heartFailure" | "hypertension" | "diabetes" | "strokeTiaThromboembolism" | "vascularDisease";
+const CHA_WORDS: [ChaKey, RegExp][] = [
+  ["heartFailure", /insuffisance cardiaque/],
+  ["hypertension", /hypertension/],
+  ["diabetes", /diabete/],
+  ["strokeTiaThromboembolism", /avc|ait|accident vasculaire|thrombo/],
+  ["vascularDisease", /maladie vasculaire|arteriopathie|infarctus/],
+];
+
 function scoreAnswers<K extends string>(answers: CareAnswer[], group: RegExp, words: [K, RegExp][]): Partial<Record<K, boolean>> {
   const out: Partial<Record<K, boolean>> = {};
   for (const a of answers) {
@@ -141,6 +158,8 @@ export function consultationFromCare(p: CarePayload, catalogs: Pick<Catalogs, "c
   const answers = p.answers ?? [];
   c.hemstop = { ...scoreAnswers(answers, /hemstop/, HEMSTOP_WORDS), ...c.hemstop };
   c.stopBang = { ...scoreAnswers(answers, /stop.?bang/, STOP_BANG_WORDS), ...c.stopBang };
+  c.rcri = { ...scoreAnswers(answers, /lee/, RCRI_WORDS), ...c.rcri };
+  c.cha = { ...scoreAnswers(answers, /cha2?ds2?/, CHA_WORDS), ...c.cha };
   const comments = [p.sections?.comments, p.sections?.information].map((x) => x?.trim()).filter(Boolean) as string[];
   const fresh = comments.filter((x) => !c.notes.includes(x));
   if (fresh.length) c.notes = [c.notes, ...fresh].filter(Boolean).join("\n");

@@ -18,6 +18,7 @@ import { useRules } from "@/components/preop/use-rules";
 import { useToast } from "@/components/ui/toast";
 import { CatalogsProvider, useCatalogs } from "@/components/preop/use-catalogs";
 import { useCareBridge } from "@/components/preop/care-bridge";
+import { CarnetAutoPlanner } from "@/components/preop/carnet-auto";
 import { SettingsView } from "@/components/preop/settings";
 import { ServicePrefsPanel } from "@/components/preop/service-prefs-panel";
 import { PlanListsSettings } from "@/components/preop/plan-lists-settings";
@@ -94,8 +95,11 @@ function PreopScreens({ embedded }: { embedded: boolean }) {
   }, [rulesUpdated, toast]);
   const dossierStore = useDossiers(userId);
   const { catalogs } = useCatalogs();
+  // Dossiers venus de CARE : planifiés dans le carnet tout seuls (carnet-auto.tsx)
+  const [fromCare, setFromCare] = useState<string[]>([]);
   useCareBridge(embedded, dossierStore, catalogs, (d, created) => {
     toast(created ? `Dossier ${d.initials} créé depuis CARE.` : `Dossier ${d.initials} complété depuis CARE.`, { variant: "success" });
+    setFromCare((ids) => (ids.includes(d.id) ? ids : [...ids, d.id]));
     go("dossier", { id: d.id });
   });
   const [pendingQuestion, setPendingQuestion] = useState<QuestionInput | null>(null);
@@ -177,6 +181,7 @@ function PreopScreens({ embedded }: { embedded: boolean }) {
         </nav>
       </header>
       {dossierStore.error && <p className="text-sm text-danger">{dossierStore.error}</p>}
+      {carnetEnabled && fromCare.length > 0 && <CarnetAutoPlanner ids={fromCare} dossiers={dossierStore.dossiers} onPlanned={(d) => void dossierStore.put(d, true)} />}
 
       {/* The consultation stays mounted (hidden) so switching away and back doesn't wipe it. */}
       {isAdmin && (
